@@ -152,6 +152,28 @@ const patchBaileysDeclarations = (modDir) => {
   }
 }
 
+const patchBaileysEsmRuntimeImports = (modDir) => {
+  const roots = [
+    join(modDir, 'lib'),
+    join(modDir, 'WAProto')
+  ]
+  let patched = 0
+  for (const root of roots) {
+    for (const filePath of walkFiles(root, (file) => file.endsWith('.js') || file.endsWith('.d.ts'))) {
+      const changed = patchFile(filePath, (src) => {
+        return src.replace(
+          /(from\s+['"]libsignal\/src\/[^'".]+)(['"])/g,
+          '$1.js$2'
+        )
+      })
+      if (changed) patched += 1
+    }
+  }
+  if (patched) {
+    log(`imports ESM do libsignal ajustados (${patched} arquivos)`)
+  }
+}
+
 try {
   const root = process.cwd()
   const modDir = join(root, 'node_modules', '@whiskeysockets', 'baileys')
@@ -178,6 +200,7 @@ try {
 
   if ((hasLibIndex || hasDistIndex) && hasSocketIdx && hasLibTypes) {
     patchBaileysDeclarations(modDir)
+    patchBaileysEsmRuntimeImports(modDir)
     patchBaileysCompat(modDir)
     log('artefatos ja presentes (lib/dist + Socket), skip build')
     process.exit(0)
@@ -235,6 +258,7 @@ try {
     ], modDir)
 
     patchBaileysDeclarations(modDir)
+    patchBaileysEsmRuntimeImports(modDir)
     patchBaileysCompat(modDir)
   } catch (e) {
     warn('falha ao ajustar/compilar tsconfig local:', e?.message || e)
