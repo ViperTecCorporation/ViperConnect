@@ -80,7 +80,7 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     }
   }
 
-  const uploadWithRetry = async (params: { Bucket: string; Key: string; Body: Buffer }, abortMs: number) => {
+  const uploadWithRetry = async (params: { Bucket: string; Key: string; Body: Buffer; ContentType?: string }, abortMs: number) => {
     const attempt = async () => {
       const uploader = new Upload({
         client: s3Client,
@@ -122,7 +122,7 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     }
   }
 
-  mediaStore.saveMediaBuffer = async (fileName: string, content: Buffer) => {
+  mediaStore.saveMediaBuffer = async (fileName: string, content: Buffer, contentType?: string) => {
     logger.debug(`Uploading file ${fileName} to bucket ${bucket}....`)
     try {
       if (DOWNLOAD_AUDIO_CONVERT_TO_MP3 && fileName.toLowerCase().endsWith('.mp3')) {
@@ -140,6 +140,7 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
       Bucket: bucket,
       Key: fileName,
       Body: content,
+      ...(contentType ? { ContentType: contentType } : {}),
     }
     await uploadWithRetry(putParams, s3Config.timeoutMs)
     logger.debug(`Uploaded file ${fileName} to bucket ${bucket}!`)
@@ -263,11 +264,13 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     if (contact.imgUrl) {
       logger.info('PROFILE_PICTURE saving (S3) targets: %s (from %s)', targetIds.join(','), sanitizeProfileId(originalId))
       const response: FetchResponse = await fetch(contact.imgUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), method: 'GET'})
+      const responseContentType = `${response.headers.get('content-type') || ''}`.split(';')[0].trim().toLowerCase()
+      const profilePictureContentType = responseContentType.startsWith('image/') ? responseContentType : 'image/jpeg'
       const buffer = toBuffer(await response.arrayBuffer())
       for (const targetId of targetIds) {
         const fileName = `${phone}/${PROFILE_PICTURE_FOLDER}/${profilePictureFileName(targetId)}`
         try {
-          await mediaStore.saveMediaBuffer(fileName, buffer)
+          await mediaStore.saveMediaBuffer(fileName, buffer, profilePictureContentType)
           logger.info('PROFILE_PICTURE saved (S3): %s', jidToPhoneNumberIfUser(targetId))
         } catch (e) {
           logger.warn(e as any, 'Ignore error saving S3 profile picture %s', targetId)

@@ -187,6 +187,34 @@ const clearGlobalJidMapOnLegacyUpgrade = async (): Promise<void> => {
   }
 }
 
+const clearProfilePictureRefreshKeysOnLegacyUpgrade = async (): Promise<void> => {
+  const currentVersion = `${appVersion || ''}`.trim()
+  const previousVersion = `${await redisGet(appVersionKey()) || ''}`.trim()
+  const targetVersion = '3.0.65'
+  if (previousVersion && !isSemverLt(previousVersion, targetVersion)) return
+
+  const lockKey = appMigrationLockKey(`clear-profile-picture-refresh-before-${targetVersion}`)
+  const acquired = await redisSetIfNotExists(lockKey, currentVersion || '1', 600)
+  if (!acquired) return
+
+  const keys = await redisScanSome(`${BASE_KEY}profile-picture-refresh:*`, 100000)
+  let deleted = 0
+  for (const key of keys || []) {
+    try {
+      await redisDel(key)
+      deleted += 1
+    } catch {}
+  }
+  try {
+    logger.warn(
+      'Startup migration: cleared %s profile picture refresh key(s) due to upgrade from %s to %s',
+      deleted,
+      previousVersion || '<none>',
+      currentVersion || '<none>'
+    )
+  } catch {}
+}
+
 export const getHistorySyncMarker = async (phone: string): Promise<boolean> => {
   try {
     return !!(await redisGet(historySyncMarkerKey(phone)))
@@ -237,6 +265,7 @@ const seedHistorySyncMarkersForExistingSessions = async (): Promise<void> => {
 }
 
 const runStartupRedisMigrations = async (): Promise<void> => {
+  await clearProfilePictureRefreshKeysOnLegacyUpgrade()
   await clearGlobalJidMapOnLegacyUpgrade()
   await seedHistorySyncMarkersForExistingSessions()
 }
