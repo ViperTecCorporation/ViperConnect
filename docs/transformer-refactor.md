@@ -19,9 +19,14 @@ Concluido em 2026-05-04:
 - Teste focado executado com sucesso: `"/mnt/c/Program Files/nodejs/node.exe" node_modules/jest/bin/jest.js __tests__/services/transformer.ts --runInBand`.
 - Suite completa executada com sucesso: `NODE_OPTIONS=--max-old-space-size=4096 "/mnt/c/Program Files/nodejs/node.exe" node_modules/jest/bin/jest.js --coverage`.
 
+Concluido em 2026-05-06:
+
+- Helpers de tipo de mensagem foram extraidos para `src/services/transformer/message_type.ts`.
+- `src/services/transformer.ts` continua importando os helpers extraidos para uso interno e reexportando os mesmos simbolos para imports antigos.
+- Teste focado executado com sucesso: `"/mnt/c/Program Files/nodejs/node.exe" node_modules/jest/bin/jest.js __tests__/services/transformer.ts --runInBand`.
+
 Proximos candidatos seguros:
 
-- Extrair helpers de tipo de mensagem para `src/services/transformer/message_type.ts`.
 - Extrair helpers de grupo/direcao para `src/services/transformer/groups.ts`.
 - Manter `toBaileysMessageContent` e `fromBaileysMessageContent` para uma etapa posterior.
 
@@ -117,6 +122,7 @@ Comece por funcoes menores e mais isoladas. A ordem recomendada e:
    - `isSaveMedia`
    - `extractTypeMessage`
    - `isAudioMessage`
+   - Status: concluido em `message_type.ts`.
 
 4. Helpers de grupo e direcao:
    - `getGroupId`
