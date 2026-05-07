@@ -4,6 +4,11 @@ import { spawnSync } from 'child_process'
 
 const log = (...args) => console.log('[prepare-baileys]', ...args)
 const warn = (...args) => console.warn('[prepare-baileys]', ...args)
+const isPostinstall = process.env.npm_lifecycle_event === 'postinstall'
+
+const exitFailure = () => {
+  process.exit(isPostinstall ? 0 : 1)
+}
 
 const run = (cmd, args, cwd) => {
   try {
@@ -178,18 +183,8 @@ try {
     process.exit(0)
   }
 
-  // Se veio de git, geralmente precisa compilar: instalar devDeps e rodar build/prepare
-  log('artefatos nao encontrados; instalando devDependencies do baileys...')
-  const installed = runWithFallback([
-    ['yarn', ['install', '--production=false', '--non-interactive', '--ignore-scripts']],
-    ['corepack', ['yarn', 'install', '--production=false', '--non-interactive', '--ignore-scripts']]
-  ], modDir)
-  if (!installed) {
-    warn('falha ao instalar devDependencies do baileys')
-    process.exit(0) // nao falhar o postinstall do app
-  }
-
-  // Preparar tsconfig local desativando declaracoes para evitar TS2742
+  // Preparar tsconfig local para emitir JS e declarations mesmo se a Baileys
+  // reportar erros de tipagem internos durante a geracao dos artefatos.
   const tsconfigBuild = [
     join(modDir, 'tsconfig.build.json'),
     join(modDir, 'tsconfig.json')
@@ -213,18 +208,30 @@ try {
     const localCfg = join(modDir, 'tsconfig.build.local.json')
     writeFileSync(localCfg, JSON.stringify(cfg, null, 2))
 
-    // Compilar TS -> JS
+    // Compilar TS -> JS usando primeiro as ferramentas do projeto raiz.
+    // Evita instalar devDependencies da Baileys com Yarn 1, que quebra em
+    // alguns package.json modernos com packageManager Yarn 4.
+    const rootTsc = join(root, 'node_modules', 'typescript', 'bin', 'tsc')
     runWithFallback([
+      [process.execPath, [rootTsc, '-p', localCfg]],
       ['yarn', ['tsc', '-p', localCfg]],
       ['corepack', ['yarn', 'tsc', '-p', localCfg]],
-      ['npx', ['-y', 'typescript', '-p', localCfg]]
+      ['npx', ['-y', 'tsc', '-p', localCfg]]
     ], modDir)
 
     // Ajustar imports ESM
-    runWithFallback([
+    const rootTscEsmFix = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsc-esm-fix.cmd' : 'tsc-esm-fix')
+    const esmFixVariants = []
+    if (existsSync(rootTscEsmFix)) {
+      esmFixVariants.push([rootTscEsmFix, [`--tsconfig=${localCfg}`, '--ext=.js']])
+    }
+    esmFixVariants.push(
       ['yarn', ['tsc-esm-fix', `--tsconfig=${localCfg}`, '--ext=.js']],
       ['corepack', ['yarn', 'tsc-esm-fix', `--tsconfig=${localCfg}`, '--ext=.js']],
       ['npx', ['-y', 'tsc-esm-fix', `--tsconfig=${localCfg}`, '--ext=.js']]
+    )
+    runWithFallback([
+      ...esmFixVariants
     ], modDir)
 
     patchBaileysDeclarations(modDir)
@@ -235,13 +242,16 @@ try {
 
   // Checagem final
   const finalHasLibIndex = existsSync(libIndex)
+  const finalHasLibTypes = existsSync(libTypes)
+  const finalHasLoggerTypes = existsSync(join(modDir, 'lib', 'Utils', 'logger.d.ts'))
   const finalHasSocketIdx = socketIdxCandidates.some(existsSync)
-  if (finalHasLibIndex && finalHasSocketIdx) {
+  if (finalHasLibIndex && finalHasSocketIdx && finalHasLibTypes && finalHasLoggerTypes) {
     log('baileys compilado e arquivos esperados presentes')
   } else {
-    warn('baileys pode nao estar completamente compilado (lib/Socket/index ausente).')
+    warn('baileys pode nao estar completamente compilado (lib/index.js, lib/index.d.ts, lib/Utils/logger.d.ts ou lib/Socket/index ausente).')
+    exitFailure()
   }
 } catch (err) {
   warn('erro no prepare-baileys:', err?.message || err)
-  // Nao derrubar a instalacao do app
+  exitFailure()
 }

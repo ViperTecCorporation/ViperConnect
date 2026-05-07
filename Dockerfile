@@ -26,7 +26,7 @@ RUN corepack enable \
        done
 
 # Garante a compilação do Baileys instalado via Git antes do build
-RUN node scripts/prepare-baileys.mjs || true
+RUN node scripts/prepare-baileys.mjs
 
 COPY ./src ./src
 COPY ./public ./public
