@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
 
@@ -111,6 +111,42 @@ const patchBaileysCompat = (modDir) => {
   }
 }
 
+const walkFiles = (dir, predicate, files = []) => {
+  if (!existsSync(dir)) return files
+  for (const entry of readdirSync(dir)) {
+    const fullPath = join(dir, entry)
+    const stat = statSync(fullPath)
+    if (stat.isDirectory()) {
+      walkFiles(fullPath, predicate, files)
+    } else if (predicate(fullPath)) {
+      files.push(fullPath)
+    }
+  }
+  return files
+}
+
+const patchBaileysDeclarations = (modDir) => {
+  const declarationRoots = [
+    join(modDir, 'lib'),
+    join(modDir, 'WAProto')
+  ]
+  let patched = 0
+  for (const root of declarationRoots) {
+    for (const filePath of walkFiles(root, (file) => file.endsWith('.d.ts'))) {
+      const changed = patchFile(filePath, (src) => {
+        let out = src
+          .replace(/@whiskeysockets\/baileys\/src\//g, '@whiskeysockets/baileys/lib/')
+          .replace(/from ['"](\.\.\/\.\.\/WAProto)['"]/g, `from '$1/index.js'`)
+        return out
+      })
+      if (changed) patched += 1
+    }
+  }
+  if (patched) {
+    log(`declarations ajustadas para apontar para lib/ (${patched} arquivos)`)
+  }
+}
+
 try {
   const root = process.cwd()
   const modDir = join(root, 'node_modules', '@whiskeysockets', 'baileys')
@@ -123,6 +159,7 @@ try {
 
   // Heuristicas de artefatos compilados
   const libIndex = join(modDir, 'lib', 'index.js')
+  const libTypes = join(modDir, 'lib', 'index.d.ts')
   const distIndex = join(modDir, 'dist', 'index.js')
   const socketIdxCandidates = [
     join(modDir, 'lib', 'Socket', 'index.js'),
@@ -130,10 +167,12 @@ try {
     join(modDir, 'lib', 'Socket', 'index.mjs')
   ]
   const hasLibIndex = existsSync(libIndex)
+  const hasLibTypes = existsSync(libTypes)
   const hasDistIndex = existsSync(distIndex)
   const hasSocketIdx = socketIdxCandidates.some(existsSync)
 
-  if ((hasLibIndex || hasDistIndex) && hasSocketIdx) {
+  if ((hasLibIndex || hasDistIndex) && hasSocketIdx && hasLibTypes) {
+    patchBaileysDeclarations(modDir)
     patchBaileysCompat(modDir)
     log('artefatos ja presentes (lib/dist + Socket), skip build')
     process.exit(0)
@@ -164,9 +203,9 @@ try {
   try {
     const cfg = JSON.parse(readFileSync(tsconfigBuild, 'utf8'))
     cfg.compilerOptions = cfg.compilerOptions || {}
-    cfg.compilerOptions.declaration = false
-    // TS5069: declarationMap exige declaration/composite.
-    // Como desativamos declaration no build local, desativamos declarationMap tambem.
+    // O package da Baileys aponta "types" para lib/index.d.ts. Em build limpo do
+    // Docker, sem esses .d.ts, o tsc do Uno nao resolve @whiskeysockets/baileys.
+    cfg.compilerOptions.declaration = true
     cfg.compilerOptions.declarationMap = false
     cfg.compilerOptions.skipLibCheck = true
     cfg.compilerOptions.strict = false
@@ -188,6 +227,7 @@ try {
       ['npx', ['-y', 'tsc-esm-fix', `--tsconfig=${localCfg}`, '--ext=.js']]
     ], modDir)
 
+    patchBaileysDeclarations(modDir)
     patchBaileysCompat(modDir)
   } catch (e) {
     warn('falha ao ajustar/compilar tsconfig local:', e?.message || e)

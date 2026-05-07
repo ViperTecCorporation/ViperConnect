@@ -86,7 +86,7 @@
     "@google-cloud/text-to-speech": "^5.2.0",
     "@redis/client": "^1.5.14",
     "@sentry/node": "^9.29.0",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#52a3e0396941acaf556e2414a2f94c750b22c9e0",
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e",
     "amqplib": "^0.10.8",
     "audio-decode": "^2.2.3",
     "audio2textjs": "^1.0.5",
@@ -121,6 +121,6 @@
   "resolutions": {
     "libsignal": "https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/e81ecfc32eb74951d789ab37f7e341ab66d5fff1",
     "@whiskeysockets/libsignal-node": "https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/e81ecfc32eb74951d789ab37f7e341ab66d5fff1",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#52a3e0396941acaf556e2414a2f94c750b22c9e0"
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e"
   }
 }
