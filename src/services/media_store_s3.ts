@@ -122,7 +122,7 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     }
   }
 
-  mediaStore.saveMediaBuffer = async (fileName: string, content: Buffer, contentType?: string) => {
+  mediaStore.saveMediaBuffer = async (fileName: string, content: Buffer, contentType?: string, scheduleRemoval = true) => {
     logger.debug(`Uploading file ${fileName} to bucket ${bucket}....`)
     try {
       if (DOWNLOAD_AUDIO_CONVERT_TO_MP3 && fileName.toLowerCase().endsWith('.mp3')) {
@@ -144,13 +144,15 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     }
     await uploadWithRetry(putParams, s3Config.timeoutMs)
     logger.debug(`Uploaded file ${fileName} to bucket ${bucket}!`)
-    await amqpPublish(
-      UNOAPI_EXCHANGE_BROKER_NAME,
-      UNOAPI_QUEUE_MEDIA,
-      phone,
-      { fileName: fileName },
-      { delay: DATA_TTL * 1000, type: 'topic' }
-    )
+    if (scheduleRemoval) {
+      await amqpPublish(
+        UNOAPI_EXCHANGE_BROKER_NAME,
+        UNOAPI_QUEUE_MEDIA,
+        phone,
+        { fileName: fileName },
+        { delay: DATA_TTL * 1000, type: 'topic' }
+      )
+    }
     return true
   }
 
@@ -270,7 +272,7 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
       for (const targetId of targetIds) {
         const fileName = `${phone}/${PROFILE_PICTURE_FOLDER}/${profilePictureFileName(targetId)}`
         try {
-          await mediaStore.saveMediaBuffer(fileName, buffer, profilePictureContentType)
+          await mediaStore.saveMediaBuffer(fileName, buffer, profilePictureContentType, false)
           logger.info('PROFILE_PICTURE saved (S3): %s', jidToPhoneNumberIfUser(targetId))
         } catch (e) {
           logger.warn(e as any, 'Ignore error saving S3 profile picture %s', targetId)
