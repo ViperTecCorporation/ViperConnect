@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Unoapi Cloud API
+  title: ViperConnect API
   version: 2.5.2
   description: |
     API compatível com WhatsApp Cloud (formato de payload), utilizando Baileys como transporte.

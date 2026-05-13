@@ -1,6 +1,6 @@
 import { Outgoing } from './outgoing'
 import fetch, { Response, RequestInit } from 'node-fetch'
-import { Webhook, getConfig } from './config'
+import { Webhook, getConfig, isWebhookEnabled } from './config'
 import logger from './logger'
 import { completeCloudApiWebHook, isGroupMessage, isOutgoingMessage, isNewsletterMessage, isUpdateMessage, extractDestinyPhone, normalizeWebhookValueIds, jidToPhoneNumber, jidToRawPhoneNumber, formatJid, isValidPhoneNumber } from './transformer'
 import { WEBHOOK_ASYNC, WEBHOOK_PREFER_PN_OVER_LID, WEBHOOK_CB_ENABLED, WEBHOOK_CB_FAILURE_THRESHOLD, WEBHOOK_CB_OPEN_MS, WEBHOOK_CB_FAILURE_TTL_MS, WEBHOOK_CB_REQUEUE_DELAY_MS, WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS } from '../defaults'
@@ -219,6 +219,10 @@ export class OutgoingCloudApi implements Outgoing {
   }
 
   public async sendHttp(phone: string, webhook: Webhook, message: any, _options: Partial<PublishOption> = {}) {
+    if (!isWebhookEnabled(webhook)) {
+      logger.info(`Session phone %s webhook %s configured as disabled`, phone, webhook?.id || '<none>')
+      return
+    }
     const cbEnabled = !!WEBHOOK_CB_ENABLED && WEBHOOK_CB_FAILURE_THRESHOLD > 0 && WEBHOOK_CB_OPEN_MS > 0
     const cbId = (webhook && (webhook.id || webhook.url || webhook.urlAbsolute)) ? `${webhook.id || webhook.url || webhook.urlAbsolute}` : 'default'
     const cbKey = `${phone}:${cbId}`

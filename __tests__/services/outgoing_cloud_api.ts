@@ -111,6 +111,15 @@ describe('service outgoing whatsapp cloud api', () => {
     expect(mockFetch).toHaveBeenCalledTimes(0)
   })
 
+  test('not sendHttp in webhook when is disabled', async () => {
+    webhook.enabled = false
+    mockFetch.mockReset()
+    expect(mockFetch).toHaveBeenCalledTimes(0)
+    await service.sendHttp(phone!, webhook, textPayload, {})
+    expect(mockFetch).toHaveBeenCalledTimes(0)
+    expect(isInBlacklistMock).toHaveBeenCalledTimes(0)
+  })
+
   test('not sendHttp in webhook when is sendGroupMessages false', async () => {
     webhook.sendGroupMessages = false
     outgoingPayload.entry[0].changes[0].value.contacts[0].group_id = 'um@g.us'

@@ -1,34 +1,50 @@
 version: "3.9"
 
-# Unoapi Cloud atrás de Traefik (HTTP + TLS)
-# Assumindo que você já tenha um serviço Traefik rodando na mesma network "proxy".
+name: viperconnect
+
+# ViperConnect + Redis + RabbitMQ atras de Traefik.
+# Requer uma network externa ja conectada ao Traefik, aqui chamada traefik-public.
 
 services:
   unoapi:
-    image: clairton/unoapi-cloud:2.8
-    entrypoint: ["yarn", "cloud"]
+    image: ghcr.io/viperteccorporation/viperconnect:3.0.66
     container_name: unoapi
+    restart: always
+    entrypoint: ["yarn", "cloud"]
     depends_on:
       - unoapi-redis
       - unoapi-rabbitmq
+    networks:
+      - unoapi
+      - traefik-public
     environment:
-      HTTP_PROTOCOL: "https"
-      BASE_URL: "https://unoapi.seu-dominio.com"
-      UNOAPI_AUTH_TOKEN: "seu_token_aleatorio"
-      #opcional
-      #WEBHOOK_URL: "https://seu-chatwoot.exemplo.com/webhooks/whatsapp"
-      #WEBHOOK_TOKEN: "seu_webhook_token"
-      #WEBHOOK_HEADER: "Authorization"
+      SIGNAL_CACHE_SAFE_MODE: "false"
 
-      AMQP_URL: "amqp://seu_usuario_rabbit:seu_password_rabbit@unoapi-rabbitmq:5672"
-      REDIS_URL: "redis://:sua_senha_redis@unoapi-redis:6379"
-      #se nao definir vai usar storage em arquivos no volume
-      STORAGE_BUCKET_NAME: "seu_bucket_unoapi"
-      STORAGE_ACCESS_KEY_ID: "seu_usuario_s3"
-      STORAGE_SECRET_ACCESS_KEY: "sua_senha_s3"
-      STORAGE_REGION: "us-east-1"
-      STORAGE_ENDPOINT: "http://minio:9000"
+      HTTP_PROTOCOL: "https"
+      BASE_URL: "https://unoapi.seudominio.com.br"
+
+      UNOAPI_AUTH_TOKEN: "SUA_TOKEN_AQUI"
+
+      EMBEDDED_SIGNUP_APP_ID: "SEU_APP_ID"
+      EMBEDDED_SIGNUP_APP_SECRET: "SEU_APP_SECRET"
+      EMBEDDED_SIGNUP_REDIRECT_URI: "https://unoapi.seudominio.com.br/embedded-callback.html"
+      EMBEDDED_SIGNUP_GRAPH_VERSION: "v24.0"
+
+      # Integracao Chatwoot (se usar)
+      WEBHOOK_URL: "https://chatwoot.seudominio.com.br/webhooks/whatsapp"
+      WEBHOOK_TOKEN: "SEU_WEBHOOK_TOKEN"
+      WEBHOOK_HEADER: "Authorization"
+
+      AMQP_URL: "amqp://user:senha@unoapi-rabbitmq:5672"
+      REDIS_URL: "redis://:SUA_SENHA_REDIS@unoapi-redis:6379"
+
+      STORAGE_BUCKET_NAME: "unoapi"
+      STORAGE_ACCESS_KEY_ID: "SEU_ACCESS_KEY"
+      STORAGE_SECRET_ACCESS_KEY: "SEU_SECRET_KEY"
+      STORAGE_REGION: "auto"
+      STORAGE_ENDPOINT: "https://SEU-ENDPOINT.r2.cloudflarestorage.com"
       STORAGE_FORCE_PATH_STYLE: "true"
+      STORAGE_TIMEOUT_MS: "1200000"
 
       LOG_LEVEL: "info"
       UNO_LOG_LEVEL: "info"
@@ -40,88 +56,73 @@ services:
       IGNORE_YOURSELF_MESSAGES: "false"
       IGNORE_HISTORY_MESSAGES: "true"
       IGNORE_BROADCAST_MESSAGES: "true"
+      COMPOSING_MESSAGE: "true"
 
-      REJECT_CALLS: "Oi, não consigo atender ligações..."
-      REJECT_CALLS_WEBHOOK: "Eu estava te ligando no WhatsApp..."
+      REJECT_CALLS: "Nao consigo atender ligacoes"
+      REJECT_CALLS_WEBHOOK: "Tentou ligar no whatsapp"
       SEND_CONNECTION_STATUS: "true"
       AUTO_CONNECT: "true"
       CLEAN_CONFIG_ON_DISCONNECT: "true"
 
-      #envs não disponivel no projeto oficial
-      #HISTORY_MAX_AGE_DAYS: "1"
-      #DOWNLOAD_AUDIO_CONVERT_TO_MP3: "true"
+      UNOAPI_RETRY_REQUEST_DELAY_MS: "10000"
+      UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS: "10"
+      UNOAPI_DELAY_BETWEEN_MESSAGES_MS: "5"
+      CONSUMER_TIMEOUT_MS: "450000"
+
+      CONFIG_SESSION_PHONE_CLIENT: "Unoapi"
+      CONFIG_SESSION_PHONE_NAME: "Chrome"
+
+      LID_RESOLVER_ENABLED: "true"
+      HISTORY_MAX_AGE_DAYS: "7"
+
+      UNOAPI_NATIVE_FLOW_BUTTONS: "true"
+      BAILEYS_DEBUG_RAW_MESSAGES: "0"
+      BAILEYS_ENABLE_LIST_REPORTING: "1"
+      UNOAPI_DEBUG_BAILEYS_LIST_DUMP: "1"
 
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.unoapi.rule=Host(`unoapi.seu-dominio.com`)"
+      - "traefik.docker.network=traefik-public"
+
+      - "traefik.http.routers.unoapi.rule=Host(`unoapi.seudominio.com.br`)"
       - "traefik.http.routers.unoapi.entrypoints=websecure"
       - "traefik.http.routers.unoapi.tls=true"
-      # Se usar resolver ACME no Traefik, ajuste o nome abaixo
-      # - "traefik.http.routers.unoapi.tls.certresolver=myresolver"
-      - "traefik.http.services.unoapi.loadbalancer.server.port=9876"
+      - "traefik.http.routers.unoapi.tls.certresolver=letsencrypt"
 
-    networks:
-      - unoapi
-      - proxy   # network externa onde o Traefik está
+      - "traefik.http.services.unoapi.loadbalancer.server.port=9876"
 
   unoapi-rabbitmq:
     image: rabbitmq:4.2.2-management-alpine
     container_name: unoapi-rabbitmq
-    hostname: unoapi-rabbitmq
     restart: always
-    environment:
-      RABBITMQ_DEFAULT_USER: "seu_usuario_rabbit"
-      RABBITMQ_DEFAULT_PASS: "seu_password_rabbit"
-    volumes:
-      - rabbitmq:/var/lib/rabbitmq
     networks:
       - unoapi
+    environment:
+      RABBITMQ_DEFAULT_USER: "user"
+      RABBITMQ_DEFAULT_PASS: "senha"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
 
   unoapi-redis:
-    image: redis:7-alpine
+    image: valkey/valkey:9-alpine3.23
     container_name: unoapi-redis
     restart: always
-    command: ["redis-server", "--requirepass", "sua_senha_redis"]
+    networks:
+      - unoapi
+    command: >
+      valkey-server
+      --appendonly yes
+      --requirepass "SUA_SENHA_REDIS"
+      --protected-mode no
     volumes:
-      - redis:/data
-    networks:
-      - unoapi
-
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: unoapi-minio
-    command: server /data --address ":9000" --console-address ":9001"
-    volumes:
-      - minio:/data
-    restart: always
-    environment:
-      MINIO_ROOT_USER: "seu_usuario_s3"
-      MINIO_ROOT_PASSWORD: "sua_senha_s3"
-    networks:
-      - unoapi
-
-  minio-mc:
-    image: quay.io/minio/mc:latest
-    container_name: unoapi-minio-mc
-    restart: "no"
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc alias set local http://minio:9000 seu_usuario_s3 sua_senha_s3;
-      /usr/bin/mc mb local/seu_bucket_unoapi || true;
-      "
-    networks:
-      - unoapi
+      - redis_data:/data
 
 volumes:
-  rabbitmq:
-  redis:
-  minio:
+  rabbitmq_data:
+  redis_data:
 
 networks:
   unoapi:
     driver: bridge
-  proxy:
+  traefik-public:
     external: true
-

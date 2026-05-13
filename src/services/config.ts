@@ -17,6 +17,7 @@ export type Webhook = {
   id: string,
   url: string
   urlAbsolute: string
+  enabled: boolean
   token: string
   header: string
   timeoutMs: number
@@ -29,6 +30,14 @@ export type Webhook = {
   sendTranscribeAudio: boolean
   addToBlackListOnOutgoingMessageWithTtl: number | undefined
   typebot?: boolean
+  disabled?: boolean
+}
+
+export const isWebhookEnabled = (webhook: Partial<Webhook> | undefined): boolean => {
+  if (!webhook) return false
+  if (webhook.enabled === false) return false
+  if (webhook.disabled === true) return false
+  return true
 }
 
 export type WebhookForward = {
@@ -156,6 +165,7 @@ export const defaultConfig: Config = {
       id: 'default',
       url: '',
       urlAbsolute: '',
+      enabled: true,
       token: '',
       header: '',
       timeoutMs: 5_000,

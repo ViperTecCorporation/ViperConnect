@@ -38,11 +38,11 @@ RUN yarn build && yarn build:docs
 FROM node:24-bookworm-slim
 
 LABEL \
-  maintainer="Clairton Rodrigo Heinzen <clairton.rodrigo@gmail.com>" \
-  org.opencontainers.image.title="Unoapi Cloud" \
-  org.opencontainers.image.description="Unoapi Cloud" \
-  org.opencontainers.image.authors="Clairton Rodrigo Heinzen <clairton.rodrigo@gmail.com>" \
-  org.opencontainers.image.url="https://github.com/clairton/unoapi-cloud" \
+  maintainer="ViperTec Corporation <suporte@vipertec.com.br>" \
+  org.opencontainers.image.title="ViperConnect" \
+  org.opencontainers.image.description="ViperConnect by ViperTec Corporation, based on the original Unoapi Cloud project" \
+  org.opencontainers.image.authors="ViperTec Corporation <suporte@vipertec.com.br>; Rodrigo Caitano <caitano28@gmail.com>; original Unoapi Cloud project by Clairton Rodrigo" \
+  org.opencontainers.image.url="https://github.com/ViperTecCorporation/ViperConnect" \
   org.opencontainers.image.vendor="https://uno.ltd" \
   org.opencontainers.image.licenses="GPLv3"
 
