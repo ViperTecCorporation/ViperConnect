@@ -888,10 +888,10 @@
   resolved "https://registry.npmjs.org/@borewit/text-codec/-/text-codec-0.1.1.tgz"
   integrity sha512-5L/uBxmjaCIX5h8Z+uu+kA9BQLkc/Wl06UGR5ajNRxu+/XjonB5i8JpgFMrPj3LXTCPA0pv8yxUvbUi+QthGGA==
 
-"@borewit/text-codec@^0.2.0":
-  version "0.2.0"
-  resolved "https://registry.npmjs.org/@borewit/text-codec/-/text-codec-0.2.0.tgz"
-  integrity sha512-X999CKBxGwX8wW+4gFibsbiNdwqmdQEXmUejIWaIqdrHBgS5ARIOOeyiQbHjP9G58xVEPcuvP6VwwH3A0OFTOA==
+"@borewit/text-codec@^0.2.1":
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/@borewit/text-codec/-/text-codec-0.2.2.tgz#75025f735c0983b3a871668804a57387e3649375"
+  integrity sha512-DDaRehssg1aNrH4+2hnj1B7vnUGEjU6OIlyRdkMd0aUdIUvKXrJfXsy8LVtXAy7DRvYVluWbMspsRhz2lcW0mQ==
 
 "@cacheable/memoize@^2.0.1":
   version "2.0.1"
@@ -2446,14 +2446,13 @@
   resolved "https://registry.npmjs.org/@thi.ng/errors/-/errors-2.5.42.tgz"
   integrity sha512-jsImkUhxzYzYgh2+0EJEGVKGyzSr2ovq1CTx8bilgJzuF778M6eh4ya81oc8LwT9Oqm6oz5ZZjVEBMldj4rRAw==
 
-"@tokenizer/inflate@^0.2.7":
-  version "0.2.7"
-  resolved "https://registry.npmjs.org/@tokenizer/inflate/-/inflate-0.2.7.tgz"
-  integrity sha512-MADQgmZT1eKjp06jpI2yozxaU9uVs4GzzgSL+uEq7bVcJ9V1ZXQkeGNql1fsSI0gMy1vhvNTNbUqrx+pZfJVmg==
+"@tokenizer/inflate@^0.4.1":
+  version "0.4.1"
+  resolved "https://registry.yarnpkg.com/@tokenizer/inflate/-/inflate-0.4.1.tgz#fa6cdb8366151b3cc8426bf9755c1ea03a2fba08"
+  integrity sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA==
   dependencies:
-    debug "^4.4.0"
-    fflate "^0.8.2"
-    token-types "^6.0.0"
+    debug "^4.4.3"
+    token-types "^6.1.1"
 
 "@tokenizer/token@^0.3.0":
   version "0.3.0"
@@ -2925,16 +2924,16 @@
   dependencies:
     "@wasm-audio-decoders/common" "9.0.7"
 
-"@whiskeysockets/baileys@github:ViperTecCorporation/Baileys#136036fcb57e8aea7059eb44007f8664dfa37546":
+"@whiskeysockets/baileys@github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e":
   version "7.0.0-rc.9"
-  resolved "https://codeload.github.com/ViperTecCorporation/Baileys/tar.gz/136036fcb57e8aea7059eb44007f8664dfa37546"
+  resolved "https://codeload.github.com/ViperTecCorporation/Baileys/tar.gz/79099a338afebb36d73e6245ea6fbe2f79422f8e"
   dependencies:
     "@cacheable/node-cache" "^1.4.0"
     "@hapi/boom" "^9.1.3"
     async-mutex "^0.5.0"
     libsignal "git+https://github.com/whiskeysockets/libsignal-node"
     lru-cache "^11.1.0"
-    music-metadata "^11.7.0"
+    music-metadata "11.12.1"
     p-queue "^9.0.0"
     pino "^9.6"
     protobufjs "^7.2.4"
@@ -3714,7 +3713,7 @@ debug@2.6.9:
   dependencies:
     ms "2.0.0"
 
-debug@4, debug@^4, debug@^4.1.0, debug@^4.1.1, debug@^4.3.1, debug@^4.3.2, debug@^4.3.3, debug@^4.3.4, debug@^4.3.5, debug@^4.3.7, debug@^4.4.0, debug@^4.4.3:
+debug@4, debug@^4, debug@^4.1.0, debug@^4.1.1, debug@^4.3.1, debug@^4.3.2, debug@^4.3.3, debug@^4.3.4, debug@^4.3.5, debug@^4.3.7, debug@^4.4.3:
   version "4.4.3"
   resolved "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz"
   integrity sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==
@@ -4283,11 +4282,6 @@ fetch-blob@^3.1.2, fetch-blob@^3.1.4:
     node-domexception "^1.0.0"
     web-streams-polyfill "^3.0.3"
 
-fflate@^0.8.2:
-  version "0.8.2"
-  resolved "https://registry.npmjs.org/fflate/-/fflate-0.8.2.tgz"
-  integrity sha512-cPJU47OaAoCbg0pBvzsgpTPhmhqI5eJjh/JIu8tPj5q+T7iLvW/JAYUqmE7KOB4R1ZyEhzBaIQpQpardBF5z8A==
-
 file-entry-cache@^6.0.1:
   version "6.0.1"
   resolved "https://registry.npmjs.org/file-entry-cache/-/file-entry-cache-6.0.1.tgz"
@@ -4295,14 +4289,14 @@ file-entry-cache@^6.0.1:
   dependencies:
     flat-cache "^3.0.4"
 
-file-type@^21.0.0:
-  version "21.0.0"
-  resolved "https://registry.npmjs.org/file-type/-/file-type-21.0.0.tgz"
-  integrity sha512-ek5xNX2YBYlXhiUXui3D/BXa3LdqPmoLJ7rqEx2bKJ7EAUEfmXgW0Das7Dc6Nr9MvqaOnIqiPV0mZk/r/UpNAg==
+file-type@^21.3.0:
+  version "21.3.4"
+  resolved "https://registry.yarnpkg.com/file-type/-/file-type-21.3.4.tgz#e3f902faee8ec4aa152909fc902a7a77f9c06725"
+  integrity sha512-Ievi/yy8DS3ygGvT47PjSfdFoX+2isQueoYP1cntFW1JLYAuS4GD7NUPGg4zv2iZfV52uDyk5w5Z0TdpRS6Q1g==
   dependencies:
-    "@tokenizer/inflate" "^0.2.7"
-    strtok3 "^10.2.2"
-    token-types "^6.0.0"
+    "@tokenizer/inflate" "^0.4.1"
+    strtok3 "^10.3.4"
+    token-types "^6.1.1"
     uint8array-extras "^1.4.0"
 
 fill-range@^7.1.1:
@@ -5630,20 +5624,21 @@ ms@2.1.3, ms@^2.1.3:
   resolved "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz"
   integrity sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==
 
-music-metadata@^11.7.0:
-  version "11.9.0"
-  resolved "https://registry.npmjs.org/music-metadata/-/music-metadata-11.9.0.tgz"
-  integrity sha512-J7VqD8FY6KRcm75Fzj86FPsckiD/EdvO5OS3P+JiMf/2krP3TcAseZYfkic6eFeJ0iBhhzcdxgfu8hLW95aXXw==
+music-metadata@11.12.1:
+  version "11.12.1"
+  resolved "https://registry.yarnpkg.com/music-metadata/-/music-metadata-11.12.1.tgz#254d70ff9d2a85f02974b2f024f00e3e6eabac17"
+  integrity sha512-j++ltLxHDb5VCXET9FzQ8bnueiLHwQKgCO7vcbkRH/3F7fRjPkv6qncGEJ47yFhmemcYtgvsOAlcQ1dRBTkDjg==
   dependencies:
-    "@borewit/text-codec" "^0.2.0"
+    "@borewit/text-codec" "^0.2.1"
     "@tokenizer/token" "^0.3.0"
     content-type "^1.0.5"
     debug "^4.4.3"
-    file-type "^21.0.0"
+    file-type "^21.3.0"
     media-typer "^1.1.0"
     strtok3 "^10.3.4"
-    token-types "^6.1.1"
+    token-types "^6.1.2"
     uint8array-extras "^1.5.0"
+    win-guid "^0.2.1"
 
 mustache@^4.2.0:
   version "4.2.0"
@@ -6792,7 +6787,7 @@ strnum@^2.1.0:
   resolved "https://registry.npmjs.org/strnum/-/strnum-2.1.1.tgz"
   integrity sha512-7ZvoFTiCnGxBtDqJ//Cu6fWtZtc7Y3x+QOirG15wztbdngGSkht27o2pyGWrVy0b4WAy3jbKmnoK6g5VlVNUUw==
 
-strtok3@^10.2.2, strtok3@^10.3.4:
+strtok3@^10.3.4:
   version "10.3.4"
   resolved "https://registry.npmjs.org/strtok3/-/strtok3-10.3.4.tgz"
   integrity sha512-KIy5nylvC5le1OdaaoCJ07L+8iQzJHGH6pWDuzS+d07Cu7n1MZ2x26P8ZKIWfbK02+XIL8Mp4RkWeqdUCrDMfg==
@@ -6909,12 +6904,21 @@ toidentifier@1.0.1:
   resolved "https://registry.npmjs.org/toidentifier/-/toidentifier-1.0.1.tgz"
   integrity sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==
 
-token-types@^6.0.0, token-types@^6.1.1:
+token-types@^6.1.1:
   version "6.1.1"
   resolved "https://registry.npmjs.org/token-types/-/token-types-6.1.1.tgz"
   integrity sha512-kh9LVIWH5CnL63Ipf0jhlBIy0UsrMj/NJDfpsy1SqOXlLKEVyXXYrnFxFT1yOOYVGBSApeVnjPw/sBz5BfEjAQ==
   dependencies:
     "@borewit/text-codec" "^0.1.0"
+    "@tokenizer/token" "^0.3.0"
+    ieee754 "^1.2.1"
+
+token-types@^6.1.2:
+  version "6.1.2"
+  resolved "https://registry.yarnpkg.com/token-types/-/token-types-6.1.2.tgz#18d0fd59b996d421f9f83914d6101c201bd08129"
+  integrity sha512-dRXchy+C0IgK8WPC6xvCHFRIWYUbqqdEIKPaKo/AcTUNzwLTK6AH7RjdLWsEZcAN/TBdtfUw3PYEgPr5VPr6ww==
+  dependencies:
+    "@borewit/text-codec" "^0.2.1"
     "@tokenizer/token" "^0.3.0"
     ieee754 "^1.2.1"
 
@@ -7175,6 +7179,11 @@ which@^2.0.1:
   integrity sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==
   dependencies:
     isexe "^2.0.0"
+
+win-guid@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/win-guid/-/win-guid-0.2.1.tgz#576915ba5e10bf92ec6a32b71ab06b5f75403fc0"
+  integrity sha512-gEIQU4mkgl2OPeoNrWflcJFJ3Ae2BPd4eCsHHA/XikslkIVms/nHhvnvzIZV7VLmBvtFlDOzLt9rrZT+n6D67A==
 
 wmf@~1.0.1:
   version "1.0.2"

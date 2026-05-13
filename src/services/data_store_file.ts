@@ -252,8 +252,16 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
         try {
           const recent = await redisGet(refreshKey)
           if (recent) {
-            logger.info('PROFILE_PICTURE refresh skipped (throttled %ss): %s', refreshTtl, preferredJid)
-            return localUrl
+            const throttledLocalUrl = await buildLocalUrl()
+            if (throttledLocalUrl) {
+              logger.info('PROFILE_PICTURE refresh skipped (throttled %ss): %s', refreshTtl, preferredJid)
+              return throttledLocalUrl
+            }
+            if (recent === 'failed') {
+              logger.info('PROFILE_PICTURE refresh skipped after recent failed refresh (throttled %ss): %s', refreshTtl, preferredJid)
+              return undefined
+            }
+            logger.warn('PROFILE_PICTURE local cache missing for throttled key; bypassing throttle: %s', preferredJid)
           }
         } catch {}
       }
@@ -289,11 +297,11 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
           logger.info('PROFILE_PICTURE persisted -> local URL: %s', localUrl)
         }
         if (refreshTtl > 0) {
-          try { await redisSetAndExpire(refreshKey, '1', refreshTtl) } catch {}
+          try { await redisSetAndExpire(refreshKey, 'ok', refreshTtl) } catch {}
         }
       } else if (refreshTtl > 0) {
         // Even on failure, set TTL to avoid tight retry loops.
-        try { await redisSetAndExpire(refreshKey, '1', refreshTtl) } catch {}
+        try { await redisSetAndExpire(refreshKey, 'failed', refreshTtl) } catch {}
       }
     }
     logger.debug('Found %s profile picture for %s (canonical=%s)', localUrl, jid, canonicalPn || '<unknown>')

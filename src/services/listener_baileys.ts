@@ -4,11 +4,12 @@ import { Outgoing } from './outgoing'
 import { Broadcast } from './broadcast'
 import { getConfig } from './config'
 import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMedia, jidToPhoneNumber, jidToRawPhoneNumber, DecryptError, isValidPhoneNumber, normalizeMessageContent, getBinMessage } from './transformer'
-import { WAMessage, delay, jidNormalizedUser, isPnUser, proto } from '@whiskeysockets/baileys'
+import * as Baileys from '@whiskeysockets/baileys'
+import { WAMessage, delay, jidNormalizedUser, isPnUser, isLidUser, proto } from '@whiskeysockets/baileys'
 import { Template } from './template'
 import { UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS, UNOAPI_DELAY_BETWEEN_MESSAGES_MS, INBOUND_DEDUP_WINDOW_MS } from '../defaults'
 import { v1 as uuid } from 'uuid'
-import { createDecipheriv, createHash, hkdfSync } from 'crypto'
+import { createDecipheriv, createHash, createHmac, hkdfSync } from 'crypto'
 import { getPollState, setPollState, getStatusMediaState, setStatusMediaState, getUnoIdsForProviderAnySession } from './redis'
 
 const  delays: Map<String, number> = new Map()
@@ -63,6 +64,126 @@ const aesDecryptGCM = (ciphertext: Buffer, key: Buffer, iv: Buffer, additionalDa
   decipher.setAAD(additionalData)
   decipher.setAuthTag(tag)
   return Buffer.concat([decipher.update(enc), decipher.final()])
+}
+
+const hmacSign = (buffer: Buffer | Uint8Array, key: Buffer | Uint8Array) => {
+  return createHmac('sha256', key).update(buffer).digest()
+}
+
+const decodePollVoteSelectedOptions = (buffer: Buffer) => {
+  const selectedOptions: Buffer[] = []
+  let offset = 0
+  const readVarint = () => {
+    let value = 0
+    let shift = 0
+    while (offset < buffer.length) {
+      const byte = buffer[offset++]
+      value |= (byte & 0x7f) << shift
+      if (!(byte & 0x80)) return value
+      shift += 7
+    }
+    return value
+  }
+  while (offset < buffer.length) {
+    const tag = readVarint()
+    const field = tag >>> 3
+    const wireType = tag & 7
+    if (field === 1 && wireType === 2) {
+      const length = readVarint()
+      selectedOptions.push(buffer.slice(offset, offset + length))
+      offset += length
+    } else if (wireType === 0) {
+      readVarint()
+    } else if (wireType === 2) {
+      offset += readVarint()
+    } else {
+      break
+    }
+  }
+  return { selectedOptions }
+}
+
+const decryptPollVoteLocal = (
+  encryptedVote: proto.Message.IPollEncValue,
+  opts: {
+    pollEncKey: Uint8Array
+    pollCreatorJid: string
+    pollMsgId: string
+    voterJid: string
+  },
+) => {
+  const sign = Buffer.concat([
+    Buffer.from(opts.pollMsgId),
+    Buffer.from(opts.pollCreatorJid),
+    Buffer.from(opts.voterJid),
+    Buffer.from('Poll Vote'),
+    Buffer.from([1]),
+  ])
+  const key0 = hmacSign(opts.pollEncKey, Buffer.alloc(32))
+  const decKey = hmacSign(sign, key0)
+  const aad = Buffer.concat([Buffer.from(opts.pollMsgId), Buffer.from([0]), Buffer.from(opts.voterJid)])
+  const decrypted = aesDecryptGCM(Buffer.from(encryptedVote.encPayload || []), decKey, Buffer.from(encryptedVote.encIv || []), aad)
+  return decodePollVoteSelectedOptions(decrypted)
+}
+
+const getPollKeyAuthor = (key: any, meId = 'me') => {
+  return (key?.fromMe ? meId : key?.participantAlt || key?.remoteJidAlt || key?.participant || key?.remoteJid) || ''
+}
+
+export const decryptPollVoteWithLidFallbackCompat = (
+  encryptedVote: proto.Message.IPollEncValue | undefined,
+  opts: {
+    pollEncKey: Uint8Array
+    pollCreationMsgKey: any
+    voteMsgKey: any
+    meId: string
+    meLid?: string
+  },
+) => {
+  if (!encryptedVote || !opts?.pollCreationMsgKey?.id) return undefined
+
+  const upstreamHelper = (Baileys as any).decryptPollVoteWithLidFallback
+  if (typeof upstreamHelper === 'function') {
+    try {
+      const decrypted = upstreamHelper(encryptedVote, opts)
+      if (decrypted) return decrypted
+    } catch {}
+  }
+
+  const meIdNormalised = jidNormalizedUser(opts.meId)
+  const meLidNormalised = opts.meLid ? jidNormalizedUser(opts.meLid) : undefined
+  const creatorPnJid = getPollKeyAuthor(opts.pollCreationMsgKey, meIdNormalised)
+  const creatorLidJid = opts.pollCreationMsgKey?.fromMe && meLidNormalised
+    ? meLidNormalised
+    : opts.pollCreationMsgKey?.participant && isLidUser(opts.pollCreationMsgKey.participant)
+      ? jidNormalizedUser(opts.pollCreationMsgKey.participant)
+      : opts.pollCreationMsgKey?.participantAlt && isLidUser(opts.pollCreationMsgKey.participantAlt)
+        ? jidNormalizedUser(opts.pollCreationMsgKey.participantAlt)
+        : undefined
+  const voterPnJid = getPollKeyAuthor(opts.voteMsgKey, meIdNormalised)
+  const voterLidJid = opts.voteMsgKey?.fromMe && meLidNormalised
+    ? meLidNormalised
+    : opts.voteMsgKey?.participant && isLidUser(opts.voteMsgKey.participant)
+      ? jidNormalizedUser(opts.voteMsgKey.participant)
+      : opts.voteMsgKey?.participantAlt && isLidUser(opts.voteMsgKey.participantAlt)
+        ? jidNormalizedUser(opts.voteMsgKey.participantAlt)
+        : undefined
+  const creatorCandidates = Array.from(new Set([creatorPnJid, creatorLidJid].filter(Boolean)))
+  const voterCandidates = Array.from(new Set([voterPnJid, voterLidJid].filter(Boolean)))
+
+  for (const pollCreatorJid of creatorCandidates) {
+    for (const voterJid of voterCandidates) {
+      try {
+        return decryptPollVoteLocal(encryptedVote, {
+          pollEncKey: opts.pollEncKey,
+          pollCreatorJid,
+          pollMsgId: opts.pollCreationMsgKey.id,
+          voterJid,
+        })
+      } catch {}
+    }
+  }
+  return undefined
 }
 
 export class ListenerBaileys implements Listener {
@@ -386,6 +507,62 @@ export class ListenerBaileys implements Listener {
       )
     } catch (e) {
       logger.warn(e as any, 'Failed to persist poll snapshot state')
+    }
+  }
+
+  private async decryptPollUpdateVote(phone: string, store: any, message: WAMessage): Promise<boolean> {
+    try {
+      const pollUpdate: any = (message as any)?.message?.pollUpdateMessage
+      const pollKey: any = pollUpdate?.pollCreationMessageKey || {}
+      const alreadyDecrypted = Array.isArray(pollUpdate?.vote?.selectedOptions) && pollUpdate.vote.selectedOptions.length > 0
+      if (!pollUpdate?.vote || alreadyDecrypted || !pollKey?.id) return false
+
+      const lookupJids = await this.messageLookupJids(phone, store, message, pollKey)
+      const pollMessage: any = (
+        await store?.dataStore?.findMessageWithSecret?.(pollKey.id, lookupJids) ||
+        await store?.dataStore?.loadMessage?.(pollKey?.remoteJid || (message as any)?.key?.remoteJid, pollKey.id)
+      )
+      const pollEncKey = pollMessage?.message?.messageContextInfo?.messageSecret
+      if (!pollEncKey) {
+        logger.info(
+          'Poll vote cannot be decrypted yet: phone=%s pollId=%s hasPollMessage=%s',
+          phone,
+          pollKey.id,
+          !!pollMessage,
+        )
+        return false
+      }
+
+      const meId = `${store?.state?.creds?.me?.id || `${phone.replace(/\D/g, '')}@s.whatsapp.net`}`.trim()
+      const meLid = `${store?.state?.creds?.me?.lid || ''}`.trim()
+      const decrypted = decryptPollVoteWithLidFallbackCompat(pollUpdate.vote, {
+        pollEncKey,
+        pollCreationMsgKey: pollKey,
+        voteMsgKey: (message as any).key || {},
+        meId,
+        meLid,
+      })
+      if (!decrypted) {
+        logger.info(
+          'Poll vote decryption failed with PN/LID candidates: phone=%s pollId=%s voteId=%s',
+          phone,
+          pollKey.id,
+          (message as any)?.key?.id || '<none>',
+        )
+        return false
+      }
+
+      pollUpdate.vote = decrypted
+      logger.info(
+        'Poll vote decrypted: phone=%s pollId=%s selectedOptions=%s',
+        phone,
+        pollKey.id,
+        Array.isArray((decrypted as any)?.selectedOptions) ? (decrypted as any).selectedOptions.length : 0,
+      )
+      return true
+    } catch (e) {
+      logger.warn(e as any, 'Failed to decrypt poll update vote')
+      return false
     }
   }
 
@@ -750,6 +927,41 @@ export class ListenerBaileys implements Listener {
     } catch {}
     const config = await this.getConfig(phone)
     const store = await config.getStore(phone, config)
+    try {
+      const updateMessage = (i as any)?.update?.message
+      if (messageType === 'update' && updateMessage?.pollUpdateMessage) {
+        const clone: any = {
+          ...(i as any),
+          message: updateMessage,
+        }
+        try { delete clone.status } catch {}
+        try { delete clone.update } catch {}
+        i = clone as WAMessage
+        messageType = getMessageType(i)
+      }
+      const pollUpdates = Array.isArray((i as any)?.update?.pollUpdates) ? (i as any).update.pollUpdates : []
+      if (messageType === 'update' && pollUpdates.length) {
+        const pollUpdate = pollUpdates[pollUpdates.length - 1] || {}
+        const clone: any = {
+          ...(i as any),
+          key: pollUpdate.pollUpdateMessageKey || (i as any).key,
+          message: {
+            pollUpdateMessage: {
+              pollCreationMessageKey: (i as any).key,
+              vote: pollUpdate.vote,
+              senderTimestampMs: pollUpdate.senderTimestampMs,
+            },
+          },
+        }
+        try { delete clone.status } catch {}
+        try { delete clone.update } catch {}
+        i = clone as WAMessage
+        messageType = getMessageType(i)
+      }
+    } catch {}
+    if (messageType === 'pollUpdateMessage') {
+      await this.decryptPollUpdateVote(phone, store, i)
+    }
     const shouldSkipMediaPersist = (m: WAMessage) => {
       try {
         const msgType = getMessageType(m as any)

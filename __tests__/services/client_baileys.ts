@@ -20,6 +20,12 @@ jest.mock('../../src/services/client_voip', () => ({
   sendVoipSignaling: jest.fn(async () => ({ ok: true, status: 200 })),
   extractVoipCommands: jest.fn(() => []),
 }))
+jest.mock('../../src/services/redis', () => ({
+  __esModule: true,
+  setContactSyncPending: jest.fn(async () => undefined),
+  getPnForLidFromAuthCache: jest.fn(async () => undefined),
+  getLidForPnFromAuthCache: jest.fn(async () => undefined),
+}))
 import { ClientBaileys } from '../../src/services/client_baileys'
 import { Client } from '../../src/services/client'
 import { Config, getConfig, defaultConfig } from '../../src/services/config'
@@ -49,6 +55,7 @@ import logger from '../../src/services/logger'
 import { SessionStore } from '../../src/services/session_store'
 import { SendError } from '../../src/services/send_error'
 import { sendVoipCallEvent, sendVoipSignaling, extractVoipCommands } from '../../src/services/client_voip'
+import { getLidForPnFromAuthCache } from '../../src/services/redis'
 
 const mockConnect = connect as jest.MockedFunction<typeof connect>
 
@@ -91,6 +98,8 @@ describe('service client baileys', () => {
     ;(sendVoipSignaling as jest.Mock).mockClear()
     ;(extractVoipCommands as jest.Mock).mockReset()
     ;(extractVoipCommands as jest.Mock).mockImplementation(() => [])
+    ;(getLidForPnFromAuthCache as jest.Mock).mockReset()
+    ;(getLidForPnFromAuthCache as jest.Mock).mockResolvedValue(undefined)
     phone = `${new Date().getMilliseconds()}`
     listener = mock<Listener>()
     incoming = mock<Incoming>()
@@ -222,6 +231,34 @@ describe('service client baileys', () => {
       wa_id: '120363040468224422@g.us',
     })
     expect(response.ok.messages[0].id).toBe(`uno-${id}`)
+  })
+
+  test('normalizes contact vcard phone with baileys auth cache before sending', async () => {
+    const id = `${new Date().getMilliseconds()}`
+    send.mockResolvedValue({ key: { id, remoteJid: '5566991111111@s.whatsapp.net' } })
+    ;(getLidForPnFromAuthCache as jest.Mock).mockImplementation(async (_session: string, pnJid: string) => (
+      pnJid === '5549988887777@s.whatsapp.net' ? '111222333@lid' : undefined
+    ))
+    const payload = {
+      to: '5566991111111',
+      type: 'contacts',
+      contacts: [
+        {
+          name: { formatted_name: 'Contato teste' },
+          phones: [{ phone: '+554988887777', wa_id: '554988887777' }],
+        },
+      ],
+    }
+
+    await client.connect(0)
+    await client.send(payload, {})
+
+    const sentContent = send.mock.calls[0][1]
+    const vcard = sentContent.contacts.contacts[0].vcard
+    expect(getLidForPnFromAuthCache).toHaveBeenCalledWith(phone, '554988887777@s.whatsapp.net')
+    expect(getLidForPnFromAuthCache).toHaveBeenCalledWith(phone, '5549988887777@s.whatsapp.net')
+    expect(vcard).toContain('WAID=5549988887777')
+    expect(vcard).toContain(':+5549988887777')
   })
 
   test('call send with message_edit resolves original Uno id to Baileys edit key', async () => {

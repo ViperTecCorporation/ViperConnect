@@ -58,6 +58,12 @@ describe('service config redis', () => {
     expect(config.webhooks[0].header).toBe(WEBHOOK_HEADER)
   })
 
+  test('uses webhook enabled flag from redis', async () => {
+    mockGetConfig.mockResolvedValue({ webhooks: [{ enabled: false }] })
+    const config = await getConfigRedis(`${new Date().getTime()}`)
+    expect(config.webhooks[0].enabled).toBe(false)
+  })
+
   test('get media store', async () => {
     const phone = `${new Date().getTime()}`
     const config = await getConfigRedis(phone)

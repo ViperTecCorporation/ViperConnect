@@ -120,16 +120,22 @@ const verifiedParticipantPhoneCandidate = async (contact: Contact, phone: string
   }
 }
 
-const normalizeParticipantCandidatesForBaileysWithVerification = async (contact: Contact, phone: string, participant?: any): Promise<string[]> => {
+const normalizeParticipantCandidatesForBaileysWithVerification = async (contact: Contact, phone: string, participant?: any, preferPhone = false): Promise<string[]> => {
   const candidates = normalizeParticipantCandidatesForBaileys(participant)
   const verifiedPhone = await verifiedParticipantPhoneCandidate(contact, phone, participant)
+  if (preferPhone) {
+    const phoneCandidates = participantPhoneCandidates(participant)
+      .map((value) => normalizeParticipantJidForBaileys(value))
+      .filter((value) => value.endsWith('@s.whatsapp.net'))
+    return Array.from(new Set([verifiedPhone, ...phoneCandidates, ...candidates].filter(Boolean)))
+  }
   if (verifiedPhone) candidates.splice(1, 0, verifiedPhone)
   return Array.from(new Set(candidates))
 }
 
-const normalizeParticipantsCandidatesForBaileys = async (contact: Contact, phone: string, participants?: any): Promise<string[][]> => {
+const normalizeParticipantsCandidatesForBaileys = async (contact: Contact, phone: string, participants?: any, preferPhone = false): Promise<string[][]> => {
   const normalized = await Promise.all((Array.isArray(participants) ? participants : [])
-    .map((participant) => normalizeParticipantCandidatesForBaileysWithVerification(contact, phone, participant)))
+    .map((participant) => normalizeParticipantCandidatesForBaileysWithVerification(contact, phone, participant, preferPhone)))
   return normalized
     .filter((candidates) => candidates.length > 0)
 }
@@ -304,7 +310,14 @@ const managementWebhook = (phone: string, field: string, value: any) => ({
       changes: [
         {
           field,
-          value,
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: {
+              display_phone_number: phone,
+              phone_number_id: phone,
+            },
+            ...value,
+          },
         },
       ],
     },
@@ -490,7 +503,7 @@ export class GroupsController {
       const subject = `${req.body?.subject || ''}`.trim()
       const description = `${req.body?.description || ''}`.trim()
       const participantInputs = Array.isArray(req.body?.participants) ? req.body.participants : []
-      const participantCandidates = await normalizeParticipantsCandidatesForBaileys(this.contact, phone, participantInputs)
+      const participantCandidates = await normalizeParticipantsCandidatesForBaileys(this.contact, phone, participantInputs, true)
       let participants = selectParticipantCandidates(participantCandidates, 0)
       if (!phone) return res.status(400).json({ error: 'missing phone param' })
       if (!subject) return res.status(400).json({ error: 'missing subject' })

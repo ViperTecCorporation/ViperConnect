@@ -469,14 +469,11 @@ describe('groups routes', () => {
     }))
   })
 
-  test('create group retries with phone number when lid participant is rejected by Baileys', async () => {
+  test('create group prefers phone number over lid participant for Baileys', async () => {
     const phone = '556600000000'
     const groupJid = '120363040468224422@g.us'
     const { app, incoming, outgoing } = await loadApp(true)
-    const error = new Error('bad-request')
-    incoming.groupCreate = jest.fn()
-      .mockRejectedValueOnce(error)
-      .mockResolvedValueOnce({ id: groupJid, subject: 'Equipe Comercial' })
+    incoming.groupCreate = jest.fn().mockResolvedValue({ id: groupJid, subject: 'Equipe Comercial' })
     incoming.groupInviteCode = jest.fn().mockResolvedValue('')
     outgoing.send.mockResolvedValue(undefined)
 
@@ -488,10 +485,8 @@ describe('groups routes', () => {
       })
 
     expect(res.status).toEqual(200)
-    expect(incoming.groupCreate).toHaveBeenNthCalledWith(1, phone, 'Equipe Comercial', [
-      '123456789012345@lid',
-    ])
-    expect(incoming.groupCreate).toHaveBeenNthCalledWith(2, phone, 'Equipe Comercial', [
+    expect(incoming.groupCreate).toHaveBeenCalledTimes(1)
+    expect(incoming.groupCreate).toHaveBeenCalledWith(phone, 'Equipe Comercial', [
       '556699999999@s.whatsapp.net',
     ])
     expect(res.body).toEqual(expect.objectContaining({
@@ -500,7 +495,7 @@ describe('groups routes', () => {
     }))
   })
 
-  test('create group retries with verified phone jid when raw phone has WhatsApp digit drift', async () => {
+  test('create group prefers verified phone jid when raw phone has WhatsApp digit drift', async () => {
     const phone = '556600000000'
     const groupJid = '120363040468224422@g.us'
     const contact = mock<Contact>()
@@ -508,10 +503,7 @@ describe('groups routes', () => {
       contacts: [{ input: '5566999554300', wa_id: '556699554300@s.whatsapp.net', status: 'valid' } as any],
     })
     const { app, incoming, outgoing } = await loadApp(true, contact)
-    const error = new Error('bad-request')
-    incoming.groupCreate = jest.fn()
-      .mockRejectedValueOnce(error)
-      .mockResolvedValueOnce({ id: groupJid, subject: 'Equipe Comercial' })
+    incoming.groupCreate = jest.fn().mockResolvedValue({ id: groupJid, subject: 'Equipe Comercial' })
     incoming.groupInviteCode = jest.fn().mockResolvedValue('')
     outgoing.send.mockResolvedValue(undefined)
 
@@ -523,10 +515,8 @@ describe('groups routes', () => {
       })
 
     expect(res.status).toEqual(200)
-    expect(incoming.groupCreate).toHaveBeenNthCalledWith(1, phone, 'Equipe Comercial', [
-      '11343495192601@lid',
-    ])
-    expect(incoming.groupCreate).toHaveBeenNthCalledWith(2, phone, 'Equipe Comercial', [
+    expect(incoming.groupCreate).toHaveBeenCalledTimes(1)
+    expect(incoming.groupCreate).toHaveBeenCalledWith(phone, 'Equipe Comercial', [
       '556699554300@s.whatsapp.net',
     ])
   })
@@ -572,13 +562,18 @@ describe('groups routes', () => {
     }))
     expect(outgoing.send).toHaveBeenCalledWith(phone, expect.objectContaining({
       entry: [expect.objectContaining({
-        changes: [expect.objectContaining({
-          field: 'group_settings_update',
-          value: expect.objectContaining({
-            group_id: groupJid,
-            changes: expect.objectContaining({ subject: 'Novo nome do grupo' }),
-          }),
-        })],
+          changes: [expect.objectContaining({
+            field: 'group_settings_update',
+            value: expect.objectContaining({
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: phone,
+                phone_number_id: phone,
+              },
+              group_id: groupJid,
+              changes: expect.objectContaining({ subject: 'Novo nome do grupo' }),
+            }),
+          })],
       })],
     }))
   })

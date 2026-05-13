@@ -40,7 +40,7 @@ import QRCode from 'qrcode'
 import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS } from '../defaults'
-import { setContactSyncPending, getPnForLidFromAuthCache } from './redis'
+import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
 import { convertToOggPtt } from '../utils/audio_convert'
 import { convertToWebpSticker } from '../utils/sticker_convert'
 import { t } from '../i18n'
@@ -66,6 +66,30 @@ const sanitizeMessageEditKey = (key: any) => {
   }
 
   return sanitized
+}
+
+const getBrNinthDigitVariants = (digits: string) => {
+  const raw = `${digits || ''}`.replace(/\D/g, '')
+  if (!raw.startsWith('55') || (raw.length !== 12 && raw.length !== 13)) return []
+  const to12 = (() => {
+    if (raw.length === 12) return raw
+    const ddd = raw.slice(2, 4)
+    const local9 = raw.slice(4)
+    return `55${ddd}${local9.slice(1)}`
+  })()
+  const to13 = (() => {
+    if (raw.length === 13) return raw
+    const ddd = raw.slice(2, 4)
+    const local = raw.slice(4)
+    return /[6-9]/.test(local[0]) ? `55${ddd}9${local}` : raw
+  })()
+  return Array.from(new Set([to12, to13]))
+}
+
+const formatVcardPhoneLikeOriginal = (original: string, digits: string) => {
+  const clean = `${digits || ''}`.replace(/\D/g, '')
+  if (!clean) return original
+  return `${original || ''}`.trim().startsWith('+') ? `+${clean}` : clean
 }
 
 interface Delay {
@@ -188,6 +212,64 @@ const buildSendOkResponse = (to: string, keyId: string) => {
 
 export class ClientBaileys implements Client {
   private voipPipelines = new Map<string, Promise<void>>()
+
+  private async resolveContactCardPn(digits: string): Promise<string | undefined> {
+    const variants = getBrNinthDigitVariants(digits)
+    for (const variant of variants) {
+      const pnJid = `${variant}@s.whatsapp.net`
+      try {
+        const authLid = await getLidForPnFromAuthCache(this.phone, pnJid)
+        if (authLid) return variant
+      } catch {}
+    }
+    return undefined
+  }
+
+  private async normalizeContactVcard(vcard: string): Promise<string> {
+    const lines = `${vcard || ''}`.split(/\r\n|\n|\r/)
+    let changed = false
+    const normalized: string[] = []
+    for (const line of lines) {
+      if (!/^TEL(?:;|:)/i.test(line)) {
+        normalized.push(line)
+        continue
+      }
+      const colon = line.indexOf(':')
+      if (colon < 0) {
+        normalized.push(line)
+        continue
+      }
+      const paramsPart = line.slice(0, colon)
+      const valuePart = line.slice(colon + 1)
+      const waidMatch = paramsPart.match(/(?:^|;)WAID=([^;:]+)/i)
+      const rawDigits = `${waidMatch?.[1] || valuePart}`.replace(/\D/g, '')
+      const resolved = await this.resolveContactCardPn(rawDigits)
+      if (!resolved || resolved === rawDigits) {
+        normalized.push(line)
+        continue
+      }
+      let nextParams = paramsPart
+      if (waidMatch) {
+        nextParams = nextParams.replace(/WAID=[^;:]*/i, `WAID=${resolved}`)
+      } else {
+        nextParams = `${nextParams};WAID=${resolved}`
+      }
+      const nextValue = formatVcardPhoneLikeOriginal(valuePart, resolved)
+      normalized.push(`${nextParams}:${nextValue}`)
+      changed = true
+      logger.warn('CONTACT_VCARD_AUTH_CANONICAL: normalized %s -> %s via auth cache', rawDigits, resolved)
+    }
+    return changed ? normalized.join('\r\n') : vcard
+  }
+
+  private async normalizeContactCardsForAuthCache(content: any) {
+    const cards = content?.contacts?.contacts
+    if (!Array.isArray(cards)) return
+    for (const card of cards) {
+      if (typeof card?.vcard !== 'string') continue
+      card.vcard = await this.normalizeContactVcard(card.vcard)
+    }
+  }
 
   private async enqueueVoipByCall<T>(callId: string, task: () => Promise<T>): Promise<T> {
     const key = `${this.phone}:${callId}`
@@ -2117,6 +2199,9 @@ export class ClientBaileys implements Client {
               )
             } catch {}
             content = toBaileysMessageContent(payload, this.config.customMessageCharactersFunction)
+            if (type === 'contacts') {
+              await this.normalizeContactCardsForAuthCache(content)
+            }
             await this.remapMentionsToLidForGroup(targetTo, content as any, payload)
             try {
               const requestId = `${payload?._requestId || payload?.requestId || '<none>'}`

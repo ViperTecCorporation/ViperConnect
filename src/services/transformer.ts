@@ -1,10 +1,40 @@
-import { AnyMessageContent, WAMessageContent, WAMessage, isJidNewsletter, isPnUser, isLidUser, proto, jidNormalizedUser } from '@whiskeysockets/baileys'
+import { AnyMessageContent, isJidNewsletter, isPnUser, isLidUser, jidNormalizedUser } from '@whiskeysockets/baileys'
 import mime from 'mime-types'
-import { parsePhoneNumber } from 'awesome-phonenumber'
 import vCard from 'vcf'
 import logger from './logger'
 import { Config } from './config'
 import { SendError } from './send_error'
+import { BindTemplateError, DecryptError } from './transformer/errors'
+import {
+  MESSAGE_STUB_TYPE_ERRORS,
+  TYPE_MESSAGES_MEDIA,
+  TYPE_MESSAGES_TO_PROCESS_FILE,
+  TYPE_MESSAGES_TO_READ,
+} from './transformer/message_constants'
+import {
+  extractTypeMessage,
+  getBinMessage,
+  getMessageType,
+  getNormalizedMessage,
+  isAudioMessage,
+  isSaveMedia,
+  normalizeMessageContent,
+} from './transformer/message_type'
+import {
+  ensurePn,
+  formatJid,
+  isIndividualJid,
+  isValidPhoneNumber,
+  jidToPhoneNumber,
+  jidToPhoneNumberIfUser,
+  jidToRawPhoneNumber,
+  normalizeGroupId,
+  normalizeParticipantId,
+  normalizeTransportJid,
+  normalizeUserOrGroupIdForWebhook,
+  phoneNumberToJid,
+  toRawPnJid,
+} from './transformer/jid'
 import {
   BASE_URL,
   MESSAGE_CHECK_WAAPP,
@@ -17,18 +47,36 @@ import {
 } from '../defaults'
 import { t } from '../i18n'
 
-export const TYPE_MESSAGES_TO_PROCESS_FILE = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage', 'ptvMessage']
-
-export const TYPE_MESSAGES_MEDIA = ['image', 'audio', 'document', 'video', 'sticker']
-
-const MESSAGE_STUB_TYPE_ERRORS = [
-  'Message absent from node'.toLowerCase(),
-  'Invalid PreKey ID'.toLowerCase(),
-  'Key used already or never filled'.toLowerCase(),
-  'No SenderKeyRecord found for decryption'.toLowerCase(),
-  'No session record'.toLowerCase(),
-  'No matching sessions found for message'.toLowerCase(),
-]
+export { BindTemplateError, DecryptError } from './transformer/errors'
+export {
+  TYPE_MESSAGES_TO_PROCESS_FILE,
+  TYPE_MESSAGES_MEDIA,
+  TYPE_MESSAGES_TO_READ,
+} from './transformer/message_constants'
+export {
+  extractTypeMessage,
+  getBinMessage,
+  getMessageType,
+  getNormalizedMessage,
+  isAudioMessage,
+  isSaveMedia,
+  normalizeMessageContent,
+} from './transformer/message_type'
+export {
+  ensurePn,
+  formatJid,
+  isIndividualJid,
+  isValidPhoneNumber,
+  jidToPhoneNumber,
+  jidToPhoneNumberIfUser,
+  jidToRawPhoneNumber,
+  normalizeGroupId,
+  normalizeParticipantId,
+  normalizeTransportJid,
+  normalizeUserOrGroupIdForWebhook,
+  phoneNumberToJid,
+  toRawPnJid,
+} from './transformer/jid'
 
 const isViewOnceUnavailableStub = (payload: any): boolean => {
   const source = payload?.update || payload || {}
@@ -66,86 +114,6 @@ const isSecretEncryptedMessageEdit = (message: any): boolean => {
   const secretType = `${message?.secretEncType || ''}`
   return secretType === '2' || secretType === 'MESSAGE_EDIT'
 }
-
-export class BindTemplateError extends Error {
-  constructor() {
-    super('')
-  }
-}
-
-export class DecryptError extends Error {
-  private content: object
-
-  constructor(content: object) {
-    super('')
-    this.content = content
-  }
-
-  getContent() {
-    return this.content
-  }
-}
-
-export const TYPE_MESSAGES_TO_READ = [
-  'viewOnceMessage',
-  'editedMessage',
-  'ephemeralMessage',
-  'documentWithCaptionMessage',
-  'viewOnceMessageV2',
-  'viewOnceMessageV2Extension',
-  'lottieStickerMessage',
-  'imageMessage',
-  'videoMessage',
-  'audioMessage',
-  'stickerMessage',
-  'documentMessage',
-  'contactMessage',
-  'contactsArrayMessage',
-  'extendedTextMessage',
-  'reactionMessage',
-  'locationMessage',
-  'liveLocationMessage',
-  'listMessage',
-  'buttonsMessage',
-  'interactiveMessage',
-  'listResponseMessage',
-  'buttonsResponseMessage',
-  'interactiveResponseMessage',
-  'conversation',
-  'ptvMessage',
-  'templateButtonReplyMessage',
-  'templateMessage',
-  'groupInviteMessage',
-  'orderMessage',
-  'pollCreationMessage',
-  'pollCreationMessageV2',
-  'pollCreationMessageV3',
-  'pollCreationMessageV5',
-  'pollUpdateMessage',
-  'eventMessage',
-  'scheduledCallCreationMessage',
-  'scheduledCallEditMessage',
-  'requestPhoneNumberMessage',
-  'newsletterAdminInviteMessage',
-  'newsletterFollowerInviteMessageV2',
-  'questionMessage',
-  'questionResponseMessage',
-  'questionReplyMessage',
-  'statusQuestionAnswerMessage',
-  'callLogMesssage',
-  'pollResultSnapshotMessage',
-  'pollResultSnapshotMessageV3',
-  'statusQuotedMessage',
-  'statusAddYours',
-  'secretEncryptedMessage',
-]
-
-const OTHER_MESSAGES_TO_PROCESS = [
-  'protocolMessage',
-  'senderKeyDistributionMessage',
-  'messageContextInfo',
-  'messageStubType',
-]
 
 export const getMimetype = (payload: any) => {
   const { type } = payload
@@ -186,60 +154,6 @@ export const getMimetype = (payload: any) => {
   }
   return mimetype ? `${mimetype}` : 'application/unknown'
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const getMessageType = (payload: any) => {
-  // 1) update tem prioridade máxima
-  if (payload?.update) return 'update'
-  // 2) status sem wrapper update: considerar update, exceto SERVER_ACK (2) de terceiros
-  if (typeof payload?.status !== 'undefined') {
-    const st = payload.status
-    const isServerAck = st === 2 || st === '2' || `${st}`.toUpperCase() === 'SERVER_ACK'
-    const fromMe = !!(payload?.key?.fromMe)
-    if (!isServerAck || fromMe) return 'update'
-    // SERVER_ACK de terceiros: deixa seguir como mensagem
-  }
-  // 3) receipts explícitos
-  if (payload?.receipt) return 'receipt'
-  // 4) mensagens reais
-  if (payload?.message) {
-    const { message } = payload
-    return (
-      TYPE_MESSAGES_TO_READ.find((t) => message[t]) ||
-      OTHER_MESSAGES_TO_PROCESS.find((t) => message[t]) ||
-      Object.keys(payload.message)[0]
-    )
-  }
-  // 5) stubs
-  if (payload?.messageStubType) return 'messageStubType'
-}
-
-export const isSaveMedia = (message: WAMessage) => {
-  const normalizedMessage = getNormalizedMessage(message)
-  const messageType = normalizedMessage && getMessageType(normalizedMessage)
-  return messageType && TYPE_MESSAGES_TO_PROCESS_FILE.includes(messageType)
-}
-
-export const normalizeMessageContent = (
-  content: WAMessageContent | null | undefined
-): WAMessageContent | proto.IMessage | undefined => {
-  content =
-    // unwrap edited message to original content
-    content?.editedMessage?.message ||
-    (content as any)?.protocolMessage?.editedMessage?.message ||
-    content?.ephemeralMessage?.message?.viewOnceMessage?.message ||
-    content?.ephemeralMessage?.message ||
-    content?.viewOnceMessage?.message ||
-    content?.viewOnceMessageV2Extension?.message ||
-    content?.viewOnceMessageV2?.message ||
-    (content as any)?.deviceSentMessage?.message ||
-		content?.documentWithCaptionMessage?.message ||
-    // unwrap lottieStickerMessage to inner message (often stickerMessage)
-    (content as any)?.lottieStickerMessage?.message ||
-    content ||
-    undefined;
-  return (content || undefined) as any;
-};
 
 const toArray = <T>(value: T | T[] | undefined): T[] => {
   if (Array.isArray(value)) return value
@@ -470,29 +384,6 @@ const parseVcardContact = (rawVcard: string): any | undefined => {
   return contact
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const getBinMessage = (waMessage: WAMessage): { messageType: string; message: any } | undefined => {
-  const message: proto.IMessage | undefined = (normalizeMessageContent(waMessage.message) || undefined) as any
-  const messageType = getMessageType({ message })
-  if (message && messageType && message[messageType]) {
-    return { messageType, message: message[messageType] }
-  }
-}
-
-export const getNormalizedMessage = (waMessage: WAMessage): WAMessage | undefined => {
-  const binMessage = getBinMessage(waMessage)
-  if (binMessage) {
-    let { message } = binMessage
-    // unwrap edited message to the inner original message
-    if (message?.editedMessage?.message) {
-      message = message.editedMessage.message
-    } else if (message?.protocolMessage?.editedMessage?.message) {
-      message = message.protocolMessage.editedMessage.message
-    }
-    return { key: waMessage.key, message: { [binMessage.messageType]: message } }
-  }
-}
-
 export const completeCloudApiWebHook = (phone, to: string, message: object) => {
   return {
     object: 'whatsapp_business_account',
@@ -654,21 +545,47 @@ export const toBaileysMessageContent = (payload: any, customMessageCharactersFun
       }
 
       if (action.sections && Array.isArray(action.sections) && action.sections.length > 0) {
-        response.text = body.text || ''
-        response.footer = footer.text || ''
-        response.title = header.text || ''
-        response.buttonText = action.button || 'Selecione'
-        if (typeof action.listType !== 'undefined') {
-          response.listType = action.listType
-        }
-        response.sections = action.sections.map((section: any) => ({
+        const sections = action.sections.map((section: any) => ({
           title: section.title || '',
           rows: (section.rows || []).map((row: any) => ({
             rowId: row.rowId || row.id || '',
+            id: row.id || row.rowId || '',
             title: row.title || '',
             description: row.description || '',
           })),
         }))
+        if (useNativeFlow && typeof action.listType === 'undefined') {
+          response.text = body.text || ''
+          response.footer = footer.text || ''
+          response.buttons = [
+            {
+              nativeFlowInfo: {
+                name: 'single_select',
+                paramsJson: JSON.stringify({
+                  title: action.button || 'Selecione',
+                  sections,
+                }),
+              },
+              type: 2,
+            },
+          ]
+        } else {
+          response.text = body.text || ''
+          response.footer = footer.text || ''
+          response.title = header.text || ''
+          response.buttonText = action.button || 'Selecione'
+          if (typeof action.listType !== 'undefined') {
+            response.listType = action.listType
+          }
+          response.sections = sections.map((section: any) => ({
+            title: section.title,
+            rows: section.rows.map((row: any) => ({
+              rowId: row.rowId || row.id || '',
+              title: row.title || '',
+              description: row.description || '',
+            })),
+          }))
+        }
         break
       }
 
@@ -712,6 +629,48 @@ export const toBaileysMessageContent = (payload: any, customMessageCharactersFun
           }
           return []
         }
+        const mapButtonsToNativeCarousel = (buttons: any[]) =>
+          (buttons || [])
+            .map((button: any) => {
+              if (button.type === 'url' || button.url || button.type === 'cta_url') {
+                const u = button.url || button
+                const url = typeof u === 'string' ? u : u.link || u.url || ''
+                return {
+                  type: 'url',
+                  text: button.text || u.title || u.display_text || 'Abrir',
+                  url,
+                  merchantUrl: button.merchantUrl || u.merchant_url || url,
+                }
+              }
+              if (button.type === 'call' || button.call || button.type === 'cta_call') {
+                const c = button.call || button
+                return {
+                  type: 'call',
+                  text: button.text || c.title || c.display_text || 'Ligar',
+                  phoneNumber: c.phone_number || c.phone || c.phoneNumber || '',
+                }
+              }
+              if (button.type === 'cta_copy' || button.copy_code || button.copy) {
+                const cp = button.copy_code || button.copy || button
+                return {
+                  type: 'copy',
+                  text: button.text || cp.title || cp.display_text || 'Copiar',
+                  copyText: cp.code || cp.copy_code || cp.copyText || '',
+                }
+              }
+              const r = button.reply || button
+              return {
+                type: 'reply',
+                text: r.title || r.text || r.displayText || r.display_text || 'Selecionar',
+                id: r.id || r.buttonId || '',
+              }
+            })
+            .filter((button: any) => {
+              if (button.type === 'url') return !!button.url
+              if (button.type === 'call') return !!button.phoneNumber
+              if (button.type === 'copy') return !!button.copyText
+              return !!button.id
+            })
         const cards = (carousel.cards || interactive.cards || action.cards || interactive?.action?.cards || []).map((card: any) => {
           const cardHeader = card.header || {}
           const cardBody = card.body || {}
@@ -746,26 +705,36 @@ export const toBaileysMessageContent = (payload: any, customMessageCharactersFun
             },
           }
         })
-        response.interactiveMessage = {
-          body: { text: body.text || '' },
-          footer: footer.text ? { text: footer.text } : undefined,
-          header: header.text
-            ? {
-                type: 4,
-                title: header.text,
-                hasMediaAttachment: false,
-              }
-            : undefined,
-          carouselMessage: {
-            cards,
-          },
+        const nativeCards = (carousel.cards || interactive.cards || action.cards || interactive?.action?.cards || []).map((card: any) => {
+          const cardHeader = card.header || {}
+          const cardBody = card.body || {}
+          const cardFooter = card.footer || {}
+          const cardButtons = card.buttons || card.action?.buttons || mapCardActionToButtons(card.action, card.type)
+          const headerType = `${cardHeader?.type || ''}`.toLowerCase()
+          const imageLink = cardHeader?.image?.link || cardHeader?.image?.url
+          const videoLink = cardHeader?.video?.link || cardHeader?.video?.url
+          return {
+            title: cardHeader?.text || card.title || '',
+            body: cardBody?.text || card.text || card.caption || '',
+            ...(cardFooter?.text ? { footer: cardFooter.text } : {}),
+            ...(headerType === 'image' && imageLink ? { image: { url: imageLink } } : {}),
+            ...(headerType === 'video' && videoLink ? { video: { url: videoLink } } : {}),
+            buttons: mapButtonsToNativeCarousel(cardButtons),
+          }
+        })
+        response.nativeCarousel = {
+          text: body.text || '',
+          footer: footer.text || undefined,
+          title: header.text || undefined,
+          cards: nativeCards,
         }
         if (UNOAPI_DEBUG_BAILEYS_LIST_DUMP) {
           logger.debug(
             'toBaileys carousel->interactive dump input=%s output=%s',
             JSON.stringify({ interactive, action, header, body, footer }),
             JSON.stringify({
-              interactiveMessage: response.interactiveMessage,
+              nativeCarousel: response.nativeCarousel,
+              legacyInteractiveCards: cards,
             }),
           )
         }
@@ -920,123 +889,6 @@ export const toBaileysMessageContent = (payload: any, customMessageCharactersFun
   return response
 }
 
-export const phoneNumberToJid = (phoneNumber: string) => {
-  try {
-    if (typeof phoneNumber === 'string' && phoneNumber.includes('@')) {
-      logger.debug('%s already is jid', phoneNumber)
-      return phoneNumber
-    }
-    // PN -> JID com ajuste do 9º dígito (Brasil)
-    const raw = ensurePn(`${phoneNumber}`)
-    const brMobile9 = (digits?: string) => {
-      try {
-        const s = `${digits || ''}`.replace(/\D/g, '')
-        if (!s.startsWith('55')) return s
-        // 55 + DDD(2) + local; se local tiver 8 dígitos e começar em [6-9], inserir 9 após DDD
-        if (s.length === 12) {
-          const ddd = s.slice(2, 4)
-          const local = s.slice(4)
-          if (/[6-9]/.test(local[0])) return `55${ddd}9${local}`
-        }
-        return s
-      } catch { return digits || '' }
-    }
-    const pn = brMobile9(raw)
-    const jid = `${pn}@s.whatsapp.net`
-    logger.debug('PN->JID transform %s => %s', phoneNumber, jid)
-    return jid
-  } catch {
-    const jid = `${`${phoneNumber}`.replace(/\D/g, '')}@s.whatsapp.net`
-    logger.debug('PN->JID fallback %s => %s', phoneNumber, jid)
-    return jid
-  }
-}
-
-export const normalizeGroupId = (input: string): string => {
-  const raw = `${input || ''}`.trim()
-  if (!raw) return ''
-  if (raw.endsWith('@g.us')) return raw
-  const digits = raw.replace(/\D/g, '')
-  return digits ? `${digits}@g.us` : raw
-}
-
-export const normalizeParticipantId = (jid: string): string => {
-  const value = `${jid || ''}`.trim()
-  if (!value) return ''
-  if (value.endsWith('@s.whatsapp.net')) {
-    return value.split('@')[0].split(':')[0].replace(/\D/g, '')
-  }
-  if (value.endsWith('@lid')) {
-    return value
-  }
-  return value.replace(/\D/g, '') || value
-}
-
-// Converte PN/JID para PN JID de transporte sem heurística extra (ex.: sem inserir 9º dígito BR).
-// Deve ser usado para caches internos/JIDMAP, preservando o valor como chega do Baileys.
-export const toRawPnJid = (value?: string): string => {
-  const raw = `${value || ''}`.trim()
-  if (!raw) return ''
-  if (raw.includes('@s.whatsapp.net')) {
-    return `${raw.split('@')[0].split(':')[0].replace(/\D/g, '')}@s.whatsapp.net`
-  }
-  if (raw.includes('@')) return raw
-  const digits = raw.replace(/\D/g, '')
-  return digits ? `${digits}@s.whatsapp.net` : ''
-}
-
-// Extrai apenas os dígitos do identificador sem aplicar a regra BR do 9º dígito.
-// Para LID, não tenta inferir PN.
-export const jidToRawPhoneNumber = (value: any, plus = '+'): string => {
-  const raw = `${value || ''}`.trim()
-  if (!raw) return ''
-  if (raw.includes('@') && !raw.endsWith('@s.whatsapp.net')) return ''
-  const number = raw.split('@')[0].split(':')[0].replace(/\D/g, '')
-  return number ? `${plus}${number}` : ''
-}
-
-// Normaliza JID apenas no formato de transporte: remove sufixo de device sem reescrever o PN.
-export const normalizeTransportJid = (jid?: string): string => {
-  const raw = `${jid || ''}`.trim()
-  if (!raw) return ''
-  if (raw.endsWith('@s.whatsapp.net')) return toRawPnJid(raw)
-  if (raw.endsWith('@lid')) return `${raw.split('@')[0].split(':')[0].replace(/\D/g, '')}@lid`
-  if (raw.includes('@')) return formatJid(raw)
-  return raw
-}
-
-export const isIndividualJid = (jid: string) => {
-  // Treat PN and LID JIDs (or raw numbers) as individual (not group/newsletter)
-  const isIndividual = isPnUser(jid as any) || isLidUser(jid as any) || jid.indexOf('@') < 0
-  logger.debug('jid %s is individual? %s', jid, isIndividual)
-  return isIndividual
-}
-
-// Garante PN (somente dígitos) a partir de número/JID (PN/LID)
-// Retorna string vazia quando não conseguir inferir com segurança
-export const ensurePn = (value?: string): string => {
-  try {
-    if (!value) return ''
-    // se já for só números (com ou sem +)
-    if (/^\+?\d+$/.test(value)) return value.replace('+', '')
-    // se for JID, normaliza (remove device suffix e resolve LID->PN quando possível)
-    const jid = value.includes('@') ? formatJid(value) : value
-    // Não tentar converter LID -> PN aqui; somente quando já houver mapping em key.*Pn
-    try { if (isLidUser(jid as any)) return '' } catch {}
-    try {
-      const normalized = jidNormalizedUser(jid as any)
-      if (isPnUser(normalized)) {
-        return jidToPhoneNumber(normalized, '').replace('+', '')
-      }
-    } catch {}
-    // tenta converter diretamente se já parecer PN JID
-    if (isPnUser(jid as any)) {
-      return jidToPhoneNumber(jid, '').replace('+', '')
-    }
-  } catch {}
-  return ''
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const isIndividualMessage = (payload: any) => {
   const {
@@ -1184,32 +1036,6 @@ const extractBaileysUsername = (payload: any): string | undefined => {
   )
 }
 
-export const formatJid = (jid: string) => {
-  const jidSplit = jid.split('@')
-  return `${jidSplit[0].split(':')[0]}@${jidSplit[1]}`
-}
-
-export const isValidPhoneNumber = (value: string, nine = false): boolean => {
-  try {
-    if (typeof value === 'string' && value.includes('@')) {
-      // Tratar JIDs como válidos para rotas que aceitam @s.whatsapp.net e @lid
-      const v = value.toLowerCase()
-      if (v.endsWith('@s.whatsapp.net') || v.endsWith('@lid') || v.endsWith('@g.us') || v.endsWith('@newsletter')) {
-        return true
-      }
-    }
-  } catch {}
-  const number = `+${(value || '').split('@')[0].split(':')[0].replace('+', '')}`
-  const country = number.replace('+', '').substring(0, 2)
-  const parsed = parsePhoneNumber(number)
-  const numbers = parsed?.number?.significant || ''
-  const isInValid = !parsed.valid || !parsed.possible || (nine && country == '55' && numbers.length < 11 && ['6', '7', '8', '9'].includes(numbers[2]))
-  if (isInValid) {
-    logger.debug('phone number %s is invalid %s', value, isInValid)
-  }
-  return !isInValid
-}
-
 export const extractDestinyPhone = (payload: object, throwError = true) => {
   const data = payload as any
   let number = data?.to || (
@@ -1319,110 +1145,11 @@ export const isIncomingMessage = (payload: object) => {
   return !isOutgoingMessage(payload)
 }
 
-export const extractTypeMessage = (payload: object) => {
-  const data = payload as any
-  return (
-    (
-      data?.entry
-      && data.entry[0]
-      && data.entry[0].changes
-      && data.entry[0].changes[0]
-      && data.entry[0].changes[0].value
-    ) && (
-      data.entry[0].changes[0].value.messages
-      && data.entry[0].changes[0].value.messages[0]
-      && data.entry[0].changes[0].value.messages[0].type
-    )
-  )
-}
-
-export const isAudioMessage = (payload: object) => {
-  return 'audio' == extractTypeMessage(payload)
-}
-
-
 export const isFailedStatus = (payload: object) => {
   const data = payload as any
   return 'failed' == (data.entry[0].changes[0].value.statuses
                         && data.entry[0].changes[0].value.statuses[0]
                         && data.entry[0].changes[0].value.statuses[0].status)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const jidToPhoneNumber = (value: any, plus = '+', retry = true): string => {
-  let v = value
-  try {
-    // Se for LID, tentar normalizar para PN JID primeiro
-    if (isLidUser(v)) {
-      try { v = jidNormalizedUser(v) } catch {}
-    }
-  } catch {}
-  const number = (v || '').split('@')[0].split(':')[0].replace('+', '')
-  const country = number.substring(0, 2)
-  if (country == '55') {
-    const isValid = isValidPhoneNumber(`+${number}`, true)
-    if (!isValid && number.length < 13 && retry) {
-      const prefix = number.substring(2, 4)
-      const m = number.match(/(\d{8})$/)
-      const digits = m ? m[1] : number.slice(-8)
-      const digit = '9'
-      const out = `${plus}${country}${prefix}${digit}${digits}`.replace('+', '')
-      return jidToPhoneNumber(`${plus}${out}`, plus, false)
-    }
-  }
-  return `${plus}${number.replace('+', '')}`
-}
-
-export const jidToPhoneNumberIfUser = (value: any): string => {
-  return isIndividualJid(value) ? jidToPhoneNumber(value, '') : value 
-}
-
-// Normaliza IDs para webhook mantendo grupos intactos e convertendo usuários para PN com regra BR do 9º dígito
-// - Mantém '@g.us' sem alterações (group_id, group_picture, etc.)
-// - Não expõe '@lid' em campos de telefone; LID fica em user_id/from_user_id
-// - Converte JID de usuário -> PN
-// - Aplica 9º dígito no Brasil somente para PN de usuários (55 + DDD + 8 dígitos iniciando em [6-9])
-export const normalizeUserOrGroupIdForWebhook = (value?: string): string => {
-  const brMobile9 = (digits?: string) => {
-    try {
-      const s = `${digits || ''}`.replace(/\D/g, '')
-      if (!s.startsWith('55')) return s
-      if (s.length === 12) {
-        const ddd = s.slice(2, 4)
-        const local = s.slice(4)
-        if (/[6-9]/.test(local[0])) return `55${ddd}9${local}`
-      }
-      return s
-    } catch {
-      return `${digits || ''}`
-    }
-  }
-  try {
-    let val = `${value || ''}`
-    if (!val) return val
-    // Não normalizar grupos
-    if (val.includes('@g.us')) return val
-    // Não expor LID em campos Cloud API de telefone; usar user_id/from_user_id para isso.
-    try {
-      if (val.includes('@lid')) {
-        return ''
-      }
-    } catch {}
-    // Converter JID de usuário para PN quando aplicável
-    try {
-      if (!/^\+?\d+$/.test(val)) {
-        val = jidToPhoneNumberIfUser(val)
-      }
-    } catch {}
-    // Garantir PN apenas dígitos e aplicar regra do 9º dígito BR
-    try {
-      const pn = ensurePn(val)
-      if (pn) return brMobile9(pn)
-    } catch {}
-    return val
-  } catch {
-    return `${value || ''}`
-  }
 }
 
 // Aplica normalização nos campos de IDs do payload Cloud API pronto para envio

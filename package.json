@@ -1,14 +1,25 @@
 {
-  "name": "unoapi-cloud",
-  "version": "3.0.62",
-  "description": "Unoapi Cloud Fork Viper Tec baileys 7",
+  "name": "viperconnect",
+  "version": "3.0.66",
+  "description": "ViperConnect by ViperTec Corporation, based on the original Unoapi Cloud project",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "./dist"
   ],
-  "repository": "github.com/ViperTecCorporation/unoapi-cloud",
-  "author": "Clairton Rodrigo Heinzen<clairton.rodrigo@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ViperTecCorporation/ViperConnect.git"
+  },
+  "author": "ViperTec Corporation <suporte@vipertec.com.br>",
+  "contributors": [
+    "Rodrigo Caitano <caitano28@gmail.com>",
+    "Clairton Rodrigo <original Unoapi Cloud project author>"
+  ],
+  "homepage": "https://github.com/ViperTecCorporation/ViperConnect#readme",
+  "bugs": {
+    "url": "https://github.com/ViperTecCorporation/ViperConnect/issues"
+  },
   "license": "GPL-3.0",
   "packageManager": "yarn@1.22.22",
   "scripts": {
@@ -45,6 +56,7 @@
     "bridge-ts": "node --max-old-space-size=4096 --experimental-strip-types --experimental-transform-types src/bridge.ts",
     "clean:data": "rm -rf ./data/medias/* ./data/sessions/* ./data/stores/*.json",
     "build:docs": "node ./scripts/openapi-to-json.mjs",
+    "check:baileys-lock": "node ./scripts/check-baileys-lock.mjs",
     "postinstall": "node ./scripts/prepare-baileys.mjs"
   },
   "devDependencies": {
@@ -85,7 +97,7 @@
     "@google-cloud/text-to-speech": "^5.2.0",
     "@redis/client": "^1.5.14",
     "@sentry/node": "^9.29.0",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#90911ba0defcc5282467501fe9c4ebd2588d5b50",
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e",
     "amqplib": "^0.10.8",
     "audio-decode": "^2.2.3",
     "audio2textjs": "^1.0.5",
@@ -120,6 +132,6 @@
   "resolutions": {
     "libsignal": "https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/e81ecfc32eb74951d789ab37f7e341ab66d5fff1",
     "@whiskeysockets/libsignal-node": "https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/e81ecfc32eb74951d789ab37f7e341ab66d5fff1",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#90911ba0defcc5282467501fe9c4ebd2588d5b50"
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e"
   }
 }

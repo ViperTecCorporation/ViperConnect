@@ -1,1508 +1,199 @@
 <div align="center">
 
-[![Whatsapp Group](https://img.shields.io/badge/Group-WhatsApp-%2322BC18)](https://chat.whatsapp.com/FZd0JyPVMLq94FHf59I8HU)
+# ViperConnect
+
 [![License](https://img.shields.io/badge/license-GPL--3.0-orange)](./LICENSE)
-[![Support](https://img.shields.io/badge/Donation-picpay-green)](https://app.picpay.com/user/clairton.rodrigo)
-[![Support](https://img.shields.io/badge/Buy%20me-coffe-orange)](https://www.buymeacoffee.com/clairton)
+[![Docker](https://img.shields.io/badge/GHCR-viperconnect-blue)](https://github.com/ViperTecCorporation/ViperConnect/pkgs/container/viperconnect)
+
+Gateway de API para WhatsApp mantido pela ViperTec Corporation.
 
 </div>
-<h1 align="center">Unoapi Cloud</h1>
 
-An implementation of Baileys(`https://github.com/WhiskeySockets/Baileys`) as
-RESTful API service with multi device support with a Whatsapp Cloud API format
-`https://developers.facebook.com/docs/whatsapp/cloud-api`.
+## Sobre
 
-The media files are saved in file system at folder data with the session or in s3 or compatible and redis.
+ViperConnect é um gateway para WhatsApp baseado em Baileys, com contrato HTTP inspirado na WhatsApp Cloud API. Ele foi criado para operar sessões WhatsApp, enviar mensagens, receber webhooks, integrar com Chatwoot/Typebot e manter compatibilidade com fluxos Meta-like quando necessário.
 
+O projeto é mantido pela ViperTec Corporation e é baseado no projeto original Unoapi Cloud, criado por Clairton Rodrigo.
 
-## Addressing, Webhooks, Pictures and JIDMAP
+## Description
 
-- LID/PN handling
-  - Webhooks keep `wa_id`, `from` and `recipient_id` as phone-only fields. When PN cannot be inferred safely, `wa_id`/`from` are left empty and LID is exposed through `user_id`/`from_user_id`.
-  - Internally, the API uses LID whenever possible (1:1 and groups) to reduce “no sessions” and decryption issues, while keeping webhooks PN‑first for compatibility.
-  - A PN?LID cache is maintained per session (file/redis) and is updated from Baileys events and observations.
-  - When Baileys exposes WhatsApp usernames, Uno keeps the LID as the stable identifier and adds the username as profile metadata. In Cloud-like webhooks this means `contacts[].user_id` and `messages[].from_user_id` receive the `@lid`, while `contacts[].profile.username` receives the username.
-  - Meta-like group participant and join-request routes follow the same rule: `user_id` receives the participant `@lid` when known, `username` carries the WhatsApp username, and the legacy `wa_id` field is preserved.
-  - `contacts[].profile.name` fallback order is: Baileys business/push name, then username, then `wa_id`, then `user_id` (`@lid`). This avoids empty names for username/LID-only contacts.
+ViperConnect is a WhatsApp gateway based on Baileys, exposing an HTTP contract inspired by the WhatsApp Cloud API. It is designed to operate WhatsApp sessions, send messages, receive webhooks, integrate with Chatwoot/Typebot, and preserve compatibility with Meta-like flows when needed.
 
-- Group sends
-  - Default addressingMode is LID. You can force via `GROUP_SEND_ADDRESSING_MODE=lid|pn`.
-  - The API pre‑asserts sessions for group participants prioritizing LIDs, with fallbacks and a final addressingMode toggle on failures such as ack 421.
+This project is maintained by ViperTec Corporation and is based on the original Unoapi Cloud project created by Clairton Rodrigo.
 
+## Principais recursos
 
-### JIDMAP endpoints (inspect PN?LID per session)
+- Manager web para listar, conectar e configurar sessões.
+- Envio de mensagens no formato WhatsApp Cloud API.
+- Webhooks por sessão, com suporte a múltiplos endpoints.
+- Controle para desabilitar um webhook específico sem remover a configuração.
+- Integração com Chatwoot e Typebot.
+- Redis/Valkey para sessões, cache e configurações.
+- RabbitMQ para processamento assíncrono.
+- Storage S3 compatível para mídias.
+- Normalização PN/LID para reduzir problemas de endereçamento no WhatsApp.
+- Embedded Signup do WhatsApp Cloud.
 
-- List mappings with optional filters/pagination:
+## Início rápido
 
-`
-GET /:version/:phone/jidmap?side=pn_for_lid|lid_for_pn|all&q=<substring>&limit=<n>&offset=<m>
-`
+### Docker Compose com Nginx
 
-- Lookup a specific contact (digits/@s.whatsapp.net or @lid):
+Use o exemplo em:
 
-`
-GET /:version/:phone/jidmap/:contact
-`
-
-See more details in docs/pt-BR/JIDMAP.md.### One‑to‑One (Direct) Sending
-
-- Control addressing for direct chats (1:1) using `ONE_TO_ONE_ADDRESSING_MODE`.
-  - `pn` (default): send via PN. Recommended — avoids cases where `@lid` opens a separate thread or hides the message on some devices.
-  - `lid`: prefer sending via LID when available (may reduce first-contact session issues, but can cause split threads in some clients).
-- Webhooks still prefer PN in `wa_id`, `from`, `recipient_id` when resolved; unresolved LIDs are exposed through `user_id`/`from_user_id`.
-  - You can control webhook normalization with `WEBHOOK_PREFER_PN_OVER_LID` (default `true`).
-
-Example:
-```env
-# Default (PN)
-ONE_TO_ONE_ADDRESSING_MODE=pn
-
-# Or prefer LID for 1:1
-# ONE_TO_ONE_ADDRESSING_MODE=lid
+```text
+docs/examples/docker-compose.unoapi-nginx.yml
 ```
 
-### Session Self‑Heal & Periodic Assert
+Ele sobe ViperConnect, RabbitMQ e Valkey, expondo a porta `9876` para o Nginx ou outro proxy reverso.
 
-- `SELFHEAL_ASSERT_ON_DECRYPT` (default `true`): when inbound messages arrive without decryptable content (e.g., only `senderKeyDistributionMessage`), assert sessions for the remote participant to avoid “Waiting for message”.
-- `PERIODIC_ASSERT_ENABLED` (default `true`): periodically assert sessions for recent contacts to prevent stale E2E sessions after long idle periods or device/key changes.
-- `PERIODIC_ASSERT_INTERVAL_MS` (default `600000`): interval between periodic asserts.
-- `PERIODIC_ASSERT_MAX_TARGETS` (default `200`): max recent contacts per batch.
-- `PERIODIC_ASSERT_RECENT_WINDOW_MS` (default `3600000`): only contacts seen within this window are considered.
+### Docker Compose com Traefik
 
-Example:
-```env
-SELFHEAL_ASSERT_ON_DECRYPT=true
-PERIODIC_ASSERT_ENABLED=true
-PERIODIC_ASSERT_INTERVAL_MS=600000
-PERIODIC_ASSERT_MAX_TARGETS=200
-PERIODIC_ASSERT_RECENT_WINDOW_MS=3600000
+Use o exemplo em:
+
+```text
+docs/examples/docker-compose.unoapi-traefik.yml
 ```
 
-- Edited/device‑sent messages
-  - Edited messages are unwrapped to their original content (no recursion); device‑sent updates with inline content are converted to normal message payloads.
+Ele usa a network externa `traefik-public` e labels Traefik para publicar o serviço em HTTPS.
 
-- Profile pictures
-  - Stored and looked up by both canonical PN and stable LID/user id when known, so webhook consumers can resolve profile pictures by phone or BSUID. The same applies to S3 keys.
+### Manager
 
-Notes on Rate Limiting
-- Optional per‑session and per‑destination caps are available via env. When exceeded, messages may be scheduled in RabbitMQ instead of returning 429.
+Depois de subir o container, acesse:
 
-## Read qrcode or config
-
-Go to `http://localhost:9876/session/XXX`, when XXX is your phone number, by example `http://localhost:9876/session/5549988290955`. When disconnect whatsapp number this show the qrcode, read to connect, unoapi response with auth token, save him. When already connect, they show the number config saved in redis, you cloud update, put the auth token and save.
-
-The qrcode is send to configured webhook to, you can read in chatwoot inbox, in created chat with de same number of connection.
-
-### Qrcode with websocket
-Use the endpoint `/ws` and listen event `broadcast`, the object with type `qrcode` has a `content` attribute with de base64 url of qrcode
-```js
-import { io } from 'socket.io-client';
-const socket = io('http://localhost:9876/ws', { path: '/ws' });
-socket.on('broadcast', data => {
-  console.log('broadcast', data);
-});
+```text
+https://seu-dominio/
 ```
 
-## Send a Message
+ou localmente:
 
-The payload is based on
-`https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components#messages-object`
-
-To send a message
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/554931978550/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "text",
-  "text": {
-    "body": "hello"
-  } 
-}'
+```text
+http://localhost:9876/
 ```
 
-Interactive list (sections)
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/554931978550/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "interactive",
-  "interactive": {
-    "type": "list",
-    "header": { "type": "text", "text": "Menu" },
-    "body": { "text": "Escolha uma opcao" },
-    "footer": { "text": "Unoapi" },
-    "action": {
-      "button": "Ver opcoes",
-      "sections": [
-        {
-          "title": "Planos",
-          "rows": [
-            { "id": "plan_basic", "title": "Basico", "description": "R$ 10" },
-            { "id": "plan_pro", "title": "Pro", "description": "R$ 20" }
-          ]
-        }
-      ]
+Informe o token configurado em `UNOAPI_AUTH_TOKEN`.
+
+## Exemplo de Envio
+
+```bash
+curl -X POST "https://unoapi.seudominio.com.br/v15.0/5566999999999/messages" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: SUA_TOKEN_AQUI" \
+  -d '{
+    "messaging_product": "whatsapp",
+    "to": "55669988887777",
+    "type": "text",
+    "text": {
+      "body": "Olá do ViperConnect"
     }
-  }
-}'
+  }'
 ```
 
-Interactive buttons (quick replies, default when UNOAPI_NATIVE_FLOW_BUTTONS=false)
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/554931978550/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "interactive",
-  "interactive": {
-    "type": "button",
-    "body": { "text": "Posso ajudar?" },
-    "action": {
-      "buttons": [
-        { "type": "reply", "reply": { "id": "btn_yes", "title": "Sim" } },
-        { "type": "reply", "reply": { "id": "btn_no", "title": "Nao" } }
-      ]
-    }
-  }
-}'
+## Configuração essencial
+
+| Variável | Uso |
+| --- | --- |
+| `BASE_URL` | URL pública do ViperConnect |
+| `UNOAPI_AUTH_TOKEN` | Token de autenticação da API e do manager |
+| `AMQP_URL` | Conexão RabbitMQ |
+| `REDIS_URL` | Conexão Redis/Valkey |
+| `WEBHOOK_URL` | Webhook padrão, opcional |
+| `WEBHOOK_TOKEN` | Token enviado ao webhook |
+| `WEBHOOK_HEADER` | Header usado para o token do webhook |
+| `STORAGE_BUCKET_NAME` | Bucket S3/R2/MinIO |
+| `STORAGE_ENDPOINT` | Endpoint S3 compatível |
+| `EMBEDDED_SIGNUP_APP_ID` | App ID do Embedded Signup |
+| `EMBEDDED_SIGNUP_APP_SECRET` | App Secret do Embedded Signup |
+
+Veja a lista completa em [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) e [docs/pt-BR/AMBIENTE.md](docs/pt-BR/AMBIENTE.md).
+
+## Webhooks
+
+Cada sessão pode ter um ou mais webhooks. Para desabilitar um endpoint específico sem remover a configuração:
+
+```http
+PATCH /v19.0/{phone}/webhooks/{webhook_id}
+Content-Type: application/json
+
+{ "enabled": false }
 ```
 
-Interactive buttons (native flow CTA, requires UNOAPI_NATIVE_FLOW_BUTTONS=true)
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/554931978550/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "interactive",
-  "interactive": {
-    "type": "button",
-    "body": { "text": "Acesse ou fale com a equipe" },
-    "action": {
-      "buttons": [
-        { "type": "cta_url", "url": { "title": "Abrir site", "link": "https://unoapi.cloud" } },
-        { "type": "cta_call", "call": { "title": "Ligar", "phone_number": "+5511999999999" } },
-        { "type": "cta_copy", "copy_code": { "title": "Copiar codigo", "code": "ABC-123" } }
-      ]
-    }
-  }
-}'
-```
-
-Official Meta-like carousel template
-
-The template must exist in the local template store with a `CAROUSEL`
-component. Uno renders the approved template text with the send-time
-parameters and converts it to a Baileys `interactiveMessage.carouselMessage`.
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/554931978550/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "template",
-  "template": {
-    "name": "promo_carousel",
-    "language": { "code": "pt_BR" },
-    "components": [
-      {
-        "type": "body",
-        "parameters": [{ "type": "text", "text": "Rodrigo" }]
-      },
-      {
-        "type": "carousel",
-        "cards": [
-          {
-            "card_index": 0,
-            "components": [
-              {
-                "type": "header",
-                "parameters": [
-                  { "type": "image", "image": { "link": "https://example.com/produto.jpg" } }
-                ]
-              },
-              {
-                "type": "body",
-                "parameters": [{ "type": "text", "text": "1" }]
-              },
-              {
-                "type": "button",
-                "sub_type": "quick_reply",
-                "index": "0",
-                "parameters": [{ "type": "payload", "payload": "produto_1" }]
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
-}'
-```
-
-To Send a Status
-Requisitos:
-to = 'status@broadcast'
-type is content (ex.: image, video ou text)
-statusJidList = ['5511999999999, ...] with at least 1 JID valid
-
-Image sample
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
---header 'Content-Type: application/json' \
---header 'Authorization: ••••••' \
---data-raw '
-{
-"messaging_product": 
-"whatsapp",
-"recipient_type": 
-"individual",
-"to": 
-"status@broadcast",
-"context": 
-{
-"message_id": 
-"8e401d25-89e8-4b9d-aa10-373e2ee1a5555"
-},
-"type": 
-"image",
-"image": 
-{
-"link": 
-"https://r2.vipertec.net/6YLUsdJFWE1SRdTcuGpi.png",
-"caption": 
-"wificam"
-},
-"statusJidList": 
-[
-"5566996269251",
-"5566997195718",
-"5566996222471"
-]
-}
-```
-Video sample
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
---header 'Content-Type: application/json' \
---header 'Authorization: ••••••' \
---data-raw '
-{
-"messaging_product": 
-"whatsapp",
-"recipient_type": 
-"individual",
-"to": 
-"status@broadcast",
-"context": 
-{
-"message_id": 
-"8e401d25-89e8-4b9d-aa10-373e2ee1a5555"
-},
-"type": 
-"video",
-"video": 
-{
-"link": 
-"https://r2.vipertec.net/fyHiN0XTnKtnDXbUwX9A.mp4",
-"caption": 
-"AutoMonitoramento"
-},
-"statusJidList": 
-[
-"5566996269251",
-"5566997195718",
-"5566996222471"
-]
-}
-```
-Text sample
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
---header 'Content-Type: application/json' \
---header 'Authorization: ••••••' \
---data-raw '
-{
-"messaging_product": 
-"whatsapp",
-"recipient_type": 
-"individual",
-"to": 
-"status@broadcast",
-"context": 
-{
-"message_id": 
-"8e401d25-89e8-4b9d-aa10-373e2ee1a5555"
-},
-"type": "text",
-  "text": {
-    "body": "hello"
-  },
-"statusJidList": 
-[
-"5566996269251",
-"5566997195718",
-"5566996222471"
-],
-"backgroundColor":
-"#000000",
-"font": 
-1
-}
-```
-Note: 
-Your number's WhatsApp status privacy must allow delivery to the provided JIDs.
-If statusJidList is empty or null and type is image/video, Unoapi auto-fills from Redis contact-info (unoapi-contact-info:<phone>:*).
-If the list is still empty, the status will not be delivered.
-To send a contact
-![Imagem do WhatsApp de 2025-09-21 à(s) 20 03 33_a199430a](https://github.com/user-attachments/assets/c498de41-b8dc-4368-98b0-737b2fee4735)
-
-New endpoint Preflight  
-
-How to use for diagnostics
-
-Call preflight and check:
-session.online = true (session connected)
-counts.valid == counts.normalized (all counts exist in WhatsApp)
-ready = true (prerequisites met)
-If "ready" is false:
-session.online = false → reconnect the session.
-There are invalid numbers → the number doesn't have WhatsApp (correct or remove from the list).
-Even with ready=true, Status may not appear due to privacy/saved contacts (not something the API can confirm).
-
-```sh
-curl --location 'http://localhost:9876/v15.0/v15.0/5566996222471/preflight/status' \
---header 'Content-Type: application/json' \
---header 'Authorization: ••••••' \
---data '{ "statusJidList": ["5566996269251","5566997195718","5566996222471"] }
-'
-```
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549999621461",
-  "type": "contacts",
-  "contacts": [
-    {
-      "name": {
-        "formatted_name": "Clairton - Faça um pix nessa chave e contribua com a unoapi"
-      },
-      "phones": [
-        {
-          "wa_id": "554988290955",
-          "phone": "+5549988290955"
-        }
-      ]
-    }
-  ]
-}'
-```
-
-To send a message to group
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "120363040468224422@g.us",
-  "type": "text",
-  "text": {
-    "body": "hello"
-  }
-}'
-```
-
-Group mention helpers (`to` ending with `@g.us`):
-
-- `@all` or `@todos` in `text.body` enables `mentionAll=true` automatically and removes only the token from the final text.
-- `@<valid_phone>` in `text.body` is auto-added to `mentions[]` (normalized to `@s.whatsapp.net`) and remains in the text.
-- If both are present, both rules apply (`mentions[]` + `mentionAll=true`).
-
-Examples:
+Para reativar:
 
 ```json
-{
-  "messaging_product": "whatsapp",
-  "to": "120363040468224422@g.us",
-  "type": "text",
-  "text": {
-    "body": "Aviso @todos"
-  }
-}
+{ "enabled": true }
 ```
 
-```json
-{
-  "messaging_product": "whatsapp",
-  "to": "120363040468224422@g.us",
-  "type": "text",
-  "text": {
-    "body": "Oi @5566996269251 e @5566996222471"
-  }
-}
+Quando `enabled` é omitido, o webhook continua ativo por padrão. Isso preserva compatibilidade com integrações antigas, incluindo providers que não enviam esse campo.
+
+## Documentação
+
+Com o serviço rodando:
+
+- Manager: `/`
+- Documentação: `/docs`
+- OpenAPI UI: `/docs/openapi.html`
+- Swagger UI: `/docs/swagger.html`
+- OpenAPI JSON: `/docs/openapi.json`
+
+Arquivos principais:
+
+- [Instalação](docs/INSTALLATION.md)
+- [Ambiente](docs/ENVIRONMENT.md)
+- [Arquitetura](docs/ARCHITECTURE.md)
+- [Desenvolvimento](docs/DEVELOPMENT.md)
+- [Embedded Signup](docs/WHATSAPP_EMBEDDED.md)
+- [JIDMAP PN/LID](docs/pt-BR/JIDMAP.md)
+- [Status/Broadcast](docs/STATUS_BROADCAST.md)
+- [Transcrição de áudio](docs/TRANSCRIPTION_AUDIO.md)
+
+## Desenvolvimento
+
+```bash
+yarn install
+yarn build
+yarn test
 ```
 
-```json
-{
-  "messaging_product": "whatsapp",
-  "to": "120363040468224422@g.us",
-  "type": "text",
-  "text": {
-    "body": "Oi @5566996269251, @5566996222471 @all"
-  }
-}
+Executar em desenvolvimento:
+
+```bash
+yarn cloud-dev
 ```
 
-To send a message to lid
+Rodar a versão compilada:
 
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "206652636680324@lid",
-  "type": "text",
-  "text": {
-    "body": "hello"
-  }
-}'
+```bash
+yarn build
+yarn cloud
 ```
 
-Group cache endpoints (participants by session):
+## Imagem Docker
 
-Set `UNOAPI_META_GROUPS_ENABLED=true` to enable the Meta-like group response
-shape and the group details route.
+Imagem oficial do projeto ViperConnect:
 
-With `UNOAPI_META_GROUPS_ENABLED=true`, Uno also exposes Meta-like group
-management endpoints backed by Baileys:
-
-- `POST /v15.0/{phone}/groups` creates a group.
-- `GET /v15.0/{phone}/groups/{groupId}` returns group details.
-- `POST /v15.0/{phone}/groups/{groupId}` updates subject, description, picture URL, announcement/locked settings, and join approval mode.
-- `DELETE /v15.0/{phone}/groups/{groupId}/participants` removes participants.
-- `GET /v15.0/{phone}/groups/{groupId}/invite_link` returns the invite link.
-- `POST /v15.0/{phone}/groups/{groupId}/invite_link` resets the invite link.
-- `GET /v15.0/{phone}/groups/{groupId}/join_requests` lists pending join requests.
-- `POST /v15.0/{phone}/groups/{groupId}/join_requests` approves join requests.
-- `DELETE /v15.0/{phone}/groups/{groupId}/join_requests` rejects join requests.
-- `DELETE /v15.0/{phone}/groups/{groupId}` leaves/deletes the group for the current session.
-
-Group management runs through Baileys directly when the HTTP process owns the
-session. In AMQP deployments, the HTTP process sends a synchronous RPC command
-to the session owner and returns the Baileys result.
-
-```sh
-curl -i -X GET \
-http://localhost:9876/v15.0/5549988290955/groups \
--H 'Content-Type: application/json' \
--H 'Authorization: 1'
+```text
+ghcr.io/viperteccorporation/viperconnect
 ```
 
-```sh
-curl -i -X GET \
-http://localhost:9876/v15.0/5549988290955/groups/120363040468224422@g.us/participants \
--H 'Content-Type: application/json' \
--H 'Authorization: 1'
+Exemplo:
+
+```bash
+docker pull ghcr.io/viperteccorporation/viperconnect:3.0.66
 ```
 
-Participants response includes:
-- `jid`: participant identifier (`5566...` for PN contacts, `...@lid` for LID contacts)
-- `wa_id`: participant id for Meta-like consumers
-- `name`: participant name when available in contact cache
-- `picture`, `lid`, `is_admin`, and `role` when available with `UNOAPI_META_GROUPS_ENABLED=true`
+## Créditos
 
-Example response:
+- Mantenedora: ViperTec Corporation <suporte@vipertec.com.br>
+- Rodrigo Caitano <caitano28@gmail.com>
+- Baseado no projeto original Unoapi Cloud, criado por Clairton Rodrigo.
+- Baileys: https://github.com/WhiskeySockets/Baileys
 
-```json
-{
-  "phone": "5549988290955",
-  "group": {
-    "jid": "120363040468224422@g.us",
-    "subject": "Equipe"
-  },
-  "participants": [
-    { "jid": "5566996269251", "name": "Fulano" },
-    { "jid": "123456789012345@lid", "name": "Ciclano" }
-  ]
-}
-```
+## Aviso legal
 
-### Group message webhook compatibility
+Este projeto não é afiliado, autorizado, mantido ou patrocinado pelo WhatsApp, Meta ou qualquer uma de suas afiliadas. WhatsApp e marcas relacionadas pertencem aos seus respectivos proprietários.
 
-`UNOAPI_META_GROUPS_ENABLED` does not duplicate webhooks. Uno sends one webhook
-per event. The flag controls the newer Meta-like group routes and enriches the
-group contract where possible, while keeping the existing message webhook shape
-compatible with older consumers.
+O uso de automação em WhatsApp pode violar políticas da plataforma e causar bloqueios. Use por sua conta e risco.
 
-With `UNOAPI_META_GROUPS_ENABLED=false`, group message webhooks keep the legacy
-compatible shape. The participant remains in `contacts[0].wa_id` and
-`messages[0].from`; the group is identified by `group_id` when available.
+## Licença
 
-```json
-{
-  "object": "whatsapp_business_account",
-  "entry": [
-    {
-      "id": "5566999999999",
-      "changes": [
-        {
-          "value": {
-            "messaging_product": "whatsapp",
-            "metadata": {
-              "display_phone_number": "5566999999999",
-              "phone_number_id": "5566999999999"
-            },
-            "contacts": [
-              {
-                "wa_id": "556688888888",
-                "group_id": "120363040468224422@g.us",
-                "profile": {
-                  "name": "Maria",
-                  "picture": ""
-                }
-              }
-            ],
-            "messages": [
-              {
-                "from": "556688888888",
-                "id": "MESSAGE_ID",
-                "timestamp": "1710000000",
-                "text": {
-                  "body": "Oi grupo"
-                },
-                "type": "text",
-                "group_id": "120363040468224422@g.us"
-              }
-            ],
-            "statuses": [],
-            "errors": []
-          },
-          "field": "messages"
-        }
-      ]
-    }
-  ]
-}
-```
-
-With `UNOAPI_META_GROUPS_ENABLED=true`, the message webhook remains a single
-payload and preserves the same participant/group split, but may include richer
-group fields from cache/metadata.
-
-```json
-{
-  "object": "whatsapp_business_account",
-  "entry": [
-    {
-      "id": "5566999999999",
-      "changes": [
-        {
-          "value": {
-            "messaging_product": "whatsapp",
-            "metadata": {
-              "display_phone_number": "5566999999999",
-              "phone_number_id": "5566999999999"
-            },
-            "contacts": [
-              {
-                "wa_id": "556688888888",
-                "group_id": "120363040468224422@g.us",
-                "group_subject": "Equipe Comercial",
-                "group_picture": "https://example.com/group.jpg",
-                "profile": {
-                  "name": "Maria",
-                  "picture": "https://example.com/maria.jpg"
-                }
-              }
-            ],
-            "messages": [
-              {
-                "from": "556688888888",
-                "id": "MESSAGE_ID",
-                "timestamp": "1710000000",
-                "text": {
-                  "body": "Oi grupo"
-                },
-                "type": "text",
-                "group_id": "120363040468224422@g.us"
-              }
-            ],
-            "statuses": [],
-            "errors": []
-          },
-          "field": "messages"
-        }
-      ]
-    }
-  ]
-}
-```
-
-Status webhooks for group sends also become more explicit with the flag enabled:
-`recipient_id` may be the group JID and `recipient_type` may be `group`.
-
-To mark message as read
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "status": "read",
-  "message_id": "MESSAGE_ID"
-}'
-```
-
-To react to a message
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "reaction",
-  "reaction": {
-    "message_id": "MESSAGE_ID",
-    "emoji": "👍"
-  }
-}'
-```
-
-To send a sticker (PNG/JPG/GIF are auto-converted to WEBP)
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "sticker",
-  "sticker": {
-    "link": "https://example.com/sticker.png"
-  }
-}'
-```
-
-## Media
-
-To test media
-
-```sh
-curl -i -X GET \
-http://localhost:9876/v15.0/5549988290955/3EB005A626251D50D4E4 \
--H 'Content-Type: application/json'
-```
-
-This return de url and request this url like
-
-```sh
-curl -i -X GET \
-http://locahost:9876/download/v13/5549988290955/5549988290955@s.whatsapp.net/48e6bcd09a9111eda528c117789f8b62.png \
--H 'Content-Type: application/json'
-```
-
-To send media
-
-`https://developers.facebook.com/docs/whatsapp/cloud-api/guides/send-messages#media-messages`
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v15.0/5549988290955/messages \
--H 'Content-Type: application/json' \
--d '{
-  "messaging_product": "whatsapp",
-  "to": "5549988290955",
-  "type": "image",
-  "image": {
-    "link" : "https://github.githubassets.com/favicons/favicon-dark.png"
-  }
-}'
-```
-
-## Webhook Events
-
-Webhook Events like this
-https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples
-
-Message status update on this
-https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples#message-status-updates
-
-To turn possible work with group, we add three fields(group_id, group_subject and group_picture) in
-message beside cloud api format if `IGNORE_GROUP_MESSAGES` is `false`. Unoapi put field` picture` in profile.
-
-```json
-{
-  "object": "whatsapp_business_account",
-  "entry": [{
-      "id": "WHATSAPP_BUSINESS_ACCOUNT_ID",
-      "changes": [{
-          "value": {
-              "messaging_product": "whatsapp",
-              "metadata": {
-                  "display_phone_number": PHONE_NUMBER,
-                  "phone_number_id": PHONE_NUMBER_ID
-              },
-              "contacts": [{
-                  "profile": {
-                    "name": "NAME",
-                    "picture": "url of image" // extra field of whatsapp cloud api oficial
-                  },
-                  "group_id": "123345@g.us", // extra field of whatsapp cloud api oficial
-                  "group_subject": "Awesome Group", // extra field of whatsapp cloud api oficial
-                  "group_picture": "url of image", // extra field of whatsapp cloud api oficial
-                  "wa_id": PHONE_NUMBER
-                }],
-              "messages": [{
-                  "from": PHONE_NUMBER,
-                  "id": "wamid.ID",
-                  "timestamp": TIMESTAMP,
-                  "text": {
-                    "body": "MESSAGE_BODY"
-                  },
-                  "type": "text"
-                }]
-          },
-          "field": "messages"
-        }]
-  }]
-}
-```
-
-## Error Messages
-
-Messages failed with this
-`https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples#status--message-failed`
-
-Custom errors sound append this codes
-`https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes`
-with:
-
-* 1 - unknown erro, verify logs for error details
-* 2 - the receipt number not has whatsapp account
-* 3 - disconnect number, please read qr code
-* 4 - Unknown baileys status
-* 5 - Wait a moment, connecting process 
-* 6 - max qrcode generate 
-* 7 - invalid phone number
-* 8 - message not allowed
-* 9 - connection lost
-* 10 - Invalid token value
-* 11 - Http Head test link not return success
-* 12 - offline session, connecting....
-* 14 - standby session, waiting for time configured
-* 15 - realoaded session, send message do connect again
-
-
-
-## Verify contacts has whatsapp account
-Based on `https://developers.facebook.com/docs/whatsapp/on-premises/reference/contacts`, it works only with standalone mode in `yarn standalone`, for development in `yarn standalone-dev`
-
-```sh
-curl -i -X POST \
-http://localhost:9876/5549988290955/contacts \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{
-  "blocking": "no_wait",
-  "contacts": [
-  	"16315551000"
-  ],
-  "force_check": true
-}'
-```
-
-this return
-
-```json
-{
-  "contacts": [ 
-    {
-      "wa_id": "16315551000",
-      "input": "16315551000",
-      "status": "valid"
-    }
-  ]
-}
-```
-
-## Up for development
-
-Copy .env.example to .env an set your config
-
-A `docker-compose.yml` file is available:
-
-```sh
-docker compose up
-```
-
-Visit `http://localhost:9876/ping` wil be render a "pong!"
-
-## Documentation
-
-- Architecture: see `docs/ARCHITECTURE.md`
-- Development: see `docs/DEVELOPMENT.md`
-- Odoo/official connector compatibility: see `docs/COMPAT_ODOO.md` (PT-BR: `docs/pt-BR/COMPAT_ODOO.md`)
-- WhatsApp Embedded Signup helper: see `docs/WHATSAPP_EMBEDDED.md` (PT-BR: `docs/pt-BR/WHATSAPP_EMBEDDED.md`)
-- Status/Broadcast details: see `docs/STATUS_BROADCAST.md`
-- Environment variables: see `docs/ENVIRONMENT.md` (PT-BR: `docs/pt-BR/AMBIENTE.md`)
-- Changelog: see `CHANGELOG.md` (PT-BR: `docs/pt-BR/CHANGELOG.md`)
-- In the browser: open `http://localhost:9876/docs/`
-  - OpenAPI viewer: `http://localhost:9876/docs/openapi.html` (serves `docs/openapi.yaml`)
-  - OpenAPI JSON: `http://localhost:9876/docs/swagger.json`
-  - Swagger UI: `http://localhost:9876/docs/swagger.html`
-
-## Wiki
-
-- GitHub Wiki (auto-synced from `docs/`): navigate to this repository’s Wiki tab or open `../../wiki` when viewing on GitHub.
-
-
-## Up for production
-
-A `docker-compose.yml` example for production:
-
-```yml
-version: '3'
-
-services:
-  app:
-    image: clairton/unoapi-cloud:latest
-    volumes:
-      - ./data:/home/u/app/data
-    ports:
-      - 9876:9876
-    deploy:
-      restart_policy:
-        condition: on-failure
-```
-
-Run `docker compose up`
-
-Visit `http://localhost:9876/ping` wil be render a "pong!"
-
-## Start options
-
-`yarn start` up a single server and save session and media file in filesystem
-
-`yarn cloud` up a single server and save message in redis and message broker rabbitmq
-
-`yarn web` e `yarn worker` up a web and worker with redis and rabbitmq
-
-`yarn standalone` 
-  - choose redis when set REDI_URL, if not use file system do save data
-  - choose rabbitmq when set AMQP_URL
-  - choose s3 when set STORAGE_ envs, if not use file system
-
-`yarn waker` 
-  - move all messages in dead queues(listener, incoming, outgoing), to process retry
-
-
-## Config Options
-### Config with Environment Variables
-
-Create a `.env`file and put configuration if you need change default value:
-
-This a general env:
-
-```env
-CONSUMER_TIMEOUT_MS=miliseconds in timeout for consume job, default is 15000
-AVAILABLE_LOCALES=default is `["en", "pt_BR", "pt"]`
-DEFAULT_LOCALE=locale for notifications status, now possibile is en, pt_BR and pt, default is en, to add new, use docker volume for exempla `/app/dist/src/locales/custom.json` and add `custom` in `AVAILABLE_LOCALES`
-ONLY_HELLO_TEMPLATE=true sets hello template as the only default template, default false.
-MAX_CONNECT_RETRY=3 max call connect with error in MAX_CONNECT_TIME
-MAX_CONNECT_TIME=3000 interval of max connect, 5 minutes
-CONNECTION_TYPE=connection type use qrcode or pairing_code, default is qrcode
-QR_TIMEOUT_MS=60000 timeout for read qrcode, default is 60000
-WEBHOOK_SESSION=webhook to send events of type OnStatus and OnQrCode
-BASE_URL=current base url to download medias
-PORT=the http port
-BASE_STORE=dir where save sessions, medias and stores. Defaul is ./data
-LOG_LEVEL=log level, default warn
-UNO_LOG_LEVEL=uno log level. default LOG_LEVEL
-UNOAPI_RETRY_REQUEST_DELAY_MS=retry delay in miliseconds when decrypt failed, default is 1_000(a second)
-UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS=to service had time do create contact and conversation before send next messages, default 0
-UNOAPI_DELAY_AFTER_FIRST_MESSAGE_WEBHOOK_MS=to service had time do create contact and conversation in first message after unoapi up, before send next messages, default 0
-UNOAPI_DELAY_BETWEEN_MESSAGES_MS=to not duplicate timestamp message. default 0
-CLEAN_CONFIG_ON_DISCONNECT=true to clean all saved redis configurations on disconnect number, default is false
-CONFIG_SESSION_PHONE_CLIENT=Unoapi Name that will be displayed on smartphone connection
-CONFIG_SESSION_PHONE_NAME=Chrome Browser Name = Chrome | Firefox | Edge | Opera | Safari
-WHATSAPP_VERSION=Version of whatsapp, default to local Baileys version. Format is `[2, 3000, 1019810866]`
-VALIDATE_SESSION_NUMBER=validate the number in session and config is equals, default true
-OPENAI_API_KEY=openai api key to transcribe audio
-UNOAPI_NATIVE_FLOW_BUTTONS=enable native flow buttons (cta_url/cta_call/cta_copy). Default false for compatibility.
-SEND_AUDIO_MESSAGE_AS_PTT=false flag outgoing audio messages as PTT (voice note) without forced conversion
-CONVERT_AUDIO_TO_PTT=false actually convert audio to OGG/Opus via ffmpeg when sending as PTT; defaults to SEND_AUDIO_MESSAGE_AS_PTT when unset
-```
-
-Bucket env to config assets media compatible with S3, this config can't save in redis:
-
-```env
-STORAGE_BUCKET_NAME
-STORAGE_ACCESS_KEY_ID
-STORAGE_SECRET_ACCESS_KEY
-STORAGE_REGION
-STORAGE_ENDPOINT
-STORAGE_FORCE_PATH_STYLE
-STORAGE_TIMEOUT_MS
-```
-
-Config connection to redis to temp save messages and rabbitmq broker, this config can't save in redis too.
-
-```env
-AMQP_URL
-REDIS_URL
-```
-
-This env would be set by session:
-
-```env
-WEBHOOK_URL_ABSOLUTE=the webhook absolute url, not use this if already use WEBHOOK_URL
-WEBHOOK_URL=the webhook url, this config attribute put phone number on the end, no use if use WEBHOOK_URL_ABSOLUTE
-WEBHOOK_TOKEN=the webhook header token
-WEBHOOK_HEADER=the webhook header name
-WEBHOOK_TIMEOUT_MS=webhook request timeout, default 6000 ms
-VOIP_SERVICE_URL=internal VoIP helper service base url, optional, example http://localhost:3097
-VOIP_SERVICE_TOKEN=bearer token used to authenticate against the internal VoIP helper service
-VOIP_SERVICE_TIMEOUT_MS=timeout in milliseconds for requests to the internal VoIP helper service, default 3000
-WEBHOOK_ASYNC=true to send webhooks in background (fire-and-forget), default true
-WEBHOOK_ASYNC_MODE=amqp to enqueue webhooks in RabbitMQ even in cloud mode; requires AMQP_URL, default amqp
-WEBHOOK_CB_ENABLED=true enable webhook circuit breaker to avoid backlog when endpoint is offline, default true
-WEBHOOK_CB_FAILURE_THRESHOLD=number of failures within window to open circuit, default 1
-WEBHOOK_CB_OPEN_MS=how long to keep the circuit open (skip sends), default 120000
-WEBHOOK_CB_FAILURE_TTL_MS=failure counter window in ms, default 300000
-WEBHOOK_CB_REQUEUE_DELAY_MS=delay (ms) used to requeue when circuit is open, default 300000
-WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS=local CB map cleanup interval (ms), default 3600000
-
-Example (circuit breaker):
-```env
-WEBHOOK_CB_ENABLED=true
-WEBHOOK_CB_FAILURE_THRESHOLD=1
-WEBHOOK_CB_FAILURE_TTL_MS=300000
-WEBHOOK_CB_OPEN_MS=120000
-WEBHOOK_CB_REQUEUE_DELAY_MS=300000
-WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS=3600000
-```
-WEBHOOK_INCLUDE_MEDIA_DATA=false to avoid sending binary/base64 media data in webhook payloads; keeps url/filename, default false
-WEBHOOK_SEND_NEW_MESSAGES=true, send new messages to webhook, caution with this, messages will be duplicated, default is false
-WEBHOOK_SEND_GROUP_MESSAGES=true, send group messages to webhook, default is true
-WEBHOOK_SEND_OUTGOING_MESSAGES=true, send outgoing messages to webhook, default is true
-WEBHOOK_SEND_INCOMING_MESSAGES=true, send incoming messages to webhook, default is true
-WEBHOOK_SEND_TRANSCRIBE_AUDIO=false, send trancription audio messages to webhook, needs OPENAI_API_KEY, default is false
-WEBHOOK_SEND_UPDATE_MESSAGES=true, send update messages sent, delivered, read
-IGNORE_GROUP_MESSAGES=false to send group messages received in socket to webhook, default true
-IGNORE_BROADCAST_STATUSES=false to send stories in socket to webhook, default true
-IGNORE_NEWSLETTER_MESSAGES=false to ignore newsletter
-IGNORE_STATUS_MESSAGE=false to send stories in socket to webhook, default true
-READ_ON_RECEIPT=false mark message as read on receipt
-IGNORE_BROADCAST_MESSAGES=false to send broadcast messages in socket to webhook, default false
-IGNORE_HISTORY_MESSAGES=false to import messages when connect, default is true
-BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT=false clears Baileys app-state sync markers before connect, forcing fresh app-state snapshots. Keep false by default; enable only as an emergency self-heal for stale app-state decode errors.
-BAILEYS_ALLOW_FULL_HISTORY_SYNC=false forces Baileys FULL/INITIAL_BOOTSTRAP/ON_DEMAND history sync even when the session already has the Redis history-sync marker. New unmarked sessions can do their first full sync with IGNORE_HISTORY_MESSAGES=false.
-IGNORE_OWN_MESSAGES=false to send own messages in socket to webhook, default true
-IGNORE_YOURSELF_MESSAGES=true to ignore messages for yourself, default is true, possible loop if was false
-COMPOSING_MESSAGE=true enable composing before send message as text length, default false
-REJECT_CALLS=message to send when receive a call, default is empty and not reject
-REJECT_CALLS_WEBHOOK=message to send webook when receive a call, default is empty and not send, is deprecated, use MESSAGE_CALLS_WEBHOOK
-MESSAGE_CALLS_WEBHOOK=message to send webook when receive a call, default is empty and not send
-SEND_CONNECTION_STATUS=true to send all connection status to webhook, false to send only important messages, default is true
-IGNORE_DATA_STORE=ignore save/retrieve data(message, contacts, groups...)
-AUTO_CONNECT=true, auto connect on start service
-AUTO_CONNECT_CONCURRENCY=1, max sessions connecting in parallel during service startup, default 1
-AUTO_RESTART_MS=miliseconds to restart connection, default is 0 and not auto restart
-THROW_WEBHOOK_ERROR=false send webhook error do self whatsapp, default is false, if true throw exception
-NOTIFY_FAILED_MESSAGES=true send message to your self in whatsapp when message failed and enqueued in dead queue
-SEND_REACTION_AS_REPLY=true to send reactions as replay, default false
-SEND_PROFILE_PICTURE=true to send profile picture users and groups, default is true
-PROXY_URL=the socks proxy url, default not use
-WEBHOOK_FORWARD_PHONE_NUMBER_ID=the phone number id of whatsapp cloud api, default is empty
-WEBHOOK_FORWARD_BUSINESS_ACCOUNT_ID=the business account id of whatsapp cloud api, default is empty
-WEBHOOK_FORWARD_TOKEN=the token of whatsapp cloud api, default is empty
-WEBHOOK_FORWARD_VERSION=the version of whatsapp cloud api, default is v17.0
-WEBHOOK_FORWARD_URL=the url of whatsapp cloud api, default is https://graph.facebook.com
-WEBHOOK_FORWARD_TIMEOUT_MS=the timeout for request to whatsapp cloud api, default is 6000
-VALIDATE_MEDIA_LINK_BEFORE_SEND=false validate media link with HEAD before sending media (image, document, video, audio)
-```
-
-VoIP helper service integration:
-
-```env
-VOIP_SERVICE_URL=http://localhost:3097
-VOIP_SERVICE_TOKEN=change-me
-VOIP_SERVICE_TIMEOUT_MS=3000
-```
-
-PT-BR:
-
-- `VOIP_SERVICE_URL`: URL base do serviço auxiliar de VoIP. A UnoAPI envia eventos de chamada para ele.
-- `VOIP_SERVICE_TOKEN`: token Bearer compartilhado entre a UnoAPI e o serviço de VoIP.
-- `VOIP_SERVICE_TIMEOUT_MS`: timeout das requisições internas para o serviço de VoIP.
-
-EN:
-
-- `VOIP_SERVICE_URL`: base URL of the helper VoIP service. UnoAPI sends call events to it.
-- `VOIP_SERVICE_TOKEN`: shared Bearer token between UnoAPI and the VoIP service.
-- `VOIP_SERVICE_TIMEOUT_MS`: timeout for internal requests to the VoIP service.
-
-### Config session with redis
-
-The `.env` can be save one config, but on redis use different webhook by session number, to do this, save the config json with key format `unoapi-config:XXX`, where XXX is your whatsapp number.
-
-```json
-{
-  "authToken": "xpto",
-  "rejectCalls":"Reject Call Text do send do number calling to you",
-  "rejectCallsWebhook":"Message send to webhook when receive a call",
-  "ignoreGroupMessages": true,
-  "ignoreBroadcastStatuses": true,
-  "ignoreBroadcastMessages": false,
-  "ignoreHistoryMessages": true,
-  "ignoreOwnMessages": true,
-  "ignoreYourselfMessages": true,
-  "sendConnectionStatus": true,
-  "composingMessage": false,
-  "sessionWebhook": "",
-  "autoConnect": false,
-  "autoRestartMs": 3600000,
-  "retryRequestDelayMs": 1000,
-  "throwWebhookError": false,
-  "webhooks": [
-    {
-      "url": "http://localhost:3000/whatsapp/webhook",
-      "token": "kslflkhlkwq",
-      "header": "api_access_token",
-      "sendGroupMessages": false,
-      "sendNewMessages": false,
-    }
-  ],
-  "ignoreDataStore": false
-}
-```
-
-PS: After update JSON, restart de docker container or service
-
-
-### Save config with http
-
-To create a session with http send a post with config in body to `http://localhost:9876/v15.0/:phone/register`, change :phone by your phone session number and put content of env UNOAPI_AUTH_TOKEN in Authorization header:
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v17.0/5549988290955/register \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{ 
-  "ignoreOwnMessages": false
-}'
-```
-
-### Delete config and session with http
-
-To remover a session with http send a post to `http://localhost:9876/v15.0/:phone/deregister`, change :phone by your phone session number and put content of env UNOAPI_AUTH_TOKEN in Authorization header:
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v17.0/5549988290955/deregister \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' 
-```
-
-### Get a session config
-
-```sh
-curl -i -X GET \
-http://localhost:9876/sessions/5549988290955 \
--H 'Content-Type: application/json' \
--H 'Authorization: 1'
-```
-
-### List the sessions configs
-
-```sh
-curl -i -X GET \
-http://localhost:9876/sessions \
--H 'Content-Type: application/json' \
--H 'Authorization: 1'
-```
-
-```json
-{
-  "authToken": "xpto",
-  "rejectCalls":"Reject Call Text do send do number calling to you",
-  "rejectCallsWebhook":"Message send to webhook when receive a call",
-  "ignoreGroupMessages": true,
-  "ignoreBroadcastStatuses": true,
-  "ignoreBroadcastMessages": false,
-  "ignoreHistoryMessages": true,
-  "ignoreOwnMessages": true,
-  "ignoreYourselfMessages": true,
-  "sendConnectionStatus": true,
-  "composingMessage": false,
-  "sessionWebhook": "",
-  "autoConnect": false,
-  "autoRestartMs": 3600000,
-  "retryRequestDelayMs": 1000,
-  "throwWebhookError": false,
-  "webhooks": [
-    {
-      "url": "http://localhost:3000/whatsapp/webhook",
-      "token": "kslflkhlkwq",
-      "header": "api_access_token"
-    }
-  ],
-  "ignoreDataStore": false
-}
-```
-
-## Templates
-
-UnoAPI's default definition has 4 templates: hello, unoapi-bulk-report, unoapi-webhook and unoapi-config. UnoAPI can be configured to only present the hello template as default, check the ONLY_HELLO_TEMPLATE variable to obtain this behavior
-
-The templates for each Session (PHONE_NUMBER) can be be customized, saving in `${BASE_STORE}/${PHONE_NUMBER}/templates.json` , or when use redis with key `unoapi-template:${PHONE_NUMBER}`. The json format is:
-
-```json
-[
-  {
-    "id": 1,
-    "name": "hello",
-    "status": "APPROVED",
-    "category": "UTILITY",
-    "components": [
-      {
-        "text": "{{hello}}",
-        "type": "BODY",
-        "parameters": [
-          {
-            "type": "text",
-            "text": "hello",
-          },
-        ],
-      },
-    ],
-  }
-]
-```
-
-### Save templates with http
-
-To edit (by id) or add a template with http send a post with the template in body to `http://localhost:9876/v15.0/:phone/templates`, change :phone by your phone session number and put content of env UNOAPI_AUTH_TOKEN in Authorization header:
-
-```sh
-curl -i -X POST \
-http://localhost:9876/v17.0/5549988290955/templates \
--H 'Content-Type: application/json' \
--H 'Authorization: 1' \
--d '{"id":1,"name":"hello","status":"APPROVED","category":"UTILITY","components":[{"text":"{{hello}}","type":"BODY","parameters":[{"type":"text","text":"hello"}]}]}'
-```
-
-PS: After update JSON, restart de docker container or service
-
-
-## Examples
-
-### [Docker compose with chatwoot](examples/chatwoot/README.md)
-
-### [Docker compose with chatwoot and unoapi inbox](examples/chatwoot-uno/README.md)
-
-### [Docker compose with unoapi](examples/docker-compose.yml)
-
-### [Docker compose with chatwoot and unoapi together](examples/unochat/README.md)
-
-### [Typebot](examples/typebot/README.md)
-
-## Install as Systemctl
-
-Install nodejs 21 as https://nodejs.org/en/download/package-manager and Git
-
-`mkdir /opt/unoapi && cd /opt/unoapi`
-
-`git clone git@github.com:clairton/unoapi-cloud.git .`
-
-`npm install`
-
-`npm build`
-
-`cp .env.example .env && vi .env`
-
-```env
-WEBHOOK_URL=http://chatwoot_addres/webhooks/whatsapp
-WEBHOOK_TOKEN=chatwoot token
-BASE_URL=https://unoapi_address
-BASE_STORE=/opt/unoapi/data
-WEBHOOK_HEADER=api_access_token
-```
-
-And other .env you desire
-
-`chown -R $(whoami) ./data/sessions && chown -R $(whoami) ./data/stores && chown -R $(whoami) ./data/medias`
-
-`vi /etc/systemd/system/unoapi.service` or `systemctl edit --force --full unoapi.service`
-
-And put
-
-```
-[Unit]
-Description=Unoapi
-ConditionPathExists=/opt/unoapi/data
-After=network.target
-  
-[Service]
-ExecStart=/usr/bin/node dist/index.js
-WorkingDirectory=/opt/unoapi
-CPUAccounting=yes
-MemoryAccounting=yes
-Type=simple
-Restart=on-failure
-TimeoutStopSec=5
-RestartSec=5
-
-[Install]  
-WantedBy=multi-user.target
-```
-Run
-
-`systemctl daemon-reload && systemctl enable unoapi.service && systemctl start unoapi.service`
-
-To show logs `journalctl -u unoapi.service -f`
-
-## Postman collection
-
-[![Postman Collection](https://img.shields.io/badge/Postman-Collection-orange)](https://www.postman.com/clairtonrodrigo/workspace/unoapi/collection/2340422-8951a202-9a18-42ea-b6be-42f57b4d768d?tab=variables)
-
-## Caution with whatsapp web connection
-More then 14 days without open app in smartphone, the connection with whatsapp web is invalidated and need to read a new qrcode.
-
-## Future providers
-### Current lib is baileys, to other libraries implement subscribe:
-- incoming and convert whatsapp cloud api format to lib format
-- disconnect to remove conection
-- reload do close socket and reopen
-### to send messages:
-- write in rabbitmq queue outgoing in format
-
-### Edit sent messages
-
-Unoapi supports a Meta-like `message_edit` payload on the regular messages endpoint.
-This is an Unoapi/Baileys extension, not an official Meta Cloud API send payload.
-
-For 1:1 conversations:
-
-```json
-POST /v15.0/{phone}/messages
-{
-  "messaging_product": "whatsapp",
-  "recipient_type": "individual",
-  "to": "5566996269251",
-  "type": "message_edit",
-  "context": {
-    "message_id": "uno-message-id-original"
-  },
-  "text": {
-    "body": "Texto editado"
-  }
-}
-```
-
-For group conversations:
-
-```json
-POST /v15.0/{phone}/messages
-{
-  "messaging_product": "whatsapp",
-  "recipient_type": "group",
-  "to": "120363012345678@g.us",
-  "type": "message_edit",
-  "context": {
-    "message_id": "uno-message-id-original"
-  },
-  "text": {
-    "body": "@5566996269251 texto editado"
-  },
-  "mentions": ["5566996269251"]
-}
-```
-
-`context.message_id` must be the Unoapi id of the original sent message. Unoapi resolves it from Redis/DataStore to the original Baileys provider id/key and sends:
-
-```ts
-await sock.sendMessage(jid, {
-  text: 'Texto editado',
-  edit: originalMessageKey
-})
-```
-
-https://github.com/NaikAayush/whatsapp-cloud-api
-https://github.com/green-api/whatsapp-api-client-golang
-
-## Legal
-
-- This code is in no way affiliated, authorized, maintained, sponsored or
-  endorsed by WA (WhatsApp) or any of its affiliates or subsidiaries.
-- The official WhatsApp website can be found at https://whatsapp.com. "WhatsApp"
-  as well as related names, marks, emblems and images are registered trademarks
-  of their respective owners.
-- This is an independent and unofficial software Use at your own risk.
-- Do not spam people with this.
-
-## Note
-
-I can't guarantee or can be held responsible if you get blocked or banned by
-using this software. WhatsApp does not allow bots using unofficial methods on
-their platform, so this shouldn't be considered totally safe.
-
-Released under the GPLv3 License.
-
-## WhatsApp Group
-
-https://chat.whatsapp.com/FZd0JyPVMLq94FHf59I8HU
-
-## Need More
-
-Mail to sales@unoapi.cloud
-
-## Donate to the project.
-
-#### Become a sponsor: https://github.com/sponsors/clairton
-
-#### Pix: 0e42d192-f4d6-4672-810b-41d69eba336e
-
-## Roadmap
-- Gif message as video: https://github.com/WhiskeySockets/Baileys#gif-message
-- Convert audio message: https://github.com/WhiskeySockets/Baileys#audio-message
-- Disappearing messages: https://github.com/WhiskeySockets/Baileys#disappearing-messages
-- Send Stories: https://github.com/WhiskeySockets/Baileys#broadcast-lists--stories
-- Filter by specific date on sync history: https://github.com/WhiskeySockets/Baileys?tab=readme-ov-file#receive-full-history
-- Add /health endpoint with test connection with redis, s3 and rabbitmq
-
-## Ready
-- Connect with pairing code: https://github.com/WhiskeySockets/Baileys#starting-socket-with-pairing-code
-- Counting connection retry attempts even when restarting to prevent looping messages
-- Message delete endpoint
-- Send reply message with please to send again, when any error and message enqueue in .dead
-
-### Audio PTT Conversion & Waveform
-
-The audio conversion to OGG/Opus for PTT and waveform generation can be configured via envs. Defaults are tuned for WhatsApp voice messages.
-
-Required to enable conversion:
-
-```env
-SEND_AUDIO_MESSAGE_AS_PTT=true
-CONVERT_AUDIO_MESSAGE_TO_OGG=true
-```
-
-Optional parameters:
-
-```env
-# ffmpeg parameters used for conversion (JSON array)
-CONVERT_AUDIO_FFMPEG_PARAMS=["-vn","-ar","48000","-ac","1","-c:a","libopus","-b:a","64k","-application","voip","-avoid_negative_ts","make_zero","-map_metadata","-1","-f","ogg"]
-
-# enable waveform generation and choose sample resolution (number of bars)
-SEND_AUDIO_WAVEFORM=true
-AUDIO_WAVEFORM_SAMPLES=85
-
-# timeouts (ms)
-WEBHOOK_TIMEOUT_MS=6000
-FETCH_TIMEOUT_MS=6000
-```
-
-Notes:
-- When `SEND_AUDIO_MESSAGE_AS_PTT` is true, outgoing audio is flagged as PTT by the transformer.
-- When `CONVERT_AUDIO_MESSAGE_TO_OGG` is true and the message is PTT, the client converts to `audio/ogg; codecs=opus` using the `CONVERT_AUDIO_FFMPEG_PARAMS`.
-- If `SEND_AUDIO_WAVEFORM` is true, a `waveform` array with `AUDIO_WAVEFORM_SAMPLES` points (default 85) is generated and added to the outgoing message content.
-
-### History Sync Window
-
-When history import is enabled, you can limit which historical messages are processed by age (in days). Messages older than the window are ignored, keeping timestamps intact for the ones that pass the filter.
-
-```env
-# enable history import in your runtime config (example)
-IGNORE_HISTORY_MESSAGES=false
-
-# emergency only: forces Baileys to rebuild app-state snapshots on connect
-BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT=false
-
-# force/redo full import even when the session already has the Redis history-sync marker
-BAILEYS_ALLOW_FULL_HISTORY_SYNC=false
-
-# marker created automatically per session when FULL/INITIAL_BOOTSTRAP/ON_DEMAND starts:
-# unoapi-history-sync:<phone>:started
-# on startup, existing configured sessions are marked automatically; removing/logout session deletes this marker
-
-# only import messages newer than the last N days (default 30)
-HISTORY_MAX_AGE_DAYS=30
-```
-
-Notes:
-- The filter compares Baileys `messageTimestamp` (seconds) against the cutoff.
-- Messages lacking a valid timestamp are skipped by the filter.
-
-### Group Sending
-
-Improve deliverability and reduce 421 acks when sending to WhatsApp groups.
-
-```env
-# Warn (soft check) when membership cannot be verified; sending still proceeds
-GROUP_SEND_MEMBERSHIP_CHECK=true
-
-# Prefer addressing mode when sending to groups (optional): 'pn' or 'lid'
-# Leave empty to keep default (LID preferred internally)
-GROUP_SEND_ADDRESSING_MODE=
-
-# Proactively assert E2E sessions for all group participants before sending
-GROUP_SEND_PREASSERT_SESSIONS=true
-
-# Fallback order to toggle addressing on ack 421
-GROUP_SEND_FALLBACK_ORDER=pn,lid
-
-# Large groups: skip heavy pre-assert and use chunked fallbacks/throttles
-GROUP_LARGE_THRESHOLD=800
-GROUP_ASSERT_CHUNK_SIZE=100
-GROUP_ASSERT_FLOOD_WINDOW_MS=5000
-NO_SESSION_RETRY_BASE_DELAY_MS=150
-NO_SESSION_RETRY_PER_200_DELAY_MS=300
-NO_SESSION_RETRY_MAX_DELAY_MS=2000
-RECEIPT_RETRY_ASSERT_COOLDOWN_MS=15000
-RECEIPT_RETRY_ASSERT_MAX_TARGETS=400
-```
-
-Notes:
-- Membership check is non-blocking: it only logs a warning if your session is not found in participants.
-- Default addressing for groups is LID; fallback toggles addressing once following `GROUP_SEND_FALLBACK_ORDER` on 421.
-- Large groups skip heavy pre‑assert; when asserts are needed, they run in chunks and respect a per‑group flood window.
-
-See also: `docs/ENVIRONMENT.md` (PT‑BR: `docs/pt-BR/AMBIENTE.md`).
+Distribuído sob a licença GPL-3.0. Consulte [LICENSE](LICENSE).

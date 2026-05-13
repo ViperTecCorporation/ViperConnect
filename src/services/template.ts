@@ -94,6 +94,41 @@ const nativeButtonFromTemplate = (templateButton: any, runtimeButton: any) => {
   }
 }
 
+const nativeCarouselButtonFromTemplate = (templateButton: any, runtimeButton: any) => {
+  const type = lower(runtimeButton?.sub_type || runtimeButton?.type || templateButton?.type)
+  const parameters = Array.isArray(runtimeButton?.parameters) ? runtimeButton.parameters : []
+  const first = parameters[0] || {}
+  const displayText = templateButton?.text || first?.text || first?.payload || 'Selecionar'
+  if (type.includes('url')) {
+    const url = first?.text || first?.payload || templateButton?.url || ''
+    return {
+      type: 'url',
+      text: displayText,
+      url,
+      merchantUrl: url,
+    }
+  }
+  if (type.includes('phone')) {
+    return {
+      type: 'call',
+      text: displayText,
+      phoneNumber: first?.text || first?.payload || templateButton?.phone_number || templateButton?.phoneNumber || '',
+    }
+  }
+  if (type.includes('copy')) {
+    return {
+      type: 'copy',
+      text: displayText,
+      copyText: first?.coupon_code || first?.text || first?.payload || '',
+    }
+  }
+  return {
+    type: 'reply',
+    text: displayText,
+    id: first?.payload || first?.text || displayText,
+  }
+}
+
 const buildCarousel = (template: any, values: any[]) => {
   const templateComponents: any[] = Array.isArray(template.components) ? template.components : []
   const runtimeCarousel = findComponent(values, 'carousel')
@@ -123,28 +158,24 @@ const buildCarousel = (template: any, values: any[]) => {
     const runtimeButtons = runtimeComponents.filter((component: any) => lower(component?.type) === 'button')
     const nativeButtons = runtimeButtons.map((button: any, index: number) => {
       const buttonIndex = parseInt(`${button?.index ?? index}`, 10)
-      return nativeButtonFromTemplate(templateButtons[Number.isFinite(buttonIndex) ? buttonIndex : index], button)
+      return nativeCarouselButtonFromTemplate(templateButtons[Number.isFinite(buttonIndex) ? buttonIndex : index], button)
     })
     const header = headerFromRuntime(runtimeHeader)
     return {
-      ...(header ? { header } : {}),
-      body: {
-        text: templateBody
-          ? renderText(templateBody.text || '', runtimeBody?.parameters || [])
-          : renderText(runtimeBody?.text || '', runtimeBody?.parameters || []),
-      },
-      nativeFlowMessage: {
-        buttons: nativeButtons,
-      },
+      ...(header?.imageMessage?.url ? { image: { url: header.imageMessage.url } } : {}),
+      ...(header?.videoMessage?.url ? { video: { url: header.videoMessage.url } } : {}),
+      title: '',
+      body: templateBody
+        ? renderText(templateBody.text || '', runtimeBody?.parameters || [])
+        : renderText(runtimeBody?.text || '', runtimeBody?.parameters || []),
+      buttons: nativeButtons,
     }
   })
 
   return {
-    interactiveMessage: {
-      body: { text: bodyText },
-      carouselMessage: {
-        cards,
-      },
+    nativeCarousel: {
+      text: bodyText,
+      cards,
     },
   }
 }

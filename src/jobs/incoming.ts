@@ -76,11 +76,13 @@ export class IncomingJob {
       ...(groupId ? { group_id: groupId } : {}),
       profile: {
         name: `${payload?.contact?.name || payload?.profile?.name || contactWaId || ''}`,
-        picture: `${payload?.contact?.picture || payload?.profile?.picture || ''}`,
       },
     }
+    const profilePicture = `${payload?.contact?.picture || payload?.profile?.picture || ''}`.trim()
+    if (profilePicture) contact.profile.picture = profilePicture
     if (payload?.group_subject) contact.group_subject = `${payload.group_subject}`
-    if (payload?.group_picture) contact.group_picture = `${payload.group_picture}`
+    const groupPicture = `${payload?.group_picture || ''}`.trim()
+    if (groupPicture) contact.group_picture = groupPicture
     if (userId) contact.user_id = userId
     const username = `${payload?.username || payload?.contact?.username || payload?.profile?.username || ''}`.trim()
     if (username) contact.profile.username = username
@@ -215,7 +217,6 @@ export class IncomingJob {
                             wa_id: waId,
                             profile: {
                               name: '',
-                              picture: '',
                             },
                           },
                         ],
@@ -298,7 +299,6 @@ export class IncomingJob {
                       wa_id: waId,
                       profile: {
                         name: '',
-                        picture: '',
                       },
                     },
                   ],

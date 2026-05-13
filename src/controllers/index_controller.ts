@@ -97,8 +97,7 @@ class IndexController {
   }
 
   public favicon(_req: Request, res: Response) {
-    // respond with no content to avoid 404 noise if favicon is not present
-    return res.sendStatus(204)
+    return res.type('image/png').sendFile(path.resolve('./logos/favicon-32x32.png'))
   }
 
   public ping(req: Request, res: Response) {

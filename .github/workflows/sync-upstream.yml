@@ -52,7 +52,9 @@ jobs:
       - name: Install Yarn (classic) and dependencies
         run: |
           npm i -g yarn@1.22.22
-          yarn install
+          yarn check:baileys-lock
+          yarn install --frozen-lockfile
+          yarn check:baileys-lock
 
       - name: Build
         run: yarn build

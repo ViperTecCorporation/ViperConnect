@@ -21,6 +21,7 @@ export class MediaController {
     logger.debug('media index (no phone) params %s', JSON.stringify(req.params))
     const mediaId = `${req.params.media_id || ''}`.trim()
     if (!mediaId) return next()
+    if (/^\d{10,15}$/.test(mediaId)) return next()
     try {
       const phones = await this.sessionStore.getPhones()
       for (const phone of phones) {
@@ -79,16 +80,14 @@ export class MediaController {
         logger.debug('media typebot not found %s', mediaId)
         return res.sendStatus(404)
       }
-      const mimeType = mediaPayload?.mime_type || mediaPayload?.content_type
-      let url: string | undefined = mediaPayload?.url
-      if (!url) {
-        try {
-          const fallback: any = await mediaStore.getMedia(this.baseUrl, mediaId)
-          url = fallback?.url
-        } catch (e) {
-          logger.warn(e as any, 'media typebot failed to compute fallback url %s', mediaId)
-        }
+      let mediaResult: any
+      try {
+        mediaResult = await mediaStore.getMedia(this.baseUrl, mediaId)
+      } catch (e) {
+        logger.warn(e as any, 'media typebot failed to compute download url %s', mediaId)
       }
+      const mimeType = mediaResult?.mime_type || mediaPayload?.mime_type || mediaPayload?.content_type
+      const url: string | undefined = mediaResult?.url || mediaPayload?.url
       if (!url) {
         logger.debug('media typebot missing url %s', mediaId)
         return res.sendStatus(404)

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { getConfig } from '../services/config'
+import { Webhook, getConfig } from '../services/config'
 import { setConfig } from '../services/redis'
 import logger from '../services/logger'
 import { Logout } from '../services/logout'
@@ -70,5 +70,51 @@ export class RegistrationController {
     const phone = await resolveSessionPhoneByMetaId(req.params.phone)
     await this.logout.run(phone)
     return res.status(204).send()
+  }
+
+  public async updateWebhook(req: Request, res: Response) {
+    logger.debug('updateWebhook method %s', req.method)
+    logger.debug('updateWebhook params %s', JSON.stringify(req.params))
+    logger.debug('updateWebhook body %s', JSON.stringify(req.body))
+    const phone = await resolveSessionPhoneByMetaId(req.params.phone)
+    const webhookId = `${req.params.webhook_id || ''}`.trim()
+    const enabled = this.resolveWebhookEnabled(req.body)
+
+    if (!webhookId) {
+      return res.status(400).json({ status: 'error', message: 'webhook_id is required' })
+    }
+    if (enabled === undefined) {
+      return res.status(400).json({ status: 'error', message: 'enabled or disabled boolean is required' })
+    }
+
+    const config = await this.getConfig(phone)
+    const webhooks = (config.webhooks || []) as Webhook[]
+    const index = webhooks.findIndex((webhook) => webhook.id === webhookId)
+
+    if (index < 0) {
+      return res.status(404).json({ status: 'error', message: `webhook ${webhookId} not found` })
+    }
+
+    const updatedWebhooks = webhooks.map((webhook, currentIndex) => {
+      if (currentIndex !== index) return webhook
+      const rest = { ...(webhook as any) }
+      delete rest.disabled
+      return { ...rest, enabled }
+    })
+
+    await setConfig(phone, { webhooks: updatedWebhooks, overrideWebhooks: true })
+    const updatedConfig = await this.getConfig(phone)
+    return res.status(200).json({
+      status: 'ok',
+      phone,
+      webhook: updatedConfig.webhooks.find((webhook) => webhook.id === webhookId),
+      webhooks: updatedConfig.webhooks,
+    })
+  }
+
+  private resolveWebhookEnabled(body: any): boolean | undefined {
+    if (typeof body?.enabled === 'boolean') return body.enabled
+    if (typeof body?.disabled === 'boolean') return !body.disabled
+    return undefined
   }
 }

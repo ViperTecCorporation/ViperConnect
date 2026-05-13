@@ -1,6 +1,6 @@
 import { Outgoing } from './outgoing'
 import fetch, { Response, RequestInit } from 'node-fetch'
-import { Webhook, getConfig } from './config'
+import { Webhook, getConfig, isWebhookEnabled } from './config'
 import logger from './logger'
 import { completeCloudApiWebHook, isGroupMessage, isOutgoingMessage, isNewsletterMessage, isUpdateMessage, extractDestinyPhone, normalizeWebhookValueIds, jidToPhoneNumber, jidToRawPhoneNumber, formatJid, isValidPhoneNumber } from './transformer'
 import { WEBHOOK_ASYNC, WEBHOOK_PREFER_PN_OVER_LID, WEBHOOK_CB_ENABLED, WEBHOOK_CB_FAILURE_THRESHOLD, WEBHOOK_CB_OPEN_MS, WEBHOOK_CB_FAILURE_TTL_MS, WEBHOOK_CB_REQUEUE_DELAY_MS, WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS } from '../defaults'
@@ -82,13 +82,18 @@ const normalizePayloadForTypebot = (payload: any, phone: string) => {
   try {
     const data = JSON.parse(JSON.stringify(payload))
     const value = data?.entry?.[0]?.changes?.[0]?.value
+    if (value?.metadata) {
+      const phoneWithPlus = phone.startsWith('+') ? phone : `+${phone}`
+      value.metadata.display_phone_number = phoneWithPlus
+      value.metadata.phone_number_id = phoneWithPlus
+    }
     if (value?.messages && Array.isArray(value.messages)) {
       const allowedTypes = new Set(['text', 'image', 'video', 'audio', 'document', 'sticker', 'ptv'])
       value.messages = value.messages.map((m: any) => {
         const mm = { ...m }
-        // Descartar tipos nÇœo suportados pelo schema Typebot (ex.: call)
-        if (mm.type && !allowedTypes.has(mm.type)) {
-          logger.debug('TYPEBOT normalize: dropping unsupported message type %s', mm.type)
+        // Descartar mensagens sem tipo ou tipos nao suportados pelo schema Typebot (ex.: call).
+        if (!mm.type || !allowedTypes.has(mm.type)) {
+          logger.debug('TYPEBOT normalize: dropping unsupported message type %s', mm.type || '<none>')
           return null
         }
         const mediaTypes = ['image', 'video', 'audio', 'document', 'sticker', 'ptv']
@@ -120,6 +125,10 @@ const normalizePayloadForTypebot = (payload: any, phone: string) => {
         } catch {}
         return mm
       }).filter(Boolean)
+      if (value.messages.length === 0) {
+        logger.debug('TYPEBOT normalize: dropping payload without supported messages')
+        return undefined
+      }
     }
     if (value?.contacts && Array.isArray(value.contacts)) {
       value.contacts = value.contacts.map((c: any) => {
@@ -210,6 +219,10 @@ export class OutgoingCloudApi implements Outgoing {
   }
 
   public async sendHttp(phone: string, webhook: Webhook, message: any, _options: Partial<PublishOption> = {}) {
+    if (!isWebhookEnabled(webhook)) {
+      logger.info(`Session phone %s webhook %s configured as disabled`, phone, webhook?.id || '<none>')
+      return
+    }
     const cbEnabled = !!WEBHOOK_CB_ENABLED && WEBHOOK_CB_FAILURE_THRESHOLD > 0 && WEBHOOK_CB_OPEN_MS > 0
     const cbId = (webhook && (webhook.id || webhook.url || webhook.urlAbsolute)) ? `${webhook.id || webhook.url || webhook.urlAbsolute}` : 'default'
     const cbKey = `${phone}:${cbId}`
@@ -450,6 +463,7 @@ export class OutgoingCloudApi implements Outgoing {
     // Aplicar schema Typebot (Cloud API estrito) se habilitado no webhook
     if (webhook.typebot) {
       message = normalizePayloadForTypebot(message, phone)
+      if (!message) return
     }
     const body = JSON.stringify(message)
     const headers = {

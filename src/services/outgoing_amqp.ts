@@ -1,4 +1,4 @@
-import { Webhook, getConfig } from './config'
+import { Webhook, getConfig, isWebhookEnabled } from './config'
 import { Outgoing } from './outgoing'
 import { PublishOption, amqpPublish } from '../amqp'
 import { UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_OUTGOING } from '../defaults'
@@ -18,15 +18,17 @@ export class OutgoingAmqp implements Outgoing {
 
   public async send(phone: string, payload: object) {
     const config = await this.getConfig(phone)
+    const webhooks = config.webhooks.filter(isWebhookEnabled)
     await amqpPublish(
       UNOAPI_EXCHANGE_BROKER_NAME,
       UNOAPI_QUEUE_OUTGOING, phone,
-      { webhooks: config.webhooks, payload, split: true },
+      { webhooks, payload, split: true },
       { type: 'topic' }
     )
   }
 
   public async sendHttp(phone: string, webhook: Webhook, payload: object, options: Partial<PublishOption> = {}) {
+    if (!isWebhookEnabled(webhook)) return
     options.type = 'topic'
     await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_OUTGOING, phone, { webhook, payload, split: false }, options)
   }

@@ -97,4 +97,38 @@ describe('media routes', () => {
     expect(response.headers['content-disposition']).toEqual(`attachment; filename="${name.split('/')[1]}"`)
     expect(response.headers['content-type']).toContain(mimetype)
   })
+
+  test('typebot media endpoint returns uno download url instead of stored signed url', async () => {
+    const typebotMessageId = 'abc123XYZ'
+    const rawMediaId = `${phone}-${typebotMessageId}`
+    const mediaData = {
+      messaging_product: 'whatsapp',
+      url: `${url}/v15.0/download/${phone}/${typebotMessageId}.${extension}`,
+      mime_type: mimetype,
+      id: `${phone}/${typebotMessageId}`,
+    }
+    dataStore.loadMediaPayload.mockResolvedValue({
+      messaging_product: 'whatsapp',
+      url: 'https://bucket.r2.cloudflarestorage.com/unoapi/file.txt?X-Amz-Signature=abc',
+      mime_type: mimetype,
+      id: `${phone}/${typebotMessageId}`,
+    })
+    mediaStore.getMedia.mockResolvedValue(mediaData)
+
+    const response = await request(app.server).get(`/v15.0/${rawMediaId}`).expect(200)
+
+    expect(response.body.url).toBe(mediaData.url)
+    expect(response.body.url).not.toContain('cloudflarestorage.com')
+    expect(response.body.id).toBe(rawMediaId)
+  })
+
+  test('does not scan media stores when path is a phone number', async () => {
+    mediaStore.getMedia.mockClear()
+    dataStore.loadTemplates.mockResolvedValue([])
+    sessionStore.getStatus.mockResolvedValue('online')
+
+    await request(app.server).get(`/v15.0/${phone}`)
+
+    expect(mediaStore.getMedia).not.toHaveBeenCalled()
+  })
 })

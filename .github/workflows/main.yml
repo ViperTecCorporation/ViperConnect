@@ -27,7 +27,9 @@ jobs:
         with:
           node-version: 24
           cache: yarn
-      - run: yarn install
+      - run: yarn check:baileys-lock
+      - run: yarn install --frozen-lockfile
+      - run: yarn check:baileys-lock
       - run: yarn lint
       - run: yarn format
       - run: yarn test

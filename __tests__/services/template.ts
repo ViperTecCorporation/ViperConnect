@@ -114,6 +114,27 @@ describe('template', () => {
                 },
               ],
             },
+            {
+              components: [
+                {
+                  type: 'HEADER',
+                  format: 'IMAGE',
+                },
+                {
+                  type: 'BODY',
+                  text: 'Produto {{1}}',
+                },
+                {
+                  type: 'BUTTONS',
+                  buttons: [
+                    {
+                      type: 'QUICK_REPLY',
+                      text: 'Escolher',
+                    },
+                  ],
+                },
+              ],
+            },
           ],
         },
       ],
@@ -157,33 +178,69 @@ describe('template', () => {
               },
             ],
           },
+          {
+            card_index: 1,
+            components: [
+              {
+                type: 'header',
+                parameters: [
+                  {
+                    type: 'image',
+                    image: { link: 'https://example.com/produto-2.jpg' },
+                  },
+                ],
+              },
+              {
+                type: 'body',
+                parameters: [{ type: 'text', text: '2' }],
+              },
+              {
+                type: 'button',
+                sub_type: 'quick_reply',
+                index: '0',
+                parameters: [{ type: 'payload', payload: 'produto_2' }],
+              },
+            ],
+          },
         ],
       },
     ]
 
     expect(await service.bind(phone, templateName, parameters)).toEqual({
-      interactiveMessage: {
-        body: { text: 'Confira nossas ofertas, Rodrigo' },
-        carouselMessage: {
-          cards: [
-            {
-              header: { imageMessage: { url: 'https://example.com/produto.jpg' } },
-              body: { text: 'Produto 1' },
-              nativeFlowMessage: {
-                buttons: [
-                  {
-                    name: 'quick_reply',
-                    buttonParamsJson: '{"display_text":"Escolher","id":"produto_1"}',
-                  },
-                  {
-                    name: 'cta_url',
-                    buttonParamsJson: '{"display_text":"Abrir","url":"https://example.com/produto-1","merchant_url":"https://example.com/produto-1"}',
-                  },
-                ],
+      nativeCarousel: {
+        text: 'Confira nossas ofertas, Rodrigo',
+        cards: [
+          {
+            image: { url: 'https://example.com/produto.jpg' },
+            title: '',
+            body: 'Produto 1',
+            buttons: [
+              {
+                type: 'reply',
+                text: 'Escolher',
+                id: 'produto_1',
               },
-            },
-          ],
-        },
+              {
+                type: 'url',
+                text: 'Abrir',
+                url: 'https://example.com/produto-1',
+                merchantUrl: 'https://example.com/produto-1',
+              },
+            ],
+          },
+          {
+            image: { url: 'https://example.com/produto-2.jpg' },
+            title: '',
+            body: 'Produto 2',
+            buttons: [
+              {
+                type: 'reply',
+                text: 'Escolher',
+                id: 'produto_2',
+              },
+            ],
+          },
+        ],
       },
     })
   })

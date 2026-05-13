@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unoapi Cloud — Manager</title>
+    <title>ViperConnect — Manager</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/logos/apple-icon-180x180.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/logos/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/logos/favicon-16x16.png">
+    <meta name="theme-color" content="#6F3935">
     <script src="/embedded/config.js"></script>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -302,7 +306,7 @@
       var I18N = {
         'en': {
           langLabel: 'Language:',
-          headerTitle: 'Unoapi Cloud — Manager',
+          headerTitle: 'ViperConnect — Manager',
           headerSub: 'Manage sessions and quick tests',
           docsLink: 'Docs',
           themeButton: 'Toggle Theme',
@@ -328,7 +332,7 @@
           markOnlineOnConnect: 'Mark online on connect',
           sendProfilePicture: 'Send Profile Picture', ignoreStatuses: 'Ignore Status', sendConnStatus: 'Send Connection Status',
           notifyFailures: 'Notify Failures', sendTyping: 'Send "Typing"', sendReactionAsReply: 'Send Reaction As Reply', ignoreOwnMessages: 'Ignore Own Messages', ignoreYourselfMessages: 'Ignore Yourself Messages', autoConnect: 'Auto Connect', ignoreBroadcastMessages: 'Ignore Broadcast Lists',
-          whId: 'ID', whIdPh: 'Webhook ID', whUrlAbs: 'Absolute URL', whUrlAbsPh: 'Webhook Absolute URL', whToken: 'Token', whTokenPh: 'Webhook Token', whHeader: 'Header', whHeaderPh: 'Webhook Header',
+          whId: 'ID', whIdPh: 'Webhook ID', whUrlAbs: 'Absolute URL', whUrlAbsPh: 'Webhook Absolute URL', whToken: 'Token', whTokenPh: 'Webhook Token', whHeader: 'Header', whHeaderPh: 'Webhook Header', whEnabled: 'Webhook enabled',
           whSendNew: 'Send New Messages', whSendGroup: 'Send Group Messages', whSendNewsletter: 'Send Newsletter Messages', whSendOutgoing: 'Send Outgoing Messages', whSendIncoming: 'Send Incoming Messages', whSendUpdate: 'Send Message Updates', whSendTranscribe: 'Send Audio Transcription', whAddBlacklist: 'Add to blacklist when there is an outgoing message for X seconds', whTypebot: 'Typebot payload (Cloud API strict)', remove: 'Remove',
           btnEdit: 'Edit', btnConnect: 'Connect', btnDelete: 'Delete', btnTest: 'Test',
           confirmDelete: 'Are you sure you want to delete this session?',
@@ -366,7 +370,7 @@
         },
         'pt-BR': {
           langLabel: 'Idioma:',
-          headerTitle: 'Unoapi Cloud — Manager',
+          headerTitle: 'ViperConnect — Manager',
           headerSub: 'Gerencie sessões e testes rápidos',
           docsLink: 'Documentação',
           themeButton: 'Alternar tema',
@@ -392,7 +396,7 @@
           markOnlineOnConnect: 'Marcar online ao conectar',
           sendProfilePicture: 'Enviar Foto de Perfil', ignoreStatuses: 'Ignorar Status', sendConnStatus: 'Enviar Status da Conexão',
           notifyFailures: 'Notificar Falhas', sendTyping: 'Enviar "Digitando"', sendReactionAsReply: 'Enviar Reação Como Resposta', ignoreOwnMessages: 'Ignorar Mensagens Próprias', ignoreYourselfMessages: 'Ignorar Suas Mensagens', autoConnect: 'Conexão Automática', ignoreBroadcastMessages: 'Ignorar Listas de Transmissão',
-          whId: 'ID', whIdPh: 'ID do Webhook', whUrlAbs: 'URL Absoluta', whUrlAbsPh: 'URL Absoluta do Webhook', whToken: 'Token', whTokenPh: 'Token do Webhook', whHeader: 'Header', whHeaderPh: 'Header do Webhook',
+          whId: 'ID', whIdPh: 'ID do Webhook', whUrlAbs: 'URL Absoluta', whUrlAbsPh: 'URL Absoluta do Webhook', whToken: 'Token', whTokenPh: 'Token do Webhook', whHeader: 'Header', whHeaderPh: 'Header do Webhook', whEnabled: 'Webhook ativo',
           whSendNew: 'Enviar Novas Mensagens', whSendGroup: 'Enviar Mensagens de Grupos', whSendNewsletter: 'Enviar Mensagens de Newsletter', whSendOutgoing: 'Enviar Mensagens de Saída', whSendIncoming: 'Enviar Mensagens de Entrada', whSendUpdate: 'Enviar Atualização de Mensagens', whSendTranscribe: 'Enviar Transcrição de Áudio', whAddBlacklist: 'Adicionar ao blacklist quando houver mensagem de saída por X segundos', whTypebot: 'Payload Typebot (schema Cloud API)', remove: 'Remover',
           btnEdit: 'Editar', btnConnect: 'Conectar', btnDelete: 'Deletar', btnTest: 'Testar',
           confirmDelete: 'Tem certeza que deseja deletar essa sessão?',
@@ -576,9 +580,9 @@
     <!-- Header (unified with docs) -->
     <header>
       <div style="display:flex;align-items:center;gap:12px;">
-        <img src="/logos/unoapi_logo.png" alt="Unoapi" style="height:44px;width:auto;"/>
+        <img src="/logos/viperconnect_icon.svg" alt="ViperConnect" style="height:44px;width:auto;"/>
         <div>
-          <h1 style="margin:0;font-size:20px;" data-i18n="headerTitle">Unoapi Cloud — Manager</h1>
+          <h1 style="margin:0;font-size:20px;" data-i18n="headerTitle">ViperConnect — Manager</h1>
           <p class="muted" style="margin:0;" data-i18n="headerSub">Manage sessions and quick tests</p>
         </div>
       </div>
@@ -606,7 +610,7 @@
             </li>
           </ul>
         </div>
-        <a class="btn" href="https://github.com/clairton/unoapi-cloud" target="_blank" rel="noopener" title="GitHub">
+        <a class="btn" href="https://github.com/ViperTecCorporation/ViperConnect" target="_blank" rel="noopener" title="GitHub">
           <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>
         </a>
       </div>
@@ -914,6 +918,11 @@
                                 <input type="text" class="form-control mb-2 webhook-token" placeholder="Webhook Token">
                                 <label for="webhookHeader" class="form-label">Header</label>
                                 <input type="text" class="form-control mb-2 webhook-header" placeholder="Webhook Header">
+                                <label for="webhookEnabled" class="form-label" data-i18n="whEnabled">Webhook ativo</label>
+                                <label class="switch">
+                                    <input type="checkbox" class="webhook-enabled" checked>
+                                    <span class="slider round"></span>
+                                </label>
                                 <label for="sendNewMessages" class="form-label">Enviar Novas Mensagens</label>
                                 <label class="switch">
                                     <input type="checkbox" class="webhook-sendNewMessages">
@@ -1196,6 +1205,11 @@
                         <input type="text" class="form-control mb-2 webhook-token" placeholder="Webhook Token" data-i18n-placeholder="whTokenPh">
                         <label for="webhookHeader" class="form-label" data-i18n="whHeader">Header</label>
                         <input type="text" class="form-control mb-2 webhook-header" placeholder="Webhook Header" data-i18n-placeholder="whHeaderPh">
+                        <label for="webhookEnabled" class="form-label" data-i18n="whEnabled">Webhook enabled</label>
+                        <label class="switch">
+                            <input type="checkbox" class="webhook-enabled" checked>
+                            <span class="slider round"></span>
+                        </label>
                         <label for="sendNewMessages" class="form-label" data-i18n="whSendNew">Send New Messages</label>
                         <label class="switch">
                             <input type="checkbox" class="webhook-sendNewMessages">
@@ -1532,6 +1546,11 @@
                                 <input type=\"text\" class=\"form-control mb-2 webhook-token\" value=\"${htmlAttr(webhook.token)}\" placeholder=\"Webhook Token\" data-i18n-placeholder=\"whTokenPh\">
                                 <label for=\"webhookHeader\" class=\"form-label\" data-i18n=\"whHeader\">Header</label>
                                 <input type=\"text\" class=\"form-control mb-2 webhook-header\" value=\"${htmlAttr(webhook.header)}\" placeholder=\"Webhook Header\" data-i18n-placeholder=\"whHeaderPh\">
+                                <label for=\"webhookEnabled\" class=\"form-label\" data-i18n=\"whEnabled\">Webhook enabled</label>
+                                <label class=\"switch\">
+                                    <input type=\"checkbox\" class=\"webhook-enabled\" ${(webhook.enabled === false || webhook.disabled === true) ? '' : 'checked'}>
+                                    <span class=\"slider round\"></span>
+                                </label>
                                 <label for=\"sendNewMessages\" class=\"form-label\" data-i18n=\"whSendNew\">Send New Messages</label>
                                 <label class="switch">
                                     <input type="checkbox" class="webhook-sendNewMessages" ${webhook.sendNewMessages ? 'checked' : ''}>
@@ -1639,6 +1658,7 @@
                         const webhook = {
                             id: $(this).find('.webhook-id').val(),
                             urlAbsolute: $(this).find('.webhook-url').val(),
+                            enabled: $(this).find('.webhook-enabled').is(':checked'),
                             token: $(this).find('.webhook-token').val(),
                             header: $(this).find('.webhook-header').val(),
                             sendNewMessages: $(this).find('.webhook-sendNewMessages').is(':checked'),
