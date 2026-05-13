@@ -56,6 +56,17 @@ docs/examples/docker-compose.unoapi-traefik.yml
 
 Ele usa a network externa `traefik-public` e labels Traefik para publicar o serviço em HTTPS.
 
+### Typebot
+
+Exemplos para publicar Typebot integrado ao ViperConnect:
+
+```text
+docs/examples/docker-compose.typebot-nginx.yml
+docs/examples/docker-compose.typebot-traefik.yml
+```
+
+Guia de configuração: [examples/typebot/README.md](examples/typebot/README.md).
+
 ### Manager
 
 Depois de subir o container, acesse:
