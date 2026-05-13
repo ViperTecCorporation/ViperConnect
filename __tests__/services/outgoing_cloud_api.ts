@@ -277,4 +277,46 @@ describe('service outgoing whatsapp cloud api', () => {
     expect(value.metadata.display_phone_number).toBe(`+${phone}`)
     expect(value.contacts[0].profile.picture).toBeUndefined()
   })
+
+  test('does not send unsupported typebot payload without message type', async () => {
+    mockFetch.mockReset()
+    const typebotWebhook = {
+      id: 'typebot',
+      urlAbsolute: 'https://bot.local/api/v1/workspaces/ws/whatsapp/cred/webhook',
+      sendIncomingMessages: true,
+      sendOutgoingMessages: true,
+      sendGroupMessages: true,
+      sendUpdateMessages: true,
+      sendNewsletterMessages: true,
+      typebot: true,
+    } as Webhook
+    const payload: any = {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: phone, phone_number_id: phone },
+                contacts: [{ profile: { name: '' }, wa_id: phone }],
+                messages: [
+                  {
+                    from: phone,
+                    id: 'MSG1',
+                    timestamp: '123',
+                  },
+                ],
+              },
+              field: 'messages',
+            },
+          ],
+        },
+      ],
+    }
+
+    await service.sendHttp(phone!, typebotWebhook, payload, {})
+
+    expect(mockFetch).toHaveBeenCalledTimes(0)
+  })
 })
