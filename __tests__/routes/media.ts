@@ -121,4 +121,14 @@ describe('media routes', () => {
     expect(response.body.url).not.toContain('cloudflarestorage.com')
     expect(response.body.id).toBe(rawMediaId)
   })
+
+  test('does not scan media stores when path is a phone number', async () => {
+    mediaStore.getMedia.mockClear()
+    dataStore.loadTemplates.mockResolvedValue([])
+    sessionStore.getStatus.mockResolvedValue('online')
+
+    await request(app.server).get(`/v15.0/${phone}`)
+
+    expect(mediaStore.getMedia).not.toHaveBeenCalled()
+  })
 })

@@ -21,6 +21,7 @@ export class MediaController {
     logger.debug('media index (no phone) params %s', JSON.stringify(req.params))
     const mediaId = `${req.params.media_id || ''}`.trim()
     if (!mediaId) return next()
+    if (/^\d{10,15}$/.test(mediaId)) return next()
     try {
       const phones = await this.sessionStore.getPhones()
       for (const phone of phones) {
