@@ -310,7 +310,14 @@ const managementWebhook = (phone: string, field: string, value: any) => ({
       changes: [
         {
           field,
-          value,
+          value: {
+            messaging_product: 'whatsapp',
+            metadata: {
+              display_phone_number: phone,
+              phone_number_id: phone,
+            },
+            ...value,
+          },
         },
       ],
     },

@@ -562,13 +562,18 @@ describe('groups routes', () => {
     }))
     expect(outgoing.send).toHaveBeenCalledWith(phone, expect.objectContaining({
       entry: [expect.objectContaining({
-        changes: [expect.objectContaining({
-          field: 'group_settings_update',
-          value: expect.objectContaining({
-            group_id: groupJid,
-            changes: expect.objectContaining({ subject: 'Novo nome do grupo' }),
-          }),
-        })],
+          changes: [expect.objectContaining({
+            field: 'group_settings_update',
+            value: expect.objectContaining({
+              messaging_product: 'whatsapp',
+              metadata: {
+                display_phone_number: phone,
+                phone_number_id: phone,
+              },
+              group_id: groupJid,
+              changes: expect.objectContaining({ subject: 'Novo nome do grupo' }),
+            }),
+          })],
       })],
     }))
   })
