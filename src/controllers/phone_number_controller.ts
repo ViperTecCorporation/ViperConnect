@@ -205,7 +205,7 @@ export class PhoneNumberController {
           is_valid: isValid,
           app_id: appId,
           application: 'unoapi',
-          expires_at: isValid ? Math.floor(Date.now() / 1000) + 86400 : 0,
+          expires_at: 0,
           scopes: isValid ? ['whatsapp_business_management', 'whatsapp_business_messaging'] : [],
           granular_scopes: isValid ? [
             {

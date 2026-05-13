@@ -93,6 +93,7 @@ describe('phone number meta-like routes', () => {
 
     expect(res.status).toEqual(200)
     expect(res.body.data.is_valid).toBe(true)
+    expect(res.body.data.expires_at).toBe(0)
     expect(res.body.data.scopes).toEqual(['whatsapp_business_management', 'whatsapp_business_messaging'])
   })
 
