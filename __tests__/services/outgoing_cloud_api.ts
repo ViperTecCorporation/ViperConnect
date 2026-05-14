@@ -328,4 +328,105 @@ describe('service outgoing whatsapp cloud api', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(0)
   })
+
+  test('sendHttp does not leak LID into Cloud API phone fields', async () => {
+    process.env.WEBHOOK_PREFER_PN_OVER_LID = 'true'
+    jest.resetModules()
+    ;({ OutgoingCloudApi: OutgoingCloudApiClass } = require('../../src/services/outgoing_cloud_api'))
+    mockFetch = require('node-fetch') as jest.MockedFunction<typeof fetchType>
+    service = new OutgoingCloudApiClass(getConfig, isInBlacklistMock, addToBlacklistMock)
+    mockFetch.mockReset()
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
+
+    const lidWithDevice = '190280070385782:35@lid'
+    const lid = '190280070385782@lid'
+    const safeWebhook = {
+      id: 'webhook',
+      urlAbsolute: 'https://example.com/webhook',
+      sendIncomingMessages: true,
+      sendOutgoingMessages: true,
+      sendGroupMessages: true,
+      sendUpdateMessages: true,
+      sendNewsletterMessages: true,
+    } as Webhook
+    const payload: any = {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: phone, phone_number_id: phone },
+                contacts: [{ profile: { name: 'Contato' }, wa_id: lidWithDevice, user_id: lidWithDevice }],
+                messages: [
+                  {
+                    from: lidWithDevice,
+                    from_user_id: lidWithDevice,
+                    id: 'MSG1',
+                    type: 'text',
+                    text: { body: 'oi' },
+                    timestamp: '123',
+                  },
+                ],
+                statuses: [{ id: 'MSG1', status: 'delivered', recipient_id: lidWithDevice }],
+              },
+              field: 'messages',
+            },
+          ],
+        },
+      ],
+    }
+
+    await service.sendHttp(phone!, safeWebhook, payload, {})
+
+    const body = JSON.parse((mockFetch.mock.calls[0] as any)[1].body)
+    const value = body.entry[0].changes[0].value
+    expect(value.contacts[0].wa_id).toBe('')
+    expect(value.contacts[0].user_id).toBe(lid)
+    expect(value.messages[0].from).toBe('')
+    expect(value.messages[0].from_user_id).toBe(lid)
+    expect(value.statuses[0].recipient_id).toBe('')
+    process.env.WEBHOOK_PREFER_PN_OVER_LID = 'false'
+  })
+
+  test('sendHttp keeps status recipient_id as PN even when LID mapping exists', async () => {
+    mockFetch.mockReset()
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
+    ;(store.dataStore.getLidForPn as jest.Mock).mockResolvedValue('190280070385782@lid')
+
+    const safeWebhook = {
+      id: 'webhook',
+      urlAbsolute: 'https://example.com/webhook',
+      sendIncomingMessages: true,
+      sendOutgoingMessages: true,
+      sendGroupMessages: true,
+      sendUpdateMessages: true,
+      sendNewsletterMessages: true,
+    } as Webhook
+    const payload: any = {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: phone, phone_number_id: phone },
+                contacts: [{ profile: { name: 'Contato' }, wa_id: '5566996269251' }],
+                messages: [],
+                statuses: [{ id: 'MSG1', status: 'delivered', recipient_id: '5566996269251' }],
+              },
+              field: 'messages',
+            },
+          ],
+        },
+      ],
+    }
+
+    await service.sendHttp(phone!, safeWebhook, payload, {})
+
+    const body = JSON.parse((mockFetch.mock.calls[0] as any)[1].body)
+    expect(body.entry[0].changes[0].value.statuses[0].recipient_id).toBe('5566996269251')
+  })
 })

@@ -432,6 +432,51 @@ describe('service transformer', () => {
     })
   })
 
+  test('fromBaileysMessageContent resolves PN from group metadata when LID has device suffix', async () => {
+    const phoneNumer = '5549998360838'
+    const groupJid = '120363409038491818@g.us'
+    const participantLidWithDevice = '190280070385782:35@lid'
+    const participantLid = '190280070385782@lid'
+    const participantPn = '5566996269251'
+    const body = `${new Date().getTime()}`
+    const id = `wa.${new Date().getTime()}`
+    const messageTimestamp = Math.floor(new Date().getTime() / 1000).toString()
+    const input = {
+      key: {
+        remoteJid: groupJid,
+        participant: participantLidWithDevice,
+        fromMe: false,
+        id,
+      },
+      groupMetadata: {
+        id: groupJid,
+        subject: 'Grupo teste',
+        participants: [
+          { id: `${participantPn}@s.whatsapp.net`, lid: participantLid },
+        ],
+      },
+      message: { conversation: body },
+      messageTimestamp,
+    }
+
+    const value = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value
+
+    expect(value.contacts[0]).toMatchObject({
+      wa_id: participantPn,
+      user_id: participantLid,
+      group_id: groupJid,
+      group_subject: 'Grupo teste',
+    })
+    expect(value.messages[0]).toMatchObject({
+      from_user_id: participantLid,
+      from: participantPn,
+      group_id: groupJid,
+      id,
+      text: { body },
+      type: 'text',
+    })
+  })
+
   test('fromBaileysMessageContent with messageContextInfo', async () => {
     const phoneNumer = '5549998360838'
     const remotePhoneNumer = '554988290955'

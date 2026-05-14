@@ -28,6 +28,7 @@ import {
   jidToPhoneNumber,
   jidToPhoneNumberIfUser,
   jidToRawPhoneNumber,
+  normalizeLidJid,
   normalizeGroupId,
   normalizeParticipantId,
   normalizeTransportJid,
@@ -70,6 +71,7 @@ export {
   jidToPhoneNumber,
   jidToPhoneNumberIfUser,
   jidToRawPhoneNumber,
+  normalizeLidJid,
   normalizeGroupId,
   normalizeParticipantId,
   normalizeTransportJid,
@@ -964,8 +966,8 @@ export const getNumberAndId = (payload: any): [string, string] => {
       try {
         const participants: any[] = (payload?.groupMetadata?.participants || []) as any[]
         if (participants?.length) {
-          const lidCandidate = senderLid || participantLid || participant || participant2 || participantAlt || participantAlt2 || remoteJidAlt
-          const found = participants.find((p: any) => (p?.lid || '').toString() === (lidCandidate || '').toString())
+          const lidCandidate = normalizeLidJid(senderLid || participantLid || participant || participant2 || participantAlt || participantAlt2 || remoteJidAlt)
+          const found = participants.find((p: any) => normalizeLidJid(p?.lid || p?.jid || p?.id) === lidCandidate)
           const pnFromGroup = found?.id || found?.jid
           if (pnFromGroup && isPnUser(pnFromGroup)) {
             phone = jidToPhoneNumber(pnFromGroup, '')
@@ -1002,10 +1004,10 @@ const firstNonEmptyString = (...values: any[]): string | undefined => {
 const normalizeLidUserId = (value?: string): string | undefined => {
   if (!value || typeof value !== 'string') return undefined
   try {
-    const jid = value.includes('@') ? formatJid(value) : value
+    const jid = normalizeLidJid(value) || (value.includes('@') ? formatJid(value) : value)
     return isLidUser(jid as any) ? jid : undefined
   } catch {
-    return value.endsWith('@lid') ? value : undefined
+    return normalizeLidJid(value) || (value.endsWith('@lid') ? value : undefined)
   }
 }
 
@@ -1154,7 +1156,9 @@ export const isFailedStatus = (payload: object) => {
 
 // Aplica normalização nos campos de IDs do payload Cloud API pronto para envio
 // - contacts[*].wa_id
+// - contacts[*].user_id
 // - messages[*].from
+// - messages[*].from_user_id
 // - statuses[*].recipient_id
 export const normalizeWebhookValueIds = (cloudValue: any): void => {
   try {
@@ -1162,11 +1166,13 @@ export const normalizeWebhookValueIds = (cloudValue: any): void => {
     if (Array.isArray(v.contacts)) {
       for (const c of v.contacts) {
         if (c && typeof c.wa_id === 'string') c.wa_id = normalizeUserOrGroupIdForWebhook(c.wa_id)
+        if (c && typeof c.user_id === 'string') c.user_id = normalizeLidJid(c.user_id) || c.user_id
       }
     }
     if (Array.isArray(v.messages)) {
       for (const m of v.messages) {
         if (m && typeof m.from === 'string') m.from = normalizeUserOrGroupIdForWebhook(m.from)
+        if (m && typeof m.from_user_id === 'string') m.from_user_id = normalizeLidJid(m.from_user_id) || m.from_user_id
       }
     }
     if (Array.isArray(v.statuses)) {

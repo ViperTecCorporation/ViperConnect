@@ -20,6 +20,8 @@ import NodeCache from 'node-cache'
 import { BASE_URL, PROFILE_PICTURE_FORCE_REFRESH, PROFILE_PICTURE_REFRESH_INTERVAL_SEC } from '../defaults'
 import { JIDMAP_CACHE_ENABLED, JIDMAP_TTL_SECONDS } from '../defaults'
 import { BASE_KEY, redisGet, redisSetAndExpire } from './redis'
+import { mergeGroupMetadataForCache } from './groups/group_metadata_cache'
+import { normalizeLidJid } from './transformer/jid'
 
 export const MEDIA_DIR = './data/medias'
 const HOUR = 60 * 60
@@ -312,7 +314,7 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
     return groups.get(jid)
   }
   dataStore.setGroupMetada = async (jid: string, data: GroupMetadata) => {
-    groups.set(jid, data, HOUR)
+    groups.set(jid, mergeGroupMetadataForCache(await dataStore.getGroupMetada(jid), data), HOUR)
   }
   dataStore.loadGroupMetada = async (jid: string, sock: WASocket) => {
     let data = await dataStore.getGroupMetada(jid)
@@ -363,9 +365,9 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
     let jid = await dataStore.getJid(phoneOrJid)
     let lid
     // Tratar entrada LID: se input já for LID, preservar como fallback
-    try { if (isLidUser(phoneOrJid)) { lid = phoneOrJid } } catch {}
+    try { if (isLidUser(phoneOrJid)) { lid = normalizeLidJid(phoneOrJid) || phoneOrJid } } catch {}
     if (isLidUser(jid)) {
-      lid = jid
+      lid = normalizeLidJid(jid) || jid
     }
     if (!jid || lid) {
     let results: unknown
@@ -373,7 +375,7 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
     // quick mapping: if input is a LID JID and a PN is cached, return it
     try {
       if (isIndividualJid(phoneOrJid) && (phoneOrJid || '').includes('@lid')) {
-        const pn = await dataStore.getPnForLid?.(phone, phoneOrJid)
+        const pn = await dataStore.getPnForLid?.(phone, normalizeLidJid(phoneOrJid) || phoneOrJid)
         if (pn) {
           await dataStore.setJid(phoneOrJid, pn)
           return pn
@@ -384,7 +386,7 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
       try {
         if (lid && typeof lid === 'string') {
           try {
-            const mapped = await dataStore.getPnForLid?.(phone, phoneOrJid)
+            const mapped = await dataStore.getPnForLid?.(phone, normalizeLidJid(phoneOrJid) || phoneOrJid)
             if (!mapped) {
               logger.warn('%s is a LID and has no PN mapping; skipping onWhatsApp and using LID fallback', `${phoneOrJid}`)
               await dataStore.setJid(phoneOrJid, lid)
@@ -645,6 +647,7 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
     if (!JMAP_ENABLED) return undefined
     try {
       if (typeof lidJid !== 'string') return undefined
+      lidJid = normalizeLidJid(lidJid) || lidJid
       const key = `PN_FOR:${_sessionPhone}:${lidJid}`
       const cached = jidMapGet(key)
       if (cached) return cached
@@ -657,13 +660,15 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
     try {
       if (typeof pnJid !== 'string') return undefined
       const key = `LID_FOR:${_sessionPhone}:${pnJid}`
-      return jidMapGet(key)
+      const lid = jidMapGet(key)
+      return normalizeLidJid(lid) || lid
     } catch { return undefined }
   }
   dataStore.setJidMapping = async (_sessionPhone: string, pnJid: string, lidJid: string) => {
     if (!JMAP_ENABLED) return
     try {
       if (typeof pnJid !== 'string' || typeof lidJid !== 'string') return
+      lidJid = normalizeLidJid(lidJid) || lidJid
       jidMapSet(`PN_FOR:${_sessionPhone}:${lidJid}`, pnJid, JMAP_TTL)
       jidMapSet(`LID_FOR:${_sessionPhone}:${pnJid}`, lidJid, JMAP_TTL)
       // also reflect mapping in generic JID cache to speed up loadJid()

@@ -144,6 +144,20 @@ export interface readMessages {
   (_keys: WAMessageKey[]): Promise<boolean>
 }
 
+const normalizeReceiptJid = (jid?: string | null): string | undefined => {
+  const raw = `${jid || ''}`.trim()
+  if (!raw) return undefined
+  if (raw.includes('@lid')) {
+    const user = raw.split('@')[0].split(':')[0]
+    return user ? `${user}@lid` : raw
+  }
+  if (raw.includes('@s.whatsapp.net')) {
+    const user = raw.split('@')[0].split(':')[0]
+    return user ? `${user}@s.whatsapp.net` : raw
+  }
+  return raw
+}
+
 export interface rejectCall {
   (_callId: string, _callFrom: string): Promise<void>
 }
@@ -2370,18 +2384,36 @@ export const connect = async ({
       try {
         if (config.readOnReply && id) {
           // Normaliza PN e cobre variantes PN<->LID para localizar o ponteiro correto, independente do modo de endereçamento
-          let pnTarget = id
+          let pnTarget = normalizeReceiptJid(id) || id
           try { if (isLidUser(pnTarget)) pnTarget = jidNormalizedUser(pnTarget) } catch {}
           const candidates = new Set<string>()
           // PN normalizado
           try { if (typeof pnTarget === 'string') candidates.add(pnTarget) } catch {}
           // JID original (pode ser LID)
-          try { if (typeof id === 'string') candidates.add(id) } catch {}
+          try {
+            if (typeof id === 'string') {
+              candidates.add(id)
+              const normalizedId = normalizeReceiptJid(id)
+              if (normalizedId) candidates.add(normalizedId)
+            }
+          } catch {}
+          // Cobre diferença BR 8/9 dígitos quando a entrada foi salva com outra forma do mesmo PN
+          try {
+            if (typeof pnTarget === 'string' && isPnUser(pnTarget)) {
+              const digits = pnTarget.split('@')[0].split(':')[0].replace(/\D/g, '')
+              if (digits) {
+                candidates.add(`${digits}@s.whatsapp.net`)
+                candidates.add(phoneNumberToJid(digits))
+              }
+            }
+          } catch {}
           // Se estamos com PN, tente o LID mapeado para garantir ponteiro de aparelho que usa LID
           try {
             if (typeof pnTarget === 'string' && isPnUser(pnTarget)) {
               const lid = await (dataStore as any).getLidForPn?.(phone, pnTarget)
               if (lid && typeof lid === 'string') candidates.add(lid)
+              const authLid = await getLidForPnFromAuthCache(phone, pnTarget)
+              if (authLid && typeof authLid === 'string') candidates.add(authLid)
             }
           } catch {}
           const order = Array.from(candidates)
@@ -2397,6 +2429,13 @@ export const connect = async ({
               const original = await dataStore.loadKey?.(lastKey.id as any)
               if (original && (original as any).id && (original as any).remoteJid) {
                 keyForRead = original
+              }
+            } catch {}
+            try {
+              keyForRead = {
+                ...(keyForRead || {}),
+                remoteJid: normalizeReceiptJid((keyForRead as any)?.remoteJid) || (keyForRead as any)?.remoteJid,
+                participant: normalizeReceiptJid((keyForRead as any)?.participant) || (keyForRead as any)?.participant,
               }
             } catch {}
             logger.info('READ_ON_REPLY: reading last incoming id=%s jid=%s', (keyForRead as any).id, (keyForRead as any).remoteJid)
@@ -2424,6 +2463,11 @@ export const connect = async ({
 
   const read: readMessages = async (keys: WAMessageKey[]) => {
     await validateStatus()
+    keys = (keys || []).map((key: any) => ({
+      ...(key || {}),
+      remoteJid: normalizeReceiptJid(key?.remoteJid) || key?.remoteJid,
+      participant: normalizeReceiptJid(key?.participant) || key?.participant,
+    }))
 
     // Proactively assert sessions for the message recipients to avoid 'No sessions' on receipts/deletes
     try {
@@ -2461,109 +2505,9 @@ export const connect = async ({
 
   const rejectCall: rejectCall = async (callId: string, callFrom: string) => {
     await validateStatus()
-    // Avoid creating duplicate threads on devices: do NOT force BR 13-digit PN here.
-    // Prefer LID if mapped; otherwise, use the WA-resolved JID (even if 12-digit for BR).
-    // Apply BR send-order for call rejection: try 12-digit first (onWhatsApp), then fallback to 13-digit.
-    let target = callFrom
-    const targetIsLid = typeof target === 'string' && isLidUser(target)
-    try {
-      if (targetIsLid) {
-        logger.debug('CALL_REJECT: preserving LID %s for rejectCall', target)
-        logger.info('CALL_REJECT fast path: callId=%s target=%s', callId, target)
-        const result = await sock?.rejectCall(callId, target)
-        logger.info('CALL_REJECT sent: callId=%s target=%s', callId, target)
-        return result
-      // If a plain number was provided, resolve via onWhatsApp with BR 12?13 preference before falling back
-      } else if (typeof target === 'string' && target.indexOf('@') < 0) {
-        try {
-          const raw = ensurePn(target)
-          if (raw && raw.startsWith('55') && (raw.length === 12 || raw.length === 13)) {
-            const to12 = (() => {
-              if (raw.length === 12) return raw
-              const ddd = raw.slice(2, 4)
-              const local9 = raw.slice(4)
-              return `55${ddd}${local9.slice(1)}`
-            })()
-            const to13 = (() => {
-              if (raw.length === 13) return raw
-              const ddd = raw.slice(2, 4)
-              const local = raw.slice(4)
-              return /[6-9]/.test(local[0]) ? `55${ddd}9${local}` : raw
-            })()
-            let chosen: string | undefined
-            try {
-              const r12: any = await (sock as any)?.onWhatsApp?.(to12)
-              if (Array.isArray(r12) && r12[0]?.exists && r12[0]?.jid) {
-                chosen = r12[0].jid
-                logger.warn('BR_SEND_ORDER(rejectCall): using 12-digit candidate %s -> %s', to12, chosen)
-              }
-            } catch {}
-            if (!chosen) {
-              try {
-                const r13: any = await (sock as any)?.onWhatsApp?.(to13)
-                if (Array.isArray(r13) && r13[0]?.exists && r13[0]?.jid) {
-                  chosen = r13[0].jid
-                  logger.warn('BR_SEND_ORDER(rejectCall): fallback to 13-digit candidate %s -> %s', to13, chosen)
-                }
-              } catch {}
-            }
-            if (chosen) {
-              target = chosen
-            }
-          }
-        } catch {}
-        // Fallback: WA mapping cache if still plain number
-        if (typeof target === 'string' && target.indexOf('@') < 0) {
-          try {
-            const waJid = await exists(target)
-            if (waJid) target = waJid as any
-          } catch {}
-        }
-      } else if (typeof target === 'string' && target.endsWith('@s.whatsapp.net')) {
-        // If the input already is a PN JID with 13 digits, try the 12-digit mapping first
-        try {
-          const digits = ensurePn(target)
-          if (digits && digits.startsWith('55') && digits.length === 13) {
-            const ddd = digits.slice(2, 4)
-            const local9 = digits.slice(4)
-            const to12 = `55${ddd}${local9.slice(1)}`
-            try {
-              const r12: any = await (sock as any)?.onWhatsApp?.(to12)
-              if (Array.isArray(r12) && r12[0]?.exists && r12[0]?.jid) {
-                logger.warn('BR_SEND_ORDER(rejectCall): switching to 12-digit candidate %s -> %s', to12, r12[0].jid)
-                target = r12[0].jid
-              }
-            } catch {}
-          }
-        } catch {}
-      }
-      // BR mismatch guard (13 input vs 12 resolved): respeitar modo 1:1. Se j? veio LID, mantenha LID.
-      if (!targetIsLid) {
-        try {
-          const inDigits = `${callFrom}`.replace(/\D/g, '')
-          const outDigits = `${target || ''}`.split('@')[0].replace(/\D/g, '')
-          const isBr13in = inDigits.startsWith('55') && inDigits.length === 13 && inDigits.charAt(4) === '9'
-          const isBr12out = outDigits.startsWith('55') && outDigits.length === 12
-          if (isBr13in && isBr12out) {
-            // Se ONE_TO_ONE_ADDRESSING_MODE for 'lid', pode preferir LID; caso contr?rio, manter PN
-            if (ONE_TO_ONE_ADDRESSING_MODE === 'lid') {
-              try {
-                const lid = await (dataStore as any).getLidForPn?.(phone, target as any)
-                if (lid && typeof lid === 'string') {
-                  logger.warn('BR_GUARD(rejectCall): prefer LID %s over PN mismatch (%s vs %s)', lid, inDigits, outDigits)
-                  target = lid
-                } else {
-                  logger.warn('BR_GUARD(rejectCall): keeping WA JID %s (input=%s); no LID mapping', target, inDigits)
-                }
-              } catch {}
-            } else {
-              // Modo PN: n?o alternar para LID; manter PN (incluindo candidato 12 d?gitos)
-              logger.debug('BR_GUARD(rejectCall): ONE_TO_ONE_ADDRESSING_MODE=pn, mantendo PN %s', target)
-            }
-          }
-        } catch {}
-      }
-    } catch {}
+    // A rejeição precisa usar o mesmo identificador que originou o evento de chamada.
+    // Apenas removemos sufixo técnico de device (:NN) para não enviar JID inválido ao Baileys.
+    let target = normalizeReceiptJid(callFrom) || callFrom
     // Preassert de sess?es para rejeitar chamada com chaves atualizadas
     try {
       const set = new Set<string>()

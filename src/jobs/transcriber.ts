@@ -12,6 +12,30 @@ import { writeFileSync, rmSync, existsSync, mkdirSync } from 'fs'
 import { SESSION_DIR } from '../services/session_store_file'
 import mime from 'mime'
 
+const firstNonEmptyString = (...values: unknown[]) => {
+  for (const value of values) {
+    const text = `${value || ''}`.trim()
+    if (text) return text
+  }
+  return ''
+}
+
+export const extractTranscriptionDestiny = (payload: any, audioMessage: any) => {
+  const value = payload?.entry?.[0]?.changes?.[0]?.value
+  const contact = value?.contacts?.[0]
+  const destinyPhone = extractDestinyPhone(payload, false)
+  return firstNonEmptyString(
+    destinyPhone,
+    audioMessage?.group_id,
+    audioMessage?.from,
+    audioMessage?.from_user_id,
+    contact?.group_id,
+    contact?.wa_id,
+    contact?.user_id,
+    value?.metadata?.phone_number_id,
+  )
+}
+
 export class TranscriberJob {
   private service: Outgoing
   private getConfig: getConfig
@@ -24,7 +48,6 @@ export class TranscriberJob {
   async consume(phone: string, data: object) {
     try {
       const { payload, webhooks }: { payload: any; webhooks: Webhook[] } = data as any
-      const destinyPhone = extractDestinyPhone(payload)
       const payloadEntry = payload?.entry && payload.entry[0]
       const payloadValue = payloadEntry &&
         payload.entry[0].changes &&
@@ -33,7 +56,8 @@ export class TranscriberJob {
       const audioMessage = payloadValue &&
         payload.entry[0].changes[0].value.messages &&
         payload.entry[0].changes[0].value.messages[0]
-       
+      const destinyPhone = extractTranscriptionDestiny(payload, audioMessage)
+
       const config = await this.getConfig(phone)
       const mediaKey = audioMessage.audio.id
       let token = config.authToken
@@ -191,12 +215,20 @@ export class TranscriberJob {
       }
       logger.debug('Transcriber audio content for session %s and to %s is %s', phone, destinyPhone, transcriptionText)
       const output = { ...payload }
+      const transcriptionFrom = firstNonEmptyString(
+        audioMessage.from,
+        audioMessage.from_user_id,
+        payloadValue?.contacts?.[0]?.wa_id,
+        payloadValue?.contacts?.[0]?.user_id,
+      )
       output.entry[0].changes[0].value.messages = [{
         context: {
           message_id: audioMessage.id,
           id: audioMessage.id,
         },
-        from: audioMessage.from,
+        from: transcriptionFrom,
+        ...(audioMessage.from_user_id && audioMessage.from_user_id !== transcriptionFrom ? { from_user_id: audioMessage.from_user_id } : {}),
+        ...(audioMessage.group_id ? { group_id: audioMessage.group_id } : {}),
         id: uuid(),
         text: { body: transcriptionText },
         type: 'text',

@@ -77,4 +77,15 @@ describe('redis.setJidMapping', () => {
     expect(await getLidForPn(phone, pn12)).toBe(lidJid)
     expect(await getLidForPn(phone, pn13)).toBeUndefined()
   })
+
+  it('normalizes device-qualified LID mappings before storing and reading', async () => {
+    const phone = '5566996269251'
+    const pn = '5517997666260@s.whatsapp.net'
+
+    await setJidMapping(phone, pn, '190280070385782:35@lid')
+
+    expect(await getPnForLid(phone, '190280070385782@lid')).toBe(pn)
+    expect(await getPnForLid(phone, '190280070385782:35@lid')).toBe(pn)
+    expect(await getLidForPn(phone, pn)).toBe('190280070385782@lid')
+  })
 })

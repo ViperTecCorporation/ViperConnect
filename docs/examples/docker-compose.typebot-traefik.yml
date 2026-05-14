@@ -1,0 +1,110 @@
+version: "3.8"
+
+name: typebot
+
+# Typebot Builder + Viewer + Postgres atras de Traefik.
+# Requer uma network externa ja conectada ao Traefik, aqui chamada traefik-public.
+#
+# Hosts usados neste exemplo:
+# - Builder: typebot.seudominio.com.br
+# - Viewer:  bot.seudominio.com.br
+
+x-base: &base
+  environment:
+    DATABASE_URL: "postgres://typebot:SUA_SENHA_POSTGRES@typebot-db:5432/typebot"
+    NEXTAUTH_URL: "https://typebot.seudominio.com.br"
+    NEXTAUTH_SECRET: "TROQUE_POR_UM_SECRET_FORTE"
+    ENCRYPTION_SECRET: "TROQUE_POR_UM_SECRET_DE_32_CHARS"
+    TYPEBOT_PUBLIC_ENDPOINT: "https://bot.seudominio.com.br"
+    NEXT_PUBLIC_VIEWER_URL: "https://bot.seudominio.com.br"
+    TELEMETRY_ENABLED: "false"
+    LOG_LEVEL: "debug"
+    DEBUG: "true"
+    NODE_ENV: "production"
+
+    # WhatsApp Cloud API via ViperConnect
+    WHATSAPP_CLOUD_API_URL: "https://unoapi.seudominio.com.br"
+    WHATSAPP_PREVIEW_FROM_PHONE_NUMBER_ID: "5566999999999"
+    WHATSAPP_PREVIEW_TEMPLATE_NAME: "hello"
+    META_SYSTEM_USER_TOKEN: "TOKEN_DA_UNOAPI_OU_META_COMPATIVEL"
+
+    # E-mail
+    NEXT_PUBLIC_SMTP_FROM: "Typebot <no-reply@seudominio.com.br>"
+    SMTP_HOST: "smtp.seudominio.com.br"
+    SMTP_PORT: "587"
+    SMTP_USERNAME: "no-reply@seudominio.com.br"
+    SMTP_PASSWORD: "SUA_SENHA_SMTP"
+    SMTP_SECURE: "false"
+    SMTP_AUTH_DISABLED: "false"
+
+    # Storage S3 compativel (Cloudflare R2 / MinIO / Wasabi)
+    # Para R2 no Typebot, use endpoint sem https:// e habilite S3_SSL.
+    S3_ENDPOINT: "SEU_ACCOUNT_ID.r2.cloudflarestorage.com"
+    S3_SSL: "true"
+    S3_REGION: "auto"
+    S3_ACCESS_KEY: "SUA_ACCESS_KEY"
+    S3_SECRET_KEY: "SUA_SECRET_KEY"
+    S3_BUCKET: "typebot"
+    S3_FORCE_PATH_STYLE: "true"
+    S3_PUBLIC_CUSTOM_DOMAIN: "https://midia.seudominio.com.br"
+
+services:
+  typebot-db:
+    image: postgres:15
+    container_name: typebot-db
+    restart: always
+    environment:
+      POSTGRES_DB: "typebot"
+      POSTGRES_USER: "typebot"
+      POSTGRES_PASSWORD: "SUA_SENHA_POSTGRES"
+    volumes:
+      - typebot-db-data:/var/lib/postgresql/data
+    networks:
+      - typebot
+
+  typebot-builder:
+    <<: *base
+    image: baptistearno/typebot-builder:latest
+    container_name: typebot-builder
+    restart: always
+    depends_on:
+      - typebot-db
+    networks:
+      - typebot
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.typebot-builder.rule=Host(`typebot.seudominio.com.br`)"
+      - "traefik.http.routers.typebot-builder.entrypoints=websecure"
+      - "traefik.http.routers.typebot-builder.tls=true"
+      - "traefik.http.routers.typebot-builder.tls.certresolver=letsencrypt"
+      - "traefik.http.services.typebot-builder.loadbalancer.server.port=3000"
+
+  typebot-viewer:
+    <<: *base
+    image: baptistearno/typebot-viewer:latest
+    container_name: typebot-viewer
+    restart: always
+    depends_on:
+      - typebot-db
+    networks:
+      - typebot
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.typebot-viewer.rule=Host(`bot.seudominio.com.br`)"
+      - "traefik.http.routers.typebot-viewer.entrypoints=websecure"
+      - "traefik.http.routers.typebot-viewer.tls=true"
+      - "traefik.http.routers.typebot-viewer.tls.certresolver=letsencrypt"
+      - "traefik.http.services.typebot-viewer.loadbalancer.server.port=3000"
+
+volumes:
+  typebot-db-data:
+
+networks:
+  typebot:
+    driver: bridge
+  traefik-public:
+    external: true

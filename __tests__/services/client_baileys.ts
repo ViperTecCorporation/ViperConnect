@@ -391,6 +391,57 @@ describe('service client baileys', () => {
     expect(dataStore.setGroupMetada).toHaveBeenCalledWith(groupJid, metadata)
   })
 
+  test('persists refreshed group profile picture in group metadata cache', async () => {
+    const groupJid = '120363040468224422@g.us'
+    const metadata = { id: groupJid, subject: 'Grupo com foto', participants: [] }
+    const picture = 'https://cdn.example.com/group.jpg'
+    sessionStore.isStatusOnline.mockResolvedValue(true)
+    fetchGroupMetadata.mockResolvedValue(metadata)
+    fetchImageUrl.mockResolvedValue(picture)
+
+    ;(client as any).store = store
+    ;(client as any).config = { ...defaultConfig, sendProfilePicture: true }
+    ;(client as any).fetchGroupMetadata = fetchGroupMetadata
+    ;(client as any).fetchImageUrl = fetchImageUrl
+    ;(client as any).exists = exists
+    const message = await (client as any).getMessageMetadata({
+      key: {
+        remoteJid: groupJid,
+        participant: '5566996222471@s.whatsapp.net',
+      },
+      message: { conversation: 'teste' },
+    })
+
+    expect(message.groupMetadata.profilePicture).toBe(picture)
+    expect(dataStore.setGroupMetada).toHaveBeenCalledWith(groupJid, expect.objectContaining({
+      id: groupJid,
+      subject: 'Grupo com foto',
+      profilePicture: picture,
+    }))
+  })
+
+  test('normalizes device-qualified LID ids before exposing message metadata', async () => {
+    const lid = '190280070385782@lid'
+    sessionStore.isStatusOnline.mockResolvedValue(true)
+
+    ;(client as any).store = store
+    ;(client as any).config = { ...defaultConfig, sendProfilePicture: false }
+    ;(client as any).fetchGroupMetadata = fetchGroupMetadata
+    ;(client as any).fetchImageUrl = fetchImageUrl
+    ;(client as any).exists = exists
+
+    const message = await (client as any).getMessageMetadata({
+      key: {
+        remoteJid: '190280070385782:35@lid',
+      },
+      message: { conversation: 'teste' },
+    })
+
+    expect(message.key.remoteJid).toBe(lid)
+    expect(message.key.senderLid).toBe(lid)
+    expect(dataStore.getPnForLid).toHaveBeenCalledWith(phone, lid)
+  })
+
   test('call send with message type unknown', async () => {
     const type = `${new Date().getMilliseconds()}`
     try {

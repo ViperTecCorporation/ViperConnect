@@ -8,7 +8,7 @@ name: viperconnect
 
 services:
   unoapi:
-    image: ghcr.io/viperteccorporation/viperconnect:3.0.66
+    image: ghcr.io/viperteccorporation/viperconnect:3.0.67
     container_name: unoapi
     restart: always
     entrypoint: ["yarn", "cloud"]

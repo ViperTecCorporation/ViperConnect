@@ -1,6 +1,7 @@
 import { proto, WAMessage, WAMessageKey, GroupMetadata, isLidUser, isPnUser } from '@whiskeysockets/baileys'
 import { DataStore, MessageStatus } from './data_store'
 import { jidToPhoneNumber, phoneNumberToJid, isIndividualJid, toRawPnJid, jidToRawPhoneNumber } from './transformer'
+import { normalizeLidJid } from './transformer/jid'
 import { getDataStore, dataStores } from './data_store'
 import { ONLY_HELLO_TEMPLATE } from '../defaults'
 import {
@@ -188,7 +189,7 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
   store.setContactInfo = async (jid: string, info: { name?: string; pnJid?: string; lidJid?: string; pn?: string }) => {
     const normalize = (j?: string) => `${(j || '').toString().trim()}`.replace(/@+/g, '@')
     const cleanPnJid = (j: string) => toRawPnJid(j)
-    const cleanLidJid = (j: string) => `${(j || '').split('@')[0].split(':')[0]}@lid`
+    const cleanLidJid = (j: string) => normalizeLidJid(j) || `${(j || '').split('@')[0].split(':')[0]}@lid`
     try {
       const raw = normalize(jid)
       let pnJid = ''
@@ -354,6 +355,7 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
   // JID map cache (PN <-> LID)
   store.getPnForLid = async (sessionPhone: string, lidJid: string) => {
     if (!JIDMAP_CACHE_ENABLED) return undefined
+    lidJid = normalizeLidJid(lidJid) || lidJid
     try {
       const cached = (await redisGetPnForLid(sessionPhone, lidJid)) || undefined
       if (cached) return cached
@@ -396,9 +398,10 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
     // Fast-path: consult Baileys auth lid-mapping cache for this session
     try {
       const fast = await redisGetLidForPnFromAuthCache(sessionPhone, pnJid)
-      if (fast && typeof fast === 'string' && fast.endsWith('@lid')) {
-        try { await redisSetJidMapping(sessionPhone, toRawPnJid(pnJid), fast) } catch {}
-        return fast
+      const normalizedFast = normalizeLidJid(fast)
+      if (normalizedFast) {
+        try { await redisSetJidMapping(sessionPhone, toRawPnJid(pnJid), normalizedFast) } catch {}
+        return normalizedFast
       }
     } catch {}
     // Fallback: consult contact cache keyed by PN JID (or digits)
@@ -411,8 +414,9 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
       const raw = await redisGetContactInfo(sessionPhone, keyJid)
       if (raw) {
         const info = typeof raw === 'string' ? JSON.parse(raw) : raw
-        if (info?.lidJid) {
-          return info.lidJid
+        const normalizedLid = normalizeLidJid(info?.lidJid)
+        if (normalizedLid) {
+          return normalizedLid
         }
       }
     } catch {}
