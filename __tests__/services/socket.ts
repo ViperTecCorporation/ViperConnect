@@ -8,6 +8,9 @@ jest.mock('@whiskeysockets/baileys', () => {
     fetchLatestBaileysVersion: jest.fn(async () => ({ version: [2, 2, 2] })),
     DisconnectReason: { loggedOut: 401, connectionReplaced: 440, restartRequired: 515, badSession: 500 },
     delay: jest.fn(async () => {}),
+    isLidUser: (jid: string) => `${jid || ''}`.includes('@lid'),
+    isPnUser: (jid: string) => `${jid || ''}`.includes('@s.whatsapp.net'),
+    jidNormalizedUser: (jid: string) => jid,
     proto: {
       HistorySync: {
         HistorySyncType: {
@@ -151,5 +154,50 @@ describe('service socket', () => {
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.PUSH_NAME, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.RECENT, config)).toBe(false)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.FULL, config)).toBe(false)
+  })
+
+  test('rejectCall strips device suffix from LID target', async () => {
+    const socket = await connect({
+      phone,
+      store,
+      onQrCode,
+      onNotification,
+      onDisconnected,
+      onReconnect,
+      onNewLogin,
+      attempts: 1,
+      time: 1,
+      config: { ...defaultConfig, whatsappVersion },
+    })
+
+    mockWaSocket.rejectCall = jest.fn().mockResolvedValue(true)
+
+    await socket?.rejectCall('call-1', '190280070385782:35@lid')
+
+    expect(mockWaSocket.rejectCall).toHaveBeenCalledWith('call-1', '190280070385782@lid')
+  })
+
+  test('rejectCall preserves originating PN target', async () => {
+    const socket = await connect({
+      phone,
+      store,
+      onQrCode,
+      onNotification,
+      onDisconnected,
+      onReconnect,
+      onNewLogin,
+      attempts: 1,
+      time: 1,
+      config: { ...defaultConfig, whatsappVersion },
+    })
+
+    mockWaSocket.rejectCall = jest.fn().mockResolvedValue(true)
+    mockWaSocket.onWhatsApp = jest.fn().mockResolvedValue([
+      { exists: true, jid: '556699626925@s.whatsapp.net' },
+    ])
+
+    await socket?.rejectCall('call-2', '5566999626925@s.whatsapp.net')
+
+    expect(mockWaSocket.rejectCall).toHaveBeenCalledWith('call-2', '5566999626925@s.whatsapp.net')
   })
 })

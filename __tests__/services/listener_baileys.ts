@@ -103,6 +103,40 @@ describe('service listener baileys', () => {
     )
   })
 
+  test('stores read-on-reply pointer for PN/LID aliases from inbound key', async () => {
+    config.getMessageMetadata = async message => message
+    outgoing.send = jest.fn().mockResolvedValue(undefined) as any
+
+    await service.sendOne(phone, {
+      key: {
+        remoteJid: '190280070385782:35@lid',
+        remoteJidAlt: '5566996269251@s.whatsapp.net',
+        fromMe: false,
+        id: 'provider-inbound-message',
+        senderPn: '5566996269251',
+        senderLid: '190280070385782:35@lid',
+      },
+      message: {
+        conversation: 'Mensagem normal',
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+    })
+
+    expect(store.dataStore.setLastIncomingKey).toHaveBeenCalledWith(
+      '190280070385782@lid',
+      expect.objectContaining({
+        id: expect.any(String),
+        remoteJid: '190280070385782:35@lid',
+      }),
+    )
+    expect(store.dataStore.setLastIncomingKey).toHaveBeenCalledWith(
+      '5566996269251@s.whatsapp.net',
+      expect.objectContaining({
+        id: expect.any(String),
+      }),
+    )
+  })
+
   test('normalizes message edit context to Uno id before sending webhook', async () => {
     const providerId = 'provider-original-message'
     const unoId = 'uno-original-message'

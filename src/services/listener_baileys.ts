@@ -3,7 +3,7 @@ import logger from './logger'
 import { Outgoing } from './outgoing'
 import { Broadcast } from './broadcast'
 import { getConfig } from './config'
-import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMedia, jidToPhoneNumber, jidToRawPhoneNumber, DecryptError, isValidPhoneNumber, normalizeMessageContent, getBinMessage, normalizeLidJid } from './transformer'
+import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMedia, jidToPhoneNumber, jidToRawPhoneNumber, DecryptError, isValidPhoneNumber, normalizeMessageContent, getBinMessage, normalizeLidJid, phoneNumberToJid } from './transformer'
 import * as Baileys from '@whiskeysockets/baileys'
 import { WAMessage, delay, jidNormalizedUser, isPnUser, isLidUser, proto } from '@whiskeysockets/baileys'
 import { Template } from './template'
@@ -32,6 +32,45 @@ const STATUS_MEDIA_TYPES = new Set([
   'stickerMessage',
 ])
 const STATUS_MEDIA_TTL_SEC = 24 * 60 * 60
+
+const buildLastIncomingAliases = (key: any): string[] => {
+  const aliases = new Set<string>()
+  const add = (value?: unknown) => {
+    const raw = `${value || ''}`.trim()
+    if (!raw) return
+    try {
+      if (/^\+?\d+$/.test(raw)) {
+        const digits = raw.replace(/\D/g, '')
+        if (digits) {
+          aliases.add(`${digits}@s.whatsapp.net`)
+          try { aliases.add(phoneNumberToJid(digits)) } catch {}
+        }
+        return
+      }
+      if (raw.includes('@lid')) {
+        aliases.add(normalizeLidJid(raw) || raw)
+        return
+      }
+      if (raw.includes('@')) {
+        aliases.add(raw)
+      }
+    } catch {
+      if (raw.includes('@')) aliases.add(raw)
+    }
+  }
+
+  add(key?.remoteJid)
+  add(key?.remoteJidAlt)
+  add(key?.participant)
+  add(key?.participantAlt)
+  add(key?.participantPn)
+  add(key?.participantLid)
+  add(key?.senderPn)
+  add(key?.senderLid)
+  add(key?.recipientPn)
+  add(key?.recipientLid)
+  return Array.from(aliases)
+}
 
 const delayFunc = UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS && UNOAPI_DELAY_BETWEEN_MESSAGES_MS ? async (phone, to) => {
   if (to) { 
@@ -1038,8 +1077,13 @@ export class ListenerBaileys implements Listener {
         if (i?.key?.remoteJid && i?.key?.id && !i?.key?.fromMe) {
           const original = await (await config.getStore(phone, config))?.dataStore?.loadKey?.(i.key.id)
           if (original && (original as any).id && (original as any).remoteJid) {
-            await (await config.getStore(phone, config))?.dataStore?.setLastIncomingKey?.((original as any).remoteJid, original as any)
-            try { logger.debug('READ_ON_REPLY: normalized lastIncoming %s -> %s (provider id)', (original as any).remoteJid, (original as any).id) } catch {}
+            const dataStore = (await config.getStore(phone, config))?.dataStore
+            const aliases = buildLastIncomingAliases((original as any) || {})
+            if (!aliases.length) aliases.push((original as any).remoteJid)
+            for (const jid of aliases) {
+              await dataStore?.setLastIncomingKey?.(jid, original as any)
+            }
+            try { logger.debug('READ_ON_REPLY: normalized lastIncoming aliases=%s -> %s (provider id)', JSON.stringify(aliases), (original as any).id) } catch {}
           }
         }
       } catch {}
@@ -1211,8 +1255,12 @@ export class ListenerBaileys implements Listener {
       // Atualiza ponteiro da última mensagem recebida por chat (para ler ao responder)
       try {
         if (i?.key?.remoteJid && i?.key?.id && !i?.key?.fromMe) {
-          await dataStore.setLastIncomingKey?.(i.key.remoteJid!, i.key)
-          logger.debug('READ_ON_REPLY: set lastIncoming %s -> %s', i.key.remoteJid, i.key.id)
+          const aliases = buildLastIncomingAliases(i.key as any)
+          if (!aliases.length) aliases.push(i.key.remoteJid!)
+          for (const jid of aliases) {
+            await dataStore.setLastIncomingKey?.(jid, i.key)
+          }
+          logger.debug('READ_ON_REPLY: set lastIncoming aliases=%s -> %s', JSON.stringify(aliases), i.key.id)
         }
       } catch {}
       // wa_id/from are Cloud API phone fields. LID is exposed by the transformer via user_id/from_user_id.
