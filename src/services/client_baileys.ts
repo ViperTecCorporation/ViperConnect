@@ -41,6 +41,7 @@ import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS } from '../defaults'
 import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
+import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
 import { convertToWebpSticker } from '../utils/sticker_convert'
 import { t } from '../i18n'
@@ -1632,6 +1633,22 @@ export class ClientBaileys implements Client {
       } catch {}
     })
     this.event('message-receipt.update', async (updates: object[]) => {
+      try {
+        for (const u of Array.isArray(updates) ? (updates as any[]) : []) {
+          const key = u?.key || {}
+          for (const field of ['remoteJid', 'participant', 'senderLid', 'participantLid', 'recipientLid']) {
+            const normalized = normalizeLidJid(key[field])
+            if (normalized) key[field] = normalized
+          }
+          const attrs = u?.attrs || u?.receipt?.attrs
+          if (attrs) {
+            for (const field of ['from', 'to', 'participant', 'recipient']) {
+              const normalized = normalizeLidJid(attrs[field])
+              if (normalized) attrs[field] = normalized
+            }
+          }
+        }
+      } catch {}
       // Para mensagens de grupo, quando habilitado, ignorar recibos individuais (read/played/delivery por participante)
       try {
         if (this.config.ignoreGroupIndividualReceipts) {
@@ -2702,6 +2719,14 @@ export class ClientBaileys implements Client {
       return message
     }
     const key = message && message['key']
+    try {
+      if (key) {
+        for (const field of ['remoteJid', 'participant', 'senderLid', 'participantLid', 'recipientLid']) {
+          const normalized = normalizeLidJid(key[field])
+          if (normalized) key[field] = normalized
+        }
+      }
+    } catch {}
     let remoteJid
     if (key.remoteJid && isJidGroup(key.remoteJid)) {
       logger.debug(`Retrieving group metadata...`)
@@ -2712,6 +2737,7 @@ export class ClientBaileys implements Client {
       } catch (error) {
         logger.warn(error, 'Ignore error fetch group metadata')
       }
+      const hasFetchedGroupMetadata = !!groupMetadata
       if (groupMetadata) {
         logger.debug(groupMetadata, 'Retrieved group metadata!')
       } else {
@@ -2731,6 +2757,12 @@ export class ClientBaileys implements Client {
         const store = this.store
         if (store && Array.isArray(gm.participants)) {
           for (const p of gm.participants as any[]) {
+            try {
+              for (const field of ['id', 'jid', 'lid']) {
+                const normalized = normalizeLidJid(p?.[field])
+                if (normalized) p[field] = normalized
+              }
+            } catch {}
             const ids: string[] = []
             if (p?.id) ids.push(p.id)
             if (p?.jid && p?.jid !== p?.id) ids.push(p.jid)
@@ -2754,7 +2786,7 @@ export class ClientBaileys implements Client {
                   // Add LID digits alias quando o id é LID (para @<lidDigits>)
                   try {
                     if (typeof j === 'string' && j.includes('@lid')) {
-                      const lidDigits = j.split('@')[0]
+                      const lidDigits = j.split('@')[0].split(':')[0]
                       if (lidDigits) names[lidDigits] = n
                     }
                   } catch {}
@@ -2806,6 +2838,9 @@ export class ClientBaileys implements Client {
         if (profilePictureGroup) {
           logger.debug(`Retrieved group picture! ${profilePictureGroup}`)
           gm['profilePicture'] = profilePictureGroup
+          if (hasFetchedGroupMetadata) {
+            try { await this.store?.dataStore?.setGroupMetada?.(key.remoteJid, gm) } catch {}
+          }
         }
       } catch (error) {
         logger.warn(error)
@@ -2861,7 +2896,7 @@ export class ClientBaileys implements Client {
                   const n3 = await store.dataStore.getContactName?.(lid) || n
                   if (n3) {
                     names[lid] = n3
-                    try { const d = lid.split('@')[0]; if (d) names[d] = n3 } catch {}
+                  try { const d = lid.split('@')[0].split(':')[0]; if (d) names[d] = n3 } catch {}
                   }
                 }
               }
@@ -2927,11 +2962,11 @@ export class ClientBaileys implements Client {
         const k: any = key
         if (k?.remoteJid && isLidUser(k.remoteJid)) {
           // Preserve original LID and expose a PN-normalized variant (best effort)
-          k.senderLid = k.remoteJid
+          k.senderLid = normalizeLidJid(k.remoteJid) || k.remoteJid
           let pnJid: string | undefined
           // 0) Try mapping cache PN<-LID (DataStore)
           try {
-            const mapped = await this.store?.dataStore?.getPnForLid?.(this.phone, k.remoteJid)
+            const mapped = await this.store?.dataStore?.getPnForLid?.(this.phone, k.senderLid)
             if (mapped && isPnUser(mapped)) pnJid = mapped
           } catch {}
           try {
@@ -2963,11 +2998,11 @@ export class ClientBaileys implements Client {
           }
         }
         if (k?.participant && isLidUser(k.participant)) {
-          k.participantLid = k.participant
+          k.participantLid = normalizeLidJid(k.participant) || k.participant
           let pnJid: string | undefined
           // 0) Try mapping cache PN<-LID (DataStore)
           try {
-            const mapped = await this.store?.dataStore?.getPnForLid?.(this.phone, k.participant)
+            const mapped = await this.store?.dataStore?.getPnForLid?.(this.phone, k.participantLid)
             if (mapped && isPnUser(mapped)) pnJid = mapped
           } catch {}
           try {

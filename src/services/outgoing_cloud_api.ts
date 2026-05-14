@@ -2,7 +2,7 @@ import { Outgoing } from './outgoing'
 import fetch, { Response, RequestInit } from 'node-fetch'
 import { Webhook, getConfig, isWebhookEnabled } from './config'
 import logger from './logger'
-import { completeCloudApiWebHook, isGroupMessage, isOutgoingMessage, isNewsletterMessage, isUpdateMessage, extractDestinyPhone, normalizeWebhookValueIds, jidToPhoneNumber, jidToRawPhoneNumber, formatJid, isValidPhoneNumber } from './transformer'
+import { completeCloudApiWebHook, isGroupMessage, isOutgoingMessage, isNewsletterMessage, isUpdateMessage, extractDestinyPhone, normalizeWebhookValueIds, jidToPhoneNumber, jidToRawPhoneNumber, formatJid, isValidPhoneNumber, normalizeLidJid } from './transformer'
 import { WEBHOOK_ASYNC, WEBHOOK_PREFER_PN_OVER_LID, WEBHOOK_CB_ENABLED, WEBHOOK_CB_FAILURE_THRESHOLD, WEBHOOK_CB_OPEN_MS, WEBHOOK_CB_FAILURE_TTL_MS, WEBHOOK_CB_REQUEUE_DELAY_MS, WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS } from '../defaults'
 import { jidNormalizedUser, isPnUser } from '@whiskeysockets/baileys'
 import { addToBlacklist, isInBlacklist } from './blacklist'
@@ -311,32 +311,7 @@ export class OutgoingCloudApi implements Outgoing {
     } catch {}
     // Sanitize phone fields ONLY right before sending (do not affect routing decisions)
     try { normalizeWebhookValueIds(v) } catch {}
-    // Mapping preferences are applied below only where a field is not a Cloud API phone field.
-    // wa_id/from remain phone-only; LID/BSUID belongs in user_id/from_user_id.
-    if (!WEBHOOK_PREFER_PN_OVER_LID) try {
-      const config = await this.getConfig(phone)
-      const store = await config.getStore(phone, config)
-      const ds: any = store?.dataStore
-      const v: any = (message as any)?.entry?.[0]?.changes?.[0]?.value || {}
-      const toLidIfMapped = async (x?: string): Promise<string> => {
-        const val = `${x || ''}`
-        if (!val) return val
-        if (val.includes('@')) return val
-        // digits-only -> try PN JID mapping to LID
-        const pnJid = `${val.replace(/\D/g, '')}@s.whatsapp.net`
-        try {
-          const lid = await ds?.getLidForPn?.(phone, pnJid)
-          if (typeof lid === 'string' && lid.endsWith('@lid')) return lid
-        } catch {}
-        return val
-      }
-      // wa_id/from are Cloud API phone fields now; do not convert them to @lid.
-      if (Array.isArray(v.statuses)) {
-        for (const s of v.statuses) {
-          if (s && typeof s.recipient_id === 'string') s.recipient_id = await toLidIfMapped(s.recipient_id)
-        }
-      }
-    } catch {} 
+    // wa_id/from/recipient_id are Cloud API phone fields; LID/BSUID belongs in user_id/from_user_id.
     // Optionally convert @lid to PN when explicitly enabled
     if (WEBHOOK_PREFER_PN_OVER_LID) {
       try {
@@ -348,17 +323,17 @@ export class OutgoingCloudApi implements Outgoing {
           let val = `${x || ''}`
           if (!val) return val
           if (val.includes('@g.us')) return val
-          // If LID and we have a PN mapping, prefer PN digits; otherwise keep @lid
+          // If LID and we have a PN mapping, prefer PN digits; otherwise keep the phone field empty.
           if (val.includes('@lid')) {
             // sanitize device suffix (e.g., 1134:18@lid -> 1134@lid) to maximize cache hit
-            let base = val
-            try { base = formatJid(val) } catch {}
+            let base = normalizeLidJid(val) || val
+            try { base = normalizeLidJid(base) || formatJid(base) } catch {}
             try {
               const mapped = (await ds?.getPnForLid?.(phone, base)) || (await ds?.getPnForLid?.(phone, val))
-              // Somente converte quando o mapeamento aponta para um PN JID vÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lido
+              // Somente converte quando o mapeamento aponta para um PN JID valido.
               if (mapped && isPnUser(mapped)) { const digits = jidToPhoneNumber(mapped, '') .replace('\+',''); if (isValidPhoneNumber(digits, true)) return digits }
             } catch {}
-            // TambÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©m tentar via contact-info (pn jÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ resolvido anteriormente)
+            // Tambem tentar via contact-info (PN ja resolvido anteriormente).
             try {
               const info = await ds?.getContactInfo?.(base)
               const pnDigits = `${info?.pn || ''}`.replace(/\D/g, '')
@@ -372,14 +347,8 @@ export class OutgoingCloudApi implements Outgoing {
                 if (isValidPhoneNumber(digits, true)) return digits
               }
             } catch {}
-            // Sem mapping nem contact-info confiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡vel: preserva @lid (nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o gerar dÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­gitos nus)
-            return val
-            // Fallback: tentar normalizar o LID via Baileys
-            try {
-              const norm = jidNormalizedUser(base)
-              if (norm && isPnUser(norm)) return jidToPhoneNumber(norm, '')
-            } catch {}
-            return val
+            // Sem mapping nem contact-info confiavel: nao expor LID em campo Cloud API de telefone.
+            return ''
           }
           // If PN JID, convert to digits-only PN
           try {

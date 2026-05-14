@@ -3,7 +3,7 @@ import logger from './logger'
 import { Outgoing } from './outgoing'
 import { Broadcast } from './broadcast'
 import { getConfig } from './config'
-import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMedia, jidToPhoneNumber, jidToRawPhoneNumber, DecryptError, isValidPhoneNumber, normalizeMessageContent, getBinMessage } from './transformer'
+import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMedia, jidToPhoneNumber, jidToRawPhoneNumber, DecryptError, isValidPhoneNumber, normalizeMessageContent, getBinMessage, normalizeLidJid } from './transformer'
 import * as Baileys from '@whiskeysockets/baileys'
 import { WAMessage, delay, jidNormalizedUser, isPnUser, isLidUser, proto } from '@whiskeysockets/baileys'
 import { Template } from './template'
@@ -251,11 +251,12 @@ export class ListenerBaileys implements Listener {
       currentMessage?.key?.participantAlt,
     ])
 
-    const result = new Set<string>(seeds)
+    const result = new Set<string>(seeds.map((jid) => normalizeLidJid(jid) || jid))
     for (const jid of seeds) {
       try {
-        if (jid.endsWith('@lid')) {
-          const pn = await store?.dataStore?.getPnForLid?.(phone, jid)
+        const lookupJid = normalizeLidJid(jid) || jid
+        if (lookupJid.endsWith('@lid')) {
+          const pn = await store?.dataStore?.getPnForLid?.(phone, lookupJid)
           if (pn) result.add(pn)
         }
       } catch {}
@@ -578,9 +579,10 @@ export class ListenerBaileys implements Listener {
           displayName = `${await store?.dataStore?.getContactName?.(voterJid) || ''}`.trim()
         } catch {}
       }
-      if (!displayName && voterJid.endsWith('@lid')) {
+      const normalizedVoterLid = normalizeLidJid(voterJid) || voterJid
+      if (!displayName && normalizedVoterLid.endsWith('@lid')) {
         try {
-          const mappedPn = await store?.dataStore?.getPnForLid?.(phone, voterJid)
+          const mappedPn = await store?.dataStore?.getPnForLid?.(phone, normalizedVoterLid)
           if (mappedPn) {
             displayName = `${await store?.dataStore?.getContactName?.(mappedPn) || ''}`.trim()
           }
@@ -1256,9 +1258,9 @@ export class ListenerBaileys implements Listener {
         const pnDigits = preferredPnDigits
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const kid: any = (i as any)?.key || {}
-        const lidJid = (typeof kid?.participant === 'string' && kid.participant.includes('@lid')) ? kid.participant
-                      : (typeof kid?.remoteJid === 'string' && kid.remoteJid.includes('@lid')) ? kid.remoteJid
-                      : (typeof senderId === 'string' && senderId.includes('@lid')) ? senderId
+        const lidJid = (typeof kid?.participant === 'string' && kid.participant.includes('@lid')) ? normalizeLidJid(kid.participant)
+                      : (typeof kid?.remoteJid === 'string' && kid.remoteJid.includes('@lid')) ? normalizeLidJid(kid.remoteJid)
+                      : (typeof senderId === 'string' && senderId.includes('@lid')) ? normalizeLidJid(senderId)
                       : undefined
         // 1) Se já temos PN válido (E.164), usa-o
         if (pnDigits && lidJid && isValidPhoneNumber(pnDigits, true)) {

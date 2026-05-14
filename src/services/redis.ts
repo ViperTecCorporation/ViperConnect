@@ -22,6 +22,8 @@ import { GroupMetadata, proto } from '@whiskeysockets/baileys'
 import { Webhook, configs } from './config' 
 import { isTransientInfraError } from './error_utils'
 import { version as appVersion } from '../../package.json'
+import { mergeGroupMetadataForCache } from './groups/group_metadata_cache'
+import { normalizeLidJid } from './transformer/jid'
 
 export const BASE_KEY = 'unoapi-'
 
@@ -755,6 +757,7 @@ const getAlternateBrPnJids = (pnJid: string): string[] => {
 
 export const getPnForLid = async (session: string, lidJid: string) => {
   if (!JIDMAP_STORED_LOOKUP_ENABLED) return undefined
+  lidJid = normalizeLidJid(lidJid) || lidJid
   const vGlob = await redisGet(jidMapPnKeyGlob(lidJid))
   if (vGlob) return vGlob
   const vNew = await redisGet(jidMapPnKeyNew(session, lidJid))
@@ -764,13 +767,14 @@ export const getPnForLid = async (session: string, lidJid: string) => {
 export const getLidForPn = async (session: string, pnJid: string) => {
   if (!JIDMAP_STORED_LOOKUP_ENABLED) return undefined
   const vGlob = await redisGet(jidMapLidKeyGlob(pnJid))
-  if (vGlob) return vGlob
+  if (vGlob) return normalizeLidJid(vGlob) || vGlob
   const vNew = await redisGet(jidMapLidKeyNew(session, pnJid))
-  if (vNew) return vNew
+  if (vNew) return normalizeLidJid(vNew) || vNew
   return undefined
 }
 export const setJidMapping = async (session: string, pnJid: string, lidJid: string) => {
   if (!pnJid || !lidJid) return
+  lidJid = normalizeLidJid(lidJid) || lidJid
   // Sanity check: ensure correct roles (pnJid is @s.whatsapp.net, lidJid is @lid)
   try {
     const pnIsPn = typeof pnJid === 'string' && pnJid.endsWith('@s.whatsapp.net')
@@ -780,6 +784,7 @@ export const setJidMapping = async (session: string, pnJid: string, lidJid: stri
     if (!pnIsPn || !lidIsLid) {
       if (pnIsLid && lidIsPn) {
         const tmp = pnJid; pnJid = lidJid; lidJid = tmp
+        lidJid = normalizeLidJid(lidJid) || lidJid
       } else {
         return
       }
@@ -1410,6 +1415,7 @@ export const delContactSyncPending = async (phone: string) => {
 // Varre contact-info da sessão e enriquece o JIDMAP PN<->LID
 export const getPnForLidFromAuthCache = async (session: string, lidJid: string): Promise<string | undefined> => {
   try {
+    lidJid = normalizeLidJid(lidJid) || lidJid
     const digits = `${lidJid || ''}`.split('@')[0].split(':')[0].replace(/\D/g, '')
     if (!digits) return undefined
     const key = `${BASE_KEY}auth:${session}:lid-mapping-${digits}_reverse`
@@ -1430,7 +1436,8 @@ export const getLidForPnFromAuthCache = async (session: string, pnJid: string): 
     const raw = await redisGet(key)
     if (!raw) return undefined
     const val = `${raw}`
-    if (val.endsWith('@lid')) return val
+    const normalizedLid = normalizeLidJid(val)
+    if (normalizedLid) return normalizedLid
     const lidDigits = val.replace(/\D/g, '')
     return lidDigits ? `${lidDigits}@lid` : undefined
   } catch { return undefined }
@@ -1570,7 +1577,8 @@ export const getGroup = async (phone: string, jid: string) => {
 
 export const setGroup = async (phone: string, jid: string, data: GroupMetadata) => {
   const key = groupKey(phone, jid)
-  return redisSetAndExpire(key, JSON.stringify(data), DATA_TTL)
+  const previous = await getGroup(phone, jid)
+  return redisSetAndExpire(key, JSON.stringify(mergeGroupMetadataForCache(previous, data)), DATA_TTL)
 }
 
 export const setLastTimer = async (phone: string, to: string, current: Date) => {

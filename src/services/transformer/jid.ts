@@ -7,6 +7,12 @@ export const formatJid = (jid: string) => {
   return `${jidSplit[0].split(':')[0]}@${jidSplit[1]}`
 }
 
+export const normalizeLidJid = (jid?: string): string | undefined => {
+  const value = `${jid || ''}`.trim()
+  if (!value || !value.includes('@lid')) return undefined
+  return `${value.split('@')[0].split(':')[0]}@lid`
+}
+
 export const isValidPhoneNumber = (value: string, nine = false): boolean => {
   try {
     if (typeof value === 'string' && value.includes('@')) {

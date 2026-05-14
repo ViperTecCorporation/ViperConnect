@@ -189,7 +189,7 @@ ghcr.io/viperteccorporation/viperconnect
 Exemplo:
 
 ```bash
-docker pull ghcr.io/viperteccorporation/viperconnect:3.0.66
+docker pull ghcr.io/viperteccorporation/viperconnect:3.0.67
 ```
 
 ## Créditos
