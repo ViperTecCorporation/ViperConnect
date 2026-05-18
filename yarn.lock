@@ -2941,7 +2941,7 @@
   dependencies:
     "@wasm-audio-decoders/common" "9.0.7"
 
-"@whiskeysockets/baileys@github:ViperTecCorporation/Baileys#Main":
+"@whiskeysockets/baileys@github:ViperTecCorporation/Baileys#ccf8c735c77f42d7fb2283dd873e546e87275767":
   version "7.0.0-rc11"
   resolved "https://codeload.github.com/ViperTecCorporation/Baileys/tar.gz/ccf8c735c77f42d7fb2283dd873e546e87275767"
   dependencies:

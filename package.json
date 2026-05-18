@@ -96,7 +96,7 @@
     "@google-cloud/text-to-speech": "^5.2.0",
     "@redis/client": "^1.5.14",
     "@sentry/node": "^9.29.0",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#Main",
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#ccf8c735c77f42d7fb2283dd873e546e87275767",
     "amqplib": "^0.10.8",
     "audio-decode": "^2.2.3",
     "audio2textjs": "^1.0.5",
@@ -129,6 +129,6 @@
     "node": ">= 24.x"
   },
   "resolutions": {
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#Main"
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#ccf8c735c77f42d7fb2283dd873e546e87275767"
   }
 }

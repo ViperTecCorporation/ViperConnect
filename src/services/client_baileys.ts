@@ -843,6 +843,139 @@ export class ClientBaileys implements Client {
     await this.processVoipCommands(extractVoipCommands(response.body))
   }
 
+  private async handleIncomingCallRejection(event: any, source = 'call') {
+    const from = `${event?.from || ''}`.trim()
+    const id = `${event?.id || event?.callId || ''}`.trim()
+    const status = `${event?.status || ''}`.trim()
+    const callerPn = `${event?.callerPn || event?.caller_pn || ''}`.trim()
+    if (!from || !id) return
+
+    const normalizedStatus = status.toLowerCase()
+    const terminalCallStatuses = new Set(['terminate', 'terminated', 'timeout', 'timed_out', 'reject', 'rejected', 'end', 'ended', 'hangup', 'missed'])
+    if (terminalCallStatuses.has(normalizedStatus)) {
+      try {
+        if (this.calls.delete(from)) {
+          logger.info('CALL gate cleared immediately: from=%s id=%s status=%s source=%s', from, id, status, source)
+        }
+      } catch {}
+    }
+    try {
+      logger.info(
+        'CALL ringing gate: from=%s id=%s hasCall=%s hasRejectCall=%s rejectCallsConfigured=%s status=%s source=%s',
+        from,
+        id,
+        this.calls.has(from),
+        !!this.rejectCall,
+        !!this.config.rejectCalls,
+        normalizedStatus,
+        source,
+      )
+    } catch {}
+    const incomingCallStatuses = new Set(['ringing', 'offer'])
+    if (!incomingCallStatuses.has(normalizedStatus) || this.calls.has(from)) return
+
+    this.calls.set(from, true)
+    if (this.config.rejectCalls && this.rejectCall) {
+      try {
+        logger.info('CALL reject start: from=%s callerPn=%s id=%s source=%s', from, callerPn || '<none>', id, source)
+        await this.rejectCall(id, from)
+        logger.info('CALL reject success: from=%s id=%s source=%s', from, id, source)
+      } catch (error) {
+        logger.warn({ err: error, from, callerPn, id, source }, 'CALL reject failed')
+      }
+      // Enviar mensagem de rejeição respeitando o modo 1:1:
+      // - Em PN: preferir PN; para BR, tentar 12 dígitos primeiro (exists), depois 13; fallback origem
+      // - Em LID: manter origem
+      let toMsg = from
+      try {
+        if (ONE_TO_ONE_ADDRESSING_MODE === 'pn') {
+          let pnJid: string | undefined
+          if (callerPn && isPnUser(callerPn)) {
+            pnJid = callerPn
+          } else if (isLidUser(from)) {
+            try { pnJid = await this.store?.dataStore?.getPnForLid?.(this.phone, from) } catch {}
+            if (!pnJid) { try { const cand = jidNormalizedUser(from); if (cand && isPnUser(cand as any)) pnJid = cand as any } catch {} }
+          } else if (isPnUser(from)) {
+            pnJid = from
+          }
+          const digits = ensurePn(pnJid || from)
+          if (digits && digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+            const ddd = digits.slice(2, 4)
+            const to12 = digits.length === 12 ? digits : `55${ddd}${digits.slice(5)}`
+            const to13 = digits.length === 13 ? digits : (/[6-9]/.test(digits.slice(4)[0]) ? `55${ddd}9${digits.slice(4)}` : digits)
+            let chosen: string | undefined
+            try { const r12 = await this.exists(to12); if (r12 && isPnUser(r12 as any)) chosen = r12 } catch {}
+            if (!chosen) { try { const r13 = await this.exists(to13); if (r13 && isPnUser(r13 as any)) chosen = r13 } catch {} }
+            toMsg = chosen || pnJid || from
+          } else {
+            toMsg = pnJid || from
+          }
+        } else {
+          toMsg = from
+        }
+      } catch { toMsg = from }
+      try {
+        await this.sendMessage(toMsg, { text: this.config.rejectCalls }, {})
+        logger.info('Rejecting calls %s %s to=%s source=%s', this.phone, this.config.rejectCalls, toMsg, source)
+      } catch (error) {
+        logger.warn({ err: error, from, callerPn, id, toMsg, source }, 'CALL reject message send failed')
+      }
+    }
+
+    const messageCallsWebhook = this.config.rejectCallsWebhook || this.config.messageCallsWebhook
+    if (messageCallsWebhook) {
+      // Tenta resolver PN para o remetente da chamada (quando vier em LID)
+      let senderPnJid: string | undefined = undefined
+      try {
+        if (callerPn && isPnUser(callerPn)) {
+          senderPnJid = callerPn
+        }
+      } catch {}
+      try {
+        if (!senderPnJid && isLidUser(from)) {
+          senderPnJid = await this.store?.dataStore?.getPnForLid?.(this.phone, from)
+        }
+      } catch {}
+      try {
+        if (!senderPnJid && isLidUser(from)) {
+          senderPnJid = await getPnForLidFromAuthCache(this.phone, from)
+        }
+      } catch {}
+      try {
+        if (!senderPnJid && isLidUser(from)) {
+          // Fallback leve: normaliza o JID (pode retornar PN em alguns cenários)
+          senderPnJid = jidNormalizedUser(from)
+        }
+      } catch {}
+      try {
+        logger.info('CALL resolve mapping: from=%s isLid=%s mappedPn=%s source=%s', from, isLidUser(from), senderPnJid || '<none>', source)
+      } catch {}
+      const remoteJidKey = senderPnJid || from
+      const waMessageKey = {
+        fromMe: false,
+        id: uuid(),
+        remoteJid: remoteJidKey,
+        // Ajuda o transformer a resolver PN mesmo quando o evento vier em LID (usa mapping quando disponível)
+        senderPn: senderPnJid || (isLidUser(from) ? undefined : from),
+      }
+      try {
+        logger.info('CALL notify key: remoteJid=%s senderPn=%s source=%s', waMessageKey.remoteJid, waMessageKey['senderPn'] || '<none>', source)
+      } catch {}
+      const message = {
+        key: waMessageKey,
+        message: {
+          conversation: messageCallsWebhook,
+        },
+      }
+      await this.listener.process(this.phone, [message], 'notify')
+      try { logger.info('CALL notify enqueued for %s source=%s', from, source) } catch {}
+    }
+    setTimeout(() => {
+      logger.debug('Clean call rejecteds %s', from)
+      this.calls.delete(from)
+    }, 10_000)
+  }
+
   private async ensureUnoExternalMessageId(key: { id?: string; remoteJid?: string } | undefined): Promise<string> {
     const idBaileys = `${key?.id || ''}`.trim()
     if (!idBaileys) return ''
@@ -1846,129 +1979,7 @@ export class ClientBaileys implements Client {
         try {
           await this.notifyVoipServiceCallEvent(event)
         } catch {}
-        const normalizedStatus = `${status || ''}`.toLowerCase()
-        const terminalCallStatuses = new Set(['terminate', 'terminated', 'timeout', 'timed_out', 'reject', 'rejected', 'end', 'ended', 'hangup', 'missed'])
-        if (terminalCallStatuses.has(normalizedStatus)) {
-          try {
-            if (this.calls.delete(from)) {
-              logger.info('CALL gate cleared immediately: from=%s id=%s status=%s', from, id, status)
-            }
-          } catch {}
-        }
-        try {
-          logger.info(
-            'CALL ringing gate: from=%s id=%s hasCall=%s hasRejectCall=%s rejectCallsConfigured=%s status=%s',
-            from,
-            id,
-            this.calls.has(from),
-            !!this.rejectCall,
-            !!this.config.rejectCalls,
-            normalizedStatus,
-          )
-        } catch {}
-        const incomingCallStatuses = new Set(['ringing', 'offer'])
-        if (incomingCallStatuses.has(normalizedStatus) && !this.calls.has(from)) {
-          this.calls.set(from, true)
-          if (this.config.rejectCalls && this.rejectCall) {
-            try {
-              logger.info('CALL reject start: from=%s callerPn=%s id=%s', from, callerPn || '<none>', id)
-              await this.rejectCall(id, from)
-              logger.info('CALL reject success: from=%s id=%s', from, id)
-            } catch (error) {
-              logger.warn({ err: error, from, callerPn, id }, 'CALL reject failed')
-            }
-            // Enviar mensagem de rejeição respeitando o modo 1:1:
-            // - Em PN: preferir PN; para BR, tentar 12 dígitos primeiro (exists), depois 13; fallback origem
-            // - Em LID: manter origem
-            let toMsg = from
-            try {
-              if (ONE_TO_ONE_ADDRESSING_MODE === 'pn') {
-                let pnJid: string | undefined
-                if (callerPn && isPnUser(callerPn)) {
-                  pnJid = callerPn
-                } else if (isLidUser(from)) {
-                  try { pnJid = await this.store?.dataStore?.getPnForLid?.(this.phone, from) } catch {}
-                  if (!pnJid) { try { const cand = jidNormalizedUser(from); if (cand && isPnUser(cand as any)) pnJid = cand as any } catch {} }
-                } else if (isPnUser(from)) {
-                  pnJid = from
-                }
-                const digits = ensurePn(pnJid || from)
-                if (digits && digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
-                  const ddd = digits.slice(2, 4)
-                  const to12 = digits.length === 12 ? digits : `55${ddd}${digits.slice(5)}`
-                  const to13 = digits.length === 13 ? digits : (/[6-9]/.test(digits.slice(4)[0]) ? `55${ddd}9${digits.slice(4)}` : digits)
-                  let chosen: string | undefined
-                  try { const r12 = await this.exists(to12); if (r12 && isPnUser(r12 as any)) chosen = r12 } catch {}
-                  if (!chosen) { try { const r13 = await this.exists(to13); if (r13 && isPnUser(r13 as any)) chosen = r13 } catch {} }
-                  toMsg = chosen || pnJid || from
-                } else {
-                  toMsg = pnJid || from
-                }
-              } else {
-                toMsg = from
-              }
-            } catch { toMsg = from }
-            try {
-              await this.sendMessage(toMsg, { text: this.config.rejectCalls }, {})
-              logger.info('Rejecting calls %s %s to=%s', this.phone, this.config.rejectCalls, toMsg)
-            } catch (error) {
-              logger.warn({ err: error, from, callerPn, id, toMsg }, 'CALL reject message send failed')
-            }
-          }
-          
-          const messageCallsWebhook = this.config.rejectCallsWebhook || this.config.messageCallsWebhook
-          if (messageCallsWebhook) {
-            // Tenta resolver PN para o remetente da chamada (quando vier em LID)
-            let senderPnJid: string | undefined = undefined
-            try {
-              if (callerPn && isPnUser(callerPn)) {
-                senderPnJid = callerPn
-              }
-            } catch {}
-            try {
-              if (!senderPnJid && isLidUser(from)) {
-                senderPnJid = await this.store?.dataStore?.getPnForLid?.(this.phone, from)
-              }
-            } catch {}
-            try {
-              if (!senderPnJid && isLidUser(from)) {
-                senderPnJid = await getPnForLidFromAuthCache(this.phone, from)
-              }
-            } catch {}
-            try {
-              if (!senderPnJid && isLidUser(from)) {
-                // Fallback leve: normaliza o JID (pode retornar PN em alguns cenários)
-                senderPnJid = jidNormalizedUser(from)
-              }
-            } catch {}
-            try {
-              logger.info('CALL resolve mapping: from=%s isLid=%s mappedPn=%s', from, isLidUser(from), senderPnJid || '<none>')
-            } catch {}
-            const remoteJidKey = senderPnJid || from
-            const waMessageKey = {
-              fromMe: false,
-              id: uuid(),
-              remoteJid: remoteJidKey,
-              // Ajuda o transformer a resolver PN mesmo quando o evento vier em LID (usa mapping quando disponível)
-              senderPn: senderPnJid || (isLidUser(from) ? undefined : from),
-            }
-            try {
-              logger.info('CALL notify key: remoteJid=%s senderPn=%s', waMessageKey.remoteJid, waMessageKey['senderPn'] || '<none>')
-            } catch {}
-            const message = {
-              key: waMessageKey,
-              message: {
-                conversation: messageCallsWebhook,
-              },
-            }
-            await this.listener.process(this.phone, [message], 'notify')
-            try { logger.info('CALL notify enqueued for %s', from) } catch {}
-          }
-          setTimeout(() => {
-            logger.debug('Clean call rejecteds %s', from)
-            this.calls.delete(from)
-          }, 10_000)
-        }
+        await this.handleIncomingCallRejection(event)
       }
     })
     this.event('call.raw' as any, async (node: BinaryNode) => {
