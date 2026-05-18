@@ -59,6 +59,7 @@ describe('service socket', () => {
   let mockWaSocket
   let mockBaileysEventEmitter
   let mockOn
+  let wsHandlers: Record<string, Function>
   let onQrCode: OnQrCode
   let onNotification: OnNotification
   let onDisconnected: OnDisconnected
@@ -73,6 +74,12 @@ describe('service socket', () => {
     store = mock<Store>()
     store.sessionStore = mock<SessionStore>()
     mockWaSocket = mock<WASocket>()
+    wsHandlers = {}
+    Reflect.set(mockWaSocket, 'ws', {
+      on: jest.fn((event: string, callback: Function) => {
+        wsHandlers[event] = callback
+      }),
+    })
     mockBaileysEventEmitter = mock<typeof mockWaSocket.ev>()
     Reflect.set(mockWaSocket, 'ev', mockBaileysEventEmitter)
     mockOn = jest.spyOn(mockWaSocket.ev, 'process')
@@ -113,6 +120,32 @@ describe('service socket', () => {
       config: { ...defaultConfig, whatsappVersion } 
     })
     expect(mockOn).toHaveBeenCalled()
+  })
+
+  test('routes Baileys call callback to call.raw handler', async () => {
+    const socket = await connect({
+      phone,
+      store,
+      onQrCode,
+      onNotification,
+      onDisconnected,
+      onReconnect,
+      onNewLogin,
+      attempts: 1,
+      time: 1,
+      config: { ...defaultConfig, whatsappVersion }
+    })
+    const callRaw = jest.fn()
+    socket?.event('call.raw' as any, callRaw)
+
+    await wsHandlers['CB:call']?.({
+      tag: 'call',
+      attrs: { from: '11343495192601@lid' },
+      content: [{ tag: 'offer', attrs: { 'call-id': 'call-1' } }],
+    })
+
+    expect(callRaw).toHaveBeenCalledTimes(1)
+    expect(callRaw).toHaveBeenCalledWith(expect.objectContaining({ tag: 'call' }))
   })
 
   test('allows full history sync for the first unmarked sync', async () => {
@@ -199,5 +232,28 @@ describe('service socket', () => {
     await socket?.rejectCall('call-2', '5566999626925@s.whatsapp.net')
 
     expect(mockWaSocket.rejectCall).toHaveBeenCalledWith('call-2', '5566999626925@s.whatsapp.net')
+  })
+
+  test('rejectCall sends immediately to origin without asserting sessions first', async () => {
+    const socket = await connect({
+      phone,
+      store,
+      onQrCode,
+      onNotification,
+      onDisconnected,
+      onReconnect,
+      onNewLogin,
+      attempts: 1,
+      time: 1,
+      config: { ...defaultConfig, whatsappVersion },
+    })
+
+    mockWaSocket.assertSessions = jest.fn()
+    mockWaSocket.rejectCall = jest.fn().mockResolvedValue(true)
+
+    await socket?.rejectCall('call-3', '11343495192601@lid')
+
+    expect(mockWaSocket.assertSessions).not.toHaveBeenCalled()
+    expect(mockWaSocket.rejectCall).toHaveBeenCalledWith('call-3', '11343495192601@lid')
   })
 })

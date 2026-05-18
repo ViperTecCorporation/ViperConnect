@@ -2508,58 +2508,6 @@ export const connect = async ({
     // A rejeição precisa usar o mesmo identificador que originou o evento de chamada.
     // Apenas removemos sufixo técnico de device (:NN) para não enviar JID inválido ao Baileys.
     let target = normalizeReceiptJid(callFrom) || callFrom
-    // Preassert de sess?es para rejeitar chamada com chaves atualizadas
-    try {
-      const set = new Set<string>()
-      if (typeof target === 'string' && target) set.add(target)
-      try { if (isLidUser(target)) set.add(jidNormalizedUser(target)) } catch {}
-      // BR: incluir candidato alternativo (12"13) quando alvo for PN JID
-      try {
-        if (typeof target === 'string' && target.endsWith('@s.whatsapp.net')) {
-          const digits = ensurePn(target)
-          if (digits && digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
-            const to12 = (() => {
-              if (digits.length === 12) return digits
-              const ddd = digits.slice(2, 4)
-              const local9 = digits.slice(4)
-              return `55${ddd}${local9.slice(1)}`
-            })()
-            const to13 = (() => {
-              if (digits.length === 13) return digits
-              const ddd = digits.slice(2, 4)
-              const local = digits.slice(4)
-              return /[6-9]/.test(local[0]) ? `55${ddd}9${local}` : digits
-            })()
-            const cands = Array.from(new Set([to12, to13])).filter((v) => v && v !== digits)
-            for (const cand of cands) {
-              try {
-                const res: any = await (sock as any)?.onWhatsApp?.(cand)
-                if (Array.isArray(res) && res[0]?.exists && res[0]?.jid) {
-                  set.add(res[0].jid)
-                  try { logger.debug('Preassert BR(rejectCall): added alternate candidate %s -> %s', cand, res[0].jid) } catch {}
-                }
-              } catch {}
-            }
-          }
-        }
-      } catch {}
-      try {
-        const self = state?.creds?.me?.id
-        if (self) { set.add(self); try { set.add(jidNormalizedUser(self)) } catch {} }
-      } catch {}
-      const targets = Array.from(set)
-      if (targets.length) {
-        const assertSessionsWithTimeout = Promise.race([
-          (sock as any).assertSessions(targets, true),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('rejectCall_assertSessions_timeout')), 1500)),
-        ])
-        await assertSessionsWithTimeout
-        try { logger.debug('Preasserted %s sessions for rejectCall %s', targets.length, JSON.stringify(targets)) } catch {}
-        try { if ((config as any)?.useRedis) await countSignalSessionsForJids(phone, targets) } catch {}
-      }
-    } catch (e) {
-      logger.warn(e as any, 'Ignore error on preassert sessions for rejectCall')
-    }
     logger.info('CALL_REJECT final target: callId=%s from=%s target=%s', callId, callFrom, target)
     try {
       const result = await sock?.rejectCall(callId, target)

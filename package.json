@@ -1,6 +1,6 @@
 {
   "name": "viperconnect",
-  "version": "3.0.67",
+  "version": "3.0.68",
   "description": "ViperConnect by ViperTec Corporation, based on the original Unoapi Cloud project",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -56,8 +56,7 @@
     "bridge-ts": "node --max-old-space-size=4096 --experimental-strip-types --experimental-transform-types src/bridge.ts",
     "clean:data": "rm -rf ./data/medias/* ./data/sessions/* ./data/stores/*.json",
     "build:docs": "node ./scripts/openapi-to-json.mjs",
-    "check:baileys-lock": "node ./scripts/check-baileys-lock.mjs",
-    "postinstall": "node ./scripts/prepare-baileys.mjs"
+    "check:baileys-lock": "node ./scripts/check-baileys-lock.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.1.1",
@@ -97,7 +96,7 @@
     "@google-cloud/text-to-speech": "^5.2.0",
     "@redis/client": "^1.5.14",
     "@sentry/node": "^9.29.0",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e",
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#ccf8c735c77f42d7fb2283dd873e546e87275767",
     "amqplib": "^0.10.8",
     "audio-decode": "^2.2.3",
     "audio2textjs": "^1.0.5",
@@ -130,8 +129,6 @@
     "node": ">= 24.x"
   },
   "resolutions": {
-    "libsignal": "https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/e81ecfc32eb74951d789ab37f7e341ab66d5fff1",
-    "@whiskeysockets/libsignal-node": "https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/e81ecfc32eb74951d789ab37f7e341ab66d5fff1",
-    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#79099a338afebb36d73e6245ea6fbe2f79422f8e"
+    "@whiskeysockets/baileys": "github:ViperTecCorporation/Baileys#ccf8c735c77f42d7fb2283dd873e546e87275767"
   }
 }
