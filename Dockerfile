@@ -12,7 +12,6 @@ COPY ./package.json ./package.json
 COPY ./yarn.lock ./yarn.lock
 COPY ./vendor ./vendor
 COPY ./scripts ./scripts
-# Instala dependências já com o postinstall disponível
 RUN corepack enable \
     && corepack use yarn@1.22.22 \
     && yarn --version \
@@ -24,9 +23,6 @@ RUN corepack enable \
          i=$((i+1)); echo "yarn install failed ($i/3), retrying in 5s..."; \
          sleep 5; \
        done
-
-# Garante a compilação do Baileys instalado via Git antes do build
-RUN node scripts/prepare-baileys.mjs
 
 COPY ./src ./src
 COPY ./public ./public
