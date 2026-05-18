@@ -1,6 +1,6 @@
 {
   "name": "viperconnect",
-  "version": "3.0.67",
+  "version": "3.0.68",
   "description": "ViperConnect by ViperTec Corporation, based on the original Unoapi Cloud project",
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
