@@ -1311,6 +1311,7 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
       profileName = firstNonEmptyString(payload.verifiedBizName, payload.pushName, senderUsername, contactWaId, senderStableUserId)
     }
     let cloudApiStatus
+    let cloudApiStatusMessageId = whatsappMessageId
     let messageTimestamp = payload.messageTimestamp
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const groupMetadata: any = {}
@@ -1549,6 +1550,13 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
           const { update: _omitUpdate2, ...restProto } = payload || {}
           return fromBaileysMessageContent(phone, { ...restProto, message: inner, __unoapiMessageEdit: messageEditInfo }, config)
         } else {
+          const protocolType = typeof binMessage?.type === 'undefined' ? '' : `${binMessage.type}`
+          const revokedMessageId = `${binMessage?.key?.id || ''}`.trim()
+          if ((protocolType === 'REVOKE' || protocolType === '0') && revokedMessageId) {
+            cloudApiStatus = 'deleted'
+            cloudApiStatusMessageId = revokedMessageId
+            break
+          }
           logger.debug(`Ignore message type ${messageType}`)
           return [null, senderPhone, senderId]
         }
@@ -2330,7 +2338,7 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
     }
     // const repository = await getRepository(this.phone, this.config)
     if (cloudApiStatus) {
-      const messageId = whatsappMessageId
+      const messageId = cloudApiStatusMessageId
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let recipientPn = (
         // 1) outro lado (preferência absoluta)

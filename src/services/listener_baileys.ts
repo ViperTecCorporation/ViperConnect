@@ -1387,7 +1387,11 @@ export class ListenerBaileys implements Listener {
         if (state?.id && state?.status) {
           try {
             const keyId = `${i?.key?.id || ''}`.trim()
-            if (keyId) {
+            const protocol = (i as any)?.message?.protocolMessage || (i as any)?.update?.message?.protocolMessage
+            const protocolType = typeof protocol?.type === 'undefined' ? '' : `${protocol.type}`
+            const protocolRevokeId = `${protocol?.key?.id || ''}`.trim()
+            const isProtocolRevokeStatus = state?.status === 'deleted' && !!protocolRevokeId && (protocolType === 'REVOKE' || protocolType === '0')
+            if (keyId && !isProtocolRevokeStatus) {
               state.id = keyId
               try { (data as any).entry[0].changes[0].value.statuses[0].id = keyId } catch {}
             }

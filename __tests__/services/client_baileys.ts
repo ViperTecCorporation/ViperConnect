@@ -18,6 +18,7 @@ jest.mock('../../src/services/client_voip', () => ({
   mapBaileysCallStatusToVoipEvent: jest.fn((status: string) => status === 'ringing' ? 'incoming_call' : undefined),
   sendVoipCallEvent: jest.fn(async () => ({ ok: true, status: 200 })),
   sendVoipSignaling: jest.fn(async () => ({ ok: true, status: 200 })),
+  drainVoipCommands: jest.fn(async () => ({ ok: true, status: 200, body: { commands: [] } })),
   extractVoipCommands: jest.fn(() => []),
 }))
 jest.mock('../../src/services/redis', () => ({
@@ -26,7 +27,7 @@ jest.mock('../../src/services/redis', () => ({
   getPnForLidFromAuthCache: jest.fn(async () => undefined),
   getLidForPnFromAuthCache: jest.fn(async () => undefined),
 }))
-import { ClientBaileys } from '../../src/services/client_baileys'
+import { ClientBaileys, normalizeOutgoingVoipCallChild } from '../../src/services/client_baileys'
 import { Client } from '../../src/services/client'
 import { Config, getConfig, defaultConfig } from '../../src/services/config'
 import { Response } from '../../src/services/response'
@@ -47,14 +48,14 @@ import {
   logout,
 } from '../../src/services/socket'
 import { mock, mockFn } from 'jest-mock-extended'
-import { proto } from '@whiskeysockets/baileys'
+import { encodeBinaryNode, proto } from '@whiskeysockets/baileys'
 import { DataStore } from '../../src/services/data_store'
 import { Incoming } from '../../src/services/incoming'
 import { dataStores } from '../../src/services/data_store'
 import logger from '../../src/services/logger'
 import { SessionStore } from '../../src/services/session_store'
 import { SendError } from '../../src/services/send_error'
-import { sendVoipCallEvent, sendVoipSignaling, extractVoipCommands } from '../../src/services/client_voip'
+import { drainVoipCommands, sendVoipCallEvent, sendVoipSignaling, extractVoipCommands } from '../../src/services/client_voip'
 import { getLidForPnFromAuthCache } from '../../src/services/redis'
 
 const mockConnect = connect as jest.MockedFunction<typeof connect>
@@ -96,6 +97,7 @@ describe('service client baileys', () => {
     mockConnect.mockReset()
     ;(sendVoipCallEvent as jest.Mock).mockClear()
     ;(sendVoipSignaling as jest.Mock).mockClear()
+    ;(drainVoipCommands as jest.Mock).mockClear()
     ;(extractVoipCommands as jest.Mock).mockReset()
     ;(extractVoipCommands as jest.Mock).mockImplementation(() => [])
     ;(getLidForPnFromAuthCache as jest.Mock).mockReset()
@@ -689,6 +691,190 @@ describe('service client baileys', () => {
     )
   })
 
+  test('call event processes binary call stanza commands from voip service', async () => {
+    const callNode = {
+      tag: 'call',
+      attrs: {
+        from: 'self@s.whatsapp.net',
+        to: '123456789012345@s.whatsapp.net',
+      },
+      content: [
+        {
+          tag: 'accept',
+          attrs: {
+            'call-id': 'call-7',
+            'call-creator': '123456789012345@s.whatsapp.net',
+          },
+        },
+      ],
+    }
+    ;(sendVoipCallEvent as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: {
+        commands: [
+          {
+            action: 'send_call_node',
+            session: phone,
+            callId: 'call-7',
+            peerJid: 'ignored@lid',
+            payloadTag: 'call',
+            payloadBase64: Buffer.from(encodeBinaryNode(callNode)).toString('base64'),
+          },
+        ],
+      },
+    })
+    ;(extractVoipCommands as jest.Mock).mockImplementation((body: any) => body.commands)
+
+    await client.connect(0)
+    await eventHandlers.call?.([
+      {
+        from: '123456789012345@lid',
+        id: 'call-7',
+        status: 'ringing',
+      },
+    ])
+
+    expect(sendCallNodeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tag: 'call',
+        attrs: expect.objectContaining({
+          from: 'self@s.whatsapp.net',
+          to: '123456789012345@s.whatsapp.net',
+        }),
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            tag: 'accept',
+            attrs: expect.objectContaining({ 'call-id': 'call-7' }),
+          }),
+        ]),
+      }),
+    )
+    expect(sendCallNodeMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        tag: 'call',
+        attrs: expect.objectContaining({
+          to: '123456789012345@s.whatsapp.net',
+        }),
+      }),
+    )
+  })
+
+  test('drained async voip commands are sent back to WhatsApp', async () => {
+    const acceptNode = {
+      tag: 'accept',
+      attrs: {
+        'call-id': 'call-9',
+        'call-creator': '123456789012345@s.whatsapp.net',
+      },
+    }
+    ;(drainVoipCommands as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: {
+        commands: [
+          {
+            action: 'send_call_node',
+            session: phone,
+            callId: 'call-9',
+            peerJid: '123456789012345@s.whatsapp.net',
+            payloadTag: 'call',
+            payloadBase64: Buffer.from(encodeBinaryNode(acceptNode)).toString('base64'),
+          },
+        ],
+      },
+    })
+    ;(extractVoipCommands as jest.Mock).mockImplementation((body: any) => body.commands || [])
+
+    await client.connect(0)
+    const commandCount = await (client as any).drainAndProcessVoipCommands('call-9', 1, 'test')
+
+    expect(commandCount).toBe(1)
+    expect(drainVoipCommands).toHaveBeenCalledWith(expect.anything(), phone, 'call-9')
+    expect(sendCallNodeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tag: 'call',
+        attrs: expect.objectContaining({
+          to: '123456789012345@s.whatsapp.net',
+        }),
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            tag: 'accept',
+            attrs: expect.objectContaining({ 'call-id': 'call-9' }),
+          }),
+        ]),
+      }),
+    )
+  })
+
+  test('forwards WhatsApp call node ack back to voip service', async () => {
+    const acceptNode = {
+      tag: 'accept',
+      attrs: {
+        'call-id': 'call-ack',
+        'call-creator': '123456789012345@s.whatsapp.net',
+      },
+    }
+    const ackNode = {
+      tag: 'ack',
+      attrs: {
+        id: 'ack-1',
+        type: 'accept',
+      },
+    }
+    sendCallNodeMock.mockResolvedValue(ackNode)
+    ;(extractVoipCommands as jest.Mock).mockImplementation((body: any) => body?.commands || [])
+
+    await client.connect(0)
+    await (client as any).processVoipCommands([
+      {
+        action: 'send_call_node',
+        session: phone,
+        callId: 'call-ack',
+        peerJid: '123456789012345@s.whatsapp.net',
+        payloadTag: 'call',
+        payloadBase64: Buffer.from(
+          '<accept call-id="call-ack" call-creator="123456789012345@s.whatsapp.net"/>'
+        ).toString('base64'),
+      },
+    ])
+
+    expect(sendCallNodeMock).toHaveBeenCalled()
+    expect(sendVoipSignaling).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        session: phone,
+        callId: 'call-ack',
+        peerJid: '123456789012345@s.whatsapp.net',
+        msgType: 'ack',
+        payloadBase64: Buffer.from(encodeBinaryNode(ackNode)).toString('base64'),
+        payloadEncoding: 'wa_binary',
+        attrs: {
+          error: '0',
+          type: 'accept',
+        },
+      }),
+    )
+  })
+
+  test('restores lid identity in outgoing voip call command attrs', () => {
+    expect(normalizeOutgoingVoipCallChild({
+      tag: 'accept',
+      attrs: {
+        'call-id': 'call-lid-route',
+        'call-creator': '94047083475061@s.whatsapp.net',
+        peer: '94047083475061@s.whatsapp.net',
+      },
+    }, '94047083475061@lid')).toEqual({
+      tag: 'accept',
+      attrs: {
+        'call-id': 'call-lid-route',
+        'call-creator': '94047083475061@lid',
+        peer: '94047083475061@lid',
+      },
+    })
+  })
+
   test('raw call node forwards signaling to voip service', async () => {
     await client.connect(0)
 
@@ -705,6 +891,7 @@ describe('service client baileys', () => {
             'call-id': 'call-5',
             from: '123456789012345@lid',
             'call-creator': '123456789012345@lid',
+            caller_pn: '559999999999@s.whatsapp.net',
           },
           content: [
             {
@@ -728,5 +915,118 @@ describe('service client baileys', () => {
         payloadEncoding: 'wa_binary',
       }),
     )
+  })
+
+  test('call signaling keeps original lid peer for voip service and replies', async () => {
+    const acceptNode = {
+      tag: 'accept',
+      attrs: {
+        'call-id': 'call-8',
+        'call-creator': '123456789012345@s.whatsapp.net',
+      },
+    }
+    ;(sendVoipSignaling as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: {
+        commands: [
+          {
+            action: 'send_call_node',
+            session: phone,
+            callId: 'call-8',
+            peerJid: '123456789012345@s.whatsapp.net',
+            payloadTag: 'call',
+            payloadBase64: Buffer.from(
+              '<accept call-id="call-8" call-creator="123456789012345@s.whatsapp.net"/>'
+            ).toString('base64'),
+          },
+        ],
+      },
+    })
+    ;(extractVoipCommands as jest.Mock).mockImplementation((body: any) => body.commands || [])
+
+    await client.connect(0)
+
+    await eventHandlers['call.raw']?.({
+      tag: 'call',
+      attrs: {
+        from: '123456789012345@lid',
+        t: '1774650364',
+      },
+      content: [
+        {
+          tag: 'offer',
+          attrs: {
+            'call-id': 'call-8',
+            'call-creator': '123456789012345@lid',
+            caller_pn: '559999999999@s.whatsapp.net',
+          },
+          content: [
+            {
+              tag: 'enc',
+              attrs: {},
+              content: Buffer.from('test-enc-payload'),
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(sendVoipSignaling).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        callId: 'call-8',
+        peerJid: '123456789012345@lid',
+      }),
+    )
+    expect(sendCallNodeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tag: 'call',
+        attrs: expect.objectContaining({
+          to: '123456789012345@lid',
+        }),
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            tag: 'accept',
+            attrs: expect.objectContaining({
+              'call-id': 'call-8',
+              'call-creator': '123456789012345@lid',
+            }),
+          }),
+        ]),
+      }),
+    )
+  })
+
+  test('raw offer starts async command drain polling', async () => {
+    await client.connect(0)
+
+    await eventHandlers['call.raw']?.({
+      tag: 'call',
+      attrs: {
+        from: '123456789012345@lid',
+        t: '1774650364',
+      },
+      content: [
+        {
+          tag: 'offer',
+          attrs: {
+            'call-id': 'call-10',
+            'call-creator': '123456789012345@lid',
+            caller_pn: '559999999999@s.whatsapp.net',
+          },
+          content: [
+            {
+              tag: 'enc',
+              attrs: {},
+              content: Buffer.from('test-enc-payload'),
+            },
+          ],
+        },
+      ],
+    })
+
+    expect((client as any).voipCommandDrainPollers.has(`${phone}:call-10`)).toBe(true)
+    ;(client as any).voipCommandDrainPollers.delete(`${phone}:call-10`)
   })
 })

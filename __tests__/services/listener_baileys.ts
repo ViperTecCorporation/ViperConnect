@@ -195,6 +195,63 @@ describe('service listener baileys', () => {
     )
   }, 15000)
 
+  test('normalizes group revoke status to original Uno id before sending webhook', async () => {
+    const providerId = 'provider-original-group-message'
+    const unoId = 'uno-original-group-message'
+    const groupJid = '120363409038491818@g.us'
+    config.getMessageMetadata = async message => message
+    store.dataStore.loadUnoId.mockImplementation(async (id: string) => (id === providerId ? unoId : undefined))
+    store.dataStore.loadStatus.mockResolvedValue(undefined)
+    outgoing.send = jest.fn().mockResolvedValue(undefined) as any
+
+    await service.sendOne(phone, {
+      key: {
+        remoteJid: groupJid,
+        fromMe: true,
+        id: 'provider-revoke-event',
+        participant: '5587981148453@s.whatsapp.net',
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+      message: {
+        protocolMessage: {
+          key: {
+            remoteJid: groupJid,
+            fromMe: true,
+            id: providerId,
+          },
+          type: 'REVOKE',
+        },
+      },
+    })
+
+    expect(outgoing.send).toHaveBeenCalledWith(
+      phone,
+      expect.objectContaining({
+        entry: expect.arrayContaining([
+          expect.objectContaining({
+            changes: expect.arrayContaining([
+              expect.objectContaining({
+                value: expect.objectContaining({
+                  statuses: expect.arrayContaining([
+                    expect.objectContaining({
+                      id: unoId,
+                      status: 'deleted',
+                      recipient_id: groupJid,
+                      recipient_type: 'group',
+                      conversation: {
+                        id: groupJid,
+                      },
+                    }),
+                  ]),
+                }),
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    )
+  }, 15000)
+
   test('decrypts poll update vote using lid fallback before building webhook summary', async () => {
     config.getMessageMetadata = async message => message
     const groupJid = '120363040468224422@g.us'

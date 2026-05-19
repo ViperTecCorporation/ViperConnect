@@ -53,6 +53,7 @@ export interface VoipSignalingPayload {
   rawDecryptedCallFrameBase64?: string
   rawOfferWapNoPrefixBase64?: string
   rawOfferChildWapBase64?: string
+  tcTokenBase64?: string
   payloadEncoding?: 'xml' | 'wa_binary'
   attrs?: Record<string, string>
   outerAttrs?: Record<string, string>
@@ -69,6 +70,7 @@ export type VoipCommand =
       peerJid: string
       payloadBase64: string
       payloadTag?: string
+      payloadChildTag?: string
     }
   | {
       action: 'voip_event'
@@ -87,7 +89,7 @@ export type VoipCommand =
 export const mapBaileysCallStatusToVoipEvent = (status: unknown): VoipCallEvent | undefined => {
   const normalized = `${status || ''}`.trim().toLowerCase()
   if (!normalized) return undefined
-  if (normalized === 'ringing') return 'incoming_call'
+  if (['ringing', 'offer'].includes(normalized)) return 'incoming_call'
   if (['accepted', 'accept', 'connected', 'connect'].includes(normalized)) return 'call_accepted'
   if (['rejected', 'reject', 'declined', 'decline'].includes(normalized)) return 'call_rejected'
   if (['ended', 'end', 'terminated', 'terminate', 'hangup', 'hang_up'].includes(normalized)) return 'call_ended'
@@ -175,6 +177,7 @@ export const sendVoipSignaling = async (
   if (!baseUrl) return { ok: false, reason: 'disabled' }
 
   const url = `${baseUrl}/v1/calls/signaling`
+  const timeoutMs = Math.max(config.voipServiceTimeoutMs || 10_000, 30_000)
   const headers: Record<string, string> = {
     'Content-Type': 'application/json; charset=utf-8',
   }
@@ -185,7 +188,7 @@ export const sendVoipSignaling = async (
     logger.info(
       {
         url,
-        timeoutMs: config.voipServiceTimeoutMs || 10_000,
+        timeoutMs,
         session: payload.session,
         callId: payload.callId,
         peerJid: payload.peerJid,
@@ -197,7 +200,7 @@ export const sendVoipSignaling = async (
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(config.voipServiceTimeoutMs || 10_000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     let body: unknown = undefined
     try {
@@ -229,13 +232,81 @@ export const sendVoipSignaling = async (
         err: error,
         url,
         durationMs: Date.now() - startedAt,
-        timeoutMs: config.voipServiceTimeoutMs || 10_000,
+        timeoutMs,
         session: payload.session,
         callId: payload.callId,
         peerJid: payload.peerJid,
         msgType: payload.msgType || 'unknown',
       },
       'failed to send voip signaling'
+    )
+    return { ok: false, reason: 'request_failed' }
+  }
+}
+
+export const drainVoipCommands = async (
+  config: Config,
+  session: string,
+  callId: string,
+): Promise<{ ok: boolean; status?: number; body?: unknown; reason?: string }> => {
+  const baseUrl = `${config.voipServiceUrl || ''}`.trim().replace(/\/+$/, '')
+  if (!baseUrl) return { ok: false, reason: 'disabled' }
+
+  const url = `${baseUrl}/v1/calls/sessions/${encodeURIComponent(session)}/calls/${encodeURIComponent(callId)}/commands/drain`
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json; charset=utf-8',
+  }
+  if (config.voipServiceToken) headers.Authorization = `Bearer ${config.voipServiceToken}`
+  const startedAt = Date.now()
+
+  try {
+    logger.info(
+      {
+        url,
+        timeoutMs: config.voipServiceTimeoutMs || 10_000,
+        session,
+        callId,
+      },
+      'draining voip async commands'
+    )
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(config.voipServiceTimeoutMs || 10_000),
+    })
+    let body: unknown = undefined
+    try {
+      body = await response.json()
+    } catch {}
+    if (!response.ok) {
+      logger.warn(
+        { url, status: response.status, session, callId, body },
+        'voip service async command drain failed'
+      )
+      return { ok: false, status: response.status, body }
+    }
+    logger.info(
+      {
+        url,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+        session,
+        callId,
+      },
+      'voip async commands drained'
+    )
+    return { ok: true, status: response.status, body }
+  } catch (error) {
+    logger.warn(
+      {
+        err: error,
+        url,
+        durationMs: Date.now() - startedAt,
+        timeoutMs: config.voipServiceTimeoutMs || 10_000,
+        session,
+        callId,
+      },
+      'failed to drain voip async commands'
     )
     return { ok: false, reason: 'request_failed' }
   }
