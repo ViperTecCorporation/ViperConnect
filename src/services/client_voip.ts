@@ -17,6 +17,8 @@ export interface VoipCallEventPayload {
   callId: string
   from: string
   callerPn?: string
+  selfJid?: string
+  selfLid?: string
   isGroup?: boolean
   groupJid?: string
   isVideo?: boolean
@@ -28,6 +30,8 @@ export interface VoipSignalingPayload {
   session: string
   callId: string
   peerJid: string
+  selfJid?: string
+  selfLid?: string
   payload?: string
   payloadBase64?: string
   rawCallRootWapBase64?: string
@@ -181,11 +185,14 @@ export const sendVoipSignaling = async (
   const headers: Record<string, string> = {
     'Content-Type': 'application/json; charset=utf-8',
   }
+  if (payload.selfJid) headers['x-uno-self-jid'] = payload.selfJid
+  if (payload.selfLid) headers['x-uno-self-lid'] = payload.selfLid
   if (config.voipServiceToken) headers.Authorization = `Bearer ${config.voipServiceToken}`
   const startedAt = Date.now()
+  const requestBody = JSON.stringify(payload)
 
   try {
-    logger.info(
+    logger.warn(
       {
         url,
         timeoutMs,
@@ -193,13 +200,25 @@ export const sendVoipSignaling = async (
         callId: payload.callId,
         peerJid: payload.peerJid,
         msgType: payload.msgType || 'unknown',
+        payloadEncoding: payload.payloadEncoding || (payload.payloadBase64 ? 'wa_binary' : 'xml'),
+        payloadBytes: payload.payloadBase64 ? Buffer.from(payload.payloadBase64, 'base64').byteLength : undefined,
+        hasTcToken: !!payload.tcTokenBase64,
+        hasSelfJid: !!payload.selfJid,
+        hasSelfLid: !!payload.selfLid,
+        attrs: payload.attrs,
+        outerAttrs: payload.outerAttrs,
+        encAttrs: payload.encAttrs,
+        bodyHasSelfJid: requestBody.includes('"selfJid"'),
+        bodyHasSelfLid: requestBody.includes('"selfLid"'),
+        headerHasSelfJid: !!headers['x-uno-self-jid'],
+        headerHasSelfLid: !!headers['x-uno-self-lid'],
       },
       'sending voip signaling'
     )
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload),
+      body: requestBody,
       signal: AbortSignal.timeout(timeoutMs),
     })
     let body: unknown = undefined

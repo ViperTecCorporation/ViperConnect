@@ -316,8 +316,13 @@ export class ClientBaileys implements Client {
       if (!command) continue
       if (command.action !== 'send_call_node') {
         logger.warn(
-          { session: this.phone, callId: command.callId, action: command.action },
-          'VOIP command skipped'
+          {
+            session: this.phone,
+            callId: command.callId,
+            action: command.action,
+            eventSummary: command.action === 'voip_event' ? this.summarizeVoipEventCommand(command) : undefined,
+          },
+          command.action === 'voip_event' ? 'VOIP wasm event observed from service' : 'VOIP command skipped'
         )
         continue
       }
@@ -484,10 +489,13 @@ export class ClientBaileys implements Client {
         'VOIP forwarding call node ack to voip service'
       )
       const tcTokenBase64 = await this.fetchTcToken([peerJid])
+      const selfIdentity = this.getVoipSelfIdentity()
       const response = await this.enqueueVoipByCall(callId, async () => sendVoipSignaling(this.config, {
         session: this.phone,
         callId,
         peerJid,
+        selfJid: selfIdentity.selfJid,
+        selfLid: selfIdentity.selfLid,
         msgType: 'ack',
         payload: binaryNodeToXml(ack),
         payloadBase64: Buffer.from(encodeBinaryNode(ack)).toString('base64'),
@@ -563,6 +571,40 @@ export class ClientBaileys implements Client {
     })
 
     this.voipCommandDrainPollers.set(key, poller)
+  }
+
+  private getVoipSelfIdentity() {
+    const me = (this.store as any)?.state?.creds?.me || {}
+    return {
+      selfJid: typeof me.id === 'string' && me.id ? me.id : undefined,
+      selfLid: typeof me.lid === 'string' && me.lid ? me.lid : undefined,
+    }
+  }
+
+  private summarizeVoipEventCommand(command: VoipCommand) {
+    if (command.action !== 'voip_event') return undefined
+    if (!command.eventData) return { eventType: command.eventType, hasEventData: false }
+    try {
+      const parsed = JSON.parse(command.eventData)
+      const callInfo = parsed?.call_info || parsed?.callInfo || {}
+      return {
+        eventType: command.eventType,
+        callId: parsed?.callId || parsed?.call_id || callInfo?.call_id || command.callId,
+        callState: callInfo?.call_state || parsed?.call_state,
+        callResult: callInfo?.call_result || parsed?.call_result,
+        callSetupErrorType: callInfo?.call_setup_error_type || parsed?.call_setup_error_type,
+        reasonCode: parsed?.reason_code || callInfo?.reason_code,
+        bytesReceived: callInfo?.bytes_received,
+        bytesSent: callInfo?.bytes_sent,
+        relayRtt: callInfo?.relay_rtt,
+      }
+    } catch {
+      return {
+        eventType: command.eventType,
+        parseError: true,
+        eventDataPreview: `${command.eventData}`.slice(0, 500),
+      }
+    }
   }
 
   private async forwardVoipSignalingNode(node: BinaryNode) {
@@ -1048,6 +1090,29 @@ export class ClientBaileys implements Client {
       const tcTokenBase64 = infoChild.tag === 'offer'
         ? await this.fetchTcToken([peerJid, `${node.attrs?.from || ''}`.trim(), `${infoChild.attrs?.['call-creator'] || ''}`.trim()])
         : undefined
+      const selfIdentity = this.getVoipSelfIdentity()
+      logger.warn({
+        phone: this.phone,
+        callId,
+        msgType: infoChild.tag,
+        payloadStrategy,
+        peerJid,
+        rawPeerJid,
+        networkPeerJid,
+        storedPeerJid,
+        storedNetworkPeerJid: callId ? this.voipNetworkPeerByCallId.get(callId) : undefined,
+        callCreator,
+        callerPn: `${infoChild.attrs?.caller_pn || ''}`.trim() || undefined,
+        nodeFrom: `${node.attrs?.from || ''}`.trim() || undefined,
+        nodeParticipant: `${node.attrs?.participant || ''}`.trim() || undefined,
+        infoParticipant: `${infoChild.attrs?.participant || ''}`.trim() || undefined,
+        hasTcToken: !!tcTokenBase64,
+        tcTokenSource: infoChild.tag === 'offer' ? 'offer_fetch' : 'stored_by_voip_service',
+        selfJid: selfIdentity.selfJid,
+        selfLid: selfIdentity.selfLid,
+        outerAttrs: node.attrs || {},
+        infoAttrs: infoChild.attrs || {},
+      }, 'VOIP signaling context forwarding to voip service')
       const response = await this.enqueueVoipByCall(callId, async () => {
         logger.info({
           phone: this.phone,
@@ -1061,6 +1126,8 @@ export class ClientBaileys implements Client {
           session: this.phone,
           callId,
           peerJid,
+          selfJid: selfIdentity.selfJid,
+          selfLid: selfIdentity.selfLid,
           msgType: infoChild.tag,
           payload: binaryNodeToXml(infoChild),
           payloadBase64: signalingPayloadBase64,
@@ -1120,12 +1187,15 @@ export class ClientBaileys implements Client {
 
     const timestampRaw = event?.timestamp ?? event?.t ?? event?.messageTimestamp
     const timestamp = Number(timestampRaw)
+    const selfIdentity = this.getVoipSelfIdentity()
     const response = await this.enqueueVoipByCall(callId, async () => sendVoipCallEvent(this.config, {
       session: this.phone,
       event: mappedEvent,
       callId,
       from,
       callerPn: `${event?.callerPn || event?.caller_pn || ''}`.trim() || undefined,
+      selfJid: selfIdentity.selfJid,
+      selfLid: selfIdentity.selfLid,
       isGroup: typeof event?.isGroup === 'boolean' ? event.isGroup : (typeof event?.is_group === 'boolean' ? event.is_group : undefined),
       groupJid: `${event?.groupJid || event?.group_jid || ''}`.trim() || undefined,
       isVideo: typeof event?.isVideo === 'boolean' ? event.isVideo : (typeof event?.is_video === 'boolean' ? event.is_video : undefined),
