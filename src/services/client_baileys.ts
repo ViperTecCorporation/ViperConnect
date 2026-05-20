@@ -587,16 +587,6 @@ export class ClientBaileys implements Client {
     return /^\d+:\d+@s\.whatsapp\.net$/i.test(`${jid || ''}`.trim())
   }
 
-  private toVoipLidDevicePeer(callCreator?: string, deviceJids: string[] = []) {
-    const lidUser = `${callCreator || ''}`.trim().match(/^(\d+)(?::\d+)?@lid$/i)?.[1]
-    if (!lidUser) return undefined
-    const devices = Array.from(new Set(deviceJids
-      .map(jid => `${jid || ''}`.trim().match(/^\d+:(\d+)@s\.whatsapp\.net$/i)?.[1])
-      .filter(Boolean))) as string[]
-    if (devices.length !== 1) return undefined
-    return `${lidUser}:${devices[0]}@s.whatsapp.net`
-  }
-
   private async resolveVoipPeerDeviceJids(candidates: string[]) {
     const out = new Set<string>()
     const inspectCandidate = async (raw: string) => {
@@ -813,7 +803,7 @@ export class ClientBaileys implements Client {
       const decryptedOfferJid = `${(decryptedOfferNode as any)?.__unoDecryptJid || ''}`.trim()
       const peerDeviceJid = this.isVoipPnDeviceJid(decryptedOfferJid)
         ? decryptedOfferJid
-        : this.toVoipLidDevicePeer(callCreator, peerDeviceJids)
+        : undefined
       if (infoChild.tag === 'offer') {
         logger.warn({
           phone: this.phone,
@@ -822,7 +812,7 @@ export class ClientBaileys implements Client {
           peerDeviceJid,
           decryptedOfferJid: decryptedOfferJid || undefined,
           peerDeviceCandidates: peerDeviceJids,
-          peerDeviceStrategy: this.isVoipPnDeviceJid(decryptedOfferJid) ? 'decrypt_jid' : (peerDeviceJid ? 'lid_user_with_resolved_device' : 'none'),
+          peerDeviceStrategy: this.isVoipPnDeviceJid(decryptedOfferJid) ? 'decrypt_jid' : 'none',
           candidateCount: peerDeviceJids.length,
         }, 'VOIP peer device identity selected')
       }

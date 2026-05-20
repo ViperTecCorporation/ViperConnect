@@ -78,4 +78,4 @@ Para identidade de chamada VoIP, nao remova nem altere a normalizacao do listene
 - se o `enc` do offer for descriptografado, logar o JID usado em `decryptedOfferJid`;
 - nunca invente sufixo `:device`: derive `peerDeviceJid` apenas de evidencia real;
 - nao promover `caller_pn:device` vindo de `getUSyncDevices`/Redis para `peerDeviceJid`; em teste real `556696269251:2@s.whatsapp.net` fez o WASM processar offer com `commandCount:0` e cair para timeout;
-- o teste seguinte e combinar o usuario LID do `call-creator` com o device real resolvido, por exemplo `94047083475061:2@s.whatsapp.net`, e enviar isso como `peerDeviceJid` para o WASM.
+- tambem foi testado combinar o usuario LID do `call-creator` com o device real resolvido (`94047083475061:2@s.whatsapp.net`); o WASM logou `Offer from:5061:2@s.whatsapp.net`, mas ainda gerou `commandCount:0`, entao esse formato tambem deve ficar desativado.
