@@ -75,6 +75,7 @@ Para identidade de chamada VoIP, nao remova nem altere a normalizacao do listene
 - `selfJid` e `selfLid` vem de `store.state.creds.me` e sao encaminhados ao servico VoIP;
 - `caller_pn` sem `:device` deve ficar apenas como evidencia;
 - para peer com device, tente primeiro o metodo do Baileys (`getUSyncDevices`) e use Redis auth cache apenas como fallback;
-- se o `enc` do offer for descriptografado, o JID usado nessa descriptografia e a unica evidencia forte para `peerDeviceJid`;
-- nunca invente sufixo `:device`: so encaminhe `peerDeviceJid` quando a propria descriptografia do offer retornar PN real no formato `numero:device@s.whatsapp.net`;
-- nao promover device unico vindo apenas de `getUSyncDevices`/Redis para `peerDeviceJid`; em teste real isso fez o WASM processar offer com `commandCount:0` e cair para timeout.
+- se o `enc` do offer for descriptografado, logar o JID usado em `decryptedOfferJid`;
+- nunca invente sufixo `:device`: derive `peerDeviceJid` apenas de evidencia real;
+- nao promover `caller_pn:device` vindo de `getUSyncDevices`/Redis para `peerDeviceJid`; em teste real `556696269251:2@s.whatsapp.net` fez o WASM processar offer com `commandCount:0` e cair para timeout;
+- o teste seguinte e combinar o usuario LID do `call-creator` com o device real resolvido, por exemplo `94047083475061:2@s.whatsapp.net`, e enviar isso como `peerDeviceJid` para o WASM.
