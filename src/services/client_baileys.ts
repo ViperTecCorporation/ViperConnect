@@ -803,7 +803,7 @@ export class ClientBaileys implements Client {
       const decryptedOfferJid = `${(decryptedOfferNode as any)?.__unoDecryptJid || ''}`.trim()
       const peerDeviceJid = this.isVoipPnDeviceJid(decryptedOfferJid)
         ? decryptedOfferJid
-        : (peerDeviceJids.length === 1 ? peerDeviceJids[0] : undefined)
+        : undefined
       if (infoChild.tag === 'offer') {
         logger.warn({
           phone: this.phone,
