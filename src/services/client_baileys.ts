@@ -11,6 +11,7 @@ import {
   sendCallNode,
   fetchTcToken,
   decryptVoipEnc,
+  fetchUserDevices,
   groupCreate,
   groupUpdateSubject,
   groupUpdateDescription,
@@ -42,7 +43,7 @@ import QRCode from 'qrcode'
 import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS } from '../defaults'
-import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
+import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache, getDeviceJidsForPnFromAuthCache } from './redis'
 import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
 import { convertToWebpSticker } from '../utils/sticker_convert'
@@ -189,6 +190,7 @@ const sendCallNodeDefault: sendCallNode = async (_node) => {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const fetchTcTokenDefault: fetchTcToken = async (_jids) => undefined
 const decryptVoipEncDefault: decryptVoipEnc = async (_node, _jids) => undefined
+const fetchUserDevicesDefault: fetchUserDevices = async (_jids) => []
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const fetchImageUrlDefault: fetchImageUrl = async (_jid: string) => ''
@@ -581,6 +583,55 @@ export class ClientBaileys implements Client {
     }
   }
 
+  private isVoipPnDeviceJid(jid?: string) {
+    return /^\d+:\d+@s\.whatsapp\.net$/i.test(`${jid || ''}`.trim())
+  }
+
+  private async resolveVoipPeerDeviceJids(candidates: string[]) {
+    const out = new Set<string>()
+    const inspectCandidate = async (raw: string) => {
+      const jid = `${raw || ''}`.trim()
+      if (!jid) return
+      if (this.isVoipPnDeviceJid(jid)) {
+        out.add(jid)
+        return
+      }
+      if (isPnUser(jid as any)) {
+        const before = out.size
+        try {
+          for (const deviceJid of await this.fetchUserDevices([jid], true, false)) {
+            if (this.isVoipPnDeviceJid(deviceJid)) out.add(deviceJid)
+          }
+        } catch (error) {
+          logger.warn({ err: error, phone: this.phone, jid }, 'VOIP peer device lookup via Baileys failed')
+        }
+        if (out.size > before) return
+        for (const deviceJid of await getDeviceJidsForPnFromAuthCache(this.phone, jid)) out.add(deviceJid)
+        return
+      }
+      if (isLidUser(jid as any)) {
+        const pn = await getPnForLidFromAuthCache(this.phone, jid)
+        if (pn) {
+          const before = out.size
+          try {
+            for (const deviceJid of await this.fetchUserDevices([pn], true, false)) {
+              if (this.isVoipPnDeviceJid(deviceJid)) out.add(deviceJid)
+            }
+          } catch (error) {
+            logger.warn({ err: error, phone: this.phone, jid, pn }, 'VOIP peer LID device lookup via Baileys failed')
+          }
+          if (out.size > before) return
+          for (const deviceJid of await getDeviceJidsForPnFromAuthCache(this.phone, pn)) out.add(deviceJid)
+        }
+      }
+    }
+
+    for (const candidate of candidates) {
+      await inspectCandidate(candidate)
+    }
+    return Array.from(out)
+  }
+
   private summarizeVoipEventCommand(command: VoipCommand) {
     if (command.action !== 'voip_event') return undefined
     if (!command.eventData) return { eventType: command.eventType, hasEventData: false }
@@ -639,6 +690,27 @@ export class ClientBaileys implements Client {
         storedPeerJid,
         peerJid,
       }, 'VOIP route peer selected')
+      const peerDeviceJids = infoChild.tag === 'offer'
+        ? await this.resolveVoipPeerDeviceJids([
+          `${infoChild.attrs?.caller_pn || ''}`.trim(),
+          peerJid,
+          rawPeerJid,
+          networkPeerJid,
+          callCreator,
+          `${node.attrs?.from || ''}`.trim(),
+          `${node.attrs?.participant || ''}`.trim(),
+          `${infoChild.attrs?.participant || ''}`.trim(),
+        ])
+        : []
+      if (infoChild.tag === 'offer') {
+        logger.warn({
+          phone: this.phone,
+          callId,
+          peerJid,
+          peerDeviceCandidates: peerDeviceJids,
+          candidateCount: peerDeviceJids.length,
+        }, 'VOIP peer device candidates resolved')
+      }
       const infoChildren = getBinaryNodeChildrenSafe(infoChild)
       const encChild = infoChildren.find((child) => child?.tag === 'enc')
       const audioChild = infoChildren.find((child) => child?.tag === 'audio')
@@ -721,12 +793,28 @@ export class ClientBaileys implements Client {
         : undefined
       const decryptedOfferNode = infoChild.tag === 'offer' && encBytes
         ? await this.decryptVoipEnc(infoChild, [
+          ...peerDeviceJids,
           peerJid,
           `${node.attrs?.from || ''}`.trim(),
           `${infoChild.attrs?.['call-creator'] || ''}`.trim(),
           `${infoChild.attrs?.caller_pn || ''}`.trim(),
         ])
         : undefined
+      const decryptedOfferJid = `${(decryptedOfferNode as any)?.__unoDecryptJid || ''}`.trim()
+      const peerDeviceJid = this.isVoipPnDeviceJid(decryptedOfferJid)
+        ? decryptedOfferJid
+        : (peerDeviceJids.length === 1 ? peerDeviceJids[0] : undefined)
+      if (infoChild.tag === 'offer') {
+        logger.warn({
+          phone: this.phone,
+          callId,
+          peerJid,
+          peerDeviceJid,
+          decryptedOfferJid: decryptedOfferJid || undefined,
+          peerDeviceCandidates: peerDeviceJids,
+          candidateCount: peerDeviceJids.length,
+        }, 'VOIP peer device identity selected')
+      }
       const decryptedOfferBytes = decryptedOfferNode ? encodeBinaryNode(decryptedOfferNode) : undefined
       const offerWapNoPrefixBytes = infoChild.tag === 'offer'
         ? Buffer.from((encodeBinaryNode as any)(infoChild, undefined, []))
@@ -1097,6 +1185,8 @@ export class ClientBaileys implements Client {
         msgType: infoChild.tag,
         payloadStrategy,
         peerJid,
+        peerDeviceJid,
+        peerDeviceCandidates: peerDeviceJids,
         rawPeerJid,
         networkPeerJid,
         storedPeerJid,
@@ -1126,6 +1216,7 @@ export class ClientBaileys implements Client {
           session: this.phone,
           callId,
           peerJid,
+          peerDeviceJid,
           selfJid: selfIdentity.selfJid,
           selfLid: selfIdentity.selfLid,
           msgType: infoChild.tag,
@@ -1514,6 +1605,7 @@ export class ClientBaileys implements Client {
   private sendCallNode: sendCallNode = sendCallNodeDefault
   private fetchTcToken: fetchTcToken = fetchTcTokenDefault
   private decryptVoipEnc: decryptVoipEnc = decryptVoipEncDefault
+  private fetchUserDevices: fetchUserDevices = fetchUserDevicesDefault
   private groupCreateFn: groupCreate = groupUnavailable
   private groupUpdateSubjectFn: groupUpdateSubject = groupUnavailable
   private groupUpdateDescriptionFn: groupUpdateDescription = groupUnavailable
@@ -1784,6 +1876,7 @@ export class ClientBaileys implements Client {
       groupJoinApprovalMode,
       fetchTcToken,
       decryptVoipEnc,
+      fetchUserDevices,
     } = result
     this.event = event
     this.sendMessage = send
@@ -1792,6 +1885,7 @@ export class ClientBaileys implements Client {
     this.sendCallNode = sendCallNode
     this.fetchTcToken = fetchTcToken || fetchTcTokenDefault
     this.decryptVoipEnc = decryptVoipEnc || decryptVoipEncDefault
+    this.fetchUserDevices = fetchUserDevices || fetchUserDevicesDefault
     this.groupCreateFn = groupCreate || groupUnavailable
     this.groupUpdateSubjectFn = groupUpdateSubject || groupUnavailable
     this.groupUpdateDescriptionFn = groupUpdateDescription || groupUnavailable

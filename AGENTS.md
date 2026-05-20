@@ -67,3 +67,13 @@ Use este criterio antes de criar ou alterar uma classe:
 - Se roda em background, fica em `jobs`.
 - Se e uma funcao auxiliar pequena e sem estado de negocio, fica em `utils`.
 - Se e contrato compartilhado, fica em um arquivo `*_types.ts` perto do dominio.
+
+## VoIP WhatsApp
+
+Para identidade de chamada VoIP, nao remova nem altere a normalizacao do listener para tentar preservar `:device`. O caminho seguro fica em `client_baileys.ts`/`socket.ts`:
+
+- `selfJid` e `selfLid` vem de `store.state.creds.me` e sao encaminhados ao servico VoIP;
+- `caller_pn` sem `:device` deve ficar apenas como evidencia;
+- para peer com device, tente primeiro o metodo do Baileys (`getUSyncDevices`) e use Redis auth cache apenas como fallback;
+- se o `enc` do offer for descriptografado, o JID usado nessa descriptografia e a melhor evidencia para `peerDeviceJid`;
+- nunca invente sufixo `:device`: so encaminhe `peerDeviceJid` quando houver JID PN real no formato `numero:device@s.whatsapp.net`.

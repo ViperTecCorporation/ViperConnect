@@ -30,6 +30,7 @@ export interface VoipSignalingPayload {
   session: string
   callId: string
   peerJid: string
+  peerDeviceJid?: string
   selfJid?: string
   selfLid?: string
   payload?: string
@@ -199,6 +200,7 @@ export const sendVoipSignaling = async (
         session: payload.session,
         callId: payload.callId,
         peerJid: payload.peerJid,
+        peerDeviceJid: payload.peerDeviceJid,
         msgType: payload.msgType || 'unknown',
         payloadEncoding: payload.payloadEncoding || (payload.payloadBase64 ? 'wa_binary' : 'xml'),
         payloadBytes: payload.payloadBase64 ? Buffer.from(payload.payloadBase64, 'base64').byteLength : undefined,

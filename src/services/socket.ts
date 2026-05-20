@@ -178,6 +178,10 @@ export interface decryptVoipEnc {
   (_node: BinaryNode, _jids: string[]): Promise<BinaryNode | undefined>
 }
 
+export interface fetchUserDevices {
+  (_jids: string[], _useCache?: boolean, _ignoreZeroDevices?: boolean): Promise<string[]>
+}
+
 export interface fetchImageUrl {
   (_jid: string): Promise<string | undefined>
 }
@@ -2698,6 +2702,7 @@ export const connect = async ({
             ? { tag: child.tag, attrs: child.attrs || {}, content: Buffer.from(callKey) }
             : child),
         }
+        ;(decryptedNode as any).__unoDecryptJid = jid
         logger.info({ phone, jid, callKeyBytes: callKey.length }, 'VOIP enc decrypted')
         return decryptedNode
       } catch (error) {
@@ -2706,6 +2711,14 @@ export const connect = async ({
     }
     logger.warn({ err: lastError, phone, jids: candidates }, 'failed to decrypt voip enc')
     return undefined
+  }
+
+  const fetchUserDevices: fetchUserDevices = async (jids: string[], useCache = true, ignoreZeroDevices = false) => {
+    await validateStatus()
+    const fn = (sock as any)?.getUSyncDevices
+    if (typeof fn !== 'function') return []
+    const devices = await fn(jids, useCache, ignoreZeroDevices)
+    return Array.from(new Set((devices || []).map((item: any) => `${item?.jid || ''}`.trim()).filter(Boolean)))
   }
 
   const groupCreate: groupCreate = async (subject: string, participants: string[]) => {
@@ -3009,6 +3022,7 @@ export const connect = async ({
     sendCallNode,
     fetchTcToken,
     decryptVoipEnc,
+    fetchUserDevices,
     fetchImageUrl,
     fetchGroupMetadata,
     groupMetadata,
