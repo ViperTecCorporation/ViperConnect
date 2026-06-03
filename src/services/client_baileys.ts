@@ -313,6 +313,63 @@ export class ClientBaileys implements Client {
     }
   }
 
+  private shouldQueueVoipPreOfferSignal(tag: string) {
+    return !['terminate', 'reject'].includes(`${tag || ''}`.toLowerCase())
+  }
+
+  private queueVoipPreOfferSignal(callId: string, node: BinaryNode, tag: string, peerJid: string) {
+    const current = this.voipPreOfferSignalQueueByCallId.get(callId) || []
+    if (current.length >= 50) {
+      logger.warn(
+        {
+          session: this.phone,
+          callId,
+          msgType: tag,
+          peerJid,
+          queuedCount: current.length,
+        },
+        'VOIP pre-offer signaling queue full; dropping signaling node'
+      )
+      return
+    }
+    current.push(node)
+    this.voipPreOfferSignalQueueByCallId.set(callId, current)
+    logger.warn(
+      {
+        session: this.phone,
+        callId,
+        msgType: tag,
+        peerJid,
+        queuedCount: current.length,
+      },
+      'VOIP signaling queued until offer is forwarded'
+    )
+  }
+
+  private async flushVoipPreOfferSignalQueue(callId: string) {
+    const queued = this.voipPreOfferSignalQueueByCallId.get(callId)
+    if (!queued?.length) return
+    this.voipPreOfferSignalQueueByCallId.delete(callId)
+    logger.warn(
+      {
+        session: this.phone,
+        callId,
+        queuedCount: queued.length,
+      },
+      'VOIP offer forwarded; flushing queued signaling'
+    )
+    for (const queuedNode of queued) {
+      await this.forwardVoipSignalingNode(queuedNode)
+    }
+  }
+
+  private clearVoipCallSignalingState(callId: string) {
+    this.voipPeerByCallId.delete(callId)
+    this.voipNetworkPeerByCallId.delete(callId)
+    this.voipOfferForwardedByCallId.delete(callId)
+    this.voipPreOfferSignalQueueByCallId.delete(callId)
+  }
+
   private async processVoipCommands(commands: VoipCommand[]) {
     for (const command of commands || []) {
       if (!command) continue
@@ -677,6 +734,10 @@ export class ClientBaileys implements Client {
         ? networkPeerJid
         : (infoChild.tag === 'offer' ? rawPeerJid : (storedPeerJid || rawPeerJid))
       if (!callId || !peerJid) return
+      if (infoChild.tag !== 'offer' && !this.voipOfferForwardedByCallId.has(callId) && this.shouldQueueVoipPreOfferSignal(infoChild.tag)) {
+        this.queueVoipPreOfferSignal(callId, node, infoChild.tag, peerJid)
+        return
+      }
       if (infoChild.tag === 'offer') {
         this.voipPeerByCallId.set(callId, peerJid)
         if (networkPeerJid) this.voipNetworkPeerByCallId.set(callId, networkPeerJid)
@@ -1261,10 +1322,13 @@ export class ClientBaileys implements Client {
         peerJid,
       }, 'VOIP enqueue signaling done')
       await this.processVoipCommands(extractVoipCommands(response.body))
-      if (infoChild.tag === 'offer') this.scheduleVoipCommandDrain(callId)
+      if (infoChild.tag === 'offer') {
+        this.voipOfferForwardedByCallId.add(callId)
+        await this.flushVoipPreOfferSignalQueue(callId)
+        this.scheduleVoipCommandDrain(callId)
+      }
       if (infoChild.tag === 'terminate' || infoChild.tag === 'reject') {
-        this.voipPeerByCallId.delete(callId)
-        this.voipNetworkPeerByCallId.delete(callId)
+        this.clearVoipCallSignalingState(callId)
       }
     } catch (error) {
       logger.warn(error as any, 'failed to forward voip signaling for %s', this.phone)
@@ -1624,6 +1688,8 @@ export class ClientBaileys implements Client {
   private calls = new Map<string, boolean>()
   private voipPeerByCallId = new Map<string, string>()
   private voipNetworkPeerByCallId = new Map<string, string>()
+  private voipOfferForwardedByCallId = new Set<string>()
+  private voipPreOfferSignalQueueByCallId = new Map<string, BinaryNode[]>()
   private groupMetadataRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private groupMetadataRefreshInFlight = new Set<string>()
   private groupMetadataRefreshLastAt = new Map<string, number>()
