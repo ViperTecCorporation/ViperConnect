@@ -26,6 +26,7 @@ jest.mock('../../src/services/redis', () => ({
   setContactSyncPending: jest.fn(async () => undefined),
   getPnForLidFromAuthCache: jest.fn(async () => undefined),
   getLidForPnFromAuthCache: jest.fn(async () => undefined),
+  getDeviceJidsForPnFromAuthCache: jest.fn(async () => []),
 }))
 import { ClientBaileys, normalizeOutgoingVoipCallChild } from '../../src/services/client_baileys'
 import { Client } from '../../src/services/client'
@@ -56,7 +57,7 @@ import logger from '../../src/services/logger'
 import { SessionStore } from '../../src/services/session_store'
 import { SendError } from '../../src/services/send_error'
 import { drainVoipCommands, sendVoipCallEvent, sendVoipSignaling, extractVoipCommands } from '../../src/services/client_voip'
-import { getLidForPnFromAuthCache } from '../../src/services/redis'
+import { getDeviceJidsForPnFromAuthCache, getLidForPnFromAuthCache } from '../../src/services/redis'
 
 const mockConnect = connect as jest.MockedFunction<typeof connect>
 
@@ -105,6 +106,8 @@ describe('service client baileys', () => {
     ;(extractVoipCommands as jest.Mock).mockImplementation(() => [])
     ;(getLidForPnFromAuthCache as jest.Mock).mockReset()
     ;(getLidForPnFromAuthCache as jest.Mock).mockResolvedValue(undefined)
+    ;(getDeviceJidsForPnFromAuthCache as jest.Mock).mockReset()
+    ;(getDeviceJidsForPnFromAuthCache as jest.Mock).mockResolvedValue([])
     phone = `${new Date().getMilliseconds()}`
     listener = mock<Listener>()
     incoming = mock<Incoming>()
