@@ -187,6 +187,65 @@ describe('service client baileys', () => {
     expect(response.ok.messages[0].id).toBe(`uno-${id}`)
   })
 
+  test('call send with quoted message tries exact JIDs from original key before normalized fallback', async () => {
+    const unoMessageId = 'uno-original-message'
+    const providerMessageId = 'provider-original-message'
+    const sentProviderId = 'provider-sent-message'
+    const originalKey = {
+      id: providerMessageId,
+      remoteJid: '94047083475061@lid',
+      fromMe: false,
+      participant: '',
+      senderLid: '94047083475061@lid',
+      senderPn: '556696269251@s.whatsapp.net',
+    }
+    const quotedMessage = {
+      key: originalKey,
+      message: { conversation: 'Oi' },
+    }
+
+    dataStore.loadProviderId.mockImplementation(async (id: string) => (
+      id === unoMessageId ? providerMessageId : undefined
+    ))
+    dataStore.loadKey.mockImplementation(async (id: string) => (
+      id === providerMessageId ? originalKey : undefined
+    ))
+    dataStore.loadMessageExact = jest.fn(async (jid: string, id: string) => (
+      jid === '94047083475061@lid' && id === providerMessageId
+        ? quotedMessage
+        : undefined
+    )) as any
+    send.mockResolvedValue({
+      key: { id: sentProviderId, remoteJid: '556696269251@s.whatsapp.net' },
+      message: { conversation: 'teste' },
+    })
+
+    await client.connect(0)
+    await client.send({
+      messaging_product: 'whatsapp',
+      to: '556696269251',
+      type: 'text',
+      text: { body: 'teste' },
+      context: { message_id: unoMessageId },
+    }, {})
+
+    expect(dataStore.loadMessageExact).toHaveBeenCalledWith('94047083475061@lid', providerMessageId)
+    expect(dataStore.loadMessage).not.toHaveBeenCalledWith('94047083475061@s.whatsapp.net', providerMessageId)
+    expect(send).toHaveBeenCalledWith(
+      '556696269251',
+      expect.objectContaining({ text: 'teste' }),
+      expect.objectContaining({
+        quoted: expect.objectContaining({
+          key: expect.objectContaining({
+            id: providerMessageId,
+            remoteJid: '556696269251@s.whatsapp.net',
+          }),
+          message: quotedMessage.message,
+        }),
+      }),
+    )
+  })
+
   test('recovers delivery by refreshing sessions and resending with mapped provider id', async () => {
     const unoId = 'uno-message-1'
     const providerId = 'provider-message-1'

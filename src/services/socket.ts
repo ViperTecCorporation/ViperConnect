@@ -2377,7 +2377,7 @@ export const connect = async ({
       try {
         const mid = (full as any)?.key?.id as string | undefined
         if (mid) {
-          if (typeof id === 'string' && isIndividualJid(id)) {
+          if (!forceRemoteJid && typeof id === 'string' && isIndividualJid(id)) {
             const existing = pendingOneToOneErrorFallbacks.get(mid)
             if (existing?.timer) {
               try { clearTimeout(existing.timer) } catch {}

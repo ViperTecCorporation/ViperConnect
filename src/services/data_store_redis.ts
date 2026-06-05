@@ -140,6 +140,12 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
     const wm = m as proto.IWebMessageInfo
     return wm
   }
+  store.loadMessageExact = async (remoteJid: string, id: string) => {
+    const jid = isLidUser(remoteJid as any) ? (normalizeLidJid(remoteJid) || remoteJid) : remoteJid
+    const m = await getMessage(phone, jid, id)
+    const wm = m as proto.IWebMessageInfo
+    return wm
+  }
   store.findMessageWithSecret = async (id: string, jids: string[]) => {
     const candidates = Array.from(new Set((jids || []).map((jid) => `${jid || ''}`.trim()).filter(Boolean)))
     let fallback: proto.IWebMessageInfo | undefined
@@ -167,7 +173,9 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
     return fallback
   }
   store.setMessage = async (remoteJid: string, message: WAMessage) => {
-    const newJid = isIndividualJid(remoteJid) ? phoneNumberToJid(jidToPhoneNumber(remoteJid)) : remoteJid
+    const newJid = isLidUser(remoteJid as any)
+      ? (normalizeLidJid(remoteJid) || remoteJid)
+      : isIndividualJid(remoteJid) ? phoneNumberToJid(jidToPhoneNumber(remoteJid)) : remoteJid
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return setMessage(phone, newJid, message.key.id!, message)
   }

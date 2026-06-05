@@ -31,6 +31,7 @@ export type DataStore  = {
   toJSON: () => any
   fromJSON: (json: any) => void
   loadMessage: (jid: string, id: string) => Promise<any | undefined>
+  loadMessageExact?: (jid: string, id: string) => Promise<any | undefined>
   findMessageWithSecret?: (id: string, jids: string[]) => Promise<any | undefined>
   setUnoId: (id: string, unoId: string) => Promise<void>
   setMediaPayload: (id: string, payload: any) => Promise<void>

@@ -72,6 +72,23 @@ const buildLastIncomingAliases = (key: any): string[] => {
   return Array.from(aliases)
 }
 
+export const resolveUnoIdChain = async (dataStore: any, id?: unknown): Promise<string | undefined> => {
+  let current = `${id || ''}`.trim()
+  if (!current || typeof dataStore?.loadUnoId !== 'function') return current || undefined
+
+  const seen = new Set<string>()
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (seen.has(current)) return current
+    seen.add(current)
+
+    const next = `${await dataStore.loadUnoId(current) || ''}`.trim()
+    if (!next || next === current) return current
+    current = next
+  }
+
+  return current
+}
+
 const delayFunc = UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS && UNOAPI_DELAY_BETWEEN_MESSAGES_MS ? async (phone, to) => {
   if (to) { 
     const key = `${phone}:${to}`
@@ -1236,10 +1253,13 @@ export class ListenerBaileys implements Listener {
     const stanzaId = binMessage?.contextInfo?.stanzaId
     const rawStanzaId = `${stanzaId || ''}`.trim()
     if (messageType && i.message && stanzaId) {
-      const unoStanzaId = await store.dataStore.loadUnoId(stanzaId)
-      if (unoStanzaId) {
-        logger.debug('Unoapi stanza id %s to Baileys stanza id %s', unoStanzaId, stanzaId)
-        i.message[messageType].contextInfo.stanzaId = unoStanzaId
+      const normalizedStanzaId = await resolveUnoIdChain(store.dataStore, stanzaId)
+      const providerStanzaId = normalizedStanzaId !== stanzaId ? undefined : await store.dataStore.loadProviderId(stanzaId)
+      if (normalizedStanzaId && normalizedStanzaId !== stanzaId) {
+        logger.debug('Unoapi stanza id %s to Baileys stanza id %s', normalizedStanzaId, stanzaId)
+        i.message[messageType].contextInfo.stanzaId = normalizedStanzaId
+      } else if (providerStanzaId) {
+        logger.debug('Unoapi stanza id %s already normalized from Baileys stanza id %s', stanzaId, providerStanzaId)
       } else {
         logger.debug('Unoapi stanza id %s not overrided', stanzaId)
       }
@@ -1501,6 +1521,20 @@ export class ListenerBaileys implements Listener {
       try {
         const v: any = (data as any)?.entry?.[0]?.changes?.[0]?.value || {}
         const m = Array.isArray(v.messages) ? v.messages[0] : undefined
+        if (Array.isArray(v.messages)) {
+          for (const message of v.messages) {
+            const contextId = `${message?.context?.message_id || message?.context?.id || ''}`.trim()
+            const normalizedContextId = await resolveUnoIdChain(store?.dataStore, contextId)
+            if (contextId && normalizedContextId && normalizedContextId !== contextId) {
+              message.context = {
+                ...(message.context || {}),
+                message_id: normalizedContextId,
+                id: normalizedContextId,
+              }
+              logger.debug('Webhook context id %s normalized to Uno id %s', contextId, normalizedContextId)
+            }
+          }
+        }
         if (m?.message_type === 'message_edit') {
           const contextId = `${m?.context?.message_id || m?.context?.id || ''}`.trim()
           if (contextId) {

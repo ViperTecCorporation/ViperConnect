@@ -88,6 +88,34 @@ const sanitizeMessageEditKey = (key: any) => {
   return sanitized
 }
 
+const firstPnJidFromKey = (key: any): string | undefined => {
+  for (const jid of [key?.senderPn, key?.participantPn, key?.remoteJidAlt, key?.participantAlt, key?.remoteJid, key?.participant]) {
+    if (typeof jid === 'string' && isPnUser(jid as any)) return jid
+  }
+  return undefined
+}
+
+const normalizeQuotedForOneToOneSend = (quoted: WAMessage | undefined, key: any): WAMessage | undefined => {
+  if (!quoted?.key?.remoteJid || `${quoted.key.remoteJid}`.endsWith('@g.us')) return quoted
+
+  const pnJid = firstPnJidFromKey(key)
+  if (!pnJid || quoted.key.remoteJid === pnJid) return quoted
+
+  const normalized: WAMessage = {
+    ...(quoted as any),
+    key: {
+      ...(quoted.key as any),
+      remoteJid: pnJid,
+    },
+  } as WAMessage
+
+  if (typeof (normalized.key as any).participant === 'string' && !(normalized.key as any).participant.trim()) {
+    delete (normalized.key as any).participant
+  }
+
+  return normalized
+}
+
 const getBrNinthDigitVariants = (digits: string) => {
   const raw = `${digits || ''}`.replace(/\D/g, '')
   if (!raw.startsWith('55') || (raw.length !== 12 && raw.length !== 13)) return []
@@ -2867,6 +2895,23 @@ export class ClientBaileys implements Client {
                 await dataStore?.loadProviderId?.(key?.id),
                 await dataStore?.loadUnoId?.(key?.id),
               ].filter((v): v is string => typeof v === 'string' && !!v)))
+              const exactJids = Array.from(new Set([
+                key?.remoteJid,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.remoteJidAlt : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.senderPn : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.participantPn : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.senderLid : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.participantLid : undefined,
+              ].filter((v): v is string => typeof v === 'string' && !!v)))
+              if (typeof dataStore?.loadMessageExact === 'function') {
+                for (const exactJid of exactJids) {
+                  for (const candidateId of candidateIds) {
+                    quoted = await dataStore.loadMessageExact(exactJid, candidateId)
+                    if (quoted) break
+                  }
+                  if (quoted) break
+                }
+              }
               const candidateJids = Array.from(new Set([
                 key?.remoteJid,
                 targetTo,
@@ -2874,13 +2919,18 @@ export class ClientBaileys implements Client {
                 (() => { try { return normalizeTransportJid(key?.remoteJid) } catch { return key?.remoteJid } })(),
               ].filter((v): v is string => typeof v === 'string' && !!v)))
 
-              for (const candidateJid of candidateJids) {
-                for (const candidateId of candidateIds) {
-                  quoted = await dataStore?.loadMessage(candidateJid, candidateId)
+              if (!quoted) {
+                for (const candidateJid of candidateJids) {
+                  for (const candidateId of candidateIds) {
+                    quoted = await dataStore?.loadMessage(candidateJid, candidateId)
+                    if (quoted) break
+                  }
                   if (quoted) break
                 }
-                if (quoted) break
               }
+
+              const quotedOriginalRemoteJid = quoted?.key?.remoteJid
+              quoted = normalizeQuotedForOneToOneSend(quoted, key)
 
               try {
                 const qid = quoted?.key?.id
@@ -2894,8 +2944,10 @@ export class ClientBaileys implements Client {
                     providerId,
                     quotedFound: !!quoted,
                     quotedId: qid,
-                    quotedRemoteJid: qjid,
+                    quotedRemoteJid: quotedOriginalRemoteJid,
+                    quotedSendRemoteJid: qjid,
                     quotedType: qtype,
+                    exactJids,
                     candidateJids,
                     candidateIds,
                   },
