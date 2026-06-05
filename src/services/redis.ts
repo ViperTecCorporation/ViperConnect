@@ -1443,6 +1443,28 @@ export const getLidForPnFromAuthCache = async (session: string, pnJid: string): 
   } catch { return undefined }
 }
 
+export const getDeviceJidsForPnFromAuthCache = async (session: string, pnJid: string, limit = 20): Promise<string[]> => {
+  try {
+    const digits = `${pnJid || ''}`.split('@')[0].split(':')[0].replace(/\D/g, '')
+    if (!digits) return []
+    const base = `${BASE_KEY}auth:${session}:session-`
+    const keys = await redisScanSome(`${base}${digits}*`, Math.max(20, limit * 3))
+    const out = new Set<string>()
+    const addDevice = (device: string | undefined) => {
+      if (!device || !/^\d+$/.test(device)) return
+      out.add(`${digits}:${device}@s.whatsapp.net`)
+    }
+    for (const key of keys || []) {
+      const suffix = `${key || ''}`.startsWith(base) ? `${key}`.slice(base.length) : `${key || ''}`
+      // Baileys Signal ProtocolAddress serializes as "user.device"; older/local helpers may use "user:device".
+      const match = suffix.match(new RegExp(`^${digits}(?:@s\\.whatsapp\\.net)?[.:](\\d+)(?:\\D|$)`))
+      addDevice(match?.[1])
+      if (out.size >= limit) break
+    }
+    return Array.from(out)
+  } catch { return [] }
+}
+
 export const getConnectCount = async(phone: string) => {
   await ensureConnectCountSub()
   const cached = connectCountCache.get(phone)

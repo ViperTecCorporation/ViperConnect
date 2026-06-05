@@ -12,6 +12,10 @@ import makeWASocket, {
   ConnectionState,
   UserFacingSocketConfig,
   fetchLatestWaWebVersion,
+  getAllBinaryNodeChildren,
+  getBinaryNodeChild,
+  jidDecode,
+  jidEncode,
   jidNormalizedUser,
   isLidUser,
   isPnUser,
@@ -163,7 +167,19 @@ export interface rejectCall {
 }
 
 export interface sendCallNode {
-  (_node: BinaryNode): Promise<void>
+  (_node: BinaryNode): Promise<BinaryNode | undefined>
+}
+
+export interface fetchTcToken {
+  (_jids: string[]): Promise<string | undefined>
+}
+
+export interface decryptVoipEnc {
+  (_node: BinaryNode, _jids: string[]): Promise<BinaryNode | undefined>
+}
+
+export interface fetchUserDevices {
+  (_jids: string[], _useCache?: boolean, _ignoreZeroDevices?: boolean): Promise<string[]>
 }
 
 export interface fetchImageUrl {
@@ -2361,7 +2377,7 @@ export const connect = async ({
       try {
         const mid = (full as any)?.key?.id as string | undefined
         if (mid) {
-          if (typeof id === 'string' && isIndividualJid(id)) {
+          if (!forceRemoteJid && typeof id === 'string' && isIndividualJid(id)) {
             const existing = pendingOneToOneErrorFallbacks.get(mid)
             if (existing?.timer) {
               try { clearTimeout(existing.timer) } catch {}
@@ -2522,7 +2538,187 @@ export const connect = async ({
   const sendCallNode: sendCallNode = async (node: BinaryNode) => {
     await validateStatus()
     if (!node || node.tag !== 'call') throw new Error('invalid_call_node')
+    const stanzaId = `${node.attrs?.id || (sock as any)?.generateMessageTag?.() || ''}`.trim()
+    if (stanzaId) {
+      node.attrs = {
+        ...(node.attrs || {}),
+        id: stanzaId,
+      }
+    }
+    const firstChild = Array.isArray(node.content) ? node.content.find(child => typeof child === 'object') as BinaryNode | undefined : undefined
+    logger.warn(
+      {
+        id: stanzaId || undefined,
+        to: node.attrs?.to,
+        from: node.attrs?.from,
+        childTag: firstChild?.tag,
+        childAttrs: firstChild?.attrs,
+      },
+      'SOCKET call node send visible'
+    )
     await (sock as any)?.sendNode?.(node)
+    if (!stanzaId || typeof (sock as any)?.waitForMessage !== 'function') return undefined
+    try {
+      const ack = await (sock as any).waitForMessage(stanzaId, 10_000) as BinaryNode | undefined
+      logger.info(
+        {
+          id: stanzaId,
+          to: node.attrs?.to,
+          ackTag: ack?.tag,
+          ackAttrs: ack?.attrs,
+        },
+        'SOCKET call node ack received'
+      )
+      return ack
+    } catch (error) {
+      logger.warn({ err: error, id: stanzaId, to: node.attrs?.to }, 'SOCKET call node ack wait failed')
+      return undefined
+    }
+  }
+
+  const toBareJid = (jid: string): string => {
+    const value = `${jid || ''}`.trim()
+    const decoded = jidDecode(value as any)
+    if (!decoded?.user) return value
+    const server = value.endsWith('@lid') ? 'lid' : 's.whatsapp.net'
+    return jidEncode(decoded.user, server as any)
+  }
+
+  const toCallDeviceJid = (jid: string): string => {
+    const value = `${jid || ''}`.trim()
+    const decoded = jidDecode(value as any)
+    if (!decoded?.user) return value
+    const server = value.endsWith('@lid') ? 'lid' : 's.whatsapp.net'
+    if (decoded.device == null) return jidEncode(decoded.user, server as any)
+    return `${decoded.user}:${decoded.device}@${server}`
+  }
+
+  const unpadRandomMax16Local = (bytes: Uint8Array | Buffer): Uint8Array => {
+    const value = new Uint8Array(bytes)
+    if (!value.length) throw new Error('unpadPkcs7 given empty bytes')
+    const pad = value[value.length - 1]
+    if (pad > value.length) throw new Error(`unpad given ${value.length} bytes, but pad is ${pad}`)
+    return new Uint8Array(value.buffer, value.byteOffset, value.length - pad)
+  }
+
+  const extractTcTokenForJid = (node: any, userJid: string): { token: Buffer; timestamp: string } | undefined => {
+    const tokensNode =
+      getBinaryNodeChild(node, 'tokens') ||
+      getBinaryNodeChild(getBinaryNodeChild(node, 'iq'), 'tokens')
+    const tokenNodes = tokensNode
+      ? getAllBinaryNodeChildren(tokensNode).filter((child: any) => child.tag === 'token')
+      : []
+
+    for (const tokenNode of tokenNodes) {
+      const tokenJid = `${tokenNode.attrs?.jid || ''}`.trim()
+      try {
+        if (jidNormalizedUser(tokenJid as any) !== jidNormalizedUser(userJid as any)) continue
+      } catch {
+        if (toBareJid(tokenJid) !== toBareJid(userJid)) continue
+      }
+      const content = tokenNode.content
+      if (content instanceof Uint8Array && content.length > 0) {
+        return { token: Buffer.from(content), timestamp: `${tokenNode.attrs?.t || ''}` }
+      }
+    }
+    return undefined
+  }
+
+  const fetchTcToken: fetchTcToken = async (jids: string[]) => {
+    await validateStatus()
+    const candidates = Array.from(new Set((jids || []).map(jid => toBareJid(`${jid || ''}`)).filter(Boolean)))
+    for (const jid of [...candidates]) {
+      try {
+        if (isPnUser(jid as any)) {
+          const lid = await getLidForPnFromAuthCache(phone, jid)
+          if (lid) candidates.push(toBareJid(lid))
+        }
+      } catch {}
+    }
+    try {
+      const selfLid = `${state?.creds?.me?.lid || ''}`.trim()
+      if (selfLid) candidates.push(toBareJid(selfLid))
+    } catch {}
+    const uniqueCandidates = Array.from(new Set(candidates))
+    for (const jid of uniqueCandidates) {
+      try {
+        const data = await state.keys.get('tctoken' as any, [jid])
+        const token = data?.[jid]?.token
+        if (token?.length) {
+          logger.info({ phone, jid, tokenBytes: token.length }, 'VOIP tctoken cache hit')
+          return Buffer.from(token).toString('base64')
+        }
+      } catch {}
+    }
+
+    for (const jid of uniqueCandidates) {
+      try {
+        const result = await (sock as any)?.getPrivacyTokens?.([jid])
+        const found = extractTcTokenForJid(result, jid)
+        if (found?.token?.length) {
+          await state.keys.set({
+            tctoken: { [jid]: { token: found.token, timestamp: found.timestamp } },
+          } as any)
+          logger.info({ phone, jid, tokenBytes: found.token.length }, 'VOIP tctoken fetched')
+          return found.token.toString('base64')
+        }
+        logger.info({ phone, jid }, 'VOIP tctoken fetch returned no token')
+      } catch (error) {
+        logger.info({ err: error, phone, jid }, 'failed to fetch voip tctoken')
+      }
+    }
+    return undefined
+  }
+
+  const decryptVoipEnc: decryptVoipEnc = async (node: BinaryNode, jids: string[]) => {
+    await validateStatus()
+    const enc = getBinaryNodeChild(node, 'enc')
+    if (!enc || !(enc.content instanceof Uint8Array)) return undefined
+    const type = `${enc.attrs?.type || ''}`
+    if (type !== 'pkmsg' && type !== 'msg') return undefined
+
+    const candidates = Array.from(new Set((jids || [])
+      .map(jid => `${jid || ''}`.trim())
+      .filter(Boolean)
+      .flatMap(jid => [jid, toCallDeviceJid(jid), toBareJid(jid)])))
+
+    let lastError: unknown
+    for (const jid of candidates) {
+      try {
+        const decrypted = await (sock as any)?.signalRepository?.decryptMessage?.({
+          jid,
+          type,
+          ciphertext: enc.content,
+        })
+        const message = proto.Message.decode(unpadRandomMax16Local(decrypted))
+        const callKey = message.call?.callKey
+        if (!callKey || !callKey.length) throw new Error('decrypted signaling has no call.callKey')
+
+        const children = Array.isArray(node.content) ? node.content : []
+        const decryptedNode: BinaryNode = {
+          tag: node.tag,
+          attrs: node.attrs || {},
+          content: children.map((child: any) => child?.tag === 'enc'
+            ? { tag: child.tag, attrs: child.attrs || {}, content: Buffer.from(callKey) }
+            : child),
+        }
+        ;(decryptedNode as any).__unoDecryptJid = jid
+        logger.info({ phone, jid, callKeyBytes: callKey.length }, 'VOIP enc decrypted')
+        return decryptedNode
+      } catch (error) {
+        lastError = error
+      }
+    }
+    logger.warn({ err: lastError, phone, jids: candidates }, 'failed to decrypt voip enc')
+    return undefined
+  }
+
+  const fetchUserDevices: fetchUserDevices = async (jids: string[], useCache = true, ignoreZeroDevices = false) => {
+    await validateStatus()
+    const fn = (sock as any)?.getUSyncDevices
+    if (typeof fn !== 'function') return []
+    const devices = await fn(jids, useCache, ignoreZeroDevices)
+    return Array.from(new Set((devices || []).map((item: any) => `${item?.jid || ''}`.trim()).filter(Boolean)))
   }
 
   const groupCreate: groupCreate = async (subject: string, participants: string[]) => {
@@ -2824,6 +3020,9 @@ export const connect = async ({
     read,
     rejectCall,
     sendCallNode,
+    fetchTcToken,
+    decryptVoipEnc,
+    fetchUserDevices,
     fetchImageUrl,
     fetchGroupMetadata,
     groupMetadata,

@@ -2690,6 +2690,42 @@ describe('service transformer', () => {
     expect(status.status).toEqual('delivered')
   })
 
+  test('fromBaileysMessageContent group protocol revoke emits deleted status for original message', async () => {
+    const phoneNumer = '5566996269251'
+    const remotePhoneNumber = '5587981148453'
+    const groupJid = '120363409038491818@g.us'
+    const originalMessageId = '3AC77368E8113A7EF805'
+    const input = {
+      key: {
+        remoteJid: groupJid,
+        fromMe: true,
+        id: '3A814301529590FE0ED2',
+        participant: `${remotePhoneNumber}@s.whatsapp.net`,
+      },
+      messageTimestamp: 1779161365,
+      message: {
+        protocolMessage: {
+          key: {
+            remoteJid: groupJid,
+            fromMe: true,
+            id: originalMessageId,
+          },
+          type: 'REVOKE',
+        },
+      },
+    }
+    const resp = fromBaileysMessageContent(phoneNumer, input)[0]
+    const value = resp.entry[0].changes[0].value
+    const status = value.statuses[0]
+    expect(value.messages).toEqual([])
+    expect(status.id).toEqual(originalMessageId)
+    expect(status.recipient_id).toEqual(groupJid)
+    expect(status.conversation.id).toEqual(groupJid)
+    expect(status.recipient_type).toEqual('group')
+    expect(status.status).toEqual('deleted')
+    expect(status.timestamp).toEqual(`${input.messageTimestamp}`)
+  })
+
   test('fromBaileysMessageContent statusMentionMessage', async () => {
     const remotePhoneNumber = '11115551212'
     const remoteJid = `${remotePhoneNumber}@s.whatsapp.net`

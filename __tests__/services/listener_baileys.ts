@@ -4,7 +4,7 @@ import { Store, getStore } from '../../src/services/store'
 import { DataStore } from '../../src/services/data_store'
 import { MediaStore } from '../../src/services/media_store'
 import { Config, getConfig, defaultConfig, getMessageMetadataDefault } from '../../src/services/config'
-import { ListenerBaileys, decryptPollVoteWithLidFallbackCompat } from '../../src/services/listener_baileys'
+import { ListenerBaileys, decryptPollVoteWithLidFallbackCompat, resolveUnoIdChain } from '../../src/services/listener_baileys'
 import { Outgoing } from '../../src/services/outgoing'
 import { Broadcast } from '../../src/services/broadcast'
 
@@ -183,6 +183,129 @@ describe('service listener baileys', () => {
                       context: {
                         message_id: unoId,
                         id: unoId,
+                      },
+                    }),
+                  ]),
+                }),
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    )
+  }, 15000)
+
+  test('normalizes quoted stanza id to Uno id before sending webhook', async () => {
+    const providerId = 'provider-quoted-message'
+    const unoId = 'uno-quoted-message'
+    config.getMessageMetadata = async message => message
+    store.dataStore.loadUnoId.mockImplementation(async (id: string) => (id === providerId ? unoId : undefined))
+    outgoing.send = jest.fn().mockResolvedValue(undefined) as any
+
+    await service.sendOne(phone, {
+      key: {
+        remoteJid: '556699999999@s.whatsapp.net',
+        fromMe: false,
+        id: 'provider-reply-message',
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+      message: {
+        extendedTextMessage: {
+          text: 'Resposta',
+          contextInfo: {
+            stanzaId: providerId,
+            participant: '556699999999@s.whatsapp.net',
+            quotedMessage: {
+              conversation: 'Original',
+            },
+          },
+        },
+      },
+    })
+
+    expect(outgoing.send).toHaveBeenCalledWith(
+      phone,
+      expect.objectContaining({
+        entry: expect.arrayContaining([
+          expect.objectContaining({
+            changes: expect.arrayContaining([
+              expect.objectContaining({
+                value: expect.objectContaining({
+                  messages: expect.arrayContaining([
+                    expect.objectContaining({
+                      context: {
+                        message_id: unoId,
+                        id: unoId,
+                      },
+                    }),
+                  ]),
+                }),
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    )
+  }, 15000)
+
+  test('resolves chained quoted stanza id to final Uno id', async () => {
+    const providerId = '3EB0EFBFAFCE2DA7DBDC07'
+    const intermediateUnoId = 'a708cf70-6062-11f1-b332-997617b14897'
+    const finalUnoId = 'a3a30f30-6062-11f1-b332-997617b14897'
+    store.dataStore.loadUnoId.mockImplementation(async (id: string) => {
+      if (id === providerId) return intermediateUnoId
+      if (id === intermediateUnoId) return finalUnoId
+      return undefined
+    })
+
+    await expect(resolveUnoIdChain(store.dataStore, providerId)).resolves.toBe(finalUnoId)
+  })
+
+  test('normalizes group revoke status to original Uno id before sending webhook', async () => {
+    const providerId = 'provider-original-group-message'
+    const unoId = 'uno-original-group-message'
+    const groupJid = '120363409038491818@g.us'
+    config.getMessageMetadata = async message => message
+    store.dataStore.loadUnoId.mockImplementation(async (id: string) => (id === providerId ? unoId : undefined))
+    store.dataStore.loadStatus.mockResolvedValue(undefined)
+    outgoing.send = jest.fn().mockResolvedValue(undefined) as any
+
+    await service.sendOne(phone, {
+      key: {
+        remoteJid: groupJid,
+        fromMe: true,
+        id: 'provider-revoke-event',
+        participant: '5587981148453@s.whatsapp.net',
+      },
+      messageTimestamp: Math.floor(Date.now() / 1000),
+      message: {
+        protocolMessage: {
+          key: {
+            remoteJid: groupJid,
+            fromMe: true,
+            id: providerId,
+          },
+          type: 'REVOKE',
+        },
+      },
+    })
+
+    expect(outgoing.send).toHaveBeenCalledWith(
+      phone,
+      expect.objectContaining({
+        entry: expect.arrayContaining([
+          expect.objectContaining({
+            changes: expect.arrayContaining([
+              expect.objectContaining({
+                value: expect.objectContaining({
+                  statuses: expect.arrayContaining([
+                    expect.objectContaining({
+                      id: unoId,
+                      status: 'deleted',
+                      recipient_id: groupJid,
+                      recipient_type: 'group',
+                      conversation: {
+                        id: groupJid,
                       },
                     }),
                   ]),

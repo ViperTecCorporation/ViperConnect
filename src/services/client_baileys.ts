@@ -1,4 +1,4 @@
-import { GroupMetadata, WAMessage, proto, delay, isJidGroup, jidNormalizedUser, AnyMessageContent, isLidUser, WAMessageAddressingMode, isPnUser, encodeBinaryNode } from '@whiskeysockets/baileys'
+import { GroupMetadata, WAMessage, proto, delay, isJidGroup, jidNormalizedUser, AnyMessageContent, isLidUser, WAMessageAddressingMode, isPnUser, encodeBinaryNode, decodeBinaryNode } from '@whiskeysockets/baileys'
 import type { BinaryNode } from '@whiskeysockets/baileys'
 import fetch, { Response as FetchResponse } from 'node-fetch'
 import { Listener } from './listener'
@@ -9,6 +9,9 @@ import {
   readMessages,
   rejectCall,
   sendCallNode,
+  fetchTcToken,
+  decryptVoipEnc,
+  fetchUserDevices,
   groupCreate,
   groupUpdateSubject,
   groupUpdateDescription,
@@ -40,7 +43,7 @@ import QRCode from 'qrcode'
 import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS } from '../defaults'
-import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
+import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache, getDeviceJidsForPnFromAuthCache } from './redis'
 import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
 import { convertToWebpSticker } from '../utils/sticker_convert'
@@ -49,11 +52,27 @@ import { ClientForward } from './client_forward'
 import { ClientCoexistence } from './client_coexistence'
 import { SendError } from './send_error'
 import { getRetryableStaleSendPayload, isRetryableStaleSendError } from './error_utils'
-import { extractVoipCommands, mapBaileysCallStatusToVoipEvent, sendVoipCallEvent, sendVoipSignaling, VoipCommand } from './client_voip'
+import { drainVoipCommands, extractVoipCommands, mapBaileysCallStatusToVoipEvent, sendVoipCallEvent, sendVoipSignaling, VoipCommand } from './client_voip'
 import { binaryNodeToXml, decompressWapFrameIfRequired, extractFirstChildDecompressedWapSlice, getBinaryNodeChildrenSafe, parseVoipXmlFragment, parseVoipXmlNode } from './voip_xml'
 
 const attempts = 3
 const pendingClients: Map<string, Promise<Client>> = new Map()
+
+export const normalizeOutgoingVoipCallChild = (node: BinaryNode, targetJid: string): BinaryNode => {
+  if (!node?.attrs || !targetJid.endsWith('@lid')) return node
+  const targetPnJid = targetJid.replace(/@lid$/i, '@s.whatsapp.net')
+  let changed = false
+  const attrs = Object.fromEntries(Object.entries(node.attrs).map(([key, value]) => {
+    const normalizedValue = `${value || ''}`.trim() === targetPnJid ? targetJid : value
+    if (normalizedValue !== value) changed = true
+    return [key, normalizedValue]
+  }))
+  if (!changed) return node
+  return {
+    ...node,
+    attrs,
+  }
+}
 
 const sanitizeMessageEditKey = (key: any) => {
   const sanitized: any = {
@@ -67,6 +86,34 @@ const sanitizeMessageEditKey = (key: any) => {
   }
 
   return sanitized
+}
+
+const firstPnJidFromKey = (key: any): string | undefined => {
+  for (const jid of [key?.senderPn, key?.participantPn, key?.remoteJidAlt, key?.participantAlt, key?.remoteJid, key?.participant]) {
+    if (typeof jid === 'string' && isPnUser(jid as any)) return jid
+  }
+  return undefined
+}
+
+const normalizeQuotedForOneToOneSend = (quoted: WAMessage | undefined, key: any): WAMessage | undefined => {
+  if (!quoted?.key?.remoteJid || `${quoted.key.remoteJid}`.endsWith('@g.us')) return quoted
+
+  const pnJid = firstPnJidFromKey(key)
+  if (!pnJid || quoted.key.remoteJid === pnJid) return quoted
+
+  const normalized: WAMessage = {
+    ...(quoted as any),
+    key: {
+      ...(quoted.key as any),
+      remoteJid: pnJid,
+    },
+  } as WAMessage
+
+  if (typeof (normalized.key as any).participant === 'string' && !(normalized.key as any).participant.trim()) {
+    delete (normalized.key as any).participant
+  }
+
+  return normalized
 }
 
 const getBrNinthDigitVariants = (digits: string) => {
@@ -169,6 +216,11 @@ const sendCallNodeDefault: sendCallNode = async (_node) => {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
+const fetchTcTokenDefault: fetchTcToken = async (_jids) => undefined
+const decryptVoipEncDefault: decryptVoipEnc = async (_node, _jids) => undefined
+const fetchUserDevicesDefault: fetchUserDevices = async (_jids) => []
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const fetchImageUrlDefault: fetchImageUrl = async (_jid: string) => ''
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -213,6 +265,7 @@ const buildSendOkResponse = (to: string, keyId: string) => {
 
 export class ClientBaileys implements Client {
   private voipPipelines = new Map<string, Promise<void>>()
+  private voipCommandDrainPollers = new Map<string, Promise<void>>()
 
   private async resolveContactCardPn(digits: string): Promise<string | undefined> {
     const variants = getBrNinthDigitVariants(digits)
@@ -288,33 +341,404 @@ export class ClientBaileys implements Client {
     }
   }
 
+  private shouldQueueVoipPreOfferSignal(tag: string) {
+    return !['terminate', 'reject'].includes(`${tag || ''}`.toLowerCase())
+  }
+
+  private queueVoipPreOfferSignal(callId: string, node: BinaryNode, tag: string, peerJid: string) {
+    const current = this.voipPreOfferSignalQueueByCallId.get(callId) || []
+    if (current.length >= 50) {
+      logger.warn(
+        {
+          session: this.phone,
+          callId,
+          msgType: tag,
+          peerJid,
+          queuedCount: current.length,
+        },
+        'VOIP pre-offer signaling queue full; dropping signaling node'
+      )
+      return
+    }
+    current.push(node)
+    this.voipPreOfferSignalQueueByCallId.set(callId, current)
+    logger.warn(
+      {
+        session: this.phone,
+        callId,
+        msgType: tag,
+        peerJid,
+        queuedCount: current.length,
+      },
+      'VOIP signaling queued until offer is forwarded'
+    )
+  }
+
+  private async flushVoipPreOfferSignalQueue(callId: string) {
+    const queued = this.voipPreOfferSignalQueueByCallId.get(callId)
+    if (!queued?.length) return
+    this.voipPreOfferSignalQueueByCallId.delete(callId)
+    logger.warn(
+      {
+        session: this.phone,
+        callId,
+        queuedCount: queued.length,
+      },
+      'VOIP offer forwarded; flushing queued signaling'
+    )
+    for (const queuedNode of queued) {
+      await this.forwardVoipSignalingNode(queuedNode)
+    }
+  }
+
+  private clearVoipCallSignalingState(callId: string) {
+    this.voipPeerByCallId.delete(callId)
+    this.voipNetworkPeerByCallId.delete(callId)
+    this.voipOfferForwardedByCallId.delete(callId)
+    this.voipPreOfferSignalQueueByCallId.delete(callId)
+  }
+
   private async processVoipCommands(commands: VoipCommand[]) {
     for (const command of commands || []) {
-      if (!command || command.action !== 'send_call_node') continue
+      if (!command) continue
+      if (command.action !== 'send_call_node') {
+        logger.warn(
+          {
+            session: this.phone,
+            callId: command.callId,
+            action: command.action,
+            eventSummary: command.action === 'voip_event' ? this.summarizeVoipEventCommand(command) : undefined,
+          },
+          command.action === 'voip_event' ? 'VOIP wasm event observed from service' : 'VOIP command skipped'
+        )
+        continue
+      }
       try {
-        const xml = Buffer.from(command.payloadBase64 || '', 'base64').toString('utf8').trim()
+        const payloadBuffer = Buffer.from(command.payloadBase64 || '', 'base64')
+        const storedNetworkPeerJid = `${this.voipNetworkPeerByCallId.get(command.callId) || ''}`.trim()
+        const networkPeerJid = storedNetworkPeerJid || command.peerJid
+        const commandPeerJid = `${command.peerJid || ''}`.trim()
+        const isCallPeer = (jid: string) => /@(s\.whatsapp\.net|lid)$/i.test(jid)
+        const outgoingTargets = Array.from(new Set([storedNetworkPeerJid || commandPeerJid || networkPeerJid].filter(isCallPeer)))
+        if (!outgoingTargets.length && networkPeerJid) outgoingTargets.push(networkPeerJid)
+        try {
+          const decoded = await decodeBinaryNode(payloadBuffer)
+          if (decoded?.tag === 'call') {
+            const firstChild = Array.isArray(decoded.content) ? decoded.content.find(child => typeof child === 'object') : undefined
+            logger.info(
+              {
+                session: this.phone,
+                callId: command.callId,
+                to: decoded.attrs?.to,
+                from: decoded.attrs?.from,
+                childTag: firstChild?.tag,
+                childAttrs: firstChild?.attrs,
+              },
+              'VOIP sending decoded call node'
+            )
+            await this.sendVoipCallNodeWithAck(decoded, command.callId, firstChild?.tag)
+            logger.info({ session: this.phone, callId: command.callId, to: decoded.attrs?.to }, 'VOIP decoded call node sent')
+            continue
+          }
+          if (decoded?.tag) {
+            for (const targetJid of outgoingTargets) {
+              const outgoingChild = normalizeOutgoingVoipCallChild(decoded, targetJid)
+              const node = {
+                tag: command.payloadTag || 'call',
+                attrs: {
+                  from: `${this.store?.state?.creds?.me?.id || ''}`.trim(),
+                  to: targetJid,
+                },
+                content: [outgoingChild],
+              }
+              logger.info(
+                {
+                  session: this.phone,
+                  callId: command.callId,
+                  to: node.attrs.to,
+                  from: node.attrs.from,
+                  childTag: outgoingChild?.tag,
+                  childAttrs: outgoingChild?.attrs,
+                },
+                'VOIP sending wrapped decoded call node'
+              )
+              logger.warn(
+                {
+                  session: this.phone,
+                  callId: command.callId,
+                  to: node.attrs.to,
+                  childTag: outgoingChild?.tag,
+                  childAttrs: outgoingChild?.attrs,
+                },
+                'VOIP call command send visible'
+              )
+              await this.sendVoipCallNodeWithAck(node, command.callId, outgoingChild?.tag)
+              logger.info({ session: this.phone, callId: command.callId, to: node.attrs.to }, 'VOIP wrapped decoded call node sent')
+            }
+            continue
+          }
+        } catch {}
+
+        const xml = payloadBuffer.toString('utf8').trim()
         const parsed = parseVoipXmlNode(xml)
         if (parsed?.tag === 'call') {
-          await this.sendCallNode(parsed)
+          const firstChild = Array.isArray(parsed.content) ? parsed.content.find(child => typeof child === 'object') : undefined
+          logger.info(
+            {
+              session: this.phone,
+              callId: command.callId,
+              to: parsed.attrs?.to,
+              from: parsed.attrs?.from,
+              childTag: firstChild?.tag,
+              childAttrs: firstChild?.attrs,
+            },
+            'VOIP sending parsed call node'
+          )
+          await this.sendVoipCallNodeWithAck(parsed, command.callId, firstChild?.tag)
+          logger.info({ session: this.phone, callId: command.callId, to: parsed.attrs?.to }, 'VOIP parsed call node sent')
           continue
         }
 
         const children = parseVoipXmlFragment(xml)
         if (!children.length) {
-          logger.warn({ session: this.phone, callId: command.callId }, 'voip command without parsable call payload')
+          logger.warn(
+            {
+              session: this.phone,
+              callId: command.callId,
+              peerJid: command.peerJid,
+              payloadTag: command.payloadTag,
+              payloadChildTag: command.payloadChildTag,
+              payloadBytes: payloadBuffer.byteLength,
+              payloadPreview: xml.slice(0, 120),
+            },
+            'voip command without parsable call payload'
+          )
           continue
         }
-        const node: BinaryNode = {
-          tag: command.payloadTag || 'call',
-          attrs: {
-            from: `${this.store?.state?.creds?.me?.id || ''}`.trim(),
-            to: command.peerJid,
-          },
-          content: children,
+        for (const targetJid of outgoingTargets) {
+          const outgoingChildren = children.map(child => normalizeOutgoingVoipCallChild(child, targetJid))
+          const node: BinaryNode = {
+            tag: command.payloadTag || 'call',
+            attrs: {
+              from: `${this.store?.state?.creds?.me?.id || ''}`.trim(),
+              to: targetJid,
+            },
+            content: outgoingChildren,
+          }
+          const firstChild = outgoingChildren.find(child => typeof child === 'object')
+          logger.info(
+            {
+              session: this.phone,
+              callId: command.callId,
+              to: node.attrs.to,
+              from: node.attrs.from,
+              childTag: firstChild?.tag,
+              childAttrs: firstChild?.attrs,
+            },
+            'VOIP sending wrapped parsed call node'
+          )
+          logger.warn(
+            {
+              session: this.phone,
+              callId: command.callId,
+              to: node.attrs.to,
+              childTag: firstChild?.tag,
+              childAttrs: firstChild?.attrs,
+            },
+            'VOIP call command send visible'
+          )
+          await this.sendVoipCallNodeWithAck(node, command.callId, firstChild?.tag)
+          logger.info({ session: this.phone, callId: command.callId, to: node.attrs.to }, 'VOIP wrapped parsed call node sent')
         }
-        await this.sendCallNode(node)
       } catch (error) {
         logger.warn(error as any, 'failed to process voip command for %s', this.phone)
+      }
+    }
+  }
+
+  private async sendVoipCallNodeWithAck(node: BinaryNode, callId: string, childTag?: string) {
+    const ack = await this.sendCallNode(node)
+    if (!ack) return
+
+    const peerJid = `${node?.attrs?.to || ''}`.trim()
+    if (!peerJid) return
+
+    try {
+      logger.warn(
+        {
+          session: this.phone,
+          callId,
+          peerJid,
+          childTag,
+          ackTag: ack.tag,
+          ackAttrs: ack.attrs,
+        },
+        'VOIP forwarding call node ack to voip service'
+      )
+      const tcTokenBase64 = await this.fetchTcToken([peerJid])
+      const selfIdentity = this.getVoipSelfIdentity()
+      const response = await this.enqueueVoipByCall(callId, async () => sendVoipSignaling(this.config, {
+        session: this.phone,
+        callId,
+        peerJid,
+        selfJid: selfIdentity.selfJid,
+        selfLid: selfIdentity.selfLid,
+        msgType: 'ack',
+        payload: binaryNodeToXml(ack),
+        payloadBase64: Buffer.from(encodeBinaryNode(ack)).toString('base64'),
+        tcTokenBase64,
+        payloadEncoding: 'wa_binary',
+        attrs: {
+          error: `${ack.attrs?.error || '0'}`,
+          type: `${ack.attrs?.type || childTag || 'ack'}`,
+        },
+      }))
+      const commands = extractVoipCommands(response.body)
+      if (commands.length) {
+        logger.warn(
+          {
+            session: this.phone,
+            callId,
+            peerJid,
+            commandCount: commands.length,
+            commandActions: commands.map(command => command?.action).filter(Boolean),
+          },
+          'VOIP call node ack produced commands'
+        )
+        await this.processVoipCommands(commands)
+      }
+    } catch (error) {
+      logger.warn({ err: error, session: this.phone, callId, peerJid }, 'failed to forward voip call node ack')
+    }
+  }
+
+  private async drainAndProcessVoipCommands(callId: string, attempt: number, source: string) {
+    const response = await this.enqueueVoipByCall(callId, async () => drainVoipCommands(this.config, this.phone, callId))
+    const commands = extractVoipCommands(response.body)
+    const commandActions = commands.map(command => command?.action).filter(Boolean)
+    const commandTags = commands.map(command => command?.action === 'send_call_node' ? command.payloadChildTag || command.payloadTag : command?.action).filter(Boolean)
+    const drainLog = {
+      phone: this.phone,
+      callId,
+      ok: response.ok,
+      status: response.status,
+      reason: response.reason,
+      bodyKeys: response.body && typeof response.body === 'object' ? Object.keys(response.body as Record<string, unknown>) : [],
+      commandCount: commands.length,
+      commandActions,
+      commandTags,
+      attempt,
+      source,
+    }
+    if (commands.length) logger.warn(drainLog, 'VOIP async command drain polled')
+    else logger.info(drainLog, 'VOIP async command drain polled')
+    if (!commands.length) return 0
+
+    logger.info({ phone: this.phone, callId, commandCount: commands.length, commandActions, attempt, source }, 'VOIP async commands drained')
+    await this.processVoipCommands(commands)
+    return commands.length
+  }
+
+  private scheduleVoipCommandDrain(callId: string) {
+    const key = `${this.phone}:${callId}`
+    if (this.voipCommandDrainPollers.has(key)) return
+
+    const poller = (async () => {
+      const maxAttempts = 60
+      const intervalMs = 1000
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        await delay(intervalMs)
+        await this.drainAndProcessVoipCommands(callId, attempt, 'poll')
+      }
+      logger.info({ phone: this.phone, callId, attempts: maxAttempts }, 'VOIP async command drain finished without commands')
+    })().catch(error => {
+      logger.warn(error as any, 'failed to poll voip async commands for %s', this.phone)
+    }).finally(() => {
+      this.voipCommandDrainPollers.delete(key)
+    })
+
+    this.voipCommandDrainPollers.set(key, poller)
+  }
+
+  private getVoipSelfIdentity() {
+    const me = (this.store as any)?.state?.creds?.me || {}
+    return {
+      selfJid: typeof me.id === 'string' && me.id ? me.id : undefined,
+      selfLid: typeof me.lid === 'string' && me.lid ? me.lid : undefined,
+    }
+  }
+
+  private isVoipPnDeviceJid(jid?: string) {
+    return /^\d+:\d+@s\.whatsapp\.net$/i.test(`${jid || ''}`.trim())
+  }
+
+  private async resolveVoipPeerDeviceJids(candidates: string[]) {
+    const out = new Set<string>()
+    const inspectCandidate = async (raw: string) => {
+      const jid = `${raw || ''}`.trim()
+      if (!jid) return
+      if (this.isVoipPnDeviceJid(jid)) {
+        out.add(jid)
+        return
+      }
+      if (isPnUser(jid as any)) {
+        const before = out.size
+        try {
+          for (const deviceJid of await this.fetchUserDevices([jid], true, false)) {
+            if (this.isVoipPnDeviceJid(deviceJid)) out.add(deviceJid)
+          }
+        } catch (error) {
+          logger.warn({ err: error, phone: this.phone, jid }, 'VOIP peer device lookup via Baileys failed')
+        }
+        if (out.size > before) return
+        for (const deviceJid of await getDeviceJidsForPnFromAuthCache(this.phone, jid)) out.add(deviceJid)
+        return
+      }
+      if (isLidUser(jid as any)) {
+        const pn = await getPnForLidFromAuthCache(this.phone, jid)
+        if (pn) {
+          const before = out.size
+          try {
+            for (const deviceJid of await this.fetchUserDevices([pn], true, false)) {
+              if (this.isVoipPnDeviceJid(deviceJid)) out.add(deviceJid)
+            }
+          } catch (error) {
+            logger.warn({ err: error, phone: this.phone, jid, pn }, 'VOIP peer LID device lookup via Baileys failed')
+          }
+          if (out.size > before) return
+          for (const deviceJid of await getDeviceJidsForPnFromAuthCache(this.phone, pn)) out.add(deviceJid)
+        }
+      }
+    }
+
+    for (const candidate of candidates) {
+      await inspectCandidate(candidate)
+    }
+    return Array.from(out)
+  }
+
+  private summarizeVoipEventCommand(command: VoipCommand) {
+    if (command.action !== 'voip_event') return undefined
+    if (!command.eventData) return { eventType: command.eventType, hasEventData: false }
+    try {
+      const parsed = JSON.parse(command.eventData)
+      const callInfo = parsed?.call_info || parsed?.callInfo || {}
+      return {
+        eventType: command.eventType,
+        callId: parsed?.callId || parsed?.call_id || callInfo?.call_id || command.callId,
+        callState: callInfo?.call_state || parsed?.call_state,
+        callResult: callInfo?.call_result || parsed?.call_result,
+        callSetupErrorType: callInfo?.call_setup_error_type || parsed?.call_setup_error_type,
+        reasonCode: parsed?.reason_code || callInfo?.reason_code,
+        bytesReceived: callInfo?.bytes_received,
+        bytesSent: callInfo?.bytes_sent,
+        relayRtt: callInfo?.relay_rtt,
+      }
+    } catch {
+      return {
+        eventType: command.eventType,
+        parseError: true,
+        eventDataPreview: `${command.eventData}`.slice(0, 500),
       }
     }
   }
@@ -325,8 +749,57 @@ export class ClientBaileys implements Client {
       const infoChild = children?.[0]
       if (!infoChild) return
       const callId = `${infoChild.attrs?.['call-id'] || ''}`.trim()
-      const peerJid = `${infoChild.attrs?.from || infoChild.attrs?.['call-creator'] || node.attrs?.from || ''}`.trim()
+      const callCreator = `${infoChild.attrs?.['call-creator'] || ''}`.trim()
+      const callCreatorPeerJid = callCreator.replace(/@lid$/i, '@s.whatsapp.net')
+      const rawPeerJid = `${infoChild.tag === 'offer'
+        ? infoChild.attrs?.participant || node.attrs?.participant || callCreatorPeerJid || node.attrs?.from || infoChild.attrs?.caller_pn
+        : infoChild.attrs?.from || infoChild.attrs?.participant || node.attrs?.participant || callCreator || node.attrs?.from || ''
+      }`.trim()
+      const networkPeerJid = `${node.attrs?.from || infoChild.attrs?.participant || node.attrs?.participant || callCreator || rawPeerJid}`.trim()
+      const storedPeerJid = callId ? this.voipPeerByCallId.get(callId) : undefined
+      const isCallPeer = (jid: string) => /@(s\.whatsapp\.net|lid)$/i.test(jid)
+      const peerJid = isCallPeer(networkPeerJid)
+        ? networkPeerJid
+        : (infoChild.tag === 'offer' ? rawPeerJid : (storedPeerJid || rawPeerJid))
       if (!callId || !peerJid) return
+      if (infoChild.tag !== 'offer' && !this.voipOfferForwardedByCallId.has(callId) && this.shouldQueueVoipPreOfferSignal(infoChild.tag)) {
+        this.queueVoipPreOfferSignal(callId, node, infoChild.tag, peerJid)
+        return
+      }
+      if (infoChild.tag === 'offer') {
+        this.voipPeerByCallId.set(callId, peerJid)
+        if (networkPeerJid) this.voipNetworkPeerByCallId.set(callId, networkPeerJid)
+      }
+      logger.info({
+        phone: this.phone,
+        callId,
+        msgType: infoChild.tag,
+        rawPeerJid,
+        networkPeerJid,
+        storedPeerJid,
+        peerJid,
+      }, 'VOIP route peer selected')
+      const peerDeviceJids = infoChild.tag === 'offer'
+        ? await this.resolveVoipPeerDeviceJids([
+          `${infoChild.attrs?.caller_pn || ''}`.trim(),
+          peerJid,
+          rawPeerJid,
+          networkPeerJid,
+          callCreator,
+          `${node.attrs?.from || ''}`.trim(),
+          `${node.attrs?.participant || ''}`.trim(),
+          `${infoChild.attrs?.participant || ''}`.trim(),
+        ])
+        : []
+      if (infoChild.tag === 'offer') {
+        logger.warn({
+          phone: this.phone,
+          callId,
+          peerJid,
+          peerDeviceCandidates: peerDeviceJids,
+          candidateCount: peerDeviceJids.length,
+        }, 'VOIP peer device candidates resolved')
+      }
       const infoChildren = getBinaryNodeChildrenSafe(infoChild)
       const encChild = infoChildren.find((child) => child?.tag === 'enc')
       const audioChild = infoChildren.find((child) => child?.tag === 'audio')
@@ -407,6 +880,32 @@ export class ClientBaileys implements Client {
       const rawOfferEncBase64 = infoChild.tag === 'offer' && encBytes
         ? encBytes.toString('base64')
         : undefined
+      const decryptedOfferNode = infoChild.tag === 'offer' && encBytes
+        ? await this.decryptVoipEnc(infoChild, [
+          ...peerDeviceJids,
+          peerJid,
+          `${node.attrs?.from || ''}`.trim(),
+          `${infoChild.attrs?.['call-creator'] || ''}`.trim(),
+          `${infoChild.attrs?.caller_pn || ''}`.trim(),
+        ])
+        : undefined
+      const decryptedOfferJid = `${(decryptedOfferNode as any)?.__unoDecryptJid || ''}`.trim()
+      const peerDeviceJid = this.isVoipPnDeviceJid(decryptedOfferJid)
+        ? decryptedOfferJid
+        : undefined
+      if (infoChild.tag === 'offer') {
+        logger.warn({
+          phone: this.phone,
+          callId,
+          peerJid,
+          peerDeviceJid,
+          decryptedOfferJid: decryptedOfferJid || undefined,
+          peerDeviceCandidates: peerDeviceJids,
+          peerDeviceStrategy: this.isVoipPnDeviceJid(decryptedOfferJid) ? 'decrypt_jid' : 'none',
+          candidateCount: peerDeviceJids.length,
+        }, 'VOIP peer device identity selected')
+      }
+      const decryptedOfferBytes = decryptedOfferNode ? encodeBinaryNode(decryptedOfferNode) : undefined
       const offerWapNoPrefixBytes = infoChild.tag === 'offer'
         ? Buffer.from((encodeBinaryNode as any)(infoChild, undefined, []))
         : undefined
@@ -578,7 +1077,7 @@ export class ClientBaileys implements Client {
         })
         const callerPn = `${infoChild.attrs?.caller_pn || ''}`.trim()
         const originalCallCreator = `${infoChild.attrs?.['call-creator'] || ''}`.trim()
-        const creatorDeviceJid = callerPn || originalCallCreator.replace(/@lid$/i, '@s.whatsapp.net')
+        const creatorDeviceJid = originalCallCreator.replace(/@lid$/i, '@s.whatsapp.net') || callerPn
         const callerMetadataChild: BinaryNode = {
           tag: 'caller_metadata',
           attrs: {
@@ -676,10 +1175,17 @@ export class ClientBaileys implements Client {
           }],
         })
       }
-      if (infoChild.tag === 'offer' && rawDecryptedCallFrameBase64) {
-        signalingPayloadBase64 = rawDecryptedCallFrameBase64
-        payloadStrategy = 'raw_decrypted_call_frame'
-      } else if (infoChild.tag === 'offer' && encBytes && encChild) {
+      if (infoChild.tag === 'offer') {
+        signalingPayloadBase64 = (decryptedOfferBytes || originalInfoBytes).toString('base64')
+        payloadStrategy = decryptedOfferBytes ? 'offer_decrypted_enc_node' : 'offer_encoded_node'
+      } else if (encBytes) {
+        signalingPayloadBase64 = encBytes.toString('base64')
+        payloadStrategy = 'enc_raw'
+      } else {
+        signalingPayloadBase64 = originalInfoBytes.toString('base64')
+        payloadStrategy = 'info_node_wap'
+      }
+      if (infoChild.tag === 'offer' && encBytes && encChild) {
         const minimalOfferNode: BinaryNode = {
           tag: infoChild.tag,
           attrs: infoChild.attrs || {},
@@ -696,8 +1202,6 @@ export class ClientBaileys implements Client {
           content: [minimalOfferNode],
         }
         rawCallOfferEncWapBytes = encodeBinaryNode(callOfferNode)
-        signalingPayloadBase64 = minimalOfferBytes.toString('base64')
-        payloadStrategy = 'offer_minimal_wap'
         try {
           logger.info(
             {
@@ -729,8 +1233,6 @@ export class ClientBaileys implements Client {
             'VOIP offer binary diff diagnostics'
           )
         } catch {}
-      } else if (encBytes) {
-        signalingPayloadBase64 = encBytes.toString('base64')
       }
       if (!rawCallRootWapBytes) {
         rawCallRootWapBytes = encodeBinaryNode(node)
@@ -763,6 +1265,34 @@ export class ClientBaileys implements Client {
         peerJid,
         payloadStrategy,
       }, 'VOIP enqueue signaling start')
+      const tcTokenBase64 = infoChild.tag === 'offer'
+        ? await this.fetchTcToken([peerJid, `${node.attrs?.from || ''}`.trim(), `${infoChild.attrs?.['call-creator'] || ''}`.trim()])
+        : undefined
+      const selfIdentity = this.getVoipSelfIdentity()
+      logger.warn({
+        phone: this.phone,
+        callId,
+        msgType: infoChild.tag,
+        payloadStrategy,
+        peerJid,
+        peerDeviceJid,
+        peerDeviceCandidates: peerDeviceJids,
+        rawPeerJid,
+        networkPeerJid,
+        storedPeerJid,
+        storedNetworkPeerJid: callId ? this.voipNetworkPeerByCallId.get(callId) : undefined,
+        callCreator,
+        callerPn: `${infoChild.attrs?.caller_pn || ''}`.trim() || undefined,
+        nodeFrom: `${node.attrs?.from || ''}`.trim() || undefined,
+        nodeParticipant: `${node.attrs?.participant || ''}`.trim() || undefined,
+        infoParticipant: `${infoChild.attrs?.participant || ''}`.trim() || undefined,
+        hasTcToken: !!tcTokenBase64,
+        tcTokenSource: infoChild.tag === 'offer' ? 'offer_fetch' : 'stored_by_voip_service',
+        selfJid: selfIdentity.selfJid,
+        selfLid: selfIdentity.selfLid,
+        outerAttrs: node.attrs || {},
+        infoAttrs: infoChild.attrs || {},
+      }, 'VOIP signaling context forwarding to voip service')
       const response = await this.enqueueVoipByCall(callId, async () => {
         logger.info({
           phone: this.phone,
@@ -770,11 +1300,15 @@ export class ClientBaileys implements Client {
           msgType: infoChild.tag,
           peerJid,
           payloadStrategy,
+          hasTcToken: !!tcTokenBase64,
         }, 'VOIP enqueue signaling callback')
         return sendVoipSignaling(this.config, {
           session: this.phone,
           callId,
           peerJid,
+          peerDeviceJid,
+          selfJid: selfIdentity.selfJid,
+          selfLid: selfIdentity.selfLid,
           msgType: infoChild.tag,
           payload: binaryNodeToXml(infoChild),
           payloadBase64: signalingPayloadBase64,
@@ -801,6 +1335,7 @@ export class ClientBaileys implements Client {
           rawDecryptedCallFrameBase64: rawDecryptedCallFrameBase64 || undefined,
           rawOfferWapNoPrefixBase64: offerWapNoPrefixBytes?.toString('base64'),
           rawOfferChildWapBase64: rawOfferChildWapBytes?.toString('base64'),
+          tcTokenBase64,
           payloadEncoding: 'wa_binary',
           attrs: Object.fromEntries(Object.entries(infoChild.attrs || {}).map(([key, value]) => [key, `${value}`])),
           outerAttrs: Object.fromEntries(Object.entries(node.attrs || {}).map(([key, value]) => [key, `${value}`])),
@@ -815,6 +1350,14 @@ export class ClientBaileys implements Client {
         peerJid,
       }, 'VOIP enqueue signaling done')
       await this.processVoipCommands(extractVoipCommands(response.body))
+      if (infoChild.tag === 'offer') {
+        this.voipOfferForwardedByCallId.add(callId)
+        await this.flushVoipPreOfferSignalQueue(callId)
+        this.scheduleVoipCommandDrain(callId)
+      }
+      if (infoChild.tag === 'terminate' || infoChild.tag === 'reject') {
+        this.clearVoipCallSignalingState(callId)
+      }
     } catch (error) {
       logger.warn(error as any, 'failed to forward voip signaling for %s', this.phone)
     }
@@ -828,12 +1371,15 @@ export class ClientBaileys implements Client {
 
     const timestampRaw = event?.timestamp ?? event?.t ?? event?.messageTimestamp
     const timestamp = Number(timestampRaw)
+    const selfIdentity = this.getVoipSelfIdentity()
     const response = await this.enqueueVoipByCall(callId, async () => sendVoipCallEvent(this.config, {
       session: this.phone,
       event: mappedEvent,
       callId,
       from,
       callerPn: `${event?.callerPn || event?.caller_pn || ''}`.trim() || undefined,
+      selfJid: selfIdentity.selfJid,
+      selfLid: selfIdentity.selfLid,
       isGroup: typeof event?.isGroup === 'boolean' ? event.isGroup : (typeof event?.is_group === 'boolean' ? event.is_group : undefined),
       groupJid: `${event?.groupJid || event?.group_jid || ''}`.trim() || undefined,
       isVideo: typeof event?.isVideo === 'boolean' ? event.isVideo : (typeof event?.is_video === 'boolean' ? event.is_video : undefined),
@@ -841,6 +1387,7 @@ export class ClientBaileys implements Client {
       raw: event,
     }))
     await this.processVoipCommands(extractVoipCommands(response.body))
+    if (mappedEvent === 'incoming_call') this.scheduleVoipCommandDrain(callId)
   }
 
   private async handleIncomingCallRejection(event: any, source = 'call') {
@@ -1149,6 +1696,9 @@ export class ClientBaileys implements Client {
   private readMessages = readMessagesDefault
   private rejectCall: rejectCall | undefined = rejectCallDefault
   private sendCallNode: sendCallNode = sendCallNodeDefault
+  private fetchTcToken: fetchTcToken = fetchTcTokenDefault
+  private decryptVoipEnc: decryptVoipEnc = decryptVoipEncDefault
+  private fetchUserDevices: fetchUserDevices = fetchUserDevicesDefault
   private groupCreateFn: groupCreate = groupUnavailable
   private groupUpdateSubjectFn: groupUpdateSubject = groupUnavailable
   private groupUpdateDescriptionFn: groupUpdateDescription = groupUnavailable
@@ -1164,6 +1714,10 @@ export class ClientBaileys implements Client {
   private listener: Listener
   private store: Store | undefined
   private calls = new Map<string, boolean>()
+  private voipPeerByCallId = new Map<string, string>()
+  private voipNetworkPeerByCallId = new Map<string, string>()
+  private voipOfferForwardedByCallId = new Set<string>()
+  private voipPreOfferSignalQueueByCallId = new Map<string, BinaryNode[]>()
   private groupMetadataRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private groupMetadataRefreshInFlight = new Set<string>()
   private groupMetadataRefreshLastAt = new Map<string, number>()
@@ -1415,12 +1969,18 @@ export class ClientBaileys implements Client {
       groupLeave,
       groupSettingUpdate,
       groupJoinApprovalMode,
+      fetchTcToken,
+      decryptVoipEnc,
+      fetchUserDevices,
     } = result
     this.event = event
     this.sendMessage = send
     this.readMessages = read
     this.rejectCall = rejectCall
     this.sendCallNode = sendCallNode
+    this.fetchTcToken = fetchTcToken || fetchTcTokenDefault
+    this.decryptVoipEnc = decryptVoipEnc || decryptVoipEncDefault
+    this.fetchUserDevices = fetchUserDevices || fetchUserDevicesDefault
     this.groupCreateFn = groupCreate || groupUnavailable
     this.groupUpdateSubjectFn = groupUpdateSubject || groupUnavailable
     this.groupUpdateDescriptionFn = groupUpdateDescription || groupUnavailable
@@ -2335,6 +2895,23 @@ export class ClientBaileys implements Client {
                 await dataStore?.loadProviderId?.(key?.id),
                 await dataStore?.loadUnoId?.(key?.id),
               ].filter((v): v is string => typeof v === 'string' && !!v)))
+              const exactJids = Array.from(new Set([
+                key?.remoteJid,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.remoteJidAlt : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.senderPn : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.participantPn : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.senderLid : undefined,
+                !`${key?.remoteJid || ''}`.endsWith('@g.us') ? key?.participantLid : undefined,
+              ].filter((v): v is string => typeof v === 'string' && !!v)))
+              if (typeof dataStore?.loadMessageExact === 'function') {
+                for (const exactJid of exactJids) {
+                  for (const candidateId of candidateIds) {
+                    quoted = await dataStore.loadMessageExact(exactJid, candidateId)
+                    if (quoted) break
+                  }
+                  if (quoted) break
+                }
+              }
               const candidateJids = Array.from(new Set([
                 key?.remoteJid,
                 targetTo,
@@ -2342,13 +2919,18 @@ export class ClientBaileys implements Client {
                 (() => { try { return normalizeTransportJid(key?.remoteJid) } catch { return key?.remoteJid } })(),
               ].filter((v): v is string => typeof v === 'string' && !!v)))
 
-              for (const candidateJid of candidateJids) {
-                for (const candidateId of candidateIds) {
-                  quoted = await dataStore?.loadMessage(candidateJid, candidateId)
+              if (!quoted) {
+                for (const candidateJid of candidateJids) {
+                  for (const candidateId of candidateIds) {
+                    quoted = await dataStore?.loadMessage(candidateJid, candidateId)
+                    if (quoted) break
+                  }
                   if (quoted) break
                 }
-                if (quoted) break
               }
+
+              const quotedOriginalRemoteJid = quoted?.key?.remoteJid
+              quoted = normalizeQuotedForOneToOneSend(quoted, key)
 
               try {
                 const qid = quoted?.key?.id
@@ -2362,8 +2944,10 @@ export class ClientBaileys implements Client {
                     providerId,
                     quotedFound: !!quoted,
                     quotedId: qid,
-                    quotedRemoteJid: qjid,
+                    quotedRemoteJid: quotedOriginalRemoteJid,
+                    quotedSendRemoteJid: qjid,
                     quotedType: qtype,
+                    exactJids,
                     candidateJids,
                     candidateIds,
                   },

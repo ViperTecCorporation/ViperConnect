@@ -2,6 +2,7 @@ import fs from 'node:fs'
 
 const dependencyName = '@whiskeysockets/baileys'
 const repoPrefix = 'github:ViperTecCorporation/Baileys#'
+const gitRepoPrefix = 'git+https://github.com/ViperTecCorporation/Baileys.git#'
 
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'))
 const wantedRefs = [
@@ -22,7 +23,16 @@ if (wantedPins.length > 1) {
 
 const wantedPin = wantedPins[0]
 const lockLines = fs.readFileSync('yarn.lock', 'utf8').split(/\r?\n/)
-const entryStart = lockLines.findIndex((line) => line.includes(`"${dependencyName}@${repoPrefix}`))
+const entryStarts = lockLines
+  .map((line, index) => ({ line, index }))
+  .filter(({ line }) => (
+    line.includes(`"${dependencyName}@${repoPrefix}`) ||
+    line.includes(`"${dependencyName}@${gitRepoPrefix}`)
+  ))
+const entryStart = (
+  entryStarts.find(({ line }) => line.includes(`#${wantedPin}`)) ||
+  entryStarts[0]
+)?.index ?? -1
 let lockEntry = ''
 if (entryStart >= 0) {
   const entryLines = [lockLines[entryStart]]
@@ -33,7 +43,7 @@ if (entryStart >= 0) {
   }
   lockEntry = entryLines.join('\n')
 }
-const lockedHash = lockEntry.match(/Baileys#([0-9a-f]{7,40})/)?.[1] || lockEntry.match(/tar\.gz\/([0-9a-f]{7,40})/)?.[1] || ''
+const lockedHash = lockEntry.match(/Baileys(?:\.git)?#([0-9a-f]{7,40})/)?.[1] || lockEntry.match(/tar\.gz\/([0-9a-f]{7,40})/)?.[1] || ''
 
 if (!lockEntry || !lockedHash) {
   console.error('[check-baileys-lock] Baileys entry was not found in yarn.lock')

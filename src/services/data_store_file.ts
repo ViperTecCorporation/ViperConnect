@@ -84,7 +84,8 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
       // retrocompatibilidade: caso algum valor antigo não seja base64 válido
       try { return JSON.parse(b64) as WAMessage } catch { return undefined }
     }
-  },
+  }
+  dataStore.loadMessageExact = async (jid: string, id: string) => dataStore.loadMessage(jid, id)
   dataStore.findMessageWithSecret = async (id: string, jids: string[]) => {
     let fallback: WAMessage | undefined
     for (const jid of Array.from(new Set((jids || []).map((j) => `${j || ''}`.trim()).filter(Boolean)))) {
