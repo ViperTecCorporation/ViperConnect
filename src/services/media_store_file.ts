@@ -1,7 +1,7 @@
 import { proto, WAMessage, downloadMediaMessage, downloadContentFromMessage, Contact } from '@whiskeysockets/baileys'
 import { getBinMessage, jidToPhoneNumberIfUser, toBuffer, ensurePn, phoneNumberToJid } from './transformer'
 import { writeFile } from 'fs/promises'
-import { existsSync, mkdirSync, rmSync, createReadStream } from 'fs'
+import { existsSync, mkdirSync, rmSync, createReadStream, statSync } from 'fs'
 import { MediaStore, getMediaStore, mediaStores } from './media_store'
 import mime from 'mime-types'
 import { Response } from 'express'
@@ -397,16 +397,30 @@ export const mediaStoreFile = (phone: string, config: Config, getDataStore: getD
     return Array.from(ids)
   }
 
-  mediaStore.getProfilePictureUrl = async (baseUrl: string, jid: string) => {
+  mediaStore.getProfilePictureInfo = async (baseUrl: string, jid: string) => {
     const ids = await profilePictureIdsFor(jid)
     logger.debug('Profile picture path candidate ids: %s (from %s)', ids.join(','), jid)
     const base = await mediaStore.getFileUrl(PROFILE_PICTURE_FOLDER, DATA_URL_TTL)
     for (const id of ids) {
       const fName = profilePictureFileName(id)
       const complete = `${base}/${fName}`
-      if (existsSync(complete)) return `${baseUrl}/v15.0/download/${phone}/${PROFILE_PICTURE_FOLDER}/${fName}`
+      if (existsSync(complete)) {
+        const stat = statSync(complete)
+        return {
+          url: `${baseUrl}/v15.0/download/${phone}/${PROFILE_PICTURE_FOLDER}/${fName}`,
+          metadata: {
+            content_length: `${stat.size}`,
+            last_modified: stat.mtime.toISOString(),
+            content_type: 'image/jpeg',
+          },
+        }
+      }
     }
     return undefined
+  }
+
+  mediaStore.getProfilePictureUrl = async (baseUrl: string, jid: string) => {
+    return (await mediaStore.getProfilePictureInfo?.(baseUrl, jid))?.url
   }
 
   mediaStore.saveProfilePicture = async (contact: Contact) => {

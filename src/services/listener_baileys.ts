@@ -7,7 +7,7 @@ import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMed
 import * as Baileys from '@whiskeysockets/baileys'
 import { WAMessage, delay, jidNormalizedUser, isPnUser, isLidUser, proto } from '@whiskeysockets/baileys'
 import { Template } from './template'
-import { UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS, UNOAPI_DELAY_BETWEEN_MESSAGES_MS, INBOUND_DEDUP_WINDOW_MS } from '../defaults'
+import { UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS, UNOAPI_DELAY_BETWEEN_MESSAGES_MS, INBOUND_DEDUP_WINDOW_MS, BASE_URL } from '../defaults'
 import { v1 as uuid } from 'uuid'
 import { createDecipheriv, createHash, createHmac, hkdfSync } from 'crypto'
 import { getPollState, setPollState, getStatusMediaState, setStatusMediaState, getUnoIdsForProviderAnySession } from './redis'
@@ -1391,9 +1391,12 @@ export class ListenerBaileys implements Listener {
             if (waId) {
               const jid = `${waId}@s.whatsapp.net`
               try {
-                const url = await store?.dataStore?.getImageUrl(jid)
+                const { mediaStore } = await config.getStore(phone, config)
+                const info = await mediaStore.getProfilePictureInfo?.(BASE_URL, jid)
+                const url = info?.url || await store?.dataStore?.getImageUrl(jid)
                 if (url) {
                   profile.picture = url
+                  if (info?.metadata) profile.picture_metadata = info.metadata
                 }
               } catch {}
             }

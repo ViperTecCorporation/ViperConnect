@@ -4,7 +4,14 @@ import { UNOAPI_QUEUE_MEDIA, DATA_TTL, FETCH_TIMEOUT_MS, DATA_URL_TTL, UNOAPI_EX
 import { convertBufferToMp3 } from '../utils/audio_convert_mp3'
 import { mediaStores, MediaStore, getMediaStore } from './media_store'
 import { getDataStore } from './data_store'
-import { GetObjectCommand, DeleteObjectCommand, HeadObjectCommand, S3Client, GetObjectCommandOutput } from '@aws-sdk/client-s3'
+import {
+  GetObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+  S3Client,
+  GetObjectCommandOutput,
+  HeadObjectCommandOutput,
+} from '@aws-sdk/client-s3'
 import { Upload } from '@aws-sdk/lib-storage'
 import { NodeHttpHandler } from '@smithy/node-http-handler'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
@@ -225,16 +232,36 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     return Array.from(ids)
   }
 
-  mediaStore.getProfilePictureUrl = async (_baseUrl: string, jid: string) => {
+  const profilePictureMetadata = (head: HeadObjectCommandOutput): Record<string, string> => {
+    const metadata: Record<string, string> = {}
+    if (head.ETag) metadata.etag = head.ETag
+    if (head.LastModified) metadata.last_modified = head.LastModified.toISOString()
+    if (typeof head.ContentLength === 'number') metadata.content_length = `${head.ContentLength}`
+    if (head.ContentType) metadata.content_type = head.ContentType
+    return metadata
+  }
+
+  const isS3NotFound = (error: any) => {
+    return (error?.$metadata?.httpStatusCode === 404) ||
+      error?.name === 'NotFound' ||
+      error?.code === 'NotFound' ||
+      error?.Code === 'NotFound'
+  }
+
+  mediaStore.getProfilePictureInfo = async (_baseUrl: string, jid: string) => {
     const ids = await profilePictureIdsFor(jid)
     logger.debug('S3 profile picture path candidate ids: %s (from %s)', ids.join(','), sanitizeProfileId(jid))
     for (const id of ids) {
       const fileName = `${phone}/${PROFILE_PICTURE_FOLDER}/${profilePictureFileName(id)}`
       // Verifica existência antes de gerar URL assinada (GetSignedUrl não valida existência)
+      let head: HeadObjectCommandOutput
       try {
-        await sendWithRetry(new HeadObjectCommand({ Bucket: bucket, Key: fileName }), s3Config.timeoutMs)
+        head = await sendWithRetry<HeadObjectCommandOutput>(
+          new HeadObjectCommand({ Bucket: bucket, Key: fileName }),
+          s3Config.timeoutMs
+        )
       } catch (error: any) {
-        if ((error?.$metadata?.httpStatusCode === 404) || error?.name === 'NotFound' || error?.code === 'NotFound' || error?.Code === 'NotFound') {
+        if (isS3NotFound(error)) {
           logger.debug('PROFILE_PICTURE S3 not found: %s', fileName)
           continue
         }
@@ -243,13 +270,17 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
       try {
         const url = await mediaStore.getFileUrl(fileName, DATA_URL_TTL)
         logger.debug('PROFILE_PICTURE S3 presigned URL: %s', url)
-        return url
+        return { url, metadata: profilePictureMetadata(head) }
       } catch (error: any) {
         logger.warn(error as any, 'Failed to presign S3 URL for %s', fileName)
-        return ''
+        return undefined
       }
     }
-    return ''
+    return undefined
+  }
+
+  mediaStore.getProfilePictureUrl = async (baseUrl: string, jid: string) => {
+    return (await mediaStore.getProfilePictureInfo?.(baseUrl, jid))?.url || ''
   }
 
   mediaStore.saveProfilePicture = async (contact: Partial<Contact>) => {

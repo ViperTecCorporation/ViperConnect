@@ -1321,6 +1321,7 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
     if (payload.groupMetadata) {
       if (payload.groupMetadata.subject) groupMetadata.group_subject = payload.groupMetadata.subject
       if (payload.groupMetadata.profilePicture) groupMetadata.group_picture = payload.groupMetadata.profilePicture
+      if (payload.groupMetadata.profilePictureMetadata) groupMetadata.group_picture_metadata = payload.groupMetadata.profilePictureMetadata
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const statuses: any[] = []
@@ -1348,6 +1349,9 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
                   const pic = payload.profilePicture
                   if (typeof pic === 'string' && pic) {
                     p.picture = pic
+                  }
+                  if (payload.profilePictureMetadata) {
+                    p.picture_metadata = payload.profilePictureMetadata
                   }
                 }
                 return p

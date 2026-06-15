@@ -470,9 +470,20 @@ describe('service client baileys', () => {
     const groupJid = '120363040468224422@g.us'
     const metadata = { id: groupJid, subject: 'Grupo com foto', participants: [] }
     const picture = 'https://cdn.example.com/group.jpg'
+    const pictureMetadata = {
+      etag: '"group-etag"',
+      content_length: '41053',
+      content_type: 'image/jpeg',
+      last_modified: '2026-06-15T19:24:29.000Z',
+    }
     sessionStore.isStatusOnline.mockResolvedValue(true)
     fetchGroupMetadata.mockResolvedValue(metadata)
-    fetchImageUrl.mockResolvedValue(picture)
+    ;(store as any).mediaStore = {
+      getProfilePictureInfo: jest.fn().mockResolvedValue({
+        url: picture,
+        metadata: pictureMetadata,
+      }),
+    }
 
     ;(client as any).store = store
     ;(client as any).config = { ...defaultConfig, sendProfilePicture: true }
@@ -488,10 +499,12 @@ describe('service client baileys', () => {
     })
 
     expect(message.groupMetadata.profilePicture).toBe(picture)
+    expect(message.groupMetadata.profilePictureMetadata).toEqual(pictureMetadata)
     expect(dataStore.setGroupMetada).toHaveBeenCalledWith(groupJid, expect.objectContaining({
       id: groupJid,
       subject: 'Grupo com foto',
       profilePicture: picture,
+      profilePictureMetadata: pictureMetadata,
     }))
   })
 

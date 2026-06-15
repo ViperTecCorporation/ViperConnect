@@ -42,7 +42,7 @@ import { Response } from './response'
 import QRCode from 'qrcode'
 import { Template } from './template'
 import logger from './logger'
-import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS } from '../defaults'
+import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS, BASE_URL } from '../defaults'
 import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache, getDeviceJidsForPnFromAuthCache } from './redis'
 import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
@@ -3313,6 +3313,16 @@ export class ClientBaileys implements Client {
     if (!this.store || !await this.store.sessionStore.isStatusOnline(this.phone)) {
       return message
     }
+    const fetchProfilePictureInfo = async (jid: string) => {
+      try {
+        const { mediaStore } = await this.config.getStore(this.phone, this.config)
+        const info = await mediaStore.getProfilePictureInfo?.(BASE_URL, jid)
+        if (info?.url) return info
+      } catch {}
+
+      const url = await this.fetchImageUrl(jid)
+      return url ? { url } : undefined
+    }
     const key = message && message['key']
     try {
       if (key) {
@@ -3429,10 +3439,11 @@ export class ClientBaileys implements Client {
       message['groupMetadata'] = gm
       logger.debug(`Retrieving group profile picture...`)
       try {
-        const profilePictureGroup = await this.fetchImageUrl(key.remoteJid)
-        if (profilePictureGroup) {
-          logger.debug(`Retrieved group picture! ${profilePictureGroup}`)
-          gm['profilePicture'] = profilePictureGroup
+        const profilePictureGroup = await fetchProfilePictureInfo(key.remoteJid)
+        if (profilePictureGroup?.url) {
+          logger.debug(`Retrieved group picture! ${profilePictureGroup.url}`)
+          gm['profilePicture'] = profilePictureGroup.url
+          if (profilePictureGroup.metadata) gm['profilePictureMetadata'] = profilePictureGroup.metadata
           if (hasFetchedGroupMetadata) {
             try { await this.store?.dataStore?.setGroupMetada?.(key.remoteJid, gm) } catch {}
           }
@@ -3536,16 +3547,24 @@ export class ClientBaileys implements Client {
     // Primeiro tenta anexar foto diretamente com o JID conhecido (evita depender de onWhatsApp)
     try {
       if (remoteJid && this.config.sendProfilePicture) {
-        const direct = await this.fetchImageUrl(remoteJid)
-        if (direct) {
-          try { message['profilePicture'] = direct } catch {}
+        const direct = await fetchProfilePictureInfo(remoteJid)
+        if (direct?.url) {
+          try {
+            message['profilePicture'] = direct.url
+            if (direct.metadata) message['profilePictureMetadata'] = direct.metadata
+          } catch {}
         } else {
           // Fallback: resolve JID via exists() e tenta novamente
           try {
             const resolved = await this.exists(remoteJid)
             if (resolved) {
-              const url = await this.fetchImageUrl(resolved)
-              if (url) { try { message['profilePicture'] = url } catch {} }
+              const info = await fetchProfilePictureInfo(resolved)
+              if (info?.url) {
+                try {
+                  message['profilePicture'] = info.url
+                  if (info.metadata) message['profilePictureMetadata'] = info.metadata
+                } catch {}
+              }
             }
           } catch {}
         }
@@ -3634,10 +3653,11 @@ export class ClientBaileys implements Client {
       if (jid) {
         try {
           logger.debug(`Retrieving user picture for %s...`, jid)
-          const profilePicture = await this.fetchImageUrl(jid)
-          if (profilePicture) {
-            logger.debug('Retrieved user picture %s for %s!', profilePicture, jid)
-            message['profilePicture'] = profilePicture
+          const profilePicture = await fetchProfilePictureInfo(jid)
+          if (profilePicture?.url) {
+            logger.debug('Retrieved user picture %s for %s!', profilePicture.url, jid)
+            message['profilePicture'] = profilePicture.url
+            if (profilePicture.metadata) message['profilePictureMetadata'] = profilePicture.metadata
           } else {
             logger.debug(`Not found user picture for %s!`, jid)
           }

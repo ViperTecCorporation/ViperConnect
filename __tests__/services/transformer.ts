@@ -584,6 +584,70 @@ describe('service transformer', () => {
     expect(fromBaileysMessageContent(phoneNumer, input)[0]).toEqual(output)
   })
 
+  test('fromBaileysMessageContent includes profile picture metadata', async () => {
+    const phoneNumer = '5549998360838'
+    const remoteJid = '554988290955@s.whatsapp.net'
+    const metadata = {
+      etag: '"avatar-etag"',
+      content_length: '41053',
+      content_type: 'image/jpeg',
+      last_modified: '2026-06-15T19:24:29.000Z',
+    }
+    const input = {
+      key: {
+        remoteJid,
+        fromMe: false,
+        id: 'wa.profile.metadata',
+      },
+      message: {
+        conversation: 'oi',
+      },
+      pushName: 'Maria',
+      messageTimestamp: '1781554162',
+      profilePicture: 'https://cdn.example.com/profile/maria.jpg',
+      profilePictureMetadata: metadata,
+    }
+
+    const value = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value
+
+    expect(value.contacts[0].profile.picture).toBe('https://cdn.example.com/profile/maria.jpg')
+    expect(value.contacts[0].profile.picture_metadata).toEqual(metadata)
+  })
+
+  test('fromBaileysMessageContent includes group picture metadata', async () => {
+    const phoneNumer = '5549998360838'
+    const groupJid = '120363040468224422@g.us'
+    const metadata = {
+      etag: '"group-etag"',
+      content_length: '41053',
+      content_type: 'image/jpeg',
+      last_modified: '2026-06-15T19:24:29.000Z',
+    }
+    const input = {
+      key: {
+        remoteJid: groupJid,
+        participant: '554988290955@s.whatsapp.net',
+        fromMe: false,
+        id: 'wa.group.metadata',
+      },
+      message: {
+        conversation: 'oi',
+      },
+      pushName: 'Maria',
+      messageTimestamp: '1781554162',
+      groupMetadata: {
+        subject: 'Grupo',
+        profilePicture: 'https://cdn.example.com/groups/grupo.jpg',
+        profilePictureMetadata: metadata,
+      },
+    }
+
+    const value = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value
+
+    expect(value.contacts[0].group_picture).toBe('https://cdn.example.com/groups/grupo.jpg')
+    expect(value.contacts[0].group_picture_metadata).toEqual(metadata)
+  })
+
   test('fromBaileysMessageContent with pix key', async () => {
     const phoneNumer = '5549998360838'
     const remotePhoneNumer = '554988290955'
