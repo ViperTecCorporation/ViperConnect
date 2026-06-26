@@ -1439,26 +1439,10 @@ export class ListenerBaileys implements Listener {
               id = mapped
             }
           } catch (e) { logger.debug('No UNO id mapping for %s', id) }
-          const status = state.status || 'error'
-          // Backfill a missing 'delivered' before 'read' when previous status is not delivered/read
-          if (status === 'read') {
-            const prev = await store?.dataStore?.loadStatus(id)
-            if (prev !== 'delivered' && prev !== 'read') {
-              try {
-                const deliveredPayload = JSON.parse(JSON.stringify(data))
-                deliveredPayload.entry[0].changes[0].value.statuses[0].status = 'delivered'
-                await this.outgoing.send(phone, deliveredPayload)
-                logger.debug('Emitted backfilled delivered before read for %s', id)
-                await store?.dataStore?.setStatus(id, 'delivered')
-              } catch (e) {
-                logger.warn(e as any, 'Ignore error backfilling delivered before read')
-              }
-            }
-          }
           // NÃO atualiza o status aqui; faremos após decidir enviar (evita auto-duplicata)
         }
       } catch (e) {
-        logger.warn(e as any, 'Ignore error preparing status/backfill')
+        logger.warn(e as any, 'Ignore error preparing status')
       }
     }
     if (data) {

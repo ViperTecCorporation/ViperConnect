@@ -318,6 +318,49 @@ describe('service listener baileys', () => {
     )
   }, 15000)
 
+  test('does not backfill delivered before direct read receipt', async () => {
+    const messageId = 'provider-read-message'
+    config.getMessageMetadata = async message => message
+    store.dataStore.loadStatus.mockResolvedValue(undefined)
+    outgoing.send = jest.fn().mockResolvedValue(undefined) as any
+
+    await service.sendOne(phone, {
+      key: {
+        remoteJid: '5566996183660@s.whatsapp.net',
+        fromMe: true,
+        id: messageId,
+      },
+      receipt: {
+        readTimestamp: 1782499239,
+      },
+    } as any)
+
+    expect(outgoing.send).toHaveBeenCalledTimes(1)
+    expect(outgoing.send).toHaveBeenCalledWith(
+      phone,
+      expect.objectContaining({
+        entry: expect.arrayContaining([
+          expect.objectContaining({
+            changes: expect.arrayContaining([
+              expect.objectContaining({
+                value: expect.objectContaining({
+                  statuses: [
+                    expect.objectContaining({
+                      id: messageId,
+                      status: 'read',
+                    }),
+                  ],
+                }),
+              }),
+            ]),
+          }),
+        ]),
+      }),
+    )
+    expect(store.dataStore.setStatus).toHaveBeenCalledWith(messageId, 'read')
+    expect(store.dataStore.setStatus).not.toHaveBeenCalledWith(messageId, 'delivered')
+  }, 15000)
+
   test('decrypts poll update vote using lid fallback before building webhook summary', async () => {
     config.getMessageMetadata = async message => message
     const groupJid = '120363040468224422@g.us'
