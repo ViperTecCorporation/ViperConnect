@@ -282,6 +282,37 @@ const parseInteractiveResponse = (binMessage: any) => {
   return { id, title, description, isList, isButton, bodyText }
 }
 
+const parseNativeFlowSingleSelect = (buttons: any[]) => {
+  const nativeButton = buttons.find((button: any) => {
+    const info = button?.nativeFlowInfo
+    return `${info?.name || ''}`.toLowerCase() === 'single_select'
+  })
+  const paramsJson =
+    nativeButton?.nativeFlowInfo?.paramsJson ||
+    nativeButton?.nativeFlowInfo?.buttonParamsJson
+  if (!paramsJson) return undefined
+
+  try {
+    const params = JSON.parse(paramsJson)
+    if (!Array.isArray(params?.sections)) return undefined
+    return {
+      button: params.title || 'Selecionar',
+      sections: params.sections.map((section: any) => ({
+        title: section?.title || '',
+        rows: Array.isArray(section?.rows)
+          ? section.rows.map((row: any) => ({
+              id: row?.id || row?.rowId || '',
+              title: row?.title || '',
+              description: row?.description || '',
+            }))
+          : [],
+      })),
+    }
+  } catch {
+    return undefined
+  }
+}
+
 const parseVcardContact = (rawVcard: string): any | undefined => {
   if (!rawVcard) return undefined
   const card: any = new vCard().parse(rawVcard.replace(/\r?\n/g, '\r\n'))
@@ -1970,8 +2001,21 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
 
       case 'buttonsMessage': {
         const buttonsMessage: any = binMessage || payload?.message?.buttonsMessage || {}
-        const buttons = Array.isArray(buttonsMessage.buttons)
-          ? buttonsMessage.buttons.map((button: any) => ({
+        const rawButtons = Array.isArray(buttonsMessage.buttons) ? buttonsMessage.buttons : []
+        const singleSelect = parseNativeFlowSingleSelect(rawButtons)
+        if (singleSelect) {
+          message.type = 'interactive'
+          message.interactive = {
+            type: 'list',
+            body: { text: buttonsMessage.contentText || buttonsMessage.text || '' },
+            footer: buttonsMessage.footerText ? { text: buttonsMessage.footerText } : undefined,
+            action: singleSelect,
+          }
+          break
+        }
+
+        const buttons = rawButtons.length
+          ? rawButtons.map((button: any) => ({
               type: 'reply',
               reply: {
                 id: button.buttonId || '',

@@ -2998,6 +2998,74 @@ describe('service transformer', () => {
     expect(fromBaileysMessageContent(phoneNumer, input)[0]).toEqual(output)
   })
 
+  test('fromBaileysMessageContent maps native flow single_select as interactive list', async () => {
+    const phoneNumer = '5566996269251'
+    const remotePhoneNumer = '5566999554300'
+    const remoteJid = `${remotePhoneNumer}@s.whatsapp.net`
+    const id = `wa.${new Date().getTime()}`
+    const pushName = `Mary ${new Date().getTime()}`
+    const messageTimestamp = Math.floor(new Date().getTime() / 1000).toString()
+    const input = {
+      key: {
+        remoteJid,
+        fromMe: false,
+        id,
+      },
+      message: {
+        buttonsMessage: {
+          contentText: 'Escolha uma opcao',
+          footerText: 'Unoapi',
+          buttons: [
+            {
+              type: 'NATIVE_FLOW',
+              nativeFlowInfo: {
+                name: 'single_select',
+                paramsJson: JSON.stringify({
+                  title: 'Ver opcoes',
+                  sections: [
+                    {
+                      title: 'Planos',
+                      rows: [
+                        { rowId: 'plan_basic', id: 'plan_basic', title: 'Basico', description: 'R$ 10' },
+                        { rowId: 'plan_pro', id: 'plan_pro', title: 'Pro', description: 'R$ 20' },
+                      ],
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+          headerType: 'EMPTY',
+        },
+      },
+      pushName,
+      messageTimestamp,
+    }
+
+    const message = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value.messages[0]
+    expect(message).toEqual(expect.objectContaining({
+      id,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: 'Escolha uma opcao' },
+        footer: { text: 'Unoapi' },
+        action: {
+          button: 'Ver opcoes',
+          sections: [
+            {
+              title: 'Planos',
+              rows: [
+                { id: 'plan_basic', title: 'Basico', description: 'R$ 10' },
+                { id: 'plan_pro', title: 'Pro', description: 'R$ 20' },
+              ],
+            },
+          ],
+        },
+      },
+    }))
+  })
+
 // {"key":{"remoteJid":"555533800800@s.whatsapp.net","fromMe":false,"id":"1BE283407E62E5A073"},"messageTimestamp":1753900800,"pushName":"555533800800","broadcast":false,"message":{"messageContextInfo":{"deviceListMetadata":{"recipientKeyHash":"BuoOcp2GlUsdsQ==","recipientTimestamp":"1753278139","recipientKeyIndexes":[0,5]},"deviceListMetadataVersion":2},"buttonsMessage":{"contentText":"Para confirmar, estou falando com *IM Agronegócios* e o seu CNPJ é *41.281.5xx/xxxx-xx*?","buttons":[{"buttonId":"1","buttonText":{"displayText":"Sim"},"type":"RESPONSE"},{"buttonId":"2","buttonText":{"displayText":"Não"},"type":"RESPONSE"}],"headerType":"EMPTY"}},"verifiedBizName":"Unifique"}
 // {"key":{"remoteJid":"555533800800@s.whatsapp.net","fromMe":true,"id":"3EB02FCD7C12A71F06DE34"}, "messageTimestamp":1753900805,"pushName":"Im Agronegócios","broadcast":false,"status":2, "message":{"buttonsResponseMessage":{"selectedButtonId":"1","selectedDisplayText":"Sim","contextInfo":{"stanzaId":"1BE283407E62E5A073","participant":"555533800800@s.whatsapp.net","quotedMessage":{"messageContextInfo":{},"buttonsMessage":{"contentText":"Para confirmar, estou falando com *IM Agronegócios* e o seu CNPJ é *41.281.5xx/xxxx-xx*?","buttons":[{"buttonId":"1","buttonText":{"displayText":"Sim"},"type":"RESPONSE"},{"buttonId":"2","buttonText":{"displayText":"Não"},"type":"RESPONSE"}],"headerType":"EMPTY"}}},"type":"DISPLAY_TEXT"}}}
 })
