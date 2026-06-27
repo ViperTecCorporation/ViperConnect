@@ -456,6 +456,8 @@ export const JIDMAP_ENRICH_ENABLED = process.env.JIDMAP_ENRICH_ENABLED === _unde
 export const JIDMAP_ENRICH_PER_SWEEP = parseInt(process.env.JIDMAP_ENRICH_PER_SWEEP || '20')
 // Espelhar periodicamente o cache interno (unoapi-auth:*:lid-mapping-*) no JIDMAP
 export const JIDMAP_ENRICH_AUTH_ENABLED = process.env.JIDMAP_ENRICH_AUTH_ENABLED === _undefined ? true : process.env.JIDMAP_ENRICH_AUTH_ENABLED == 'true'
+export const JIDMAP_ENRICH_ON_STORE_ENABLED =
+  process.env.JIDMAP_ENRICH_ON_STORE_ENABLED === _undefined ? false : process.env.JIDMAP_ENRICH_ON_STORE_ENABLED == 'true'
 
 // Watchdog purge scan batch size (Redis SCAN COUNT per pattern)
 export const WATCHDOG_PURGE_SCAN_COUNT = parseInt(process.env.WATCHDOG_PURGE_SCAN_COUNT || '20')
