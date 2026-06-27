@@ -229,12 +229,16 @@ export class PhoneNumberController {
         ? body.types
         : `${body.types || body.type || ''}`.split(',').map((value) => value.trim()).filter(Boolean)
       const dryRunValue = body.dry_run ?? body.dryRun
+      const parseOptionalInt = (value: any): number | undefined => {
+        const parsed = Number.parseInt(`${value ?? ''}`, 10)
+        return Number.isFinite(parsed) ? parsed : undefined
+      }
       const result = await pruneAuthSignalCache(sessionPhone, {
         types,
         dryRun: typeof dryRunValue === 'undefined' ? undefined : `${dryRunValue}` !== 'false',
-        maxDelete: Number.parseInt(`${body.max_delete ?? body.maxDelete ?? ''}`, 10) || undefined,
-        preKeyKeepRecent: Number.parseInt(`${body.pre_key_keep_recent ?? body.preKeyKeepRecent ?? ''}`, 10) || undefined,
-        scanCount: Number.parseInt(`${body.scan_count ?? body.scanCount ?? ''}`, 10) || undefined,
+        maxDelete: parseOptionalInt(body.max_delete ?? body.maxDelete),
+        preKeyKeepRecent: parseOptionalInt(body.pre_key_keep_recent ?? body.preKeyKeepRecent),
+        scanCount: parseOptionalInt(body.scan_count ?? body.scanCount),
       })
       return res.status(200).json({
         success: true,
