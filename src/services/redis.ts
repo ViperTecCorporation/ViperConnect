@@ -19,6 +19,10 @@ import {
   AUTH_SIGNAL_PRUNE_MAX_DELETE,
   AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
   AUTH_SIGNAL_PRUNE_SCAN_COUNT,
+  AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED,
+  AUTH_SIGNAL_PRUNE_DAILY_ENABLED,
+  AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS,
+  AUTH_SIGNAL_PRUNE_SESSION_LIMIT,
   SESSION_STATUS_CACHE_TTL_MS,
   CONNECT_COUNT_CACHE_TTL_MS,
 } from '../defaults'
@@ -48,6 +52,7 @@ const REDIS_CONNECT_MAX_RETRIES = parseInt(process.env.REDIS_CONNECT_MAX_RETRIES
 const REDIS_CONNECT_RETRY_DELAY_MS = parseInt(process.env.REDIS_CONNECT_RETRY_DELAY_MS || '2000')
 // Health-check flags/intervals
 let redisHealthStarted = false
+let authSignalPruneDailyStarted = false
 const REDIS_HEALTH_INTERVAL_MS = 15_000
 const REDIS_PING_WARN_MS = 200
 let startupMigrationsDone = false
@@ -122,6 +127,7 @@ export const startRedis = async (redisUrl = REDIS_URL, retried = false) => {
     } catch (e) {
       logger.warn(e as any, 'Redis startup migrations failed')
     }
+    startAuthSignalPruneMaintenance()
   }
   return client
 }
@@ -275,6 +281,61 @@ const runStartupRedisMigrations = async (): Promise<void> => {
   await clearProfilePictureRefreshKeysOnLegacyUpgrade()
   await clearGlobalJidMapOnLegacyUpgrade()
   await seedHistorySyncMarkersForExistingSessions()
+}
+
+const getConfiguredSessionPhones = async (limit = AUTH_SIGNAL_PRUNE_SESSION_LIMIT): Promise<string[]> => {
+  const keys = await redisScanSome(configKey('*'), Math.max(1, limit || 100000))
+  return [...new Set((keys || [])
+    .map((key) => `${key || ''}`.replace(configKey(''), ''))
+    .filter((phone) => !!phone && phone !== 'auth-token-index'))]
+}
+
+const runAuthSignalPruneForAllSessions = async (source: string): Promise<void> => {
+  await enqueueRedisTask(`auth-signal-prune:${source}`, async () => {
+    const phones = await getConfiguredSessionPhones()
+    let deleted = 0
+    let scanned = 0
+    logger.warn(
+      'Auth signal prune %s started sessions=%s types=%s keep_recent=%s max_delete=%s',
+      source,
+      phones.length,
+      AUTH_SIGNAL_PRUNE_DEFAULT_TYPES.join(','),
+      AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+      AUTH_SIGNAL_PRUNE_MAX_DELETE
+    )
+    for (const phone of phones) {
+      try {
+        const result = await pruneAuthSignalCache(phone, {
+          types: AUTH_SIGNAL_PRUNE_DEFAULT_TYPES,
+          dryRun: false,
+          maxDelete: AUTH_SIGNAL_PRUNE_MAX_DELETE,
+          preKeyKeepRecent: AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+          scanCount: AUTH_SIGNAL_PRUNE_SCAN_COUNT,
+        })
+        deleted += result.deleted
+        scanned += result.scanned
+        if (result.deleted > 0) {
+          logger.warn('Auth signal prune %s phone=%s scanned=%s deleted=%s', source, phone, result.scanned, result.deleted)
+        }
+      } catch (e) {
+        logger.warn(e as any, 'Auth signal prune %s failed for %s', source, phone)
+      }
+    }
+    logger.warn('Auth signal prune %s completed sessions=%s scanned=%s deleted=%s', source, phones.length, scanned, deleted)
+  })
+}
+
+const startAuthSignalPruneMaintenance = (): void => {
+  if (AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED) {
+    setTimeout(() => {
+      runAuthSignalPruneForAllSessions('bootstrap').catch((e) => logger.warn(e as any, 'Auth signal prune bootstrap failed'))
+    }, 1_000)
+  }
+  if (!AUTH_SIGNAL_PRUNE_DAILY_ENABLED || authSignalPruneDailyStarted) return
+  authSignalPruneDailyStarted = true
+  setInterval(() => {
+    runAuthSignalPruneForAllSessions('daily').catch((e) => logger.warn(e as any, 'Auth signal prune daily failed'))
+  }, Math.max(60_000, AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS || 24 * 60 * 60 * 1000))
 }
 
 export const redisConnect = async (redisUrl = REDIS_URL) => {
