@@ -22,6 +22,7 @@ import {
   AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED,
   AUTH_SIGNAL_PRUNE_DAILY_ENABLED,
   AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS,
+  AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS,
   AUTH_SIGNAL_PRUNE_SESSION_LIMIT,
   SESSION_STATUS_CACHE_TTL_MS,
   CONNECT_COUNT_CACHE_TTL_MS,
@@ -290,21 +291,44 @@ const getConfiguredSessionPhones = async (limit = AUTH_SIGNAL_PRUNE_SESSION_LIMI
     .filter((phone) => !!phone && phone !== 'auth-token-index'))]
 }
 
+const authSignalPruneNextKey = (phone: string) => `${BASE_KEY}auth-prune:${phone}:next`
+
+const shouldRunAuthSignalPrune = async (phone: string): Promise<boolean> => {
+  if (!AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS <= 0) return true
+  const raw = `${await redisGet(authSignalPruneNextKey(phone)) || ''}`.trim()
+  if (!raw) return true
+  const nextRunAt = Number.parseInt(raw, 10)
+  return !Number.isFinite(nextRunAt) || nextRunAt <= Date.now()
+}
+
+const markAuthSignalPruneNextRun = async (phone: string): Promise<void> => {
+  if (!AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS <= 0) return
+  const intervalMs = Math.max(60_000, AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS)
+  const ttlSec = Math.max(120, Math.ceil((intervalMs * 2) / 1000))
+  await redisSetAndExpire(authSignalPruneNextKey(phone), `${Date.now() + intervalMs}`, ttlSec)
+}
+
 const runAuthSignalPruneForAllSessions = async (source: string): Promise<void> => {
   await enqueueRedisTask(`auth-signal-prune:${source}`, async () => {
     const phones = await getConfiguredSessionPhones()
     let deleted = 0
     let scanned = 0
+    let skipped = 0
     logger.warn(
-      'Auth signal prune %s started sessions=%s types=%s keep_recent=%s max_delete=%s',
+      'Auth signal prune %s started sessions=%s types=%s keep_recent=%s max_delete=%s session_interval_ms=%s',
       source,
       phones.length,
       AUTH_SIGNAL_PRUNE_DEFAULT_TYPES.join(','),
       AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
-      AUTH_SIGNAL_PRUNE_MAX_DELETE
+      AUTH_SIGNAL_PRUNE_MAX_DELETE,
+      AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS
     )
     for (const phone of phones) {
       try {
+        if (!(await shouldRunAuthSignalPrune(phone))) {
+          skipped += 1
+          continue
+        }
         const result = await pruneAuthSignalCache(phone, {
           types: AUTH_SIGNAL_PRUNE_DEFAULT_TYPES,
           dryRun: false,
@@ -317,11 +341,12 @@ const runAuthSignalPruneForAllSessions = async (source: string): Promise<void> =
         if (result.deleted > 0) {
           logger.warn('Auth signal prune %s phone=%s scanned=%s deleted=%s', source, phone, result.scanned, result.deleted)
         }
+        await markAuthSignalPruneNextRun(phone)
       } catch (e) {
         logger.warn(e as any, 'Auth signal prune %s failed for %s', source, phone)
       }
     }
-    logger.warn('Auth signal prune %s completed sessions=%s scanned=%s deleted=%s', source, phones.length, scanned, deleted)
+    logger.warn('Auth signal prune %s completed sessions=%s skipped=%s scanned=%s deleted=%s', source, phones.length, skipped, scanned, deleted)
   })
 }
 
