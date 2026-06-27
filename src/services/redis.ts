@@ -1064,6 +1064,11 @@ export const setConfig = async (phone: string, value: any) => {
   })
   value.webhooks = updatedWebooks
   const config = { ...currentConfig, ...value }
+  try {
+    const mode = `${(config as any).oneToOneAddressingMode || ''}`.trim().toLowerCase()
+    if (mode === 'pn' || mode === 'lid') (config as any).oneToOneAddressingMode = mode
+    else delete (config as any).oneToOneAddressingMode
+  } catch {}
   // Enforce per-session storage flags to avoid false overrides via templates/UI
   // Since this setter persists to Redis, sessions using Redis must have useRedis/useS3 true
   try { (config as any).useRedis = true } catch {}

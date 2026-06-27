@@ -88,6 +88,34 @@ const isViewOnceUnavailableStub = (payload: any): boolean => {
   return stubParams.some((p: string) => p === 'view_once_unavailable' || p === 'view_once')
 }
 
+const extractFailedStatusError = (payload: any): any => {
+  const update = payload?.update || {}
+  const params = Array.isArray(update?.messageStubParameters)
+    ? update.messageStubParameters.map((p: any) => `${p}`)
+    : typeof update?.messageStubParameters !== 'undefined'
+      ? [`${update.messageStubParameters}`]
+      : []
+  const sourceError = update?.error || update?.error_data
+
+  let code = sourceError?.code || update?.code || 1
+  let title = sourceError?.title || update?.title || 'The Unoapi Cloud has a error, verify the logs'
+  const error: any = { code, title }
+
+  if (sourceError?.message) error.message = sourceError.message
+  if (sourceError?.error_data) error.error_data = sourceError.error_data
+
+  if (params.includes('405')) {
+    error.code = 8
+    error.title = 'message not allowed'
+  } else if (params.includes('463')) {
+    error.code = Number(error.code || 463)
+    error.title = sourceError?.title || 'Account restricted for companion or missing tctoken'
+    if (!error.message && params[1]) error.message = params[1]
+  }
+
+  return error
+}
+
 const extractMessageEditInfo = (payload: any): { originalMessageId?: string; timestampMs?: string } | undefined => {
   const candidates = [
     payload?.__unoapiMessageEdit,
@@ -2444,18 +2472,18 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
         }
       } catch {}
       if (cloudApiStatus == 'failed') {
-        // https://github.com/tawn33y/whatsapp-cloud-api/issues/40#issuecomment-1290036629
-        let title = payload?.update?.title || 'The Unoapi Cloud has a error, verify the logs'
-        let code = payload?.update?.code || 1
-        if (payload?.update?.messageStubParameters == '405') {
-          title = 'message not allowed'
-          code = 8
-        }
-        const error = {
-          code,
-          title,
-        }
+        const error = extractFailedStatusError(payload)
         state.errors = [error]
+        try {
+          logger.warn(
+            'STATUS failed detail: id=%s recipient_id=%s code=%s title=%s error_data=%s',
+            messageId || '<none>',
+            state.recipient_id || '<none>',
+            `${error?.code || '<none>'}`,
+            error?.title || '<none>',
+            error?.error_data ? JSON.stringify(error.error_data) : '<none>'
+          )
+        } catch {}
       }
       change.value.statuses.push(state)
       // Normalize webhook IDs to preferred scheme (PN with BR 9th digit) when configured

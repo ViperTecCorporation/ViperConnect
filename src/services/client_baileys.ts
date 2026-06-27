@@ -12,6 +12,8 @@ import {
   fetchTcToken,
   decryptVoipEnc,
   fetchUserDevices,
+  resyncAppState,
+  fetchMessageHistory,
   groupCreate,
   groupUpdateSubject,
   groupUpdateDescription,
@@ -219,6 +221,12 @@ const sendCallNodeDefault: sendCallNode = async (_node) => {
 const fetchTcTokenDefault: fetchTcToken = async (_jids) => undefined
 const decryptVoipEncDefault: decryptVoipEnc = async (_node, _jids) => undefined
 const fetchUserDevicesDefault: fetchUserDevices = async (_jids) => []
+const resyncAppStateDefault: resyncAppState = async () => {
+  throw sendError
+}
+const fetchMessageHistoryDefault: fetchMessageHistory = async () => {
+  throw sendError
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const fetchImageUrlDefault: fetchImageUrl = async (_jid: string) => ''
@@ -1699,6 +1707,8 @@ export class ClientBaileys implements Client {
   private fetchTcToken: fetchTcToken = fetchTcTokenDefault
   private decryptVoipEnc: decryptVoipEnc = decryptVoipEncDefault
   private fetchUserDevices: fetchUserDevices = fetchUserDevicesDefault
+  private resyncAppStateFn: resyncAppState = resyncAppStateDefault
+  private fetchMessageHistoryFn: fetchMessageHistory = fetchMessageHistoryDefault
   private groupCreateFn: groupCreate = groupUnavailable
   private groupUpdateSubjectFn: groupUpdateSubject = groupUnavailable
   private groupUpdateDescriptionFn: groupUpdateDescription = groupUnavailable
@@ -1972,6 +1982,8 @@ export class ClientBaileys implements Client {
       fetchTcToken,
       decryptVoipEnc,
       fetchUserDevices,
+      resyncAppState,
+      fetchMessageHistory,
     } = result
     this.event = event
     this.sendMessage = send
@@ -1981,6 +1993,8 @@ export class ClientBaileys implements Client {
     this.fetchTcToken = fetchTcToken || fetchTcTokenDefault
     this.decryptVoipEnc = decryptVoipEnc || decryptVoipEncDefault
     this.fetchUserDevices = fetchUserDevices || fetchUserDevicesDefault
+    this.resyncAppStateFn = resyncAppState || resyncAppStateDefault
+    this.fetchMessageHistoryFn = fetchMessageHistory || fetchMessageHistoryDefault
     this.groupCreateFn = groupCreate || groupUnavailable
     this.groupUpdateSubjectFn = groupUpdateSubject || groupUnavailable
     this.groupUpdateDescriptionFn = groupUpdateDescription || groupUnavailable
@@ -2019,6 +2033,11 @@ export class ClientBaileys implements Client {
     this.readMessages = readMessagesDefault
     this.rejectCall = rejectCallDefault
     this.sendCallNode = sendCallNodeDefault
+    this.fetchTcToken = fetchTcTokenDefault
+    this.decryptVoipEnc = decryptVoipEncDefault
+    this.fetchUserDevices = fetchUserDevicesDefault
+    this.resyncAppStateFn = resyncAppStateDefault
+    this.fetchMessageHistoryFn = fetchMessageHistoryDefault
     this.fetchImageUrl = fetchImageUrlDefault
     this.fetchGroupMetadata = fetchGroupMetadataDefault
     this.groupMetadataFn = groupMetadataDefault
@@ -3720,6 +3739,23 @@ export class ClientBaileys implements Client {
 
   public async groupMetadata(jid: string) {
     return this.groupMetadataFn(jid)
+  }
+
+  public async resyncAppState(forceSnapshot = false) {
+    return this.resyncAppStateFn(undefined, true, forceSnapshot)
+  }
+
+  public async fetchMessageHistory(payload: any = {}) {
+    const chatJid = `${payload.chat_jid || payload.chatJid || ''}`.trim()
+    const messageId = `${payload.message_id || payload.messageId || ''}`.trim()
+    const timestamp = Number(payload.timestamp || 0)
+    const count = Math.max(1, Math.min(100, Number(payload.count || 50)))
+    if (!chatJid) throw new SendError(400, 'history_on_demand_chat_jid_required')
+    if (!messageId) throw new SendError(400, 'history_on_demand_message_id_required')
+    if (!Number.isFinite(timestamp) || timestamp <= 0) throw new SendError(400, 'history_on_demand_timestamp_required')
+    const fromMe = typeof payload.from_me === 'boolean' ? payload.from_me : !!payload.fromMe
+    const requestId = await this.fetchMessageHistoryFn(count, { remoteJid: chatJid, id: messageId, fromMe }, timestamp)
+    return { request_id: requestId }
   }
 
   public async recoverDelivery(payload: any, options: any = {}) {

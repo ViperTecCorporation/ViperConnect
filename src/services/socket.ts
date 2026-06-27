@@ -20,6 +20,8 @@ import makeWASocket, {
   isLidUser,
   isPnUser,
   WAMessageAddressingMode,
+  ALL_WA_PATCH_NAMES,
+  WAPatchName,
 } from '@whiskeysockets/baileys'
 import type { BinaryNode } from '@whiskeysockets/baileys'
 import MAIN_LOGGER from '@whiskeysockets/baileys/lib/Utils/logger'
@@ -92,6 +94,8 @@ export const shouldAcceptHistorySync = (
 ): boolean => {
   if (syncType === undefined) return false
   if (syncType === proto.HistorySync.HistorySyncType.PUSH_NAME) return true
+  if (syncType === proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA) return true
+  if (syncType === proto.HistorySync.HistorySyncType.ON_DEMAND) return true
   if (config.ignoreHistoryMessages) return false
   if (syncType === proto.HistorySync.HistorySyncType.RECENT) return true
   if (state.historySyncInProgress) return true
@@ -180,6 +184,14 @@ export interface decryptVoipEnc {
 
 export interface fetchUserDevices {
   (_jids: string[], _useCache?: boolean, _ignoreZeroDevices?: boolean): Promise<string[]>
+}
+
+export interface resyncAppState {
+  (_collections?: readonly WAPatchName[], _isInitialSync?: boolean, _forceSnapshot?: boolean): Promise<void>
+}
+
+export interface fetchMessageHistory {
+  (_count: number, _oldestMsgKey: WAMessageKey, _oldestMsgTimestamp: number): Promise<string>
 }
 
 export interface fetchImageUrl {
@@ -282,6 +294,10 @@ export const connect = async ({
   config: Partial<Config>
 }) => {
   let sock: WASocket | undefined = undefined
+  const getOneToOneAddressingMode = (): 'pn' | 'lid' => {
+    const value = `${config.oneToOneAddressingMode || ONE_TO_ONE_ADDRESSING_MODE}`.toLowerCase()
+    return value === 'lid' ? 'lid' : 'pn'
+  }
   const msgRetryCounterCache = (() => {
     const store = new Map<string, unknown>()
     return {
@@ -541,7 +557,8 @@ export const connect = async ({
           const opts = { ...(entry.options || {}), messageId }
           let resendTo = entry.to
           try {
-            if (typeof entry.to === 'string' && isIndividualJid(entry.to) && ONE_TO_ONE_ADDRESSING_MODE !== 'pn') {
+            const oneToOneAddressingMode = getOneToOneAddressingMode()
+            if (typeof entry.to === 'string' && isIndividualJid(entry.to) && oneToOneAddressingMode !== 'pn') {
               if (isPnUser(entry.to)) {
                 try {
                   const lid = await (dataStore as any).getLidForPn?.(phone, entry.to)
@@ -1336,6 +1353,20 @@ export const connect = async ({
               } catch {}
               const params = u?.update?.messageStubParameters
               const key = u?.key
+              try {
+                const updateError = u?.update?.error
+                const hasMexError = Array.isArray(params) && params.includes('463')
+                if (updateError || hasMexError) {
+                  logger.warn(
+                    'BAILEYS failed detail: phone=%s id=%s jid=%s params=%s error=%s',
+                    phone,
+                    key?.id || '<none>',
+                    key?.remoteJid || '<none>',
+                    Array.isArray(params) ? JSON.stringify(params) : `${params || '<none>'}`,
+                    updateError ? JSON.stringify(updateError) : '<none>'
+                  )
+                }
+              } catch {}
               if (
                 Array.isArray(params) &&
                 params.includes('421') &&
@@ -1726,6 +1757,38 @@ export const connect = async ({
     await sessionStore.setStatus(phone, 'disconnected')
   }
 
+  const resyncAppState: resyncAppState = async (collections = ALL_WA_PATCH_NAMES, isInitialSync = true, forceSnapshot = false) => {
+    await validateStatus()
+    if (!sock?.resyncAppState) {
+      throw new Error('Baileys socket does not expose resyncAppState')
+    }
+    const names = Array.from(collections)
+    if (forceSnapshot) {
+      const resetState = Object.fromEntries(names.map(name => [name, null]))
+      await state.keys.set({ 'app-state-sync-version': resetState })
+      logger.warn('Cleared app-state versions before forced resync for %s collections=%s', phone, names.join(','))
+    }
+    logger.warn('Forcing app-state resync for %s collections=%s initial=%s forceSnapshot=%s', phone, names.join(','), isInitialSync, forceSnapshot)
+    await sock.resyncAppState(names, isInitialSync)
+  }
+
+  const fetchMessageHistory: fetchMessageHistory = async (count, oldestMsgKey, oldestMsgTimestamp) => {
+    await validateStatus()
+    if (!sock?.fetchMessageHistory) {
+      throw new Error('Baileys socket does not expose fetchMessageHistory')
+    }
+    logger.warn(
+      'Requesting on-demand history for %s chat=%s messageId=%s fromMe=%s timestamp=%s count=%s',
+      phone,
+      oldestMsgKey?.remoteJid || '<none>',
+      oldestMsgKey?.id || '<none>',
+      !!oldestMsgKey?.fromMe,
+      oldestMsgTimestamp,
+      count,
+    )
+    return await sock.fetchMessageHistory(count, oldestMsgKey, oldestMsgTimestamp)
+  }
+
   /**
    * Resolve a phone/JID to a concrete JID known by WhatsApp, caching via DataStore.
    * Accepts raw numbers (string) or JIDs and returns undefined when the number has no WhatsApp.
@@ -1781,6 +1844,7 @@ export const connect = async ({
     const skipBrSendOrder = options?.skipBrSendOrder
     const forceSessionRefresh = !!(options?.forceSessionRefresh || options?.forceDeliveryRecovery)
     const forceSessionDeviceList = options?.forceDeviceList !== false
+    const oneToOneAddressingMode = getOneToOneAddressingMode()
     let idCandidate = forceRemoteJid || to
     try {
       if (!forceRemoteJid && isIndividualJid(idCandidate)) {
@@ -1838,7 +1902,7 @@ export const connect = async ({
       } else {
         let raw = ensurePn(idCandidate)
       try {
-        if ((!raw || raw.length === 0) && ONE_TO_ONE_ADDRESSING_MODE === 'pn') {
+        if ((!raw || raw.length === 0) && oneToOneAddressingMode === 'pn') {
           raw = ensurePn(`${id || ''}`)
         }
       } catch {}
@@ -1884,7 +1948,7 @@ export const connect = async ({
     try {
       if (!BR_SEND_ORDER_ENABLED || forceRemoteJid || skipBrSendOrder) {
         // Skip BR guard when disabled or explicitly bypassed.
-      } else if (ONE_TO_ONE_ADDRESSING_MODE !== 'pn') {
+      } else if (oneToOneAddressingMode !== 'pn') {
         const inDigits = `${idCandidate}`.replace(/\D/g, '')
         const outDigits = `${id || ''}`.split('@')[0].replace(/\D/g, '')
         if (
@@ -1906,7 +1970,7 @@ export const connect = async ({
     let preferAddressingMode: WAMessageAddressingMode | undefined = undefined
     try {
       if (id && isIndividualJid(id)) {
-        if (ONE_TO_ONE_ADDRESSING_MODE === 'pn') {
+        if (oneToOneAddressingMode === 'pn') {
           // Força PN: se for LID, tentar obter PN pelo cache/mapeamento e, se necessário, por exists()
           if (isLidUser(id)) {
             try {
@@ -2228,13 +2292,13 @@ export const connect = async ({
         // Guarda final: respeitar o modo 1:1 imediatamente antes do envio
         try {
           if (typeof id === 'string' && isIndividualJid(id)) {
-            if (ONE_TO_ONE_ADDRESSING_MODE === 'lid' && isPnUser(id)) {
+            if (oneToOneAddressingMode === 'lid' && isPnUser(id)) {
               const lid = await (dataStore as any).getLidForPn?.(phone, id)
               if (lid && typeof lid === 'string') {
                 id = lid
                 ;(opts as any).addressingMode = WAMessageAddressingMode.LID
               }
-            } else if (ONE_TO_ONE_ADDRESSING_MODE === 'pn' && isLidUser(id)) {
+            } else if (oneToOneAddressingMode === 'pn' && isLidUser(id)) {
               let pnJid: string | undefined
               try { pnJid = await (dataStore as any).getPnForLid?.(phone, id) } catch {}
               if (!pnJid) {
@@ -3023,6 +3087,8 @@ export const connect = async ({
     fetchTcToken,
     decryptVoipEnc,
     fetchUserDevices,
+    resyncAppState,
+    fetchMessageHistory,
     fetchImageUrl,
     fetchGroupMetadata,
     groupMetadata,

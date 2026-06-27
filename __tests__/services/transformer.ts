@@ -1561,6 +1561,59 @@ describe('service transformer', () => {
     expect(fromBaileysMessageContent(phoneNumer, input)[0]).toEqual(output)
   })
 
+  test('fromBaileysMessageContent with structured 463 restriction diagnostics', async () => {
+    const phoneNumer = '5549998093075'
+    const remotePhoneNumber = '+11115551212'
+    const remoteJid = `${remotePhoneNumber}@s.whatsapp.net`
+    const id = `wa.${new Date().getTime()}`
+    const pushName = `Forrest Gump ${new Date().getTime()}`
+    const messageTimestamp = Math.floor(new Date().getTime() / 1000).toString()
+    const errorData = {
+      reason: 'message_account_restriction',
+      from: remoteJid,
+      msgId: id,
+      reachout: {
+        isActive: true,
+        timeEnforcementEnds: '2026-06-30T22:09:41.000Z',
+        enforcementType: 'RESTRICT_ALL_COMPANIONS',
+      },
+      capping: {
+        capping_status: 'NONE',
+      },
+    }
+    const input = {
+      key: {
+        remoteJid,
+        fromMe: false,
+        id,
+      },
+      update: {
+        status: 'ERROR',
+        messageStubParameters: ['463', 'Your account has been restricted'],
+        error: {
+          code: 463,
+          title: 'Account restricted for companion or missing tctoken',
+          message: 'Your account has been restricted',
+          error_data: errorData,
+        },
+      },
+      pushName,
+      messageTimestamp,
+    }
+    const output = fromBaileysMessageContent(phoneNumer, input)[0]
+    const status = output.entry[0].changes[0].value.statuses[0]
+
+    expect(status.status).toBe('failed')
+    expect(status.errors).toEqual([
+      {
+        code: 463,
+        title: 'Account restricted for companion or missing tctoken',
+        message: 'Your account has been restricted',
+        error_data: errorData,
+      },
+    ])
+  })
+
   test('fromBaileysMessageContent with receipt read', async () => {
     const phoneNumer = '5549998093075'
     const remotePhoneNumber = '+11115551212'

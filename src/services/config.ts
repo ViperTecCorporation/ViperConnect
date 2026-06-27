@@ -6,6 +6,7 @@ import { Level } from 'pino'
 export const configs: Map<string, Config> = new Map()
 
 export type connectionType = 'qrcode' | 'pairing_code' | 'forward'
+export type OneToOneAddressingMode = 'pn' | 'lid'
 
 export interface GetMessageMetadata {
   <T>(message: T): Promise<T>
@@ -122,6 +123,7 @@ export type Config = {
   rateLimitBlockSeconds?: number
   // Guardar reenvio indevido em caso de retry do job
   outgoingIdempotency: boolean
+  oneToOneAddressingMode?: OneToOneAddressingMode
 }
 
 export const defaultConfig: Config = {
@@ -211,7 +213,8 @@ export const defaultConfig: Config = {
   rateLimitGlobalPerMinute: 0,
   rateLimitPerToPerMinute: 0,
   rateLimitBlockSeconds: 60,
-  outgoingIdempotency: true
+  outgoingIdempotency: true,
+  oneToOneAddressingMode: undefined
 }
 
 export interface getConfig {

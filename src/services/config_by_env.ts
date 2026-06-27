@@ -74,6 +74,7 @@ import {
   GROQ_API_TRANSCRIBE_MODEL,
   GROQ_API_BASE_URL,
   WEBHOOK_ADD_TO_BLACKLIST_ON_OUTGOING_MESSAGE_WITH_TTL,
+  ONE_TO_ONE_ADDRESSING_MODE,
 } from '../defaults'
 
 export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> => {
@@ -130,6 +131,7 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.rateLimitPerToPerMinute = RATE_LIMIT_PER_TO_PER_MINUTE
     config.rateLimitBlockSeconds = RATE_LIMIT_BLOCK_SECONDS
     config.outgoingIdempotency = OUTGOING_IDEMPOTENCY_ENABLED
+    config.oneToOneAddressingMode = ONE_TO_ONE_ADDRESSING_MODE
     config.useRedis = !!process.env.REDIS_URL
     config.useS3 = !!process.env.STORAGE_ENDPOINT
     config.webhooks[0].url = WEBHOOK_URL
