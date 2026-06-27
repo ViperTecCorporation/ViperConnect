@@ -1,5 +1,5 @@
 import { SessionStore, sessionStatus } from './session_store'
-import { configKey, authKey, redisKeys, getSessionStatus, setSessionStatus, sessionStatusKey, redisGet, getConnectCount, setConnectCount, delAuth, clearConnectCount, getAllAuthTokens, addAuthTokensToIndex, getAuthIndexMembers, addAuthKeysToIndex } from './redis'
+import { configKey, authKey, redisKeys, getSessionStatus, setSessionStatus, sessionStatusKey, redisGet, getConnectCount, setConnectCount, delAuth, clearConnectCount, getAllAuthTokens, addAuthTokensToIndex, getAuthKeyCount } from './redis'
 import logger from './logger'
 import { MAX_CONNECT_RETRY, MAX_CONNECT_TIME } from '../defaults'
 
@@ -95,14 +95,9 @@ export class SessionStoreRedis extends SessionStore {
       logger.info(`Is not lost connection, status is ${currentStatus} for ${phone}`)
       return
     }
-    const aKey = authKey(`${phone}*`)
-    let keys = await getAuthIndexMembers(phone)
-    if (!keys || keys.length === 0) {
-      keys = await redisKeys(aKey)
-      await addAuthKeysToIndex(phone, keys)
-    }
-    logger.info(`Found auth ${keys.length} keys for session ${phone}`)
-    if (keys.length == 1 && keys[0] == authKey(`${phone}:creds`)) {
+    const authCount = await getAuthKeyCount(phone)
+    logger.info(`Found auth ${authCount.exact ? '' : 'at least '}${authCount.count} keys for session ${phone}`)
+    if (authCount.exact && authCount.count == 1 && await redisGet(authKey(`${phone}:creds`))) {
       await delAuth(phone)
       await this.setStatus(phone, 'disconnected')
     }

@@ -14,6 +14,11 @@ import {
   WATCHDOG_TASK_MIN_INTERVAL_MS,
   JIDMAP_ENRICH_MIN_INTERVAL_MS,
   AUTH_CACHE_TTL_MS,
+  AUTH_INDEX_FALLBACK_SCAN_LIMIT,
+  AUTH_SIGNAL_PRUNE_DEFAULT_TYPES,
+  AUTH_SIGNAL_PRUNE_MAX_DELETE,
+  AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+  AUTH_SIGNAL_PRUNE_SCAN_COUNT,
   SESSION_STATUS_CACHE_TTL_MS,
   CONNECT_COUNT_CACHE_TTL_MS,
 } from '../defaults'
@@ -1237,6 +1242,110 @@ export const addAuthKeysToIndex = async (phone: string, keys: string[]) => {
     await client.sAdd(indexKey, keys)
     await client.expire(indexKey, SESSION_TTL)
   } catch {}
+}
+
+export const getAuthKeyCount = async (phone: string): Promise<{ count: number; exact: boolean }> => {
+  const indexKey = authIndexKey(phone)
+  try {
+    const indexed = await client.sCard(indexKey)
+    if (indexed > 0) return { count: indexed, exact: true }
+  } catch {}
+
+  const limit = Math.max(1, AUTH_INDEX_FALLBACK_SCAN_LIMIT || 2)
+  const keys = await redisScanSome(authKey(`${phone}:*`), limit)
+  return { count: keys.length, exact: keys.length < limit }
+}
+
+const AUTH_SIGNAL_PRUNE_ALLOWED_TYPES = new Set([
+  'pre-key',
+  'session',
+  'sender-key',
+  'device-list',
+  'lid-mapping',
+  'app-state-sync-key',
+])
+
+export const pruneAuthSignalCache = async (
+  phone: string,
+  opts: {
+    types?: string[]
+    maxDelete?: number
+    preKeyKeepRecent?: number
+    scanCount?: number
+    dryRun?: boolean
+  } = {},
+): Promise<{ phone: string; dry_run: boolean; max_delete: number; pre_key_keep_recent: number; scanned: number; would_delete: number; deleted: number; by_type: Record<string, { scanned: number; would_delete: number; deleted: number }> }> => {
+  const rawTypes = (opts.types && opts.types.length ? opts.types : AUTH_SIGNAL_PRUNE_DEFAULT_TYPES)
+    .map((value) => `${value || ''}`.trim())
+    .filter(Boolean)
+  const types = [...new Set(rawTypes)].filter((type) => AUTH_SIGNAL_PRUNE_ALLOWED_TYPES.has(type))
+  const dryRun = opts.dryRun !== false
+  const maxDelete = Math.max(1, opts.maxDelete || AUTH_SIGNAL_PRUNE_MAX_DELETE || 5000)
+  const preKeyKeepRecent = Math.max(0, opts.preKeyKeepRecent ?? AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT ?? 5000)
+  const scanCount = Math.max(10, opts.scanCount || AUTH_SIGNAL_PRUNE_SCAN_COUNT || 1000)
+  const result = {
+    phone,
+    dry_run: dryRun,
+    max_delete: maxDelete,
+    pre_key_keep_recent: preKeyKeepRecent,
+    scanned: 0,
+    would_delete: 0,
+    deleted: 0,
+    by_type: {} as Record<string, { scanned: number; would_delete: number; deleted: number }>,
+  }
+
+  const redis = await getRedis()
+  for (const type of types) {
+    if (!result.by_type[type]) result.by_type[type] = { scanned: 0, would_delete: 0, deleted: 0 }
+    let cursor = '0'
+    const pattern = authKey(`${phone}:${type}-*`)
+    const preKeyCandidates: { key: string; id: number }[] = []
+    do {
+      const res: any = await redis.scan(cursor, { MATCH: pattern, COUNT: scanCount })
+      cursor = typeof res.cursor !== 'undefined' ? `${res.cursor}` : `${res[0]}`
+      const keys: string[] = Array.isArray(res.keys) ? res.keys : (res[1] || [])
+      result.scanned += keys.length
+      result.by_type[type].scanned += keys.length
+      if (type === 'pre-key') {
+        for (const key of keys) {
+          const id = Number.parseInt(`${key}`.split('pre-key-').pop() || '', 10)
+          if (Number.isFinite(id)) preKeyCandidates.push({ key, id })
+        }
+        continue
+      }
+      for (const key of keys) {
+        if (result.deleted >= maxDelete) return result
+        result.would_delete += 1
+        result.by_type[type].would_delete += 1
+        if (dryRun) continue
+        try {
+          await redisDel(key)
+          authCache.delete(key)
+          try { await redis.sRem(authIndexKey(phone), key) } catch {}
+          result.deleted += 1
+          result.by_type[type].deleted += 1
+        } catch {}
+      }
+    } while (cursor !== '0')
+    if (type === 'pre-key') {
+      preKeyCandidates.sort((a, b) => b.id - a.id)
+      for (const { key } of preKeyCandidates.slice(preKeyKeepRecent)) {
+        if (result.deleted >= maxDelete) return result
+        result.would_delete += 1
+        result.by_type[type].would_delete += 1
+        if (dryRun) continue
+        try {
+          await redisDel(key)
+          authCache.delete(key)
+          try { await redis.sRem(authIndexKey(phone), key) } catch {}
+          result.deleted += 1
+          result.by_type[type].deleted += 1
+        } catch {}
+      }
+    }
+  }
+
+  return result
 }
 
 export const setbulkMessage = async (phone: string, bulkId: string, messageId: string, phoneNumber) => {

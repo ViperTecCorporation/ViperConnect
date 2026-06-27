@@ -127,6 +127,7 @@ export const router = (
   router.get('/:version/:phone/phone_numbers', middleware, phoneNumberController.list.bind(phoneNumberController))
   router.post('/:version/:phone/debug/app_state_resync', middleware, phoneNumberController.resyncAppState.bind(phoneNumberController))
   router.post('/:version/:phone/debug/history_on_demand', middleware, phoneNumberController.historyOnDemand.bind(phoneNumberController))
+  router.post('/:version/:phone/debug/auth_cache/prune', middleware, phoneNumberController.pruneAuthCache.bind(phoneNumberController))
   router.get('/:version/:business_account_id/message_templates', middleware, templatesController.index.bind(templatesController))
   router.post('/:version/:business_account_id/message_templates', middleware, templatesController.templates.bind(templatesController))
   router.delete('/:version/:business_account_id/message_templates/:templateId', middleware, templatesController.destroy.bind(templatesController))

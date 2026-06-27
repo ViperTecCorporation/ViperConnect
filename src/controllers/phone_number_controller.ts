@@ -9,6 +9,7 @@ import { sendGraphError } from '../services/graph_error'
 import { generateBusinessAccountId } from '../services/meta_ids'
 import { isEmbeddedAccessToken } from '../services/embedded_tokens'
 import { clients } from '../services/client'
+import { pruneAuthSignalCache } from '../services/redis'
 
 export class PhoneNumberController {
   private getConfig: getConfig
@@ -214,6 +215,33 @@ export class PhoneNumberController {
       })
     } catch (e) {
       logger.error(e as any, 'Failed to request history on-demand')
+      return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async pruneAuthCache(req: Request, res: Response) {
+    logger.warn('auth cache prune method %s', req.method)
+    logger.warn('auth cache prune params %s body %s', JSON.stringify(req.params), JSON.stringify(req.body))
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const body: any = req.body || {}
+      const types = Array.isArray(body.types)
+        ? body.types
+        : `${body.types || body.type || ''}`.split(',').map((value) => value.trim()).filter(Boolean)
+      const dryRunValue = body.dry_run ?? body.dryRun
+      const result = await pruneAuthSignalCache(sessionPhone, {
+        types,
+        dryRun: typeof dryRunValue === 'undefined' ? undefined : `${dryRunValue}` !== 'false',
+        maxDelete: Number.parseInt(`${body.max_delete ?? body.maxDelete ?? ''}`, 10) || undefined,
+        preKeyKeepRecent: Number.parseInt(`${body.pre_key_keep_recent ?? body.preKeyKeepRecent ?? ''}`, 10) || undefined,
+        scanCount: Number.parseInt(`${body.scan_count ?? body.scanCount ?? ''}`, 10) || undefined,
+      })
+      return res.status(200).json({
+        success: true,
+        ...result,
+      })
+    } catch (e) {
+      logger.error(e as any, 'Failed to prune auth cache')
       return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
     }
   }
