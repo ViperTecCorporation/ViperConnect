@@ -18,12 +18,15 @@ import {
   AUTH_SIGNAL_PRUNE_DEFAULT_TYPES,
   AUTH_SIGNAL_PRUNE_MAX_DELETE,
   AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+  AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS,
   AUTH_SIGNAL_PRUNE_SCAN_COUNT,
   AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED,
   AUTH_SIGNAL_PRUNE_DAILY_ENABLED,
   AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS,
   AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS,
   AUTH_SIGNAL_PRUNE_SESSION_LIMIT,
+  AUTH_AUXILIARY_TTL_SECONDS,
+  AUTH_AUXILIARY_TTL_TYPES,
   SESSION_STATUS_CACHE_TTL_MS,
   CONNECT_COUNT_CACHE_TTL_MS,
 } from '../defaults'
@@ -139,6 +142,7 @@ export const getRedis = async (redisUrl = REDIS_URL) => {
 
 const appVersionKey = () => `${BASE_KEY}app:version:last`
 const appMigrationLockKey = (name: string) => `${BASE_KEY}app:migration:${name}:lock`
+const appMigrationDoneKey = (name: string) => `${BASE_KEY}app:migration:${name}:done`
 export const historySyncMarkerKey = (phone: string) => `${BASE_KEY}history-sync:${phone}:started`
 
 const parseSemverLike = (raw?: string): [number, number, number] => {
@@ -278,10 +282,73 @@ const seedHistorySyncMarkersForExistingSessions = async (): Promise<void> => {
   } catch {}
 }
 
+const runAuthAuxiliaryTtlMigration = async (): Promise<void> => {
+  const migrationName = 'auth-auxiliary-ttl-v1'
+  const doneKey = appMigrationDoneKey(migrationName)
+  if (await redisGet(doneKey)) return
+  if (!AUTH_AUXILIARY_TTL_SECONDS || AUTH_AUXILIARY_TTL_SECONDS <= 0 || AUTH_AUXILIARY_TTL_TYPES.length === 0) {
+    await client.set(doneKey, JSON.stringify({
+      skippedAt: new Date().toISOString(),
+      reason: 'disabled',
+      ttlSeconds: AUTH_AUXILIARY_TTL_SECONDS,
+      types: AUTH_AUXILIARY_TTL_TYPES,
+    }))
+    return
+  }
+
+  const lockKey = appMigrationLockKey(migrationName)
+  const acquired = await redisSetIfNotExists(lockKey, `${Date.now()}`, 30 * 60)
+  if (!acquired) return
+
+  const redis = await getRedis()
+  const batchSize = 500
+  const stats: Record<string, number> = {}
+  let total = 0
+  try {
+    for (const type of AUTH_AUXILIARY_TTL_TYPES) {
+      let cursor = '0'
+      let updated = 0
+      const pattern = authKey(`*:${type}-*`)
+      do {
+        const res: any = await redis.scan(cursor, { MATCH: pattern, COUNT: 1000 })
+        cursor = typeof res.cursor !== 'undefined' ? `${res.cursor}` : `${res[0]}`
+        const keys: string[] = Array.isArray(res.keys) ? res.keys : (res[1] || [])
+        for (let i = 0; i < keys.length; i += batchSize) {
+          const chunk = keys.slice(i, i + batchSize).filter(Boolean)
+          if (!chunk.length) continue
+          const multi = redis.multi()
+          for (const key of chunk) {
+            multi.expire(key, AUTH_AUXILIARY_TTL_SECONDS)
+          }
+          await multi.exec()
+          updated += chunk.length
+          total += chunk.length
+        }
+      } while (cursor !== '0')
+      stats[type] = updated
+    }
+
+    await client.set(doneKey, JSON.stringify({
+      completedAt: new Date().toISOString(),
+      ttlSeconds: AUTH_AUXILIARY_TTL_SECONDS,
+      types: AUTH_AUXILIARY_TTL_TYPES,
+      total,
+      byType: stats,
+    }))
+    logger.warn('Startup migration: applied auth auxiliary TTL ttl=%s total=%s byType=%s', AUTH_AUXILIARY_TTL_SECONDS, total, JSON.stringify(stats))
+  } catch (e) {
+    logger.warn(e as any, 'Startup migration: auth auxiliary TTL failed')
+    throw e
+  } finally {
+    try { await redisDel(lockKey) } catch {}
+  }
+}
+
 const runStartupRedisMigrations = async (): Promise<void> => {
   await clearProfilePictureRefreshKeysOnLegacyUpgrade()
   await clearGlobalJidMapOnLegacyUpgrade()
   await seedHistorySyncMarkersForExistingSessions()
+  await runAuthAuxiliaryTtlMigration()
 }
 
 const getConfiguredSessionPhones = async (limit = AUTH_SIGNAL_PRUNE_SESSION_LIMIT): Promise<string[]> => {
@@ -315,11 +382,12 @@ const runAuthSignalPruneForAllSessions = async (source: string): Promise<void> =
     let scanned = 0
     let skipped = 0
     logger.warn(
-      'Auth signal prune %s started sessions=%s types=%s keep_recent=%s max_delete=%s session_interval_ms=%s',
+      'Auth signal prune %s started sessions=%s types=%s keep_recent=%s min_age_days=%s max_delete=%s session_interval_ms=%s',
       source,
       phones.length,
       AUTH_SIGNAL_PRUNE_DEFAULT_TYPES.join(','),
       AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+      AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS,
       AUTH_SIGNAL_PRUNE_MAX_DELETE,
       AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS
     )
@@ -334,6 +402,7 @@ const runAuthSignalPruneForAllSessions = async (source: string): Promise<void> =
           dryRun: false,
           maxDelete: AUTH_SIGNAL_PRUNE_MAX_DELETE,
           preKeyKeepRecent: AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+          preKeyMinAgeDays: AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS,
           scanCount: AUTH_SIGNAL_PRUNE_SCAN_COUNT,
         })
         deleted += result.deleted
@@ -722,6 +791,71 @@ export const authKey = (phone: string) => {
 
 const authIndexKey = (phone: string) => {
   return `${BASE_KEY}auth-index:${phone}`
+}
+
+const authSeenIndexKey = (phone: string) => {
+  return `${BASE_KEY}auth-seen:${phone}`
+}
+
+const AUTH_SEEN_CHUNK_SIZE = 200
+const AUTH_AUXILIARY_TTL_TYPE_SET = new Set(AUTH_AUXILIARY_TTL_TYPES)
+
+const expireIfPositive = async (key: string, ttlSec: number): Promise<void> => {
+  if (!Number.isFinite(ttlSec) || ttlSec <= 0) return
+  try { await client.expire(key, ttlSec) } catch {}
+}
+
+const getAuthRecordType = (authId: string): string => {
+  const record = `${authId || ''}`.split(':').slice(1).join(':')
+  if (!record) return ''
+  if (record.startsWith('pre-key-')) return 'pre-key'
+  if (record.startsWith('session-')) return 'session'
+  if (record.startsWith('sender-key-')) return 'sender-key'
+  if (record.startsWith('device-list-')) return 'device-list'
+  if (record.startsWith('lid-mapping-')) return 'lid-mapping'
+  if (record.startsWith('app-state-sync-key-')) return 'app-state-sync-key'
+  return record
+}
+
+const getAuthRecordTtl = (authId: string): number => {
+  const type = getAuthRecordType(authId)
+  if (type && AUTH_AUXILIARY_TTL_TYPE_SET.has(type)) {
+    return AUTH_AUXILIARY_TTL_SECONDS
+  }
+  return SESSION_TTL
+}
+
+const markAuthKeysSeen = async (phone: string, keys: string[], seenAt = Date.now()): Promise<void> => {
+  if (!phone || !keys.length) return
+  const redis = await getRedis()
+  const seenKey = authSeenIndexKey(phone)
+  for (let i = 0; i < keys.length; i += AUTH_SEEN_CHUNK_SIZE) {
+    const chunk = keys.slice(i, i + AUTH_SEEN_CHUNK_SIZE).filter(Boolean)
+    if (!chunk.length) continue
+    try {
+      await redis.sendCommand(['ZADD', seenKey, 'NX', ...chunk.flatMap((key) => [`${seenAt}`, key])])
+    } catch {}
+  }
+  await expireIfPositive(seenKey, SESSION_TTL)
+}
+
+const getAuthKeySeenScores = async (phone: string, keys: string[]): Promise<Map<string, number>> => {
+  const scores = new Map<string, number>()
+  if (!phone || !keys.length) return scores
+  const redis = await getRedis()
+  const seenKey = authSeenIndexKey(phone)
+  for (let i = 0; i < keys.length; i += AUTH_SEEN_CHUNK_SIZE) {
+    const chunk = keys.slice(i, i + AUTH_SEEN_CHUNK_SIZE).filter(Boolean)
+    if (!chunk.length) continue
+    try {
+      const values = await redis.sendCommand(['ZMSCORE', seenKey, ...chunk]) as Array<string | null>
+      values.forEach((value, index) => {
+        const score = Number.parseInt(`${value || ''}`, 10)
+        if (Number.isFinite(score)) scores.set(chunk[index], score)
+      })
+    } catch {}
+  }
+  return scores
 }
 
 const connectCountTotalKey = (phone: string) => {
@@ -1231,6 +1365,7 @@ export const delAuth = async (phone: string) => {
     logger.trace(`Deleted key ${key}!`)
   }
   await redisDel(indexKey)
+  await redisDel(authSeenIndexKey(phone))
   await delHistorySyncMarker(phone)
 }
 
@@ -1254,11 +1389,13 @@ export const getAuth = async (phone: string, parse = (value: string) => JSON.par
 export const setAuth = async (phone: string, value: any, stringify = (value: string) => JSON.stringify(value, null, '\t')) => {
   const key = authKey(phone)
   const authValue = stringify(value)
-  const res = await redisSetAndExpire(key, authValue, SESSION_TTL)
+  const res = await redisSetAndExpire(key, authValue, getAuthRecordTtl(phone))
   try {
-    const indexKey = authIndexKey(phone.split(':')[0])
+    const authPhone = phone.split(':')[0]
+    const indexKey = authIndexKey(authPhone)
     await client.sAdd(indexKey, key)
-    await client.expire(indexKey, SESSION_TTL)
+    await expireIfPositive(indexKey, SESSION_TTL)
+    await markAuthKeysSeen(authPhone, [key])
   } catch {}
   authCache.set(key, { value: authValue, ts: Date.now() })
   await publishAuthUpdate(key)
@@ -1326,7 +1463,8 @@ export const addAuthKeysToIndex = async (phone: string, keys: string[]) => {
     if (!keys || keys.length === 0) return
     const indexKey = authIndexKey(phone)
     await client.sAdd(indexKey, keys)
-    await client.expire(indexKey, SESSION_TTL)
+    await expireIfPositive(indexKey, SESSION_TTL)
+    await markAuthKeysSeen(phone, keys)
   } catch {}
 }
 
@@ -1357,10 +1495,11 @@ export const pruneAuthSignalCache = async (
     types?: string[]
     maxDelete?: number
     preKeyKeepRecent?: number
+    preKeyMinAgeDays?: number
     scanCount?: number
     dryRun?: boolean
   } = {},
-): Promise<{ phone: string; dry_run: boolean; max_delete: number; pre_key_keep_recent: number; scanned: number; would_delete: number; deleted: number; by_type: Record<string, { scanned: number; would_delete: number; deleted: number }> }> => {
+): Promise<{ phone: string; dry_run: boolean; max_delete: number; pre_key_keep_recent: number; pre_key_min_age_days: number; pre_key_min_age_ms: number; scanned: number; would_delete: number; deleted: number; pre_key_preserved_recent: number; pre_key_preserved_young: number; pre_key_seen_initialized: number; by_type: Record<string, { scanned: number; would_delete: number; deleted: number }> }> => {
   const rawTypes = (opts.types && opts.types.length ? opts.types : AUTH_SIGNAL_PRUNE_DEFAULT_TYPES)
     .map((value) => `${value || ''}`.trim())
     .filter(Boolean)
@@ -1368,15 +1507,24 @@ export const pruneAuthSignalCache = async (
   const dryRun = opts.dryRun !== false
   const maxDelete = Math.max(1, opts.maxDelete || AUTH_SIGNAL_PRUNE_MAX_DELETE || 5000)
   const preKeyKeepRecent = Math.max(0, opts.preKeyKeepRecent ?? AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT ?? 5000)
+  const preKeyMinAgeDays = Math.max(0, opts.preKeyMinAgeDays ?? AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS ?? 30)
+  const preKeyMinAgeMs = preKeyMinAgeDays * 24 * 60 * 60 * 1000
+  const now = Date.now()
+  const preKeyCutoff = now - preKeyMinAgeMs
   const scanCount = Math.max(10, opts.scanCount || AUTH_SIGNAL_PRUNE_SCAN_COUNT || 1000)
   const result = {
     phone,
     dry_run: dryRun,
     max_delete: maxDelete,
     pre_key_keep_recent: preKeyKeepRecent,
+    pre_key_min_age_days: preKeyMinAgeDays,
+    pre_key_min_age_ms: preKeyMinAgeMs,
     scanned: 0,
     would_delete: 0,
     deleted: 0,
+    pre_key_preserved_recent: 0,
+    pre_key_preserved_young: 0,
+    pre_key_seen_initialized: 0,
     by_type: {} as Record<string, { scanned: number; would_delete: number; deleted: number }>,
   }
 
@@ -1408,6 +1556,7 @@ export const pruneAuthSignalCache = async (
           await redisDel(key)
           authCache.delete(key)
           try { await redis.sRem(authIndexKey(phone), key) } catch {}
+          try { await redis.zRem(authSeenIndexKey(phone), key) } catch {}
           result.deleted += 1
           result.by_type[type].deleted += 1
         } catch {}
@@ -1415,7 +1564,25 @@ export const pruneAuthSignalCache = async (
     } while (cursor !== '0')
     if (type === 'pre-key') {
       preKeyCandidates.sort((a, b) => b.id - a.id)
-      for (const { key } of preKeyCandidates.slice(preKeyKeepRecent)) {
+      const seenScores = await getAuthKeySeenScores(phone, preKeyCandidates.map((candidate) => candidate.key))
+      const missingSeen = preKeyCandidates
+        .map((candidate) => candidate.key)
+        .filter((key) => !seenScores.has(key))
+      if (missingSeen.length) {
+        result.pre_key_seen_initialized += missingSeen.length
+        await markAuthKeysSeen(phone, missingSeen, now)
+      }
+      for (let index = 0; index < preKeyCandidates.length; index += 1) {
+        const { key } = preKeyCandidates[index]
+        if (index < preKeyKeepRecent) {
+          result.pre_key_preserved_recent += 1
+          continue
+        }
+        const seenAt = seenScores.get(key)
+        if (!Number.isFinite(seenAt) || seenAt! > preKeyCutoff) {
+          result.pre_key_preserved_young += 1
+          continue
+        }
         if (result.deleted >= maxDelete) return result
         result.would_delete += 1
         result.by_type[type].would_delete += 1
@@ -1424,6 +1591,7 @@ export const pruneAuthSignalCache = async (
           await redisDel(key)
           authCache.delete(key)
           try { await redis.sRem(authIndexKey(phone), key) } catch {}
+          try { await redis.zRem(authSeenIndexKey(phone), key) } catch {}
           result.deleted += 1
           result.by_type[type].deleted += 1
         } catch {}

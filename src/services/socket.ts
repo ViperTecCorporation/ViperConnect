@@ -80,6 +80,7 @@ import {
 } from '../defaults'
 import { t } from '../i18n'
 import { SendError } from './send_error'
+import { attachVoiceBridge, closeVoiceBridge } from './client_voice_bridge'
 
 export const historySyncTypeName = (syncType: proto.HistorySync.HistorySyncType | undefined): string => {
   return typeof syncType === 'number'
@@ -1030,6 +1031,11 @@ export const connect = async ({
     touchSocketActivity()
     status.attempt = 1
     await sessionStore.setStatus(phone, 'online')
+    if (sock) {
+      void attachVoiceBridge({ phone, sock, config }).catch((error) => {
+        logger.warn(error as any, 'Failed to start Viper voice bridge for %s', phone)
+      })
+    }
     if (historySyncInProgress) {
       await setHistorySyncMarker(phone, {
         status: 'completed',
@@ -1118,6 +1124,7 @@ export const connect = async ({
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onClose = async (payload: any) => {
+    closeVoiceBridge(phone, 'connection_close')
     // Limpar timer do assert periódico ao desconectar
     try { if (periodicAssertTimer) { clearInterval(periodicAssertTimer); periodicAssertTimer = undefined; logger.debug('PERIODIC_ASSERT: timer cleared on close') } } catch {}
     try { if (idleReconnectTimer) { clearInterval(idleReconnectTimer); idleReconnectTimer = undefined; logger.debug('IDLE_WATCHDOG: timer cleared on close') } } catch {}
@@ -1706,6 +1713,7 @@ export const connect = async ({
 
   const close = async () => {
     logger.info(`${phone} close`)
+    closeVoiceBridge(phone, 'close')
     try { if (lidResolverTimer) { clearInterval(lidResolverTimer); lidResolverTimer = undefined } } catch {}
     try { if (idleReconnectTimer) { clearInterval(idleReconnectTimer); idleReconnectTimer = undefined } } catch {}
     try { if (staleDeliveryRecoveryTimer) { clearInterval(staleDeliveryRecoveryTimer); staleDeliveryRecoveryTimer = undefined } } catch {}

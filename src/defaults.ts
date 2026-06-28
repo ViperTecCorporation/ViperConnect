@@ -120,14 +120,20 @@ export const AUTH_SIGNAL_PRUNE_DEFAULT_TYPES = (process.env.AUTH_SIGNAL_PRUNE_DE
   .filter(Boolean)
 export const AUTH_SIGNAL_PRUNE_MAX_DELETE = parseInt(process.env.AUTH_SIGNAL_PRUNE_MAX_DELETE || '5000')
 export const AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT = parseInt(process.env.AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT || '5000')
+export const AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS = parseInt(process.env.AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS || '30')
 export const AUTH_SIGNAL_PRUNE_SCAN_COUNT = parseInt(process.env.AUTH_SIGNAL_PRUNE_SCAN_COUNT || '1000')
 export const AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED =
   process.env.AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED === _undefined ? false : process.env.AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED == 'true'
 export const AUTH_SIGNAL_PRUNE_DAILY_ENABLED =
-  process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED === _undefined ? false : process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED == 'true'
+  process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED === _undefined ? true : process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED == 'true'
 export const AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS = parseInt(process.env.AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS || `${24 * 60 * 60 * 1000}`)
 export const AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS = parseInt(process.env.AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || `${24 * 60 * 60 * 1000}`)
 export const AUTH_SIGNAL_PRUNE_SESSION_LIMIT = parseInt(process.env.AUTH_SIGNAL_PRUNE_SESSION_LIMIT || '100000')
+export const AUTH_AUXILIARY_TTL_SECONDS = parseInt(process.env.AUTH_AUXILIARY_TTL_SECONDS || `${30 * 24 * 60 * 60}`)
+export const AUTH_AUXILIARY_TTL_TYPES = (process.env.AUTH_AUXILIARY_TTL_TYPES || 'lid-mapping,device-list')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
 export const SESSION_STATUS_CACHE_TTL_MS = parseInt(process.env.SESSION_STATUS_CACHE_TTL_MS || '5000')
 export const CONNECT_COUNT_CACHE_TTL_MS = parseInt(process.env.CONNECT_COUNT_CACHE_TTL_MS || '2000')
 export const PROXY_URL = process.env.PROXY_URL

@@ -238,6 +238,7 @@ export class PhoneNumberController {
         dryRun: typeof dryRunValue === 'undefined' ? undefined : `${dryRunValue}` !== 'false',
         maxDelete: parseOptionalInt(body.max_delete ?? body.maxDelete),
         preKeyKeepRecent: parseOptionalInt(body.pre_key_keep_recent ?? body.preKeyKeepRecent),
+        preKeyMinAgeDays: parseOptionalInt(body.pre_key_min_age_days ?? body.preKeyMinAgeDays),
         scanCount: parseOptionalInt(body.scan_count ?? body.scanCount),
       })
       return res.status(200).json({
