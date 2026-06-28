@@ -131,9 +131,6 @@ export class IncomingJob {
     const options: object = a.options
     const idUno: string = a.id || uuid()
     const waId = normalizeUserOrGroupIdForWebhook(payload.to)
-    const payloadType = `${payload?.type || ''}`.trim()
-    const hasSendablePayload = !!payloadType && payload[payloadType] !== undefined
-    const isStatusOnlyPayload = !hasSendablePayload && !!payload?.status && !!payload?.message_id
     const timestamp = Math.floor(new Date().getTime() / 1000).toString()
     // const retries: number = a.retries ? a.retries + 1 : 1
     // Idempotency guard: skip send if this UNO id looks already processed
@@ -266,15 +263,11 @@ export class IncomingJob {
       throw `Unknow response ${JSON.stringify(response)}`
     } else if (ok.success) {
       // Fallback: provedor não retornou id da mensagem, ainda assim notificar "new message" no webhook
-      if (hasSendablePayload) {
-        const webhookMessage = this.buildOutgoingWebhookMessage(phone, payload, idUno, timestamp, payload[payloadType])
-        const webhooks = config.webhooks.filter((w) => w.sendNewMessages)
-        logger.debug('%s webhooks with sendNewMessages (fallback)', webhooks.length)
-        await Promise.all(webhooks.map((w) => this.outgoing.sendHttp(phone, w, webhookMessage, {})))
-        logger.debug('Message id %s update to status %s (fallback notified)', payload?.message_id, payload?.status)
-      } else {
-        logger.debug('Skip new-message webhook fallback for non-message payload id=%s status=%s type=%s', idUno, payload?.status, payload?.type)
-      }
+      const webhookMessage = this.buildOutgoingWebhookMessage(phone, payload, idUno, timestamp, payload[payload.type])
+      const webhooks = config.webhooks.filter((w) => w.sendNewMessages)
+      logger.debug('%s webhooks with sendNewMessages (fallback)', webhooks.length)
+      await Promise.all(webhooks.map((w) => this.outgoing.sendHttp(phone, w, webhookMessage, {})))
+      logger.debug('Message id %s update to status %s (fallback notified)', payload?.message_id, payload?.status)
       // não retorna aqui; continua fluxo de status abaixo
     }
     let outgingPayload
@@ -291,47 +284,42 @@ export class IncomingJob {
       //   await amqpPublish(UNOAPI_QUEUE_INCOMING, phone, { ...data, retries }, options)
       // }
     } else {
-      if (isStatusOnlyPayload || !waId) {
-        logger.debug('Skip sent-status webhook for non-message payload id=%s status=%s waId=%s', idUno, payload?.status, waId)
-        outgingPayload = null as any
-      } else {
-        outgingPayload = {
-          object: 'whatsapp_business_account',
-          entry: [
-            {
-              id: phone,
-              changes: [
-                {
-                  value: {
-                    messaging_product: 'whatsapp',
-                    metadata: {
-                      display_phone_number: phone,
-                      phone_number_id: phone,
-                    },
-                    contacts: [
-                      {
-                        wa_id: waId,
-                        profile: {
-                          name: '',
-                        },
-                      },
-                    ],
-                    statuses: [
-                      {
-                        id: idUno,
-                        // Normalize recipient_id sempre como PN (sem '+')
-                        recipient_id: waId,
-                        status: 'sent',
-                        timestamp,
-                      },
-                    ],
+      outgingPayload = {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: phone,
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: {
+                    display_phone_number: phone,
+                    phone_number_id: phone,
                   },
-                  field: 'messages',
+                  contacts: [
+                    {
+                      wa_id: waId,
+                      profile: {
+                        name: '',
+                      },
+                    },
+                  ],
+                  statuses: [
+                    {
+                      id: idUno,
+                      // Normalize recipient_id sempre como PN (sem '+')
+                      recipient_id: waId,
+                      status: 'sent',
+                      timestamp,
+                    },
+                  ],
                 },
-              ],
-            },
-          ],
-        }
+                field: 'messages',
+              },
+            ],
+          },
+        ], 
       }
       // Se já houver status mais avançado (delivered/read), não enviar 'sent'
       try {

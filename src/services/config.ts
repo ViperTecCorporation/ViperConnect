@@ -78,10 +78,6 @@ export type Config = {
   throwWebhookError: boolean
   rejectCallsWebhook: string
   messageCallsWebhook: string
-  voipServiceUrl: string
-  voipServiceToken: string
-  voipServiceTimeoutMs: number
-  voipSlotId: string | undefined
   proxyUrl: string | undefined
   sessionWebhook: string
   shouldIgnoreJid: (jid: string) => boolean | undefined
@@ -149,10 +145,6 @@ export const defaultConfig: Config = {
   sessionWebhook: '',
   rejectCallsWebhook: '',
   messageCallsWebhook: '',
-  voipServiceUrl: '',
-  voipServiceToken: '',
-  voipServiceTimeoutMs: 3_000,
-  voipSlotId: undefined,
   logLevel: 'fatal',
   autoConnect: true,
   autoRestartMs: 0,

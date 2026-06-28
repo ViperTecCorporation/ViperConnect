@@ -324,11 +324,6 @@
           qrScanBelow: 'Scan the QR Code below', qrWaitingNew: 'Waiting for a new QRCode/PairingCode', connected: 'Connected!',
           fldLabel: 'Label', fldLabelPh: 'Label',
           rejectCallsWebhookLabel: 'Incoming/Rejected Call Message', rejectCallsWebhookPh: 'I was calling you...',
-          voipServiceUrlLabel: 'VoIP Service URL', voipServiceUrlPh: 'http://voip-host:3097',
-          voipServiceTokenLabel: 'VoIP Service Token', voipServiceTokenPh: 'Token used by ViperConnect VoIP',
-          voipSlotIdLabel: 'VoIP slot GUID', voipSlotIdPh: 'Leave blank to create/use automatic slot',
-          voipQuerySip: 'Query SIP credentials',
-          voipServiceTimeoutLabel: 'VoIP timeout (ms)', voipServiceTimeoutPh: '10000',
           connectionType: 'Connection Type', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
           oneToOneAddressingMode: '1:1 addressing',
           oneToOneAddressingModeDefault: 'Use global setting',
@@ -397,11 +392,6 @@
           qrScanBelow: 'Leia o QR Code Abaixo', qrWaitingNew: 'Esperando um novo QrCode/PairingCode', connected: 'Conectado!',
           fldLabel: 'Identificação', fldLabelPh: 'Identificação',
           rejectCallsWebhookLabel: 'Mensagem de Ligação Recebida e/ou Rejeitada', rejectCallsWebhookPh: 'Estava te ligando...',
-          voipServiceUrlLabel: 'URL do Serviço VoIP', voipServiceUrlPh: 'http://voip-host:3097',
-          voipServiceTokenLabel: 'Token do Serviço VoIP', voipServiceTokenPh: 'Token usado pelo ViperConnect VoIP',
-          voipSlotIdLabel: 'GUID do slot VoIP', voipSlotIdPh: 'Deixe vazio para criar/usar slot automático',
-          voipQuerySip: 'Consultar credenciais SIP',
-          voipServiceTimeoutLabel: 'Timeout VoIP (ms)', voipServiceTimeoutPh: '10000',
           connectionType: 'Tipo de Conexão', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
           oneToOneAddressingMode: 'Endereçamento 1:1',
           oneToOneAddressingModeDefault: 'Usar configuração global',
@@ -720,30 +710,6 @@
                             <div class="col-12 col-md-12 col-lg-6">
                                 <label for="groqApiBaseUrl" class="form-label" data-i18n="groqApiBaseUrlLabel">Groq API Base URL</label>
                                 <input type="text" class="form-control" id="groqApiBaseUrl" name="groqApiBaseUrl" placeholder="https://api.groq.com/openai/v1" data-i18n-placeholder="groqApiBaseUrlPh">
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
-                                <label for="wavoipToken" class="form-label">Wavoip Token</label>
-                                <input type="text" class="form-control" id="wavoipToken" name="wavoipToken" placeholder="WAVOIP token">
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
-                                <label for="voipServiceUrl" class="form-label" data-i18n="voipServiceUrlLabel">VoIP Service URL</label>
-                                <input type="text" class="form-control" id="voipServiceUrl" name="voipServiceUrl" placeholder="http://voip-host:3097" data-i18n-placeholder="voipServiceUrlPh">
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
-                                <label for="voipServiceToken" class="form-label" data-i18n="voipServiceTokenLabel">VoIP Service Token</label>
-                                <input type="text" class="form-control" id="voipServiceToken" name="voipServiceToken" placeholder="Token used by ViperConnect VoIP" data-i18n-placeholder="voipServiceTokenPh">
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
-                                <label for="voipSlotId" class="form-label" data-i18n="voipSlotIdLabel">VoIP slot GUID</label>
-                                <input type="text" class="form-control" id="voipSlotId" name="voipSlotId" placeholder="Leave blank to create/use automatic slot" data-i18n-placeholder="voipSlotIdPh">
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
-                                <label for="voipServiceTimeoutMs" class="form-label" data-i18n="voipServiceTimeoutLabel">VoIP timeout (ms)</label>
-                                <input type="number" min="0" class="form-control" id="voipServiceTimeoutMs" name="voipServiceTimeoutMs" placeholder="10000" data-i18n-placeholder="voipServiceTimeoutPh">
-                            </div>
-                            <div class="col-12">
-                                <button type="button" class="btn btn-secondary btn-sm" id="queryVoipSipButton" data-i18n="voipQuerySip">Query SIP credentials</button>
-                                <textarea class="form-control mt-2 d-none" id="voipSipConfigResult" rows="7" readonly></textarea>
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
                                 <label for="rejectCallsWebhook" class="form-label" data-i18n="rejectCallsWebhookLabel">Incoming/Rejected Call Message</label>
@@ -1533,17 +1499,11 @@
                 session = session || {};
                 $('#label').val(session.label || '');
                 $('#authToken').val(session.authToken ?? '');
-                $('#wavoipToken').val(session.wavoipToken ?? '');
                 $('#openaiApiKey').val(session.openaiApiKey ?? '');
                 $('#openaiApiTranscribeModel').val(session.openaiApiTranscribeModel ?? '');
                 $('#groqApiKey').val(session.groqApiKey ?? '');
                 $('#groqApiTranscribeModel').val(session.groqApiTranscribeModel ?? '');
                 $('#groqApiBaseUrl').val(session.groqApiBaseUrl ?? '');
-                $('#voipServiceUrl').val(session.voipServiceUrl ?? '');
-                $('#voipServiceToken').val(session.voipServiceToken ?? '');
-                $('#voipSlotId').val(session.voipSlotId ?? '');
-                $('#voipServiceTimeoutMs').val(session.voipServiceTimeoutMs ?? '');
-                $('#voipSipConfigResult').addClass('d-none').val('');
                 $('#rejectCallsWebhook').val(session.rejectCallsWebhook ?? '');
                 $('#rejectCalls').val(session.rejectCalls ?? '');
                 $('#ignoreGroupMessages').prop('checked', session.ignoreGroupMessages);
@@ -1660,19 +1620,9 @@
                 const number = $('#editModal').data('number');
 
                 if (token && number) {
-                    const voipServiceUrl = `${$('#voipServiceUrl').val() || ''}`.trim() || null;
-                    const voipServiceToken = `${$('#voipServiceToken').val() || ''}`.trim() || null;
-                    const voipSlotId = `${$('#voipSlotId').val() || ''}`.trim() || null;
-                    const voipServiceTimeoutMsRaw = `${$('#voipServiceTimeoutMs').val() || ''}`.trim();
-                    const voipServiceTimeoutMs = voipServiceTimeoutMsRaw ? Number(voipServiceTimeoutMsRaw) : null;
                     const sessionData = {
                         label: $('#label').val(),
                         authToken: $('#authToken').val(),
-                        wavoipToken: $('#wavoipToken').val(),
-                        voipServiceUrl,
-                        voipServiceToken,
-                        voipSlotId,
-                        voipServiceTimeoutMs,
                         openaiApiKey: $('#openaiApiKey').val(),
                         openaiApiTranscribeModel: $('#openaiApiTranscribeModel').val(),
                         groqApiKey: $('#groqApiKey').val(),
@@ -1759,38 +1709,6 @@
                     })
                     .catch(error => alert(error.message));
                 }
-            });
-
-            $('#queryVoipSipButton').on('click', function () {
-                const token = localStorage.getItem(tokenKey);
-                const number = $('#editModal').data('number');
-                const result = $('#voipSipConfigResult');
-                if (!token || !number) return alert(t('tokenNotFound'));
-                result.removeClass('d-none').val('Consultando...');
-                fetch(`${apiUrl}/v15.0/${encodeURIComponent(number)}/voice-bridge/config`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                })
-                .then(async response => {
-                    const data = await response.json().catch(() => ({}));
-                    if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`);
-                    return data;
-                })
-                .then(data => {
-                    const sip = data.sip || {};
-                    const slot = data.slot || {};
-                    const routing = data.routing || {};
-                    result.val([
-                        `slotId: ${slot.id || ''}`,
-                        `sipExtensionId: ${sip.extensionId || ''}`,
-                        `sipUser: ${sip.username || ''}`,
-                        `sipPassword: ${sip.password || ''}`,
-                        `sipDomain: ${sip.domain || ''}`,
-                        `sipWsUrl: ${sip.wsUrl || ''}`,
-                        `transport: ${sip.transport || ''}`,
-                        `routing: ${JSON.stringify(routing)}`
-                    ].join('\n'));
-                })
-                .catch(error => result.val(`Erro: ${error.message || error}`));
             });
 
             //QRCODE AND CONNECT

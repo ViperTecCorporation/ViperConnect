@@ -126,32 +126,6 @@ describe('service socket', () => {
     expect(mockOn).toHaveBeenCalled()
   })
 
-  test('routes Baileys call callback to call.raw handler', async () => {
-    const socket = await connect({
-      phone,
-      store,
-      onQrCode,
-      onNotification,
-      onDisconnected,
-      onReconnect,
-      onNewLogin,
-      attempts: 1,
-      time: 1,
-      config: { ...defaultConfig, whatsappVersion }
-    })
-    const callRaw = jest.fn()
-    socket?.event('call.raw' as any, callRaw)
-
-    await wsHandlers['CB:call']?.({
-      tag: 'call',
-      attrs: { from: '11343495192601@lid' },
-      content: [{ tag: 'offer', attrs: { 'call-id': 'call-1' } }],
-    })
-
-    expect(callRaw).toHaveBeenCalledTimes(1)
-    expect(callRaw).toHaveBeenCalledWith(expect.objectContaining({ tag: 'call' }))
-  })
-
   test('allows full history sync for the first unmarked sync', async () => {
     await connect({
       phone,

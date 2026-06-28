@@ -65,9 +65,6 @@ export const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN || UNOAPI_AUTH_TOKEN || '
 export const WEBHOOK_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_MS || '6000')
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '6000')
 export const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'qrcode'
-export const VOIP_SERVICE_URL = process.env.VOIP_SERVICE_URL || ''
-export const VOIP_SERVICE_TOKEN = process.env.VOIP_SERVICE_TOKEN || ''
-export const VOIP_SERVICE_TIMEOUT_MS = parseInt(process.env.VOIP_SERVICE_TIMEOUT_MS || '10000')
 
 export const CONSUMER_TIMEOUT_MS = parseInt(process.env.CONSUMER_TIMEOUT_MS || '15000')
 export const WEBHOOK_SEND_NEW_MESSAGES = process.env.WEBHOOK_SEND_NEW_MESSAGES == _undefined ? false : process.env.WEBHOOK_SEND_NEW_MESSAGES == 'true'
@@ -120,20 +117,14 @@ export const AUTH_SIGNAL_PRUNE_DEFAULT_TYPES = (process.env.AUTH_SIGNAL_PRUNE_DE
   .filter(Boolean)
 export const AUTH_SIGNAL_PRUNE_MAX_DELETE = parseInt(process.env.AUTH_SIGNAL_PRUNE_MAX_DELETE || '5000')
 export const AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT = parseInt(process.env.AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT || '5000')
-export const AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS = parseInt(process.env.AUTH_SIGNAL_PRUNE_PREKEY_MIN_AGE_DAYS || '30')
 export const AUTH_SIGNAL_PRUNE_SCAN_COUNT = parseInt(process.env.AUTH_SIGNAL_PRUNE_SCAN_COUNT || '1000')
 export const AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED =
   process.env.AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED === _undefined ? false : process.env.AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED == 'true'
 export const AUTH_SIGNAL_PRUNE_DAILY_ENABLED =
-  process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED === _undefined ? true : process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED == 'true'
+  process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED === _undefined ? false : process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED == 'true'
 export const AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS = parseInt(process.env.AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS || `${24 * 60 * 60 * 1000}`)
 export const AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS = parseInt(process.env.AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || `${24 * 60 * 60 * 1000}`)
 export const AUTH_SIGNAL_PRUNE_SESSION_LIMIT = parseInt(process.env.AUTH_SIGNAL_PRUNE_SESSION_LIMIT || '100000')
-export const AUTH_AUXILIARY_TTL_SECONDS = parseInt(process.env.AUTH_AUXILIARY_TTL_SECONDS || `${30 * 24 * 60 * 60}`)
-export const AUTH_AUXILIARY_TTL_TYPES = (process.env.AUTH_AUXILIARY_TTL_TYPES || 'lid-mapping,device-list')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean)
 export const SESSION_STATUS_CACHE_TTL_MS = parseInt(process.env.SESSION_STATUS_CACHE_TTL_MS || '5000')
 export const CONNECT_COUNT_CACHE_TTL_MS = parseInt(process.env.CONNECT_COUNT_CACHE_TTL_MS || '2000')
 export const PROXY_URL = process.env.PROXY_URL
