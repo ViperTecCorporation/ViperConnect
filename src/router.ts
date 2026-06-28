@@ -117,6 +117,7 @@ export const router = (
   router.post('/:phone/contacts', middleware, contactsController.post.bind(contactsController))
   router.post('/:version/:phone/register', middleware, registrationController.register.bind(registrationController))
   router.post('/:version/:phone/deregister', middleware, registrationController.deregister.bind(registrationController))
+  router.get('/:version/:phone/voice-bridge/config', middleware, registrationController.voiceBridgeConfig.bind(registrationController))
   router.patch('/:version/:phone/webhooks/:webhook_id', middleware, registrationController.updateWebhook.bind(registrationController))
   router.get('/:version/:phone', middleware, phoneNumberController.get.bind(phoneNumberController))
   // https://developers.facebook.com/docs/whatsapp/business-management-api/manage-phone-numbers/

@@ -2,6 +2,7 @@ import { useViperVoiceBaileys, type ViperVoiceAdapterHandle } from '@viperconnec
 import type { WASocket } from '@whiskeysockets/baileys'
 import type { Config } from './config'
 import logger from './logger'
+import { setConfig } from './redis'
 
 const adapters = new Map<string, ViperVoiceAdapterHandle>()
 
@@ -57,10 +58,14 @@ export const attachVoiceBridge = async (options: {
       },
     })
     adapters.set(options.phone, adapter)
+    const provisionedSlotId = adapter.provision?.slot?.id || adapter.slotId
+    if (provisionedSlotId && provisionedSlotId !== slotId) {
+      await setConfig(options.phone, { voipSlotId: provisionedSlotId })
+    }
     logger.info(
       'Attached Viper voice bridge for %s slot=%s sipUser=%s',
       options.phone,
-      adapter.provision?.slot?.id || adapter.slotId || '<existing>',
+      provisionedSlotId || '<existing>',
       adapter.provision?.sip?.username || '<none>',
     )
     return adapter

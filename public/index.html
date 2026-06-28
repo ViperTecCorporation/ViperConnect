@@ -327,6 +327,7 @@
           voipServiceUrlLabel: 'VoIP Service URL', voipServiceUrlPh: 'http://voip-host:3097',
           voipServiceTokenLabel: 'VoIP Service Token', voipServiceTokenPh: 'Token used by ViperConnect VoIP',
           voipSlotIdLabel: 'VoIP slot GUID', voipSlotIdPh: 'Leave blank to create/use automatic slot',
+          voipQuerySip: 'Query SIP credentials',
           voipServiceTimeoutLabel: 'VoIP timeout (ms)', voipServiceTimeoutPh: '10000',
           connectionType: 'Connection Type', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
           oneToOneAddressingMode: '1:1 addressing',
@@ -399,6 +400,7 @@
           voipServiceUrlLabel: 'URL do Serviço VoIP', voipServiceUrlPh: 'http://voip-host:3097',
           voipServiceTokenLabel: 'Token do Serviço VoIP', voipServiceTokenPh: 'Token usado pelo ViperConnect VoIP',
           voipSlotIdLabel: 'GUID do slot VoIP', voipSlotIdPh: 'Deixe vazio para criar/usar slot automático',
+          voipQuerySip: 'Consultar credenciais SIP',
           voipServiceTimeoutLabel: 'Timeout VoIP (ms)', voipServiceTimeoutPh: '10000',
           connectionType: 'Tipo de Conexão', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
           oneToOneAddressingMode: 'Endereçamento 1:1',
@@ -738,6 +740,10 @@
                             <div class="col-12 col-md-12 col-lg-6">
                                 <label for="voipServiceTimeoutMs" class="form-label" data-i18n="voipServiceTimeoutLabel">VoIP timeout (ms)</label>
                                 <input type="number" min="0" class="form-control" id="voipServiceTimeoutMs" name="voipServiceTimeoutMs" placeholder="10000" data-i18n-placeholder="voipServiceTimeoutPh">
+                            </div>
+                            <div class="col-12">
+                                <button type="button" class="btn btn-secondary btn-sm" id="queryVoipSipButton" data-i18n="voipQuerySip">Query SIP credentials</button>
+                                <textarea class="form-control mt-2 d-none" id="voipSipConfigResult" rows="7" readonly></textarea>
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
                                 <label for="rejectCallsWebhook" class="form-label" data-i18n="rejectCallsWebhookLabel">Incoming/Rejected Call Message</label>
@@ -1537,6 +1543,7 @@
                 $('#voipServiceToken').val(session.voipServiceToken ?? '');
                 $('#voipSlotId').val(session.voipSlotId ?? '');
                 $('#voipServiceTimeoutMs').val(session.voipServiceTimeoutMs ?? '');
+                $('#voipSipConfigResult').addClass('d-none').val('');
                 $('#rejectCallsWebhook').val(session.rejectCallsWebhook ?? '');
                 $('#rejectCalls').val(session.rejectCalls ?? '');
                 $('#ignoreGroupMessages').prop('checked', session.ignoreGroupMessages);
@@ -1752,6 +1759,38 @@
                     })
                     .catch(error => alert(error.message));
                 }
+            });
+
+            $('#queryVoipSipButton').on('click', function () {
+                const token = localStorage.getItem(tokenKey);
+                const number = $('#editModal').data('number');
+                const result = $('#voipSipConfigResult');
+                if (!token || !number) return alert(t('tokenNotFound'));
+                result.removeClass('d-none').val('Consultando...');
+                fetch(`${apiUrl}/v15.0/${encodeURIComponent(number)}/voice-bridge/config`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                })
+                .then(async response => {
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(data.message || data.error || `HTTP ${response.status}`);
+                    return data;
+                })
+                .then(data => {
+                    const sip = data.sip || {};
+                    const slot = data.slot || {};
+                    const routing = data.routing || {};
+                    result.val([
+                        `slotId: ${slot.id || ''}`,
+                        `sipExtensionId: ${sip.extensionId || ''}`,
+                        `sipUser: ${sip.username || ''}`,
+                        `sipPassword: ${sip.password || ''}`,
+                        `sipDomain: ${sip.domain || ''}`,
+                        `sipWsUrl: ${sip.wsUrl || ''}`,
+                        `transport: ${sip.transport || ''}`,
+                        `routing: ${JSON.stringify(routing)}`
+                    ].join('\n'));
+                })
+                .catch(error => result.val(`Erro: ${error.message || error}`));
             });
 
             //QRCODE AND CONNECT

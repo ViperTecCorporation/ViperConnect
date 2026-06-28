@@ -72,6 +72,36 @@ export class RegistrationController {
     return res.status(204).send()
   }
 
+  public async voiceBridgeConfig(req: Request, res: Response) {
+    const phone = await resolveSessionPhoneByMetaId(req.params.phone)
+    const config = await this.getConfig(phone)
+    const serviceUrl = `${config.voipServiceUrl || ''}`.trim()
+    const provisionToken = `${config.voipServiceToken || ''}`.trim()
+    const slotId = `${config.voipSlotId || ''}`.trim()
+    if (!serviceUrl || !provisionToken) {
+      return res.status(400).json({ status: 'error', message: 'voip_service_not_configured_for_session' })
+    }
+    if (!slotId) {
+      return res.status(400).json({ status: 'error', message: 'voip_slot_id_not_configured_for_session' })
+    }
+
+    try {
+      const url = new URL('/v1/bridge/provisioned-config', serviceUrl)
+      url.searchParams.set('slotId', slotId)
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${provisionToken}` },
+        signal: AbortSignal.timeout(config.voipServiceTimeoutMs || 10_000),
+      })
+      const text = await response.text()
+      const data = text ? JSON.parse(text) : {}
+      if (!response.ok) return res.status(response.status).json(data)
+      return res.status(200).json({ phone, ...data })
+    } catch (error) {
+      logger.warn(error as any, 'failed to query voice bridge config for %s', phone)
+      return res.status(502).json({ status: 'error', message: `${error instanceof Error ? error.message : error}` })
+    }
+  }
+
   public async updateWebhook(req: Request, res: Response) {
     logger.debug('updateWebhook method %s', req.method)
     logger.debug('updateWebhook params %s', JSON.stringify(req.params))
