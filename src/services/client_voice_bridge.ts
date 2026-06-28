@@ -31,6 +31,7 @@ export const attachVoiceBridge = async (options: {
 }) => {
   const serviceUrl = `${options.config.voipServiceUrl || ''}`.trim()
   const provisionToken = `${options.config.voipServiceToken || ''}`.trim()
+  const slotId = `${options.config.voipSlotId || ''}`.trim() || undefined
   if (!serviceUrl || !provisionToken) return undefined
 
   closeVoiceBridge(options.phone, 'reattach')
@@ -41,6 +42,7 @@ export const attachVoiceBridge = async (options: {
       sock: options.sock as any,
       serviceUrl,
       provisionToken,
+      slotId,
       software: 'unoapi-baileys-v7',
       instanceId: `unoapi:${options.phone}`,
       phoneNumber,

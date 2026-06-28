@@ -326,6 +326,7 @@
           rejectCallsWebhookLabel: 'Incoming/Rejected Call Message', rejectCallsWebhookPh: 'I was calling you...',
           voipServiceUrlLabel: 'VoIP Service URL', voipServiceUrlPh: 'http://voip-host:3097',
           voipServiceTokenLabel: 'VoIP Service Token', voipServiceTokenPh: 'Token used by ViperConnect VoIP',
+          voipSlotIdLabel: 'VoIP slot GUID', voipSlotIdPh: 'Leave blank to create/use automatic slot',
           voipServiceTimeoutLabel: 'VoIP timeout (ms)', voipServiceTimeoutPh: '10000',
           connectionType: 'Connection Type', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
           oneToOneAddressingMode: '1:1 addressing',
@@ -397,6 +398,7 @@
           rejectCallsWebhookLabel: 'Mensagem de Ligação Recebida e/ou Rejeitada', rejectCallsWebhookPh: 'Estava te ligando...',
           voipServiceUrlLabel: 'URL do Serviço VoIP', voipServiceUrlPh: 'http://voip-host:3097',
           voipServiceTokenLabel: 'Token do Serviço VoIP', voipServiceTokenPh: 'Token usado pelo ViperConnect VoIP',
+          voipSlotIdLabel: 'GUID do slot VoIP', voipSlotIdPh: 'Deixe vazio para criar/usar slot automático',
           voipServiceTimeoutLabel: 'Timeout VoIP (ms)', voipServiceTimeoutPh: '10000',
           connectionType: 'Tipo de Conexão', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
           oneToOneAddressingMode: 'Endereçamento 1:1',
@@ -728,6 +730,10 @@
                             <div class="col-12 col-md-12 col-lg-6">
                                 <label for="voipServiceToken" class="form-label" data-i18n="voipServiceTokenLabel">VoIP Service Token</label>
                                 <input type="text" class="form-control" id="voipServiceToken" name="voipServiceToken" placeholder="Token used by ViperConnect VoIP" data-i18n-placeholder="voipServiceTokenPh">
+                            </div>
+                            <div class="col-12 col-md-12 col-lg-6">
+                                <label for="voipSlotId" class="form-label" data-i18n="voipSlotIdLabel">VoIP slot GUID</label>
+                                <input type="text" class="form-control" id="voipSlotId" name="voipSlotId" placeholder="Leave blank to create/use automatic slot" data-i18n-placeholder="voipSlotIdPh">
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
                                 <label for="voipServiceTimeoutMs" class="form-label" data-i18n="voipServiceTimeoutLabel">VoIP timeout (ms)</label>
@@ -1529,6 +1535,7 @@
                 $('#groqApiBaseUrl').val(session.groqApiBaseUrl ?? '');
                 $('#voipServiceUrl').val(session.voipServiceUrl ?? '');
                 $('#voipServiceToken').val(session.voipServiceToken ?? '');
+                $('#voipSlotId').val(session.voipSlotId ?? '');
                 $('#voipServiceTimeoutMs').val(session.voipServiceTimeoutMs ?? '');
                 $('#rejectCallsWebhook').val(session.rejectCallsWebhook ?? '');
                 $('#rejectCalls').val(session.rejectCalls ?? '');
@@ -1648,6 +1655,7 @@
                 if (token && number) {
                     const voipServiceUrl = `${$('#voipServiceUrl').val() || ''}`.trim() || null;
                     const voipServiceToken = `${$('#voipServiceToken').val() || ''}`.trim() || null;
+                    const voipSlotId = `${$('#voipSlotId').val() || ''}`.trim() || null;
                     const voipServiceTimeoutMsRaw = `${$('#voipServiceTimeoutMs').val() || ''}`.trim();
                     const voipServiceTimeoutMs = voipServiceTimeoutMsRaw ? Number(voipServiceTimeoutMsRaw) : null;
                     const sessionData = {
@@ -1656,6 +1664,7 @@
                         wavoipToken: $('#wavoipToken').val(),
                         voipServiceUrl,
                         voipServiceToken,
+                        voipSlotId,
                         voipServiceTimeoutMs,
                         openaiApiKey: $('#openaiApiKey').val(),
                         openaiApiTranscribeModel: $('#openaiApiTranscribeModel').val(),

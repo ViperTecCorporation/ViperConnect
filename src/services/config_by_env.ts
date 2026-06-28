@@ -39,9 +39,6 @@ import {
   NOTIFY_FAILED_MESSAGES,
   SEND_REACTION_AS_REPLY,
   WEBHOOK_TIMEOUT_MS,
-  VOIP_SERVICE_TIMEOUT_MS,
-  VOIP_SERVICE_TOKEN,
-  VOIP_SERVICE_URL,
   SEND_PROFILE_PICTURE,
   WEBHOOK_SEND_NEW_MESSAGES,
   WEBHOOK_SEND_GROUP_MESSAGES,
@@ -113,9 +110,6 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.sendReactionAsReply = SEND_REACTION_AS_REPLY
     config.sendProfilePicture = SEND_PROFILE_PICTURE
     config.sessionWebhook = WEBHOOK_SESSION
-    config.voipServiceUrl = VOIP_SERVICE_URL
-    config.voipServiceToken = VOIP_SERVICE_TOKEN
-    config.voipServiceTimeoutMs = VOIP_SERVICE_TIMEOUT_MS
     config.proxyUrl = PROXY_URL
     config.authToken = UNOAPI_AUTH_TOKEN
     config.authHeader = UNOAPI_HEADER_NAME
