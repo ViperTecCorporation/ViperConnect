@@ -78,7 +78,7 @@ class ViperVoiceAdapter {
         return this.connected && this.ws?.readyState === ws_1.default.OPEN;
     }
     resolveBridgeUrl() {
-        return this.options.bridgeUrl || this.provision?.slot.bridgeUrl || (this.options.serviceUrl ? joinUrl(this.options.serviceUrl.replace(/^http/i, 'ws'), '/baileys/bridge') : undefined);
+        return this.options.bridgeUrl || (this.options.serviceUrl ? joinUrl(this.options.serviceUrl.replace(/^http/i, 'ws'), '/baileys/bridge') : undefined) || this.provision?.slot.bridgeUrl;
     }
     async provisionSlot() {
         if (!this.options.provisionToken)
