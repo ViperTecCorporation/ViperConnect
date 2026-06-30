@@ -59,6 +59,13 @@ export interface Client {
     timestamp?: number | string
   }): Promise<{ request_id: string }>
 
+  sendPasskeyResponse?(payload: {
+    credentialId: Buffer
+    assertionJson: Buffer | string
+  }): Promise<Response>
+
+  sendPasskeyConfirmation?(): Promise<Response>
+
   getMessageMetadata<T>(message: T): Promise<T>
 
   contacts(numbers: string[]): Promise<Contact[]>

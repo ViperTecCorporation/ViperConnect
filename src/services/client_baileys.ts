@@ -9,6 +9,8 @@ import {
   rejectCall,
   resyncAppState,
   fetchMessageHistory,
+  sendPasskeyResponse,
+  sendPasskeyConfirmation,
   groupCreate,
   groupUpdateSubject,
   groupUpdateDescription,
@@ -41,6 +43,7 @@ import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS, BASE_URL } from '../defaults'
 import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
+import { createPasskeyBridgeSession, updatePasskeyBridgeSession } from './passkey_bridge'
 import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
 import { convertToWebpSticker } from '../utils/sticker_convert'
@@ -194,6 +197,14 @@ const resyncAppStateDefault: resyncAppState = async () => {
   throw sendError
 }
 const fetchMessageHistoryDefault: fetchMessageHistory = async () => {
+  throw sendError
+}
+
+const sendPasskeyResponseDefault: sendPasskeyResponse = async () => {
+  throw sendError
+}
+
+const sendPasskeyConfirmationDefault: sendPasskeyConfirmation = async () => {
   throw sendError
 }
 
@@ -606,6 +617,8 @@ export class ClientBaileys implements Client {
   private rejectCall: rejectCall | undefined = rejectCallDefault
   private resyncAppStateFn: resyncAppState = resyncAppStateDefault
   private fetchMessageHistoryFn: fetchMessageHistory = fetchMessageHistoryDefault
+  private sendPasskeyResponseFn: sendPasskeyResponse = sendPasskeyResponseDefault
+  private sendPasskeyConfirmationFn: sendPasskeyConfirmation = sendPasskeyConfirmationDefault
   private groupCreateFn: groupCreate = groupUnavailable
   private groupUpdateSubjectFn: groupUpdateSubject = groupUnavailable
   private groupUpdateDescriptionFn: groupUpdateDescription = groupUnavailable
@@ -873,6 +886,8 @@ export class ClientBaileys implements Client {
       groupJoinApprovalMode,
       resyncAppState,
       fetchMessageHistory,
+      sendPasskeyResponse,
+      sendPasskeyConfirmation,
     } = result
     this.event = event
     this.sendMessage = send
@@ -880,6 +895,8 @@ export class ClientBaileys implements Client {
     this.rejectCall = rejectCall
     this.resyncAppStateFn = resyncAppState || resyncAppStateDefault
     this.fetchMessageHistoryFn = fetchMessageHistory || fetchMessageHistoryDefault
+    this.sendPasskeyResponseFn = sendPasskeyResponse || sendPasskeyResponseDefault
+    this.sendPasskeyConfirmationFn = sendPasskeyConfirmation || sendPasskeyConfirmationDefault
     this.groupCreateFn = groupCreate || groupUnavailable
     this.groupUpdateSubjectFn = groupUpdateSubject || groupUnavailable
     this.groupUpdateDescriptionFn = groupUpdateDescription || groupUnavailable
@@ -919,6 +936,8 @@ export class ClientBaileys implements Client {
     this.rejectCall = rejectCallDefault
     this.resyncAppStateFn = resyncAppStateDefault
     this.fetchMessageHistoryFn = fetchMessageHistoryDefault
+    this.sendPasskeyResponseFn = sendPasskeyResponseDefault
+    this.sendPasskeyConfirmationFn = sendPasskeyConfirmationDefault
     this.fetchImageUrl = fetchImageUrlDefault
     this.fetchGroupMetadata = fetchGroupMetadataDefault
     this.groupMetadataFn = groupMetadataDefault
@@ -930,6 +949,39 @@ export class ClientBaileys implements Client {
   }
 
   async subscribe() {
+    this.event('passkey.update' as any, async (update: any) => {
+      try {
+        const status = `${update?.status || ''}`.trim()
+        const bridgeId = `${update?.bridgeId || update?.bridge_id || ''}`.trim()
+        if (!status || !bridgeId) return
+
+        if (status === 'request') {
+          const requestOptions = Buffer.isBuffer(update?.requestOptions)
+            ? update.requestOptions
+            : Buffer.from(update?.requestOptions || update?.request_options || '')
+          await createPasskeyBridgeSession(this.phone, bridgeId, requestOptions)
+          return
+        }
+
+        if (status === 'confirmation') {
+          await updatePasskeyBridgeSession(bridgeId, {
+            status: 'confirmation',
+            code: `${update?.code || ''}`.trim(),
+            skipHandoffUX: !!(update?.skipHandoffUX || update?.skip_handoff_ux),
+          })
+          logger.info('PASSKEY bridge confirmation: phone=%s bridgeId=%s code=%s skipHandoffUX=%s', this.phone, bridgeId, update?.code || '<none>', !!update?.skipHandoffUX)
+          return
+        }
+
+        await updatePasskeyBridgeSession(bridgeId, {
+          status: status as any,
+          error: update?.error ? `${update.error}` : undefined,
+        })
+      } catch (error) {
+        logger.warn(error as any, 'PASSKEY bridge event failed for %s', this.phone)
+      }
+    })
+
     this.event('groups.update', async (updates: any[] | any) => {
       const list = Array.isArray(updates) ? updates : [updates]
       for (const update of list) {
@@ -2618,6 +2670,16 @@ export class ClientBaileys implements Client {
 
   public async resyncAppState(forceSnapshot = false) {
     return this.resyncAppStateFn(undefined, true, forceSnapshot)
+  }
+
+  public async sendPasskeyResponse(payload: { credentialId: Buffer, assertionJson: Buffer | string }): Promise<Response> {
+    await this.sendPasskeyResponseFn(payload)
+    return { ok: true }
+  }
+
+  public async sendPasskeyConfirmation(): Promise<Response> {
+    await this.sendPasskeyConfirmationFn()
+    return { ok: true }
   }
 
   public async fetchMessageHistory(payload: any = {}) {

@@ -129,6 +129,7 @@ const EVENTS = [
   'labels.association',
   'offline.preview',
   'lid-mapping.update',
+  'passkey.update',
 ]
 
 export type OnQrCode = (qrCode: string, time: number, limit: number) => Promise<void>
@@ -171,6 +172,14 @@ export interface resyncAppState {
 
 export interface fetchMessageHistory {
   (_count: number, _oldestMsgKey: WAMessageKey, _oldestMsgTimestamp: number): Promise<string>
+}
+
+export interface sendPasskeyResponse {
+  (_payload: { credentialId: Buffer, assertionJson: Buffer | string }): Promise<void>
+}
+
+export interface sendPasskeyConfirmation {
+  (): Promise<void>
 }
 
 export interface fetchImageUrl {
@@ -2866,6 +2875,8 @@ export const connect = async ({
     rejectCall,
     resyncAppState,
     fetchMessageHistory,
+    sendPasskeyResponse: (sock as any).sendPasskeyResponse,
+    sendPasskeyConfirmation: (sock as any).sendPasskeyConfirmation,
     fetchImageUrl,
     fetchGroupMetadata,
     groupMetadata,
