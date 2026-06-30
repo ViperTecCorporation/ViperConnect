@@ -105,6 +105,7 @@ export const router = (
   router.get('/config.js', embeddedController.configJs.bind(embeddedController))
   router.get('/:version/config.js', embeddedController.configJs.bind(embeddedController))
   router.get('/connect/:phone', connectController.index.bind(connectController))
+  router.get('/passkey-bridge/pending', passkeyBridgeController.pendingLatest.bind(passkeyBridgeController))
   router.get('/passkey-bridge/:bridgeId/pending', passkeyBridgeController.pending.bind(passkeyBridgeController))
   router.get('/passkey-bridge/:bridgeId/status', passkeyBridgeController.status.bind(passkeyBridgeController))
   router.post('/passkey-bridge/:bridgeId/assertion', passkeyBridgeController.assertion.bind(passkeyBridgeController))

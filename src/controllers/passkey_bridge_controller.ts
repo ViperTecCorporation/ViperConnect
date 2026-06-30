@@ -8,6 +8,7 @@ import {
   deletePasskeyBridgeSession,
   fromBase64Url,
   getPasskeyBridgeSession,
+  listPasskeyBridgeSessions,
   updatePasskeyBridgeSession,
 } from '../services/passkey_bridge'
 import { isEmbeddedAccessToken } from '../services/embedded_tokens'
@@ -40,6 +41,31 @@ export class PasskeyBridgeController {
         skip_handoff_ux: !!session.skipHandoffUX,
         expires_at: session.expiresAt,
       })
+    } catch (error) {
+      return sendGraphError(res, 500, error.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async pendingLatest(req: Request, res: Response) {
+    try {
+      const sessions = await listPasskeyBridgeSessions()
+      for (const session of sessions) {
+        if (!['request', 'confirmation', 'response-sent'].includes(session.status)) continue
+        if (!await this.authorize(req, session.phone)) continue
+        return res.status(200).json({
+          id: session.bridgeId,
+          bridge_id: session.bridgeId,
+          phone: session.phone,
+          status: session.status,
+          options: session.requestOptionsJson ? JSON.stringify(session.requestOptionsJson) : undefined,
+          request_options: session.requestOptionsJson,
+          request_options_base64url: session.requestOptionsBase64Url,
+          code: session.code,
+          skip_handoff_ux: !!session.skipHandoffUX,
+          expires_at: session.expiresAt,
+        })
+      }
+      return res.status(204).send()
     } catch (error) {
       return sendGraphError(res, 500, error.message, { code: 131016, type: 'GraphMethodException' })
     }

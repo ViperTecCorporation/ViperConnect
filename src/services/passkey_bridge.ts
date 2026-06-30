@@ -1,5 +1,5 @@
 import { PASSKEY_BRIDGE_TTL_SECONDS } from '../defaults'
-import { BASE_KEY, redisGet, redisSetAndExpire, redisDelKey } from './redis'
+import { BASE_KEY, redisGet, redisSetAndExpire, redisDelKey, redisScanSome } from './redis'
 import logger from './logger'
 
 export type PasskeyBridgeStatus =
@@ -75,6 +75,17 @@ export const getPasskeyBridgeSession = async (bridgeId: string): Promise<Passkey
     logger.warn(error as any, 'Invalid passkey bridge payload %s', bridgeId)
     return undefined
   }
+}
+
+export const listPasskeyBridgeSessions = async (limit = 200): Promise<PasskeyBridgeSession[]> => {
+  const keys = await redisScanSome(`${BASE_KEY}passkey-bridge:*`, limit)
+  const sessions: PasskeyBridgeSession[] = []
+  for (const itemKey of keys) {
+    const bridgeId = itemKey.split(':').pop() || ''
+    const session = bridgeId ? await getPasskeyBridgeSession(bridgeId) : undefined
+    if (session) sessions.push(session)
+  }
+  return sessions.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 }
 
 export const updatePasskeyBridgeSession = async (bridgeId: string, patch: Partial<PasskeyBridgeSession>) => {
