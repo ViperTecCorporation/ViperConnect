@@ -6,6 +6,7 @@ import { Level } from 'pino'
 export const configs: Map<string, Config> = new Map()
 
 export type connectionType = 'qrcode' | 'pairing_code' | 'forward'
+export type OneToOneAddressingMode = 'pn' | 'lid'
 
 export interface GetMessageMetadata {
   <T>(message: T): Promise<T>
@@ -77,9 +78,6 @@ export type Config = {
   throwWebhookError: boolean
   rejectCallsWebhook: string
   messageCallsWebhook: string
-  voipServiceUrl: string
-  voipServiceToken: string
-  voipServiceTimeoutMs: number
   proxyUrl: string | undefined
   sessionWebhook: string
   shouldIgnoreJid: (jid: string) => boolean | undefined
@@ -122,6 +120,7 @@ export type Config = {
   rateLimitBlockSeconds?: number
   // Guardar reenvio indevido em caso de retry do job
   outgoingIdempotency: boolean
+  oneToOneAddressingMode?: OneToOneAddressingMode
 }
 
 export const defaultConfig: Config = {
@@ -146,9 +145,6 @@ export const defaultConfig: Config = {
   sessionWebhook: '',
   rejectCallsWebhook: '',
   messageCallsWebhook: '',
-  voipServiceUrl: '',
-  voipServiceToken: '',
-  voipServiceTimeoutMs: 3_000,
   logLevel: 'fatal',
   autoConnect: true,
   autoRestartMs: 0,
@@ -211,7 +207,8 @@ export const defaultConfig: Config = {
   rateLimitGlobalPerMinute: 0,
   rateLimitPerToPerMinute: 0,
   rateLimitBlockSeconds: 60,
-  outgoingIdempotency: true
+  outgoingIdempotency: true,
+  oneToOneAddressingMode: undefined
 }
 
 export interface getConfig {

@@ -80,9 +80,12 @@ export class IncomingJob {
     }
     const profilePicture = `${payload?.contact?.picture || payload?.profile?.picture || ''}`.trim()
     if (profilePicture) contact.profile.picture = profilePicture
+    const profilePictureMetadata = payload?.contact?.picture_metadata || payload?.profile?.picture_metadata || payload?.profile_picture_metadata
+    if (profilePictureMetadata) contact.profile.picture_metadata = profilePictureMetadata
     if (payload?.group_subject) contact.group_subject = `${payload.group_subject}`
     const groupPicture = `${payload?.group_picture || ''}`.trim()
     if (groupPicture) contact.group_picture = groupPicture
+    if (payload?.group_picture_metadata) contact.group_picture_metadata = payload.group_picture_metadata
     if (userId) contact.user_id = userId
     const username = `${payload?.username || payload?.contact?.username || payload?.profile?.username || ''}`.trim()
     if (username) contact.profile.username = username

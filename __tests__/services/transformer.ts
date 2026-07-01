@@ -584,6 +584,70 @@ describe('service transformer', () => {
     expect(fromBaileysMessageContent(phoneNumer, input)[0]).toEqual(output)
   })
 
+  test('fromBaileysMessageContent includes profile picture metadata', async () => {
+    const phoneNumer = '5549998360838'
+    const remoteJid = '554988290955@s.whatsapp.net'
+    const metadata = {
+      etag: '"avatar-etag"',
+      content_length: '41053',
+      content_type: 'image/jpeg',
+      last_modified: '2026-06-15T19:24:29.000Z',
+    }
+    const input = {
+      key: {
+        remoteJid,
+        fromMe: false,
+        id: 'wa.profile.metadata',
+      },
+      message: {
+        conversation: 'oi',
+      },
+      pushName: 'Maria',
+      messageTimestamp: '1781554162',
+      profilePicture: 'https://cdn.example.com/profile/maria.jpg',
+      profilePictureMetadata: metadata,
+    }
+
+    const value = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value
+
+    expect(value.contacts[0].profile.picture).toBe('https://cdn.example.com/profile/maria.jpg')
+    expect(value.contacts[0].profile.picture_metadata).toEqual(metadata)
+  })
+
+  test('fromBaileysMessageContent includes group picture metadata', async () => {
+    const phoneNumer = '5549998360838'
+    const groupJid = '120363040468224422@g.us'
+    const metadata = {
+      etag: '"group-etag"',
+      content_length: '41053',
+      content_type: 'image/jpeg',
+      last_modified: '2026-06-15T19:24:29.000Z',
+    }
+    const input = {
+      key: {
+        remoteJid: groupJid,
+        participant: '554988290955@s.whatsapp.net',
+        fromMe: false,
+        id: 'wa.group.metadata',
+      },
+      message: {
+        conversation: 'oi',
+      },
+      pushName: 'Maria',
+      messageTimestamp: '1781554162',
+      groupMetadata: {
+        subject: 'Grupo',
+        profilePicture: 'https://cdn.example.com/groups/grupo.jpg',
+        profilePictureMetadata: metadata,
+      },
+    }
+
+    const value = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value
+
+    expect(value.contacts[0].group_picture).toBe('https://cdn.example.com/groups/grupo.jpg')
+    expect(value.contacts[0].group_picture_metadata).toEqual(metadata)
+  })
+
   test('fromBaileysMessageContent with pix key', async () => {
     const phoneNumer = '5549998360838'
     const remotePhoneNumer = '554988290955'
@@ -1495,6 +1559,59 @@ describe('service transformer', () => {
       ],
     }
     expect(fromBaileysMessageContent(phoneNumer, input)[0]).toEqual(output)
+  })
+
+  test('fromBaileysMessageContent with structured 463 restriction diagnostics', async () => {
+    const phoneNumer = '5549998093075'
+    const remotePhoneNumber = '+11115551212'
+    const remoteJid = `${remotePhoneNumber}@s.whatsapp.net`
+    const id = `wa.${new Date().getTime()}`
+    const pushName = `Forrest Gump ${new Date().getTime()}`
+    const messageTimestamp = Math.floor(new Date().getTime() / 1000).toString()
+    const errorData = {
+      reason: 'message_account_restriction',
+      from: remoteJid,
+      msgId: id,
+      reachout: {
+        isActive: true,
+        timeEnforcementEnds: '2026-06-30T22:09:41.000Z',
+        enforcementType: 'RESTRICT_ALL_COMPANIONS',
+      },
+      capping: {
+        capping_status: 'NONE',
+      },
+    }
+    const input = {
+      key: {
+        remoteJid,
+        fromMe: false,
+        id,
+      },
+      update: {
+        status: 'ERROR',
+        messageStubParameters: ['463', 'Your account has been restricted'],
+        error: {
+          code: 463,
+          title: 'Account restricted for companion or missing tctoken',
+          message: 'Your account has been restricted',
+          error_data: errorData,
+        },
+      },
+      pushName,
+      messageTimestamp,
+    }
+    const output = fromBaileysMessageContent(phoneNumer, input)[0]
+    const status = output.entry[0].changes[0].value.statuses[0]
+
+    expect(status.status).toBe('failed')
+    expect(status.errors).toEqual([
+      {
+        code: 463,
+        title: 'Account restricted for companion or missing tctoken',
+        message: 'Your account has been restricted',
+        error_data: errorData,
+      },
+    ])
   })
 
   test('fromBaileysMessageContent with receipt read', async () => {
@@ -2932,6 +3049,74 @@ describe('service transformer', () => {
       ],
     }
     expect(fromBaileysMessageContent(phoneNumer, input)[0]).toEqual(output)
+  })
+
+  test('fromBaileysMessageContent maps native flow single_select as interactive list', async () => {
+    const phoneNumer = '5566996269251'
+    const remotePhoneNumer = '5566999554300'
+    const remoteJid = `${remotePhoneNumer}@s.whatsapp.net`
+    const id = `wa.${new Date().getTime()}`
+    const pushName = `Mary ${new Date().getTime()}`
+    const messageTimestamp = Math.floor(new Date().getTime() / 1000).toString()
+    const input = {
+      key: {
+        remoteJid,
+        fromMe: false,
+        id,
+      },
+      message: {
+        buttonsMessage: {
+          contentText: 'Escolha uma opcao',
+          footerText: 'Unoapi',
+          buttons: [
+            {
+              type: 'NATIVE_FLOW',
+              nativeFlowInfo: {
+                name: 'single_select',
+                paramsJson: JSON.stringify({
+                  title: 'Ver opcoes',
+                  sections: [
+                    {
+                      title: 'Planos',
+                      rows: [
+                        { rowId: 'plan_basic', id: 'plan_basic', title: 'Basico', description: 'R$ 10' },
+                        { rowId: 'plan_pro', id: 'plan_pro', title: 'Pro', description: 'R$ 20' },
+                      ],
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+          headerType: 'EMPTY',
+        },
+      },
+      pushName,
+      messageTimestamp,
+    }
+
+    const message = fromBaileysMessageContent(phoneNumer, input)[0].entry[0].changes[0].value.messages[0]
+    expect(message).toEqual(expect.objectContaining({
+      id,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text: 'Escolha uma opcao' },
+        footer: { text: 'Unoapi' },
+        action: {
+          button: 'Ver opcoes',
+          sections: [
+            {
+              title: 'Planos',
+              rows: [
+                { id: 'plan_basic', title: 'Basico', description: 'R$ 10' },
+                { id: 'plan_pro', title: 'Pro', description: 'R$ 20' },
+              ],
+            },
+          ],
+        },
+      },
+    }))
   })
 
 // {"key":{"remoteJid":"555533800800@s.whatsapp.net","fromMe":false,"id":"1BE283407E62E5A073"},"messageTimestamp":1753900800,"pushName":"555533800800","broadcast":false,"message":{"messageContextInfo":{"deviceListMetadata":{"recipientKeyHash":"BuoOcp2GlUsdsQ==","recipientTimestamp":"1753278139","recipientKeyIndexes":[0,5]},"deviceListMetadataVersion":2},"buttonsMessage":{"contentText":"Para confirmar, estou falando com *IM Agronegócios* e o seu CNPJ é *41.281.5xx/xxxx-xx*?","buttons":[{"buttonId":"1","buttonText":{"displayText":"Sim"},"type":"RESPONSE"},{"buttonId":"2","buttonText":{"displayText":"Não"},"type":"RESPONSE"}],"headerType":"EMPTY"}},"verifiedBizName":"Unifique"}

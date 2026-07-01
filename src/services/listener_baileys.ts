@@ -7,7 +7,7 @@ import { fromBaileysMessageContent, getMessageType, BindTemplateError, isSaveMed
 import * as Baileys from '@whiskeysockets/baileys'
 import { WAMessage, delay, jidNormalizedUser, isPnUser, isLidUser, proto } from '@whiskeysockets/baileys'
 import { Template } from './template'
-import { UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS, UNOAPI_DELAY_BETWEEN_MESSAGES_MS, INBOUND_DEDUP_WINDOW_MS } from '../defaults'
+import { UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS, UNOAPI_DELAY_BETWEEN_MESSAGES_MS, INBOUND_DEDUP_WINDOW_MS, BASE_URL } from '../defaults'
 import { v1 as uuid } from 'uuid'
 import { createDecipheriv, createHash, createHmac, hkdfSync } from 'crypto'
 import { getPollState, setPollState, getStatusMediaState, setStatusMediaState, getUnoIdsForProviderAnySession } from './redis'
@@ -1391,9 +1391,12 @@ export class ListenerBaileys implements Listener {
             if (waId) {
               const jid = `${waId}@s.whatsapp.net`
               try {
-                const url = await store?.dataStore?.getImageUrl(jid)
+                const { mediaStore } = await config.getStore(phone, config)
+                const info = await mediaStore.getProfilePictureInfo?.(BASE_URL, jid)
+                const url = info?.url || await store?.dataStore?.getImageUrl(jid)
                 if (url) {
                   profile.picture = url
+                  if (info?.metadata) profile.picture_metadata = info.metadata
                 }
               } catch {}
             }
@@ -1436,26 +1439,10 @@ export class ListenerBaileys implements Listener {
               id = mapped
             }
           } catch (e) { logger.debug('No UNO id mapping for %s', id) }
-          const status = state.status || 'error'
-          // Backfill a missing 'delivered' before 'read' when previous status is not delivered/read
-          if (status === 'read') {
-            const prev = await store?.dataStore?.loadStatus(id)
-            if (prev !== 'delivered' && prev !== 'read') {
-              try {
-                const deliveredPayload = JSON.parse(JSON.stringify(data))
-                deliveredPayload.entry[0].changes[0].value.statuses[0].status = 'delivered'
-                await this.outgoing.send(phone, deliveredPayload)
-                logger.debug('Emitted backfilled delivered before read for %s', id)
-                await store?.dataStore?.setStatus(id, 'delivered')
-              } catch (e) {
-                logger.warn(e as any, 'Ignore error backfilling delivered before read')
-              }
-            }
-          }
           // NÃO atualiza o status aqui; faremos após decidir enviar (evita auto-duplicata)
         }
       } catch (e) {
-        logger.warn(e as any, 'Ignore error preparing status/backfill')
+        logger.warn(e as any, 'Ignore error preparing status')
       }
     }
     if (data) {

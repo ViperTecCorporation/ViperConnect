@@ -65,9 +65,7 @@ export const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN || UNOAPI_AUTH_TOKEN || '
 export const WEBHOOK_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_MS || '6000')
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '6000')
 export const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'qrcode'
-export const VOIP_SERVICE_URL = process.env.VOIP_SERVICE_URL || ''
-export const VOIP_SERVICE_TOKEN = process.env.VOIP_SERVICE_TOKEN || ''
-export const VOIP_SERVICE_TIMEOUT_MS = parseInt(process.env.VOIP_SERVICE_TIMEOUT_MS || '10000')
+export const PASSKEY_BRIDGE_TTL_SECONDS = parseInt(process.env.PASSKEY_BRIDGE_TTL_SECONDS || '300')
 
 export const CONSUMER_TIMEOUT_MS = parseInt(process.env.CONSUMER_TIMEOUT_MS || '15000')
 export const WEBHOOK_SEND_NEW_MESSAGES = process.env.WEBHOOK_SEND_NEW_MESSAGES == _undefined ? false : process.env.WEBHOOK_SEND_NEW_MESSAGES == 'true'
@@ -113,6 +111,21 @@ export const REDIS_KEYS_USE_SCAN = process.env.REDIS_KEYS_USE_SCAN === _undefine
 export const CONFIG_CACHE_TTL_MS = parseInt(process.env.CONFIG_CACHE_TTL_MS || '0')
 // TTLs (ms) para cache local de sessao/auth (0 = somente invalidacao por pub/sub)
 export const AUTH_CACHE_TTL_MS = parseInt(process.env.AUTH_CACHE_TTL_MS || '5000')
+export const AUTH_INDEX_FALLBACK_SCAN_LIMIT = parseInt(process.env.AUTH_INDEX_FALLBACK_SCAN_LIMIT || '2')
+export const AUTH_SIGNAL_PRUNE_DEFAULT_TYPES = (process.env.AUTH_SIGNAL_PRUNE_DEFAULT_TYPES || 'pre-key')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
+export const AUTH_SIGNAL_PRUNE_MAX_DELETE = parseInt(process.env.AUTH_SIGNAL_PRUNE_MAX_DELETE || '5000')
+export const AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT = parseInt(process.env.AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT || '5000')
+export const AUTH_SIGNAL_PRUNE_SCAN_COUNT = parseInt(process.env.AUTH_SIGNAL_PRUNE_SCAN_COUNT || '1000')
+export const AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED =
+  process.env.AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED === _undefined ? false : process.env.AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED == 'true'
+export const AUTH_SIGNAL_PRUNE_DAILY_ENABLED =
+  process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED === _undefined ? false : process.env.AUTH_SIGNAL_PRUNE_DAILY_ENABLED == 'true'
+export const AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS = parseInt(process.env.AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS || `${24 * 60 * 60 * 1000}`)
+export const AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS = parseInt(process.env.AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || `${24 * 60 * 60 * 1000}`)
+export const AUTH_SIGNAL_PRUNE_SESSION_LIMIT = parseInt(process.env.AUTH_SIGNAL_PRUNE_SESSION_LIMIT || '100000')
 export const SESSION_STATUS_CACHE_TTL_MS = parseInt(process.env.SESSION_STATUS_CACHE_TTL_MS || '5000')
 export const CONNECT_COUNT_CACHE_TTL_MS = parseInt(process.env.CONNECT_COUNT_CACHE_TTL_MS || '2000')
 export const PROXY_URL = process.env.PROXY_URL
@@ -186,7 +199,7 @@ export const MESSAGE_CALLS_WEBHOOK = process.env.MESSAGE_CALLS_WEBHOOK || ''
 export const AUTO_RESTART_MS = parseInt(process.env.AUTO_RESTART_MS || '0')
 export const BASE_STORE = process.env.UNOAPI_BASE_STORE || process.env.BASE_STORE || './data'
 export const AUTO_CONNECT: boolean = process.env.AUTO_CONNECT === _undefined ? true : process.env.AUTO_CONNECT == 'true'
-export const AUTO_CONNECT_CONCURRENCY = Math.max(1, parseInt(process.env.AUTO_CONNECT_CONCURRENCY || '3'))
+export const AUTO_CONNECT_CONCURRENCY = Math.max(1, parseInt(process.env.AUTO_CONNECT_CONCURRENCY || '5'))
 export const COMPOSING_MESSAGE: boolean = process.env.COMPOSING_MESSAGE === _undefined ? false : process.env.COMPOSING_MESSAGE == 'true'
 export const COEXISTENCE_ENABLED: boolean = process.env.COEXISTENCE_ENABLED === _undefined ? false : process.env.COEXISTENCE_ENABLED == 'true'
 export const COEXISTENCE_WINDOW_SECONDS: number = parseInt(process.env.COEXISTENCE_WINDOW_SECONDS || `${60 * 60 * 24}`)
@@ -441,6 +454,8 @@ export const JIDMAP_ENRICH_ENABLED = process.env.JIDMAP_ENRICH_ENABLED === _unde
 export const JIDMAP_ENRICH_PER_SWEEP = parseInt(process.env.JIDMAP_ENRICH_PER_SWEEP || '20')
 // Espelhar periodicamente o cache interno (unoapi-auth:*:lid-mapping-*) no JIDMAP
 export const JIDMAP_ENRICH_AUTH_ENABLED = process.env.JIDMAP_ENRICH_AUTH_ENABLED === _undefined ? true : process.env.JIDMAP_ENRICH_AUTH_ENABLED == 'true'
+export const JIDMAP_ENRICH_ON_STORE_ENABLED =
+  process.env.JIDMAP_ENRICH_ON_STORE_ENABLED === _undefined ? false : process.env.JIDMAP_ENRICH_ON_STORE_ENABLED == 'true'
 
 // Watchdog purge scan batch size (Redis SCAN COUNT per pattern)
 export const WATCHDOG_PURGE_SCAN_COUNT = parseInt(process.env.WATCHDOG_PURGE_SCAN_COUNT || '20')

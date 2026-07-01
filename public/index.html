@@ -325,6 +325,10 @@
           fldLabel: 'Label', fldLabelPh: 'Label',
           rejectCallsWebhookLabel: 'Incoming/Rejected Call Message', rejectCallsWebhookPh: 'I was calling you...',
           connectionType: 'Connection Type', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
+          oneToOneAddressingMode: '1:1 addressing',
+          oneToOneAddressingModeDefault: 'Use global setting',
+          oneToOneAddressingModePn: 'Prefer PN',
+          oneToOneAddressingModeLid: 'Prefer LID',
           rejectCallsLabel: 'Message when rejecting calls', rejectCallsPh: 'Leave blank to not auto-reject calls', serverLabel: 'Server',
           ignoreGroupMessages: 'Ignore Group Messages', ignoreNewsletterMessages: 'Ignore Newsletter Messages', ignoreHistoryMessages: 'Ignore Message History',
           readOnReceipt: 'Mark as read on receive',
@@ -389,6 +393,10 @@
           fldLabel: 'Identificação', fldLabelPh: 'Identificação',
           rejectCallsWebhookLabel: 'Mensagem de Ligação Recebida e/ou Rejeitada', rejectCallsWebhookPh: 'Estava te ligando...',
           connectionType: 'Tipo de Conexão', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
+          oneToOneAddressingMode: 'Endereçamento 1:1',
+          oneToOneAddressingModeDefault: 'Usar configuração global',
+          oneToOneAddressingModePn: 'Preferir PN',
+          oneToOneAddressingModeLid: 'Preferir LID',
           rejectCallsLabel: 'Mensagem ao Rejeitar Chamadas', rejectCallsPh: 'Deixe em Branco para não Rejeitar ligações automaticamente', serverLabel: 'Server',
           ignoreGroupMessages: 'Ignorar Mensagens de Grupo', ignoreNewsletterMessages: 'Ignorar Mensagens de Newsletter', ignoreHistoryMessages: 'Ignorar Histórico de Mensagens',
           readOnReceipt: 'Ler a mensagem ao receber',
@@ -704,10 +712,6 @@
                                 <input type="text" class="form-control" id="groqApiBaseUrl" name="groqApiBaseUrl" placeholder="https://api.groq.com/openai/v1" data-i18n-placeholder="groqApiBaseUrlPh">
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
-                                <label for="wavoipToken" class="form-label">Wavoip Token</label>
-                                <input type="text" class="form-control" id="wavoipToken" name="wavoipToken" placeholder="WAVOIP token">
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
                                 <label for="rejectCallsWebhook" class="form-label" data-i18n="rejectCallsWebhookLabel">Incoming/Rejected Call Message</label>
                                 <input type="text" class="form-control" id="rejectCallsWebhook" name="rejectCallsWebhook" placeholder="I was calling you..." data-i18n-placeholder="rejectCallsWebhookPh">
                             </div>
@@ -717,6 +721,14 @@
                                 <option value="qrcode" selected>QrCode</option>
                                 <option value="pairing_code">PairingCode</option>
                                 <option value="forward">Forward</option>
+                              </select>
+                            </div>
+                            <div class="col-12 col-md-12 col-lg-6">
+                              <label for="oneToOneAddressingMode" class="form-label" data-i18n="oneToOneAddressingMode">1:1 addressing</label>
+                              <select id="oneToOneAddressingMode" name="oneToOneAddressingMode" class="form-control">
+                                <option value="" data-i18n="oneToOneAddressingModeDefault">Use global setting</option>
+                                <option value="pn" data-i18n="oneToOneAddressingModePn">Prefer PN</option>
+                                <option value="lid" data-i18n="oneToOneAddressingModeLid">Prefer LID</option>
                               </select>
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
@@ -1487,7 +1499,6 @@
                 session = session || {};
                 $('#label').val(session.label || '');
                 $('#authToken').val(session.authToken ?? '');
-                $('#wavoipToken').val(session.wavoipToken ?? '');
                 $('#openaiApiKey').val(session.openaiApiKey ?? '');
                 $('#openaiApiTranscribeModel').val(session.openaiApiTranscribeModel ?? '');
                 $('#groqApiKey').val(session.groqApiKey ?? '');
@@ -1514,6 +1525,7 @@
                 try { $('#coexistenceWindowSeconds').val(session.coexistenceWindowSeconds ?? 86400); } catch {}
                 $('#ignoreBroadcastMessages').prop('checked', session.ignoreBroadcastMessages);
                 $('#connectionType').val(session.connectionType ?? '');
+                $('#oneToOneAddressingMode').val(session.oneToOneAddressingMode ?? '');
                 $('#proxyUrl').val(session.proxyUrl ?? '');
                 try { $('#webhookForwardUrl').val(session.webhookForward?.url || '') } catch {}
                 try { $('#webhookForwardVersion').val(session.webhookForward?.version || '') } catch {}
@@ -1611,7 +1623,6 @@
                     const sessionData = {
                         label: $('#label').val(),
                         authToken: $('#authToken').val(),
-                        wavoipToken: $('#wavoipToken').val(),
                         openaiApiKey: $('#openaiApiKey').val(),
                         openaiApiTranscribeModel: $('#openaiApiTranscribeModel').val(),
                         groqApiKey: $('#groqApiKey').val(),
@@ -1638,6 +1649,7 @@
                         coexistenceWindowSeconds: Number($('#coexistenceWindowSeconds').val() || 86400),
                         ignoreBroadcastMessages: $('#ignoreBroadcastMessages').is(':checked'),
                         connectionType: $('#connectionType').val(),
+                        oneToOneAddressingMode: $('#oneToOneAddressingMode').val(),
                         proxyUrl: $('#proxyUrl').val(),
                         webhookForward: {
                           url: $('#webhookForwardUrl').val(),

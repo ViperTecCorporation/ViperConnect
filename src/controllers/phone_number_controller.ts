@@ -8,6 +8,8 @@ import { resolveSessionPhoneByMetaId } from '../services/meta_alias'
 import { sendGraphError } from '../services/graph_error'
 import { generateBusinessAccountId } from '../services/meta_ids'
 import { isEmbeddedAccessToken } from '../services/embedded_tokens'
+import { clients } from '../services/client'
+import { pruneAuthSignalCache } from '../services/redis'
 
 export class PhoneNumberController {
   private getConfig: getConfig
@@ -163,6 +165,88 @@ export class PhoneNumberController {
       return res.status(200).json({ data })
     } catch (e) {
       return sendGraphError(res, 500, e.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async resyncAppState(req: Request, res: Response) {
+    logger.warn('app-state resync method %s', req.method)
+    logger.warn('app-state resync params %s', JSON.stringify(req.params))
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const client = clients.get(sessionPhone)
+      if (!client) {
+        return sendGraphError(res, 404, `Session ${sessionPhone} is not loaded`, { code: 131016, type: 'GraphMethodException' })
+      }
+      if (typeof client.resyncAppState !== 'function') {
+        return sendGraphError(res, 409, `Session ${sessionPhone} does not support app-state resync`, { code: 131016, type: 'GraphMethodException' })
+      }
+      const forceSnapshot = `${(req.body as any)?.force_snapshot ?? (req.body as any)?.forceSnapshot ?? 'true'}` !== 'false'
+      await client.resyncAppState(forceSnapshot)
+      return res.status(200).json({
+        success: true,
+        phone: sessionPhone,
+        requested_collections: ['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'],
+        initial_sync: true,
+        force_snapshot: forceSnapshot,
+      })
+    } catch (e) {
+      logger.error(e as any, 'Failed to force app-state resync')
+      return sendGraphError(res, 500, e.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async historyOnDemand(req: Request, res: Response) {
+    logger.warn('history on-demand method %s', req.method)
+    logger.warn('history on-demand params %s body %s', JSON.stringify(req.params), JSON.stringify(req.body))
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const client = clients.get(sessionPhone)
+      if (!client) {
+        return sendGraphError(res, 404, `Session ${sessionPhone} is not loaded`, { code: 131016, type: 'GraphMethodException' })
+      }
+      if (typeof client.fetchMessageHistory !== 'function') {
+        return sendGraphError(res, 409, `Session ${sessionPhone} does not support history on-demand`, { code: 131016, type: 'GraphMethodException' })
+      }
+      const result = await client.fetchMessageHistory(req.body || {})
+      return res.status(200).json({
+        success: true,
+        phone: sessionPhone,
+        ...result,
+      })
+    } catch (e) {
+      logger.error(e as any, 'Failed to request history on-demand')
+      return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async pruneAuthCache(req: Request, res: Response) {
+    logger.warn('auth cache prune method %s', req.method)
+    logger.warn('auth cache prune params %s body %s', JSON.stringify(req.params), JSON.stringify(req.body))
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const body: any = req.body || {}
+      const types = Array.isArray(body.types)
+        ? body.types
+        : `${body.types || body.type || ''}`.split(',').map((value) => value.trim()).filter(Boolean)
+      const dryRunValue = body.dry_run ?? body.dryRun
+      const parseOptionalInt = (value: any): number | undefined => {
+        const parsed = Number.parseInt(`${value ?? ''}`, 10)
+        return Number.isFinite(parsed) ? parsed : undefined
+      }
+      const result = await pruneAuthSignalCache(sessionPhone, {
+        types,
+        dryRun: typeof dryRunValue === 'undefined' ? undefined : `${dryRunValue}` !== 'false',
+        maxDelete: parseOptionalInt(body.max_delete ?? body.maxDelete),
+        preKeyKeepRecent: parseOptionalInt(body.pre_key_keep_recent ?? body.preKeyKeepRecent),
+        scanCount: parseOptionalInt(body.scan_count ?? body.scanCount),
+      })
+      return res.status(200).json({
+        success: true,
+        ...result,
+      })
+    } catch (e) {
+      logger.error(e as any, 'Failed to prune auth cache')
+      return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
     }
   }
 

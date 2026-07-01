@@ -2,8 +2,6 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  modulePathIgnorePatterns: ['<rootDir>/dist', '<rootDir>/.tools'],
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/dist', '<rootDir>/.tools'],
   globals: {
     'ts-jest': {
       diagnostics: false,

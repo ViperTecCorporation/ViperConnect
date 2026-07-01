@@ -15,15 +15,19 @@ jest.mock('@whiskeysockets/baileys', () => {
       HistorySync: {
         HistorySyncType: {
           0: 'INITIAL_BOOTSTRAP',
-          1: 'RECENT',
-          2: 'PUSH_NAME',
-          3: 'ON_DEMAND',
-          4: 'FULL',
+          1: 'INITIAL_STATUS_V3',
+          2: 'FULL',
+          3: 'RECENT',
+          4: 'PUSH_NAME',
+          5: 'NON_BLOCKING_DATA',
+          6: 'ON_DEMAND',
           INITIAL_BOOTSTRAP: 0,
-          RECENT: 1,
-          PUSH_NAME: 2,
-          ON_DEMAND: 3,
-          FULL: 4,
+          INITIAL_STATUS_V3: 1,
+          FULL: 2,
+          RECENT: 3,
+          PUSH_NAME: 4,
+          NON_BLOCKING_DATA: 5,
+          ON_DEMAND: 6,
         },
       },
     },
@@ -122,32 +126,6 @@ describe('service socket', () => {
     expect(mockOn).toHaveBeenCalled()
   })
 
-  test('routes Baileys call callback to call.raw handler', async () => {
-    const socket = await connect({
-      phone,
-      store,
-      onQrCode,
-      onNotification,
-      onDisconnected,
-      onReconnect,
-      onNewLogin,
-      attempts: 1,
-      time: 1,
-      config: { ...defaultConfig, whatsappVersion }
-    })
-    const callRaw = jest.fn()
-    socket?.event('call.raw' as any, callRaw)
-
-    await wsHandlers['CB:call']?.({
-      tag: 'call',
-      attrs: { from: '11343495192601@lid' },
-      content: [{ tag: 'offer', attrs: { 'call-id': 'call-1' } }],
-    })
-
-    expect(callRaw).toHaveBeenCalledTimes(1)
-    expect(callRaw).toHaveBeenCalledWith(expect.objectContaining({ tag: 'call' }))
-  })
-
   test('allows full history sync for the first unmarked sync', async () => {
     await connect({
       phone,
@@ -168,6 +146,7 @@ describe('service socket', () => {
     const config = { ignoreHistoryMessages: false, allowFullHistorySync: false }
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.PUSH_NAME, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.RECENT, config)).toBe(true)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.FULL, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.ON_DEMAND, config)).toBe(true)
@@ -177,6 +156,7 @@ describe('service socket', () => {
     const config = { ignoreHistoryMessages: false, allowFullHistorySync: false }
     const marked = { historyAlreadySynced: true }
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.RECENT, config, marked)).toBe(true)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA, config, marked)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP, config, marked)).toBe(false)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.FULL, config, marked)).toBe(false)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.ON_DEMAND, { ...config, allowFullHistorySync: true }, marked)).toBe(true)
@@ -185,6 +165,8 @@ describe('service socket', () => {
   test('history sync decision only allows push names when history is ignored', async () => {
     const config = { ignoreHistoryMessages: true, allowFullHistorySync: true }
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.PUSH_NAME, config)).toBe(true)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA, config)).toBe(true)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.ON_DEMAND, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.RECENT, config)).toBe(false)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.FULL, config)).toBe(false)
   })

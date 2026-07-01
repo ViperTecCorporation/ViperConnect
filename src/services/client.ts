@@ -46,6 +46,26 @@ export interface Client {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   recoverDelivery?(payload: any, options: any): Promise<Response>
 
+  resyncAppState?(forceSnapshot?: boolean): Promise<void>
+
+  fetchMessageHistory?(payload: {
+    count?: number
+    chat_jid?: string
+    chatJid?: string
+    message_id?: string
+    messageId?: string
+    from_me?: boolean
+    fromMe?: boolean
+    timestamp?: number | string
+  }): Promise<{ request_id: string }>
+
+  sendPasskeyResponse?(payload: {
+    credentialId: Buffer
+    assertionJson: Buffer | string
+  }): Promise<Response>
+
+  sendPasskeyConfirmation?(): Promise<Response>
+
   getMessageMetadata<T>(message: T): Promise<T>
 
   contacts(numbers: string[]): Promise<Contact[]>

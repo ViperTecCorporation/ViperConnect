@@ -33,6 +33,7 @@ import { TimerController } from './controllers/timer_controller'
 import { PreflightController } from './controllers/preflight_controller'
 import { EmbeddedController } from './controllers/embedded_controller'
 import { GroupsController } from './controllers/groups_controller'
+import { PasskeyBridgeController } from './controllers/passkey_bridge_controller'
 
 
 export const router = (
@@ -65,6 +66,7 @@ export const router = (
   const preflightController = new PreflightController(getConfig, contact)
   const groupsController = new GroupsController(incoming, outgoing, contact)
   const embeddedController = new EmbeddedController()
+  const passkeyBridgeController = new PasskeyBridgeController(getConfig)
   const pairingCodeController = new PairingCodeController(getConfig, incoming)
   const connectController = new ConnectController(reload)
   const timerController = new TimerController()
@@ -103,6 +105,12 @@ export const router = (
   router.get('/config.js', embeddedController.configJs.bind(embeddedController))
   router.get('/:version/config.js', embeddedController.configJs.bind(embeddedController))
   router.get('/connect/:phone', connectController.index.bind(connectController))
+  router.get('/passkey-bridge/pending', passkeyBridgeController.pendingLatest.bind(passkeyBridgeController))
+  router.get('/passkey-bridge/:bridgeId/pending', passkeyBridgeController.pending.bind(passkeyBridgeController))
+  router.get('/passkey-bridge/:bridgeId/status', passkeyBridgeController.status.bind(passkeyBridgeController))
+  router.post('/passkey-bridge/:bridgeId/assertion', passkeyBridgeController.assertion.bind(passkeyBridgeController))
+  router.post('/passkey-bridge/:bridgeId/confirm', passkeyBridgeController.confirm.bind(passkeyBridgeController))
+  router.delete('/passkey-bridge/:bridgeId', passkeyBridgeController.cancel.bind(passkeyBridgeController))
   router.get('/ping', indexController.ping)
   router.get('/:version/debug_token', phoneNumberController.debugToken.bind(phoneNumberController))
   router.get('/:version/me/whatsapp_business_accounts', middleware, phoneNumberController.whatsappBusinessAccounts.bind(phoneNumberController))
@@ -125,6 +133,9 @@ export const router = (
   router.delete('/:version/:business_account_id/subscribed_apps', middleware, phoneNumberController.subscribedApps.bind(phoneNumberController))
   router.get('/:version/:business_account_id/phone_numbers', middleware, phoneNumberController.list.bind(phoneNumberController))
   router.get('/:version/:phone/phone_numbers', middleware, phoneNumberController.list.bind(phoneNumberController))
+  router.post('/:version/:phone/debug/app_state_resync', middleware, phoneNumberController.resyncAppState.bind(phoneNumberController))
+  router.post('/:version/:phone/debug/history_on_demand', middleware, phoneNumberController.historyOnDemand.bind(phoneNumberController))
+  router.post('/:version/:phone/debug/auth_cache/prune', middleware, phoneNumberController.pruneAuthCache.bind(phoneNumberController))
   router.get('/:version/:business_account_id/message_templates', middleware, templatesController.index.bind(templatesController))
   router.post('/:version/:business_account_id/message_templates', middleware, templatesController.templates.bind(templatesController))
   router.delete('/:version/:business_account_id/message_templates/:templateId', middleware, templatesController.destroy.bind(templatesController))

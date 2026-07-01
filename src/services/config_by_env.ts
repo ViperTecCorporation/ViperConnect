@@ -39,9 +39,6 @@ import {
   NOTIFY_FAILED_MESSAGES,
   SEND_REACTION_AS_REPLY,
   WEBHOOK_TIMEOUT_MS,
-  VOIP_SERVICE_TIMEOUT_MS,
-  VOIP_SERVICE_TOKEN,
-  VOIP_SERVICE_URL,
   SEND_PROFILE_PICTURE,
   WEBHOOK_SEND_NEW_MESSAGES,
   WEBHOOK_SEND_GROUP_MESSAGES,
@@ -74,6 +71,7 @@ import {
   GROQ_API_TRANSCRIBE_MODEL,
   GROQ_API_BASE_URL,
   WEBHOOK_ADD_TO_BLACKLIST_ON_OUTGOING_MESSAGE_WITH_TTL,
+  ONE_TO_ONE_ADDRESSING_MODE,
 } from '../defaults'
 
 export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> => {
@@ -112,9 +110,6 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.sendReactionAsReply = SEND_REACTION_AS_REPLY
     config.sendProfilePicture = SEND_PROFILE_PICTURE
     config.sessionWebhook = WEBHOOK_SESSION
-    config.voipServiceUrl = VOIP_SERVICE_URL
-    config.voipServiceToken = VOIP_SERVICE_TOKEN
-    config.voipServiceTimeoutMs = VOIP_SERVICE_TIMEOUT_MS
     config.proxyUrl = PROXY_URL
     config.authToken = UNOAPI_AUTH_TOKEN
     config.authHeader = UNOAPI_HEADER_NAME
@@ -130,6 +125,7 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.rateLimitPerToPerMinute = RATE_LIMIT_PER_TO_PER_MINUTE
     config.rateLimitBlockSeconds = RATE_LIMIT_BLOCK_SECONDS
     config.outgoingIdempotency = OUTGOING_IDEMPOTENCY_ENABLED
+    config.oneToOneAddressingMode = ONE_TO_ONE_ADDRESSING_MODE
     config.useRedis = !!process.env.REDIS_URL
     config.useS3 = !!process.env.STORAGE_ENDPOINT
     config.webhooks[0].url = WEBHOOK_URL

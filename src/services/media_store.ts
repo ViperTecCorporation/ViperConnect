@@ -23,5 +23,9 @@ export type MediaStore = {
   getFileUrl: (filePath: string, expiresIn: number) => Promise<string>
   getDownloadUrl: (baseUrl: string, fileName: string) => Promise<string>
   getProfilePictureUrl: (baseUrl: string, jid: string) => Promise<string | undefined>
+  getProfilePictureInfo?: (
+    baseUrl: string,
+    jid: string
+  ) => Promise<{ url: string; metadata?: Record<string, string> } | undefined>
   saveProfilePicture: (contact: Partial<Contact>) => Promise<void>
 }

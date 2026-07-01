@@ -14,6 +14,16 @@ import {
   WATCHDOG_TASK_MIN_INTERVAL_MS,
   JIDMAP_ENRICH_MIN_INTERVAL_MS,
   AUTH_CACHE_TTL_MS,
+  AUTH_INDEX_FALLBACK_SCAN_LIMIT,
+  AUTH_SIGNAL_PRUNE_DEFAULT_TYPES,
+  AUTH_SIGNAL_PRUNE_MAX_DELETE,
+  AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+  AUTH_SIGNAL_PRUNE_SCAN_COUNT,
+  AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED,
+  AUTH_SIGNAL_PRUNE_DAILY_ENABLED,
+  AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS,
+  AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS,
+  AUTH_SIGNAL_PRUNE_SESSION_LIMIT,
   SESSION_STATUS_CACHE_TTL_MS,
   CONNECT_COUNT_CACHE_TTL_MS,
 } from '../defaults'
@@ -43,6 +53,7 @@ const REDIS_CONNECT_MAX_RETRIES = parseInt(process.env.REDIS_CONNECT_MAX_RETRIES
 const REDIS_CONNECT_RETRY_DELAY_MS = parseInt(process.env.REDIS_CONNECT_RETRY_DELAY_MS || '2000')
 // Health-check flags/intervals
 let redisHealthStarted = false
+let authSignalPruneDailyStarted = false
 const REDIS_HEALTH_INTERVAL_MS = 15_000
 const REDIS_PING_WARN_MS = 200
 let startupMigrationsDone = false
@@ -117,6 +128,7 @@ export const startRedis = async (redisUrl = REDIS_URL, retried = false) => {
     } catch (e) {
       logger.warn(e as any, 'Redis startup migrations failed')
     }
+    startAuthSignalPruneMaintenance()
   }
   return client
 }
@@ -270,6 +282,85 @@ const runStartupRedisMigrations = async (): Promise<void> => {
   await clearProfilePictureRefreshKeysOnLegacyUpgrade()
   await clearGlobalJidMapOnLegacyUpgrade()
   await seedHistorySyncMarkersForExistingSessions()
+}
+
+const getConfiguredSessionPhones = async (limit = AUTH_SIGNAL_PRUNE_SESSION_LIMIT): Promise<string[]> => {
+  const keys = await redisScanSome(configKey('*'), Math.max(1, limit || 100000))
+  return [...new Set((keys || [])
+    .map((key) => `${key || ''}`.replace(configKey(''), ''))
+    .filter((phone) => !!phone && phone !== 'auth-token-index'))]
+}
+
+const authSignalPruneNextKey = (phone: string) => `${BASE_KEY}auth-prune:${phone}:next`
+
+const shouldRunAuthSignalPrune = async (phone: string): Promise<boolean> => {
+  if (!AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS <= 0) return true
+  const raw = `${await redisGet(authSignalPruneNextKey(phone)) || ''}`.trim()
+  if (!raw) return true
+  const nextRunAt = Number.parseInt(raw, 10)
+  return !Number.isFinite(nextRunAt) || nextRunAt <= Date.now()
+}
+
+const markAuthSignalPruneNextRun = async (phone: string): Promise<void> => {
+  if (!AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS || AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS <= 0) return
+  const intervalMs = Math.max(60_000, AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS)
+  const ttlSec = Math.max(120, Math.ceil((intervalMs * 2) / 1000))
+  await redisSetAndExpire(authSignalPruneNextKey(phone), `${Date.now() + intervalMs}`, ttlSec)
+}
+
+const runAuthSignalPruneForAllSessions = async (source: string): Promise<void> => {
+  await enqueueRedisTask(`auth-signal-prune:${source}`, async () => {
+    const phones = await getConfiguredSessionPhones()
+    let deleted = 0
+    let scanned = 0
+    let skipped = 0
+    logger.warn(
+      'Auth signal prune %s started sessions=%s types=%s keep_recent=%s max_delete=%s session_interval_ms=%s',
+      source,
+      phones.length,
+      AUTH_SIGNAL_PRUNE_DEFAULT_TYPES.join(','),
+      AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+      AUTH_SIGNAL_PRUNE_MAX_DELETE,
+      AUTH_SIGNAL_PRUNE_SESSION_INTERVAL_MS
+    )
+    for (const phone of phones) {
+      try {
+        if (!(await shouldRunAuthSignalPrune(phone))) {
+          skipped += 1
+          continue
+        }
+        const result = await pruneAuthSignalCache(phone, {
+          types: AUTH_SIGNAL_PRUNE_DEFAULT_TYPES,
+          dryRun: false,
+          maxDelete: AUTH_SIGNAL_PRUNE_MAX_DELETE,
+          preKeyKeepRecent: AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT,
+          scanCount: AUTH_SIGNAL_PRUNE_SCAN_COUNT,
+        })
+        deleted += result.deleted
+        scanned += result.scanned
+        if (result.deleted > 0) {
+          logger.warn('Auth signal prune %s phone=%s scanned=%s deleted=%s', source, phone, result.scanned, result.deleted)
+        }
+        await markAuthSignalPruneNextRun(phone)
+      } catch (e) {
+        logger.warn(e as any, 'Auth signal prune %s failed for %s', source, phone)
+      }
+    }
+    logger.warn('Auth signal prune %s completed sessions=%s skipped=%s scanned=%s deleted=%s', source, phones.length, skipped, scanned, deleted)
+  })
+}
+
+const startAuthSignalPruneMaintenance = (): void => {
+  if (AUTH_SIGNAL_PRUNE_BOOTSTRAP_ENABLED) {
+    setTimeout(() => {
+      runAuthSignalPruneForAllSessions('bootstrap').catch((e) => logger.warn(e as any, 'Auth signal prune bootstrap failed'))
+    }, 1_000)
+  }
+  if (!AUTH_SIGNAL_PRUNE_DAILY_ENABLED || authSignalPruneDailyStarted) return
+  authSignalPruneDailyStarted = true
+  setInterval(() => {
+    runAuthSignalPruneForAllSessions('daily').catch((e) => logger.warn(e as any, 'Auth signal prune daily failed'))
+  }, Math.max(60_000, AUTH_SIGNAL_PRUNE_DAILY_INTERVAL_MS || 24 * 60 * 60 * 1000))
 }
 
 export const redisConnect = async (redisUrl = REDIS_URL) => {
@@ -1064,6 +1155,11 @@ export const setConfig = async (phone: string, value: any) => {
   })
   value.webhooks = updatedWebooks
   const config = { ...currentConfig, ...value }
+  try {
+    const mode = `${(config as any).oneToOneAddressingMode || ''}`.trim().toLowerCase()
+    if (mode === 'pn' || mode === 'lid') (config as any).oneToOneAddressingMode = mode
+    else delete (config as any).oneToOneAddressingMode
+  } catch {}
   // Enforce per-session storage flags to avoid false overrides via templates/UI
   // Since this setter persists to Redis, sessions using Redis must have useRedis/useS3 true
   try { (config as any).useRedis = true } catch {}
@@ -1232,6 +1328,110 @@ export const addAuthKeysToIndex = async (phone: string, keys: string[]) => {
     await client.sAdd(indexKey, keys)
     await client.expire(indexKey, SESSION_TTL)
   } catch {}
+}
+
+export const getAuthKeyCount = async (phone: string): Promise<{ count: number; exact: boolean }> => {
+  const indexKey = authIndexKey(phone)
+  try {
+    const indexed = await client.sCard(indexKey)
+    if (indexed > 0) return { count: indexed, exact: true }
+  } catch {}
+
+  const limit = Math.max(1, AUTH_INDEX_FALLBACK_SCAN_LIMIT || 2)
+  const keys = await redisScanSome(authKey(`${phone}:*`), limit)
+  return { count: keys.length, exact: keys.length < limit }
+}
+
+const AUTH_SIGNAL_PRUNE_ALLOWED_TYPES = new Set([
+  'pre-key',
+  'session',
+  'sender-key',
+  'device-list',
+  'lid-mapping',
+  'app-state-sync-key',
+])
+
+export const pruneAuthSignalCache = async (
+  phone: string,
+  opts: {
+    types?: string[]
+    maxDelete?: number
+    preKeyKeepRecent?: number
+    scanCount?: number
+    dryRun?: boolean
+  } = {},
+): Promise<{ phone: string; dry_run: boolean; max_delete: number; pre_key_keep_recent: number; scanned: number; would_delete: number; deleted: number; by_type: Record<string, { scanned: number; would_delete: number; deleted: number }> }> => {
+  const rawTypes = (opts.types && opts.types.length ? opts.types : AUTH_SIGNAL_PRUNE_DEFAULT_TYPES)
+    .map((value) => `${value || ''}`.trim())
+    .filter(Boolean)
+  const types = [...new Set(rawTypes)].filter((type) => AUTH_SIGNAL_PRUNE_ALLOWED_TYPES.has(type))
+  const dryRun = opts.dryRun !== false
+  const maxDelete = Math.max(1, opts.maxDelete || AUTH_SIGNAL_PRUNE_MAX_DELETE || 5000)
+  const preKeyKeepRecent = Math.max(0, opts.preKeyKeepRecent ?? AUTH_SIGNAL_PRUNE_PREKEY_KEEP_RECENT ?? 5000)
+  const scanCount = Math.max(10, opts.scanCount || AUTH_SIGNAL_PRUNE_SCAN_COUNT || 1000)
+  const result = {
+    phone,
+    dry_run: dryRun,
+    max_delete: maxDelete,
+    pre_key_keep_recent: preKeyKeepRecent,
+    scanned: 0,
+    would_delete: 0,
+    deleted: 0,
+    by_type: {} as Record<string, { scanned: number; would_delete: number; deleted: number }>,
+  }
+
+  const redis = await getRedis()
+  for (const type of types) {
+    if (!result.by_type[type]) result.by_type[type] = { scanned: 0, would_delete: 0, deleted: 0 }
+    let cursor = '0'
+    const pattern = authKey(`${phone}:${type}-*`)
+    const preKeyCandidates: { key: string; id: number }[] = []
+    do {
+      const res: any = await redis.scan(cursor, { MATCH: pattern, COUNT: scanCount })
+      cursor = typeof res.cursor !== 'undefined' ? `${res.cursor}` : `${res[0]}`
+      const keys: string[] = Array.isArray(res.keys) ? res.keys : (res[1] || [])
+      result.scanned += keys.length
+      result.by_type[type].scanned += keys.length
+      if (type === 'pre-key') {
+        for (const key of keys) {
+          const id = Number.parseInt(`${key}`.split('pre-key-').pop() || '', 10)
+          if (Number.isFinite(id)) preKeyCandidates.push({ key, id })
+        }
+        continue
+      }
+      for (const key of keys) {
+        if (result.deleted >= maxDelete) return result
+        result.would_delete += 1
+        result.by_type[type].would_delete += 1
+        if (dryRun) continue
+        try {
+          await redisDel(key)
+          authCache.delete(key)
+          try { await redis.sRem(authIndexKey(phone), key) } catch {}
+          result.deleted += 1
+          result.by_type[type].deleted += 1
+        } catch {}
+      }
+    } while (cursor !== '0')
+    if (type === 'pre-key') {
+      preKeyCandidates.sort((a, b) => b.id - a.id)
+      for (const { key } of preKeyCandidates.slice(preKeyKeepRecent)) {
+        if (result.deleted >= maxDelete) return result
+        result.would_delete += 1
+        result.by_type[type].would_delete += 1
+        if (dryRun) continue
+        try {
+          await redisDel(key)
+          authCache.delete(key)
+          try { await redis.sRem(authIndexKey(phone), key) } catch {}
+          result.deleted += 1
+          result.by_type[type].deleted += 1
+        } catch {}
+      }
+    }
+  }
+
+  return result
 }
 
 export const setbulkMessage = async (phone: string, bulkId: string, messageId: string, phoneNumber) => {

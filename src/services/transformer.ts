@@ -88,6 +88,34 @@ const isViewOnceUnavailableStub = (payload: any): boolean => {
   return stubParams.some((p: string) => p === 'view_once_unavailable' || p === 'view_once')
 }
 
+const extractFailedStatusError = (payload: any): any => {
+  const update = payload?.update || {}
+  const params = Array.isArray(update?.messageStubParameters)
+    ? update.messageStubParameters.map((p: any) => `${p}`)
+    : typeof update?.messageStubParameters !== 'undefined'
+      ? [`${update.messageStubParameters}`]
+      : []
+  const sourceError = update?.error || update?.error_data
+
+  let code = sourceError?.code || update?.code || 1
+  let title = sourceError?.title || update?.title || 'The Unoapi Cloud has a error, verify the logs'
+  const error: any = { code, title }
+
+  if (sourceError?.message) error.message = sourceError.message
+  if (sourceError?.error_data) error.error_data = sourceError.error_data
+
+  if (params.includes('405')) {
+    error.code = 8
+    error.title = 'message not allowed'
+  } else if (params.includes('463')) {
+    error.code = Number(error.code || 463)
+    error.title = sourceError?.title || 'Account restricted for companion or missing tctoken'
+    if (!error.message && params[1]) error.message = params[1]
+  }
+
+  return error
+}
+
 const extractMessageEditInfo = (payload: any): { originalMessageId?: string; timestampMs?: string } | undefined => {
   const candidates = [
     payload?.__unoapiMessageEdit,
@@ -280,6 +308,37 @@ const parseInteractiveResponse = (binMessage: any) => {
   const isList = name.includes('list') || name.includes('single_select') || !!params?.row_id || !!params?.selected_row_id
   const isButton = name.includes('quick_reply') || name.includes('button') || !!params?.button_id || !!params?.id
   return { id, title, description, isList, isButton, bodyText }
+}
+
+const parseNativeFlowSingleSelect = (buttons: any[]) => {
+  const nativeButton = buttons.find((button: any) => {
+    const info = button?.nativeFlowInfo
+    return `${info?.name || ''}`.toLowerCase() === 'single_select'
+  })
+  const paramsJson =
+    nativeButton?.nativeFlowInfo?.paramsJson ||
+    nativeButton?.nativeFlowInfo?.buttonParamsJson
+  if (!paramsJson) return undefined
+
+  try {
+    const params = JSON.parse(paramsJson)
+    if (!Array.isArray(params?.sections)) return undefined
+    return {
+      button: params.title || 'Selecionar',
+      sections: params.sections.map((section: any) => ({
+        title: section?.title || '',
+        rows: Array.isArray(section?.rows)
+          ? section.rows.map((row: any) => ({
+              id: row?.id || row?.rowId || '',
+              title: row?.title || '',
+              description: row?.description || '',
+            }))
+          : [],
+      })),
+    }
+  } catch {
+    return undefined
+  }
 }
 
 const parseVcardContact = (rawVcard: string): any | undefined => {
@@ -1321,6 +1380,7 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
     if (payload.groupMetadata) {
       if (payload.groupMetadata.subject) groupMetadata.group_subject = payload.groupMetadata.subject
       if (payload.groupMetadata.profilePicture) groupMetadata.group_picture = payload.groupMetadata.profilePicture
+      if (payload.groupMetadata.profilePictureMetadata) groupMetadata.group_picture_metadata = payload.groupMetadata.profilePictureMetadata
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const statuses: any[] = []
@@ -1348,6 +1408,9 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
                   const pic = payload.profilePicture
                   if (typeof pic === 'string' && pic) {
                     p.picture = pic
+                  }
+                  if (payload.profilePictureMetadata) {
+                    p.picture_metadata = payload.profilePictureMetadata
                   }
                 }
                 return p
@@ -1966,8 +2029,21 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
 
       case 'buttonsMessage': {
         const buttonsMessage: any = binMessage || payload?.message?.buttonsMessage || {}
-        const buttons = Array.isArray(buttonsMessage.buttons)
-          ? buttonsMessage.buttons.map((button: any) => ({
+        const rawButtons = Array.isArray(buttonsMessage.buttons) ? buttonsMessage.buttons : []
+        const singleSelect = parseNativeFlowSingleSelect(rawButtons)
+        if (singleSelect) {
+          message.type = 'interactive'
+          message.interactive = {
+            type: 'list',
+            body: { text: buttonsMessage.contentText || buttonsMessage.text || '' },
+            footer: buttonsMessage.footerText ? { text: buttonsMessage.footerText } : undefined,
+            action: singleSelect,
+          }
+          break
+        }
+
+        const buttons = rawButtons.length
+          ? rawButtons.map((button: any) => ({
               type: 'reply',
               reply: {
                 id: button.buttonId || '',
@@ -2396,18 +2472,18 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
         }
       } catch {}
       if (cloudApiStatus == 'failed') {
-        // https://github.com/tawn33y/whatsapp-cloud-api/issues/40#issuecomment-1290036629
-        let title = payload?.update?.title || 'The Unoapi Cloud has a error, verify the logs'
-        let code = payload?.update?.code || 1
-        if (payload?.update?.messageStubParameters == '405') {
-          title = 'message not allowed'
-          code = 8
-        }
-        const error = {
-          code,
-          title,
-        }
+        const error = extractFailedStatusError(payload)
         state.errors = [error]
+        try {
+          logger.warn(
+            'STATUS failed detail: id=%s recipient_id=%s code=%s title=%s error_data=%s',
+            messageId || '<none>',
+            state.recipient_id || '<none>',
+            `${error?.code || '<none>'}`,
+            error?.title || '<none>',
+            error?.error_data ? JSON.stringify(error.error_data) : '<none>'
+          )
+        } catch {}
       }
       change.value.statuses.push(state)
       // Normalize webhook IDs to preferred scheme (PN with BR 9th digit) when configured

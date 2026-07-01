@@ -391,32 +391,6 @@ Skip sending the same message again when a job retry happens after a successful 
   - Use to integrate with external systems (e.g., show QR in another UI).
   - Example: `WEBHOOK_SESSION=https://hooks.example.com/uno/session`
 
-## VoIP Helper Service
-
-English:
-
-- `VOIP_SERVICE_URL` — Base URL of the helper VoIP service used by UnoAPI to forward call events. Optional.
-  - Example: `VOIP_SERVICE_URL=http://localhost:3097`
-- `VOIP_SERVICE_TOKEN` — Shared Bearer token sent by UnoAPI to authenticate against the helper VoIP service.
-  - Example: `VOIP_SERVICE_TOKEN=change-me`
-- `VOIP_SERVICE_TIMEOUT_MS` — Timeout in milliseconds for requests from UnoAPI to the helper VoIP service. Default `3000`.
-  - Example: `VOIP_SERVICE_TIMEOUT_MS=3000`
-
-Português:
-
-- `VOIP_SERVICE_URL` — URL base do serviço auxiliar de VoIP usado pela UnoAPI para encaminhar eventos de chamada. Opcional.
-  - Exemplo: `VOIP_SERVICE_URL=http://localhost:3097`
-- `VOIP_SERVICE_TOKEN` — Token Bearer compartilhado que a UnoAPI envia para autenticar no serviço auxiliar de VoIP.
-  - Exemplo: `VOIP_SERVICE_TOKEN=change-me`
-- `VOIP_SERVICE_TIMEOUT_MS` — Timeout em milissegundos das requisições da UnoAPI para o serviço auxiliar de VoIP. Padrão `3000`.
-  - Exemplo: `VOIP_SERVICE_TIMEOUT_MS=3000`
-
-## Voice Calls
-
-- `WAVOIP_TOKEN` Ã¢â‚¬â€ Enable voice-calls-baileys.
-  - Use to support call-related features where applicable.
-  - Example: `WAVOIP_TOKEN=your-token`
-
 ## Examples by Scenario
 
 - Local development with filesystem store only:
