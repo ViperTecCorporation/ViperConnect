@@ -95,20 +95,22 @@ const extractFailedStatusError = (payload: any): any => {
     : typeof update?.messageStubParameters !== 'undefined'
       ? [`${update.messageStubParameters}`]
       : []
-  const sourceError = update?.error || update?.error_data
+  const updateErrorData = update?.error_data && typeof update.error_data === 'object' ? update.error_data : undefined
+  const sourceError = update?.error || updateErrorData
 
   let code = sourceError?.code || update?.code || 1
   let title = sourceError?.title || update?.title || 'The Unoapi Cloud has a error, verify the logs'
   const error: any = { code, title }
 
   if (sourceError?.message) error.message = sourceError.message
-  if (sourceError?.error_data) error.error_data = sourceError.error_data
+  const errorData = update?.error?.error_data || updateErrorData
+  if (errorData) error.error_data = errorData
 
   if (params.includes('405')) {
     error.code = 8
     error.title = 'message not allowed'
   } else if (params.includes('463')) {
-    error.code = Number(error.code || 463)
+    error.code = Number(sourceError?.code || update?.code || 463)
     error.title = sourceError?.title || 'Account restricted for companion or missing tctoken'
     if (!error.message && params[1]) error.message = params[1]
   }

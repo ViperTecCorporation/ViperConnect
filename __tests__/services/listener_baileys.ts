@@ -361,6 +361,52 @@ describe('service listener baileys', () => {
     expect(store.dataStore.setStatus).not.toHaveBeenCalledWith(messageId, 'delivered')
   }, 15000)
 
+  test('emits restriction notice webhooks from async 463 status update', async () => {
+    const messageId = 'provider-463-message'
+    config.getMessageMetadata = async message => message
+    store.dataStore.loadStatus.mockResolvedValue(undefined)
+    store.dataStore.loadUnoId.mockResolvedValue('uno-463-message')
+    outgoing.send = jest.fn().mockResolvedValue(undefined) as any
+
+    await service.sendOne(phone, {
+      key: {
+        remoteJid: '5566996269251@s.whatsapp.net',
+        fromMe: true,
+        id: messageId,
+      },
+      update: {
+        status: 'ERROR',
+        messageStubParameters: ['463', 'Your account has been restricted'],
+        error: {
+          code: 463,
+          title: 'Account restricted for companion or missing tctoken',
+          message: 'Your account has been restricted',
+          error_data: {
+            reason: 'message_account_restriction',
+            from: '5566996269251@s.whatsapp.net',
+            msgId: messageId,
+            reachout: {
+              isActive: true,
+              timeEnforcementEnds: '2026-07-09T17:28:30.000Z',
+              enforcementType: 'RESTRICT_ALL_COMPANIONS',
+            },
+          },
+        },
+      },
+      messageTimestamp: 1783054975,
+    } as any)
+
+    const noticePayloads = (outgoing.send as jest.Mock).mock.calls
+      .map((call) => call[1])
+      .filter((payload) => payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body?.includes('Codigo 463'))
+
+    expect(noticePayloads).toHaveLength(2)
+    expect(noticePayloads[0].entry[0].changes[0].value.contacts[0].wa_id).toBe('5566996269251')
+    expect(noticePayloads[1].entry[0].changes[0].value.contacts[0].wa_id).toBe(phone)
+    expect(noticePayloads[0].entry[0].changes[0].value.messages[0].text.body).toContain('Mensagem: uno-463-message')
+    expect(noticePayloads[0].entry[0].changes[0].value.messages[0].text.body).toContain('Restricao ativa ate: 09/07/2026, 14:28:30 BRT')
+  }, 15000)
+
   test('decrypts poll update vote using lid fallback before building webhook summary', async () => {
     config.getMessageMetadata = async message => message
     const groupJid = '120363040468224422@g.us'

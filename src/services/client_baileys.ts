@@ -2103,6 +2103,11 @@ export class ClientBaileys implements Client {
       if (e instanceof SendError) {
         const code = e.code
         const title = e.title
+        const errorDetails: any = { code, title }
+        const errorMessage = (e as any)?.message
+        if (errorMessage && errorMessage !== `${code}: ${title}`) errorDetails.message = errorMessage
+        const errorData = (e as any)?.error_data || (e as any)?.errorData
+        if (errorData && typeof errorData === 'object') errorDetails.error_data = errorData
         // Retry de mídia quando o presigned ainda não está disponível (erro de link)
         try {
           const asStr = `${code}`
@@ -2228,10 +2233,7 @@ export class ClientBaileys implements Client {
                         status: 'failed',
                         timestamp: Math.floor(Date.now() / 1000),
                         errors: [
-                          {
-                            code,
-                            title,
-                          },
+                          errorDetails,
                         ],
                       },
                     ],

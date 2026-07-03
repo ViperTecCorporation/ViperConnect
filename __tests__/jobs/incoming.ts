@@ -269,4 +269,100 @@ describe('incoming job', () => {
     expect(noticePayloads[0].entry[0].changes[0].value.messages[0].text.body).toContain('Mensagem: uno-id-463')
     expect(noticePayloads[0].entry[0].changes[0].value.messages[0].text.body).toContain('Conteudo original: Primeira mensagem')
   })
+
+  test('emits restriction notice webhooks for 463 even without ok message id', async () => {
+    const incoming = mock<Incoming>()
+    const outgoing = mock<Outgoing>()
+    const dataStore = {
+      loadStatus: jest.fn().mockResolvedValue(undefined),
+      setStatus: jest.fn().mockResolvedValue(undefined),
+    }
+    const getConfigTest: getConfig = async () => ({
+      ...defaultConfig,
+      server: 'server_1',
+      outgoingIdempotency: false,
+      webhooks: [
+        {
+          ...defaultConfig.webhooks[0],
+          id: 'default',
+          sendNewMessages: true,
+          sendUpdateMessages: true,
+        },
+      ],
+      getStore: async () => ({ dataStore } as any),
+    })
+    const failedStatus = {
+      object: 'whatsapp_business_account',
+      entry: [
+        {
+          id: '558134395259',
+          changes: [
+            {
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: {
+                  display_phone_number: '558134395259',
+                  phone_number_id: '558134395259',
+                },
+                statuses: [
+                  {
+                    id: 'provider-id-2',
+                    recipient_id: '5581981829525',
+                    status: 'failed',
+                    timestamp: 1783022808,
+                    errors: [
+                      {
+                        code: 463,
+                        title: 'Account restricted for companion or missing tctoken',
+                        message: 'Your account has been restricted',
+                        error_data: {
+                          reason: 'message_account_restriction',
+                          from: '558181829525@s.whatsapp.net',
+                          msgId: 'provider-id-2',
+                          reachout: {
+                            isActive: true,
+                            timeEnforcementEnds: '2026-07-09T17:28:30.000Z',
+                            enforcementType: 'RESTRICT_ALL_COMPANIONS',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+              field: 'messages',
+            },
+          ],
+        },
+      ],
+    }
+    incoming.send = jest.fn().mockResolvedValue({
+      ok: { success: false },
+      error: failedStatus,
+    })
+    outgoing.sendHttp = jest.fn().mockResolvedValue(undefined)
+    const job = new IncomingJob(incoming, outgoing, getConfigTest)
+
+    await job.consume('558134395259', {
+      id: 'uno-id-463-no-ok',
+      payload: {
+        messaging_product: 'whatsapp',
+        to: '5581981829525',
+        type: 'text',
+        text: { body: 'Primeira mensagem' },
+      },
+      options: {},
+    })
+
+    const calls = (outgoing.sendHttp as jest.Mock).mock.calls
+    const statusPayload = calls.find((call) => call[2]?.entry?.[0]?.changes?.[0]?.value?.statuses)?.[2]
+    const noticePayloads = calls
+      .map((call) => call[2])
+      .filter((payload) => payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body?.includes('Codigo 463'))
+
+    expect(statusPayload.entry[0].changes[0].value.statuses[0].id).toBe('uno-id-463-no-ok')
+    expect(noticePayloads).toHaveLength(2)
+    expect(noticePayloads[0].entry[0].changes[0].value.contacts[0].wa_id).toBe('5581981829525')
+    expect(noticePayloads[1].entry[0].changes[0].value.contacts[0].wa_id).toBe('558134395259')
+  })
 })

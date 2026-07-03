@@ -50,6 +50,8 @@ export const formatRestrictionEnd = (
 }
 
 const summarizeOriginalMessage = (payload: any): string => {
+  const forced = `${payload?.__restrictionOriginalSummary || ''}`.trim()
+  if (forced) return forced.slice(0, 240)
   const type = `${payload?.type || ''}`.trim()
   if (!type) return '<sem tipo>'
   const value = payload?.[type]

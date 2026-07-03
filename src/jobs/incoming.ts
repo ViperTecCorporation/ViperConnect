@@ -260,7 +260,9 @@ export class IncomingJob {
       } catch (e) {
         logger.warn(e as any, 'Ignore error reconciling status after id mapping')
       }
-    } else if (!ok.success) {
+    } else if (error) {
+      logger.warn('Provider returned error response for %s without ok message id; emitting failed status', idUno)
+    } else if (!ok?.success) {
       throw `Unknow response ${JSON.stringify(response)}`
     } else if (ok.success) {
       // Fallback: provedor não retornou id da mensagem, ainda assim notificar "new message" no webhook
