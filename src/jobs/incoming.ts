@@ -8,6 +8,7 @@ import logger from '../services/logger'
 import fetch, { Response } from 'node-fetch'
 import mime from 'mime-types'
 import { v1 as uuid } from 'uuid'
+import { buildRestrictionNoticeWebhooks } from '../services/restriction_notice'
 
 export class IncomingJob {
   private incoming: Incoming
@@ -340,6 +341,31 @@ export class IncomingJob {
         { type: 'topic' }
       )
       await Promise.all(config.webhooks.map((w) => this.outgoing.sendHttp(phone, w, outgingPayload, optionsOutgoing)))
+      if (error) {
+        try {
+          const notices = buildRestrictionNoticeWebhooks({
+            phone,
+            payload,
+            unoMessageId: idUno,
+            statusPayload: outgingPayload,
+            timestamp,
+          })
+          const webhooks = config.webhooks
+          if (notices.length && webhooks.length) {
+            logger.warn(
+              'Sending %s restriction notice webhook(s) for %s to %s webhook(s)',
+              notices.length,
+              idUno,
+              webhooks.length,
+            )
+            await Promise.all(
+              notices.flatMap((notice) => webhooks.map((w) => this.outgoing.sendHttp(phone, w, notice, {}))),
+            )
+          }
+        } catch (e) {
+          logger.warn(e as any, 'Failed to send restriction notice webhooks for %s', idUno)
+        }
+      }
     }
     return response
   }

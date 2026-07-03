@@ -58,7 +58,7 @@ import {
   DELIVERY_STALE_RECOVERY_GROUPS,
 } from '../defaults'
 import { SESSION_DIR } from './session_store_file'
-import { BASE_KEY, redisGet, redisSetAndExpire, delSignalSessionsForJids, countSignalSessionsForJids, enrichJidMapFromAuthLidCache, configKey, getLidForPnFromAuthCache, getPnForLidFromAuthCache, getHistorySyncMarker, setHistorySyncMarker } from './redis'
+import { BASE_KEY, redisGet, redisSetAndExpire, delSignalSessionsForJids, countSignalSessionsForJids, enrichJidMapFromAuthLidCache, configKey, getLidForPnFromAuthCache, getPnForLidFromAuthCache, getHistorySyncMarker, setHistorySyncMarker, getPrivacyBootstrapSync } from './redis'
 import { readdirSync, rmSync } from 'fs'
 import { STATUS_BROADCAST_ENABLED } from '../defaults'
 import { LID_RESOLVER_ENABLED, LID_RESOLVER_BACKOFF_MS, LID_RESOLVER_SWEEP_INTERVAL_MS, LID_RESOLVER_MAX_PENDING } from '../defaults'
@@ -85,14 +85,18 @@ export const historySyncTypeName = (syncType: proto.HistorySync.HistorySyncType 
 export const shouldAcceptHistorySync = (
   syncType: proto.HistorySync.HistorySyncType | undefined,
   config: Pick<Partial<Config>, 'ignoreHistoryMessages' | 'allowFullHistorySync'>,
-  state: { historyAlreadySynced?: boolean; historySyncInProgress?: boolean } = {},
+  state: { historyAlreadySynced?: boolean; historySyncInProgress?: boolean; privacyBootstrapSyncEnabled?: boolean } = {},
 ): boolean => {
   if (syncType === undefined) return false
   if (syncType === proto.HistorySync.HistorySyncType.PUSH_NAME) return true
   if (syncType === proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA) return true
   if (syncType === proto.HistorySync.HistorySyncType.ON_DEMAND) return true
-  if (config.ignoreHistoryMessages) return false
+  // Keep RECENT enabled even when message history import is ignored: Baileys can
+  // still extract privacy payloads such as nctSalt/tctokens without Uno
+  // registering the history-message webhook importer.
   if (syncType === proto.HistorySync.HistorySyncType.RECENT) return true
+  if (syncType === proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP && state.privacyBootstrapSyncEnabled) return true
+  if (config.ignoreHistoryMessages) return false
   if (state.historySyncInProgress) return true
   if (state.historyAlreadySynced && !config.allowFullHistorySync) return false
   return [
@@ -2691,8 +2695,27 @@ export const connect = async ({
       }
     }
     historyAlreadySynced = await getHistorySyncMarker(phone)
+    const privacyBootstrapSyncEnabled = await getPrivacyBootstrapSync(phone)
+    if (privacyBootstrapSyncEnabled && state?.creds) {
+      try {
+        const previousAccountSyncCounter = (state.creds as any).accountSyncCounter
+        const previousProcessedHistoryMessages = Array.isArray((state.creds as any).processedHistoryMessages)
+          ? (state.creds as any).processedHistoryMessages.length
+          : undefined
+        ;(state.creds as any).accountSyncCounter = 0
+        ;(state.creds as any).processedHistoryMessages = []
+        logger.warn(
+          'Privacy bootstrap sync reset in-memory creds for %s: accountSyncCounter %s -> 0, processedHistoryMessages %s -> 0',
+          phone,
+          previousAccountSyncCounter ?? '<none>',
+          previousProcessedHistoryMessages ?? '<none>',
+        )
+      } catch (e) {
+        logger.warn(e as any, 'Failed to reset in-memory creds for privacy bootstrap sync %s', phone)
+      }
+    }
     historySyncInProgress = false
-    const allowFullHistoryForSession = !config.ignoreHistoryMessages && (!historyAlreadySynced || config.allowFullHistorySync)
+    const allowFullHistoryForSession = privacyBootstrapSyncEnabled || (!config.ignoreHistoryMessages && (!historyAlreadySynced || config.allowFullHistorySync))
     const socketConfig: UserFacingSocketConfig = {
       auth: state,
       logger: loggerBaileys,
@@ -2701,7 +2724,10 @@ export const connect = async ({
       shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
         const syncType = msg?.syncType as proto.HistorySync.HistorySyncType | undefined
         const syncTypeName = historySyncTypeName(syncType)
-        const shouldSync = shouldAcceptHistorySync(syncType, config, { historyAlreadySynced, historySyncInProgress })
+        const shouldSync = shouldAcceptHistorySync(syncType, config, { historyAlreadySynced, historySyncInProgress, privacyBootstrapSyncEnabled })
+        const allowedByPrivacyBootstrapSync = shouldSync
+          && privacyBootstrapSyncEnabled
+          && syncType === proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP
         if (shouldSync && [
           proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP,
           proto.HistorySync.HistorySyncType.ON_DEMAND,
@@ -2712,11 +2738,12 @@ export const connect = async ({
             status: 'started',
             syncType: syncTypeName,
             startedAt: new Date().toISOString(),
+            source: allowedByPrivacyBootstrapSync ? 'privacy-bootstrap-sync' : 'history-sync',
           }).catch(() => {})
         }
         try {
           logger.info(
-            'History sync decision %s syncType=%s chunkOrder=%s progress=%s phone=%s historyAlreadySynced=%s historySyncInProgress=%s',
+            'History sync decision %s syncType=%s chunkOrder=%s progress=%s phone=%s historyAlreadySynced=%s historySyncInProgress=%s privacyBootstrapSyncEnabled=%s privacyBootstrapSyncAllowed=%s',
             shouldSync ? 'accept' : 'skip',
             syncTypeName,
             `${msg?.chunkOrder ?? '<none>'}`,
@@ -2724,6 +2751,8 @@ export const connect = async ({
             phone,
             historyAlreadySynced,
             historySyncInProgress,
+            privacyBootstrapSyncEnabled,
+            allowedByPrivacyBootstrapSync,
           )
         } catch {}
         return shouldSync

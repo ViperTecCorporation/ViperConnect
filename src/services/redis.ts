@@ -140,6 +140,7 @@ export const getRedis = async (redisUrl = REDIS_URL) => {
 const appVersionKey = () => `${BASE_KEY}app:version:last`
 const appMigrationLockKey = (name: string) => `${BASE_KEY}app:migration:${name}:lock`
 export const historySyncMarkerKey = (phone: string) => `${BASE_KEY}history-sync:${phone}:started`
+export const privacyBootstrapSyncKey = (phone: string) => `${BASE_KEY}privacy-bootstrap-sync:${phone}`
 
 const parseSemverLike = (raw?: string): [number, number, number] => {
   const cleaned = `${raw || ''}`.trim().replace(/^v/i, '').split('-')[0]
@@ -251,6 +252,31 @@ export const delHistorySyncMarker = async (phone: string) => {
     return await redisDel(historySyncMarkerKey(phone))
   } catch (e) {
     logger.debug(e as any, 'Could not delete history sync marker for %s', phone)
+  }
+}
+
+export const getPrivacyBootstrapSync = async (phone: string): Promise<boolean> => {
+  try {
+    return !!(await redisGet(privacyBootstrapSyncKey(phone)))
+  } catch (e) {
+    logger.debug(e as any, 'Could not read privacy bootstrap sync flag for %s', phone)
+    return false
+  }
+}
+
+export const setPrivacyBootstrapSync = async (phone: string, ttlSec = 300) => {
+  try {
+    return await redisSetAndExpire(privacyBootstrapSyncKey(phone), `${Date.now()}`, Math.max(30, ttlSec || 300))
+  } catch (e) {
+    logger.debug(e as any, 'Could not set privacy bootstrap sync flag for %s', phone)
+  }
+}
+
+export const delPrivacyBootstrapSync = async (phone: string) => {
+  try {
+    return await redisDel(privacyBootstrapSyncKey(phone))
+  } catch (e) {
+    logger.debug(e as any, 'Could not delete privacy bootstrap sync flag for %s', phone)
   }
 }
 
@@ -1205,6 +1231,7 @@ export const delConfig = async (phone: string) => {
   } catch {}
   await redisDel(key)
   await delHistorySyncMarker(phone)
+  await delPrivacyBootstrapSync(phone)
   await publishConfigUpdate(phone)
 }
 
@@ -1232,6 +1259,7 @@ export const delAuth = async (phone: string) => {
   }
   await redisDel(indexKey)
   await delHistorySyncMarker(phone)
+  await delPrivacyBootstrapSync(phone)
 }
 
 export const getAuth = async (phone: string, parse = (value: string) => JSON.parse(value)) => {
