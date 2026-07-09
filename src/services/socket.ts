@@ -41,6 +41,7 @@ import {
   VALIDATE_SESSION_NUMBER,
   QR_POST_LOGIN_SUPPRESS_MS,
   BAILEYS_WAM_TELEMETRY,
+  BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS,
   BAILEYS_WAM_TELEMETRY_FLUSH_MS,
   BAILEYS_WAM_TELEMETRY_MAX_EVENTS,
 } from '../defaults'
@@ -151,6 +152,10 @@ export type OnReconnect = (time: number) => Promise<void>
 export interface sendMessage {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (_phone: string, _message: AnyMessageContent, _options: unknown): Promise<any>
+}
+
+export interface ensurePrivacyTokens {
+  (_jids: string[], _timeoutMs?: number): Promise<any>
 }
 
 export interface readMessages {
@@ -2926,6 +2931,7 @@ export const connect = async ({
     }
     ;(socketConfig as any).wamTelemetry = {
       enabled: BAILEYS_WAM_TELEMETRY,
+      debugEvents: BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS,
       flushIntervalMs: BAILEYS_WAM_TELEMETRY_FLUSH_MS,
       maxEvents: BAILEYS_WAM_TELEMETRY_MAX_EVENTS,
     }
@@ -3062,6 +3068,7 @@ export const connect = async ({
     event,
     status,
     send,
+    ensurePrivacyTokens: (sock as any).ensurePrivacyTokens,
     read,
     rejectCall,
     resyncAppState,

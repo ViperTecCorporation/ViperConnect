@@ -701,6 +701,47 @@ export const redisSetIfNotExists = async (key: string, value: string, ttlSec: nu
   }
 }
 
+export const redisZRemRangeByScore = async (key: string, min: number | string, max: number | string): Promise<number> => {
+  const c: any = await getRedis()
+  if (typeof c.zRemRangeByScore === 'function') return c.zRemRangeByScore(key, min, max)
+  if (typeof c.zremrangebyscore === 'function') return c.zremrangebyscore(key, min, max)
+  return c.sendCommand(['ZREMRANGEBYSCORE', key, `${min}`, `${max}`])
+}
+
+export const redisZCount = async (key: string, min: number | string, max: number | string): Promise<number> => {
+  const c: any = await getRedis()
+  if (typeof c.zCount === 'function') return c.zCount(key, min, max)
+  if (typeof c.zcount === 'function') return c.zcount(key, min, max)
+  const value = await c.sendCommand(['ZCOUNT', key, `${min}`, `${max}`])
+  return parseInt(`${value || '0'}`)
+}
+
+export const redisZAdd = async (key: string, score: number, value: string): Promise<number> => {
+  const c: any = await getRedis()
+  if (typeof c.zAdd === 'function') return c.zAdd(key, [{ score, value }])
+  if (typeof c.zadd === 'function') return c.zadd(key, score, value)
+  const result = await c.sendCommand(['ZADD', key, `${score}`, value])
+  return parseInt(`${result || '0'}`)
+}
+
+export const redisExpire = async (key: string, ttlSec: number): Promise<boolean> => {
+  const c: any = await getRedis()
+  const result = await c.expire(key, ttlSec)
+  return result === true || result === 1
+}
+
+export const redisZRangeWithScores = async (key: string, start: number, stop: number): Promise<{ value: string; score: number }[]> => {
+  const c: any = await getRedis()
+  if (typeof c.zRangeWithScores === 'function') return c.zRangeWithScores(key, start, stop)
+  const raw = await c.sendCommand(['ZRANGE', key, `${start}`, `${stop}`, 'WITHSCORES'])
+  const list = Array.isArray(raw) ? raw : []
+  const out: { value: string; score: number }[] = []
+  for (let i = 0; i < list.length; i += 2) {
+    out.push({ value: `${list[i]}`, score: Number(list[i + 1]) })
+  }
+  return out
+}
+
 // Webhook circuit breaker keys
 export const webhookCircuitOpenKey = (session: string, webhookId: string) =>
   `${BASE_KEY}webhook-cb:${session}:${webhookId}:open`

@@ -5,6 +5,7 @@ import { Store } from './store'
 import {
   connect,
   sendMessage,
+  ensurePrivacyTokens,
   readMessages,
   rejectCall,
   resyncAppState,
@@ -44,6 +45,7 @@ import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS, BASE_URL } from '../defaults'
 import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
+import { checkMissingTcTokenQuota, recordMissingTcTokenSend, MissingTcTokenQuotaDecision } from './privacy_token_quota'
 import { createPasskeyBridgeSession, updatePasskeyBridgeSession } from './passkey_bridge'
 import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
@@ -266,7 +268,134 @@ const buildSendOkResponse = (to: string, keyId: string) => {
   }
 }
 
+const isTcTokenExpiredForQuota = (timestamp: number | string | null | undefined): boolean => {
+  if (timestamp === null || timestamp === undefined) return true
+  const ts = typeof timestamp === 'string' ? parseInt(timestamp) : timestamp
+  if (!Number.isFinite(ts)) return true
+  const bucketDuration = 604800
+  const numBuckets = 4
+  const currentBucket = Math.floor(Math.floor(Date.now() / 1000) / bucketDuration)
+  const cutoffTimestamp = (currentBucket - (numBuckets - 1)) * bucketDuration
+  return ts < cutoffTimestamp
+}
+
+const privacyTokenSummaryFromResponse = (response: any) => response?.__privacyToken || response?.privacyToken || response?.message?.__privacyToken
+
 export class ClientBaileys implements Client {
+  private async resolveTcTokenCandidates(jid: string): Promise<string[]> {
+    const candidates = new Set<string>()
+    const normalized = jidNormalizedUser(jid)
+    candidates.add(normalized)
+    try {
+      if (isPnUser(normalized as any)) {
+        const lid = await this.store?.dataStore?.getLidForPn?.(this.phone, normalized)
+        if (lid) candidates.add(jidNormalizedUser(lid))
+        const authLid = await getLidForPnFromAuthCache(this.phone, normalized)
+        if (authLid) candidates.add(jidNormalizedUser(authLid))
+      } else if (isLidUser(normalized as any)) {
+        const pn = await this.store?.dataStore?.getPnForLid?.(this.phone, normalized)
+        if (pn) candidates.add(jidNormalizedUser(pn))
+        const authPn = await getPnForLidFromAuthCache(this.phone, normalized)
+        if (authPn) candidates.add(jidNormalizedUser(authPn))
+      }
+    } catch {}
+    return [...candidates].filter(Boolean)
+  }
+
+  private async hasUsableTcToken(jid: string): Promise<{ hasTcToken: boolean; candidates: string[]; activeJid?: string }> {
+    const candidates = await this.resolveTcTokenCandidates(jid)
+    try {
+      const data = await this.store?.state?.keys?.get?.('tctoken' as any, candidates)
+      for (const candidate of candidates) {
+        const entry = data?.[candidate]
+        if (entry?.token?.length && !isTcTokenExpiredForQuota(entry.timestamp)) {
+          return { hasTcToken: true, candidates, activeJid: candidate }
+        }
+      }
+    } catch (error) {
+      logger.warn(error as any, 'Could not inspect tctoken before send for %s -> %s', this.phone, jid)
+    }
+    return { hasTcToken: false, candidates }
+  }
+
+  private async recoverTcTokenBeforeQuotaBlock(jid: string, candidates: string[]): Promise<{ hasTcToken: boolean; activeJid?: string }> {
+    if (!this.ensurePrivacyTokensFn) return { hasTcToken: false }
+    const fetchJids = Array.from(new Set([jid, ...candidates])).filter(Boolean)
+    try {
+      const result = await this.ensurePrivacyTokensFn(fetchJids, 5000)
+      logger.warn(
+        {
+          phone: this.phone,
+          jid,
+          fetchJids,
+          stored: result?.stored,
+          tokenNodes: result?.tokenNodes,
+          tokensNodeFound: result?.tokensNodeFound,
+          storedJids: result?.storedJids,
+        },
+        'Missing tctoken quota reached; attempted token recovery before blocking',
+      )
+    } catch (error) {
+      logger.warn(error as any, 'Missing tctoken quota reached; token recovery failed for %s -> %s', this.phone, jid)
+    }
+    const refreshed = await this.hasUsableTcToken(jid)
+    return { hasTcToken: refreshed.hasTcToken, activeJid: refreshed.activeJid }
+  }
+
+  private buildMissingTcTokenQuotaResponse(to: string, quota: MissingTcTokenQuotaDecision): Response {
+    const id = uuid()
+    const recipient = `${to || ''}`.endsWith('@g.us') ? to : jidToPhoneNumber(to || this.phone, '')
+    const errorDetails = {
+      code: 463,
+      title: 'Missing tctoken quota exceeded',
+      message: `Mensagem bloqueada porque a sessao ja enviou ${quota.used} mensagens sem tc token nas ultimas ${quota.windowHours} horas.`,
+      error_data: {
+        reason: 'missing_tc_token_quota_exceeded',
+        limit: quota.limit,
+        used: quota.used,
+        remaining: quota.remaining,
+        window_hours: quota.windowHours,
+        reset_at: quota.resetAt,
+      },
+    }
+    return {
+      ok: {
+        messaging_product: 'whatsapp',
+        contacts: [{ wa_id: recipient }],
+        messages: [{ id }],
+      },
+      error: {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: this.phone,
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: {
+                    display_phone_number: this.phone,
+                    phone_number_id: this.phone,
+                  },
+                  statuses: [
+                    {
+                      id,
+                      recipient_id: recipient,
+                      status: 'failed',
+                      timestamp: Math.floor(Date.now() / 1000),
+                      errors: [errorDetails],
+                    },
+                  ],
+                },
+                field: 'messages',
+              },
+            ],
+          },
+        ],
+      },
+    }
+  }
+
   private async resolveContactCardPn(digits: string): Promise<string | undefined> {
     const variants = getBrNinthDigitVariants(digits)
     for (const variant of variants) {
@@ -622,6 +751,7 @@ export class ClientBaileys implements Client {
   private config: Config = defaultConfig
   private close: close = closeDefault
   private sendMessage = this.sendMessageDefault
+  private ensurePrivacyTokensFn: ensurePrivacyTokens | undefined
   private event
   private fetchImageUrl = fetchImageUrlDefault
   private exists = existsDefault
@@ -948,6 +1078,7 @@ export class ClientBaileys implements Client {
     }
     const {
       send,
+      ensurePrivacyTokens,
       read,
       event,
       rejectCall,
@@ -977,6 +1108,7 @@ export class ClientBaileys implements Client {
     } = result
     this.event = event
     this.sendMessage = send
+    this.ensurePrivacyTokensFn = ensurePrivacyTokens
     this.readMessages = read
     this.rejectCall = rejectCall
     this.resyncAppStateFn = resyncAppState || resyncAppStateDefault
@@ -1019,6 +1151,7 @@ export class ClientBaileys implements Client {
     this.clientRegistry.delete(this?.phone)
     configs.delete(this?.phone)
     this.sendMessage = this.sendMessageDefault
+    this.ensurePrivacyTokensFn = undefined
     this.readMessages = readMessagesDefault
     this.rejectCall = rejectCallDefault
     this.resyncAppStateFn = resyncAppStateDefault
@@ -2026,6 +2159,59 @@ export class ClientBaileys implements Client {
             ...options,
             ...extraSendOptions,
           }
+          const missingTcTokenPreflight = {
+            required: false,
+            hasTcToken: true,
+            candidates: [] as string[],
+            activeJid: undefined as string | undefined,
+          }
+          try {
+            const targetJid = typeof targetTo === 'string' && targetTo.includes('@') ? targetTo : phoneNumberToJid(targetTo)
+            const shouldCheckTcToken =
+              targetJid &&
+              (isPnUser(targetJid as any) || isLidUser(targetJid as any)) &&
+              !targetJid.endsWith('@g.us') &&
+              targetJid !== 'status@broadcast' &&
+              !['reaction', 'message_edit'].includes(type)
+            if (shouldCheckTcToken) {
+              const tokenStatus = await this.hasUsableTcToken(targetJid)
+              missingTcTokenPreflight.required = true
+              missingTcTokenPreflight.hasTcToken = tokenStatus.hasTcToken
+              missingTcTokenPreflight.candidates = tokenStatus.candidates
+              missingTcTokenPreflight.activeJid = tokenStatus.activeJid
+              if (!tokenStatus.hasTcToken) {
+                const quota = await checkMissingTcTokenQuota(this.phone)
+                if (!quota.allowed) {
+                  const recovered = await this.recoverTcTokenBeforeQuotaBlock(targetJid, tokenStatus.candidates)
+                  if (recovered.hasTcToken) {
+                    missingTcTokenPreflight.hasTcToken = true
+                    missingTcTokenPreflight.activeJid = recovered.activeJid
+                    logger.warn(
+                      {
+                        phone: this.phone,
+                        to: targetJid,
+                        activeJid: recovered.activeJid,
+                      },
+                      'Missing tctoken quota reached, but token was recovered; proceeding with send',
+                    )
+                  } else {
+                  logger.warn(
+                    {
+                      phone: this.phone,
+                      to: targetJid,
+                      quota,
+                      candidates: tokenStatus.candidates,
+                    },
+                    'Blocking send without tctoken: quota exceeded',
+                  )
+                  return this.buildMissingTcTokenQuotaResponse(targetJid, quota)
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            logger.warn(error as any, 'Ignore missing tctoken preflight error for %s', this.phone)
+          }
           // Apply addressing mode para grupos
           // Se GROUP_SEND_ADDRESSING_MODE estiver setada, respeita. Caso contrário, usa LID por padrão
           // para reduzir "session not found" em grupos grandes.
@@ -2134,6 +2320,33 @@ export class ClientBaileys implements Client {
             await this.store?.dataStore?.setKey(key.id, key)
             await this.store?.dataStore?.setMessage(key.remoteJid, response)
             const ok = buildSendOkResponse(to, externalId || key.id)
+            try {
+              const privacyToken = privacyTokenSummaryFromResponse(response)
+              const missingTcToken =
+                privacyToken?.required === true
+                  ? privacyToken?.hasTcToken !== true
+                  : missingTcTokenPreflight.required && !missingTcTokenPreflight.hasTcToken
+              if (privacyToken || missingTcTokenPreflight.required) {
+                const tokenSummary = {
+                  required: privacyToken?.required ?? missingTcTokenPreflight.required,
+                  token_type: privacyToken?.tokenType || (missingTcTokenPreflight.hasTcToken ? 'tc' : 'none'),
+                  has_tc_token: privacyToken?.hasTcToken ?? missingTcTokenPreflight.hasTcToken,
+                  has_privacy_token: privacyToken?.hasPrivacyToken ?? missingTcTokenPreflight.hasTcToken,
+                  source: privacyToken?.source || (missingTcTokenPreflight.hasTcToken ? 'cache' : 'missing'),
+                  destination_jid: privacyToken?.destinationJid || key.remoteJid,
+                  storage_jid: privacyToken?.storageJid || missingTcTokenPreflight.candidates[0],
+                  active_jid: privacyToken?.activeJid || missingTcTokenPreflight.activeJid,
+                }
+                if (missingTcToken) {
+                  const quota = await recordMissingTcTokenSend(this.phone, externalId || key.id)
+                  ;(tokenSummary as any).quota = quota
+                  logger.warn({ phone: this.phone, to: key.remoteJid, id: key.id, quota }, 'Recorded send without tctoken')
+                }
+                ;(ok.messages[0] as any).privacy_token = tokenSummary
+              }
+            } catch (error) {
+              logger.warn(error as any, 'Ignore error recording privacy token send quota')
+            }
             try {
               if (to === 'status@broadcast') {
                 const skipped = (response as any).__statusSkipped || []

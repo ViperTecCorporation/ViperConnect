@@ -11,8 +11,12 @@ const setDefaultEnv = (key: string, value: string) => {
 }
 
 setDefaultEnv('BAILEYS_WAM_TELEMETRY', 'true')
+setDefaultEnv('BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS', 'false')
 setDefaultEnv('BAILEYS_WAM_TELEMETRY_FLUSH_MS', '5000')
 setDefaultEnv('BAILEYS_WAM_TELEMETRY_MAX_EVENTS', '50')
+setDefaultEnv('UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED', 'true')
+setDefaultEnv('UNOAPI_MISSING_TC_TOKEN_LIMIT', '40')
+setDefaultEnv('UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS', '24')
 
 // security
 export const UNOAPI_AUTH_TOKEN = process.env.UNOAPI_AUTH_TOKEN
@@ -154,8 +158,14 @@ export const BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT =
     : process.env.BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT == 'true'
 export const BAILEYS_WAM_TELEMETRY =
   process.env.BAILEYS_WAM_TELEMETRY === _undefined ? true : process.env.BAILEYS_WAM_TELEMETRY == 'true'
+export const BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS =
+  process.env.BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS === _undefined ? false : process.env.BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS == 'true'
 export const BAILEYS_WAM_TELEMETRY_FLUSH_MS = parseInt(process.env.BAILEYS_WAM_TELEMETRY_FLUSH_MS || '5000')
 export const BAILEYS_WAM_TELEMETRY_MAX_EVENTS = parseInt(process.env.BAILEYS_WAM_TELEMETRY_MAX_EVENTS || '50')
+export const UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED =
+  process.env.UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED === _undefined ? true : process.env.UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED == 'true'
+export const UNOAPI_MISSING_TC_TOKEN_LIMIT = parseInt(process.env.UNOAPI_MISSING_TC_TOKEN_LIMIT || '40')
+export const UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS = parseInt(process.env.UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS || '24')
 export const UNOAPI_RETRY_REQUEST_DELAY_MS = parseInt(process.env.UNOAPI_RETRY_REQUEST_DELAY || process.env.UNOAPI_RETRY_REQUEST_DELAY_MS || '5000')
 // export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT || '30000')
 // export const SLEEP_TIME = parseInt(process.env.SLEEP_TIME || '5000')

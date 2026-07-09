@@ -67,3 +67,26 @@ Use este criterio antes de criar ou alterar uma classe:
 - Se roda em background, fica em `jobs`.
 - Se e uma funcao auxiliar pequena e sem estado de negocio, fica em `utils`.
 - Se e contrato compartilhado, fica em um arquivo `*_types.ts` perto do dominio.
+
+## Telemetria Baileys WAM
+
+A Uno habilita a telemetria WAM/w:stats da Baileys por padrao para aproximar o comportamento do WhatsApp Web:
+
+- `BAILEYS_WAM_TELEMETRY=true`
+- `BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS=false`
+- `BAILEYS_WAM_TELEMETRY_FLUSH_MS=5000`
+- `BAILEYS_WAM_TELEMETRY_MAX_EVENTS=50`
+
+Mantenha `BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS=false` em producao salvo durante investigacao pontual. Com `true`, cada evento individual gera `WAM_TELEMETRY_COMMIT` e o log fica volumoso. O acompanhamento normal deve usar os logs resumidos `WAM_TELEMETRY_ENABLED`, `WAM_TELEMETRY_FLUSH`, `WAM_TELEMETRY_SEND_OK` e `WAM_TELEMETRY_SEND_ERROR`.
+
+Quando retomar melhorias nessa area, use [docs/wam-telemetry-follow-up-plan.md](docs/wam-telemetry-follow-up-plan.md) como ponto de partida.
+
+## Guard de envio sem TC token
+
+A Uno aplica uma politica por sessao para reduzir risco de shadow ban/erro `463`: envios 1:1 sem `tctoken` entram em uma janela movel no Redis. Por padrao:
+
+- `UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED=true`
+- `UNOAPI_MISSING_TC_TOKEN_LIMIT=40`
+- `UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS=24`
+
+Ao atingir o limite, a Uno nao deve bloquear apenas porque o token nao esta no Redis/auth store local. Primeiro ela tenta recuperar `tctoken` no servidor via Baileys; se recuperar, envia normalmente. Se continuar sem `tctoken`, bloqueia antes de chamar o envio real, retorna status `failed` e emite webhook auxiliar para a aplicacao e para a propria sessao com o resumo da mensagem original. A Baileys deve continuar sendo a fonte de verdade para metadata final de token quando disponivel.

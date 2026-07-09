@@ -2941,7 +2941,7 @@
 
 "@whiskeysockets/baileys@git+https://github.com/ViperTecCorporation/Baileys.git#Main":
   version "7.0.0-rc13"
-  resolved "git+https://github.com/ViperTecCorporation/Baileys.git#c44da2e7b268433e03ae141ed2926c1dd09dd59a"
+  resolved "git+https://github.com/ViperTecCorporation/Baileys.git#eb083e6ddc53431e5d4e475500f7abcb62c31318"
   dependencies:
     "@cacheable/node-cache" "^1.4.0"
     "@hapi/boom" "^9.1.3"

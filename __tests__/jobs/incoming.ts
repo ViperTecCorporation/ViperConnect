@@ -58,6 +58,30 @@ describe('incoming job', () => {
     })).rejects.toThrow('Unknown group management action groupDestroyEverything')
   })
 
+  test('returns empty group invite code when provider reports not authorized', async () => {
+    const incoming = mock<Incoming>()
+    const outgoing = mock<Outgoing>()
+    const getConfigTest: getConfig = async () => ({
+      ...defaultConfig,
+      server: 'server_1',
+    })
+    const error = new Error('not-authorized') as any
+    error.data = 401
+    incoming.groupInviteCode = jest.fn().mockRejectedValue(error)
+    const job = new IncomingJob(incoming, outgoing, getConfigTest)
+
+    await expect(job.consume('556600000000', {
+      type: 'group_management',
+      action: 'groupInviteCode',
+      args: ['120363040468224422@g.us'],
+    })).resolves.toBeUndefined()
+
+    expect(incoming.groupInviteCode).toHaveBeenCalledWith(
+      '556600000000',
+      '120363040468224422@g.us'
+    )
+  })
+
   test('emits meta-like group webhook when provider success has no message id', async () => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()

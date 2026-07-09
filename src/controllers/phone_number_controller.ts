@@ -12,6 +12,7 @@ import { clients } from '../services/client'
 import { pruneAuthSignalCache, setPrivacyBootstrapSync } from '../services/redis'
 import { getPrivacyTokenDebug } from '../services/privacy_token_debug'
 import { preparePrivacyBootstrapSync } from '../services/privacy_bootstrap_sync'
+import { getMissingTcTokenQuotaStatus } from '../services/privacy_token_quota'
 
 export class PhoneNumberController {
   private getConfig: getConfig
@@ -108,7 +109,9 @@ export class PhoneNumberController {
         const config = await this.getConfig(phone)
         const status = config.provider == 'forwarder' ? 'forwarder' : await this.sessionStore.getStatus(phone)
         if (this.isAuthorizedToken(token, config)) {
-          return { ...config, id: phone, phone, display_phone_number: phone, status }
+          let missingTcTokenQuota
+          try { missingTcTokenQuota = await getMissingTcTokenQuotaStatus(phone) } catch {}
+          return { ...config, id: phone, phone, display_phone_number: phone, status, missing_tc_token_quota: missingTcTokenQuota }
         }
         return undefined
       }))

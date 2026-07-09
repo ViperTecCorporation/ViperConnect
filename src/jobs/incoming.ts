@@ -48,7 +48,30 @@ export class IncomingJob {
     if (typeof fn !== 'function') {
       throw new Error(`Incoming provider does not support group management action ${action}`)
     }
-    return fn.call(this.incoming, phone, ...args)
+    try {
+      return await fn.call(this.incoming, phone, ...args)
+    } catch (error) {
+      if (this.isGroupInviteNotAuthorized(action, error)) {
+        const err = error as any
+        logger.warn({
+          errorCode: err?.data || err?.statusCode || err?.output?.statusCode || err?.output?.payload?.statusCode,
+          errorMessage: err?.message || err?.output?.payload?.message || 'not-authorized',
+          phone,
+          groupJid: args[0],
+          action,
+        }, 'Group invite code unavailable: not authorized')
+        return undefined
+      }
+      throw error
+    }
+  }
+
+  private isGroupInviteNotAuthorized(action: string, error: unknown) {
+    if (action !== 'groupInviteCode' && action !== 'groupRevokeInvite') return false
+    const err = error as any
+    const statusCode = err?.data || err?.statusCode || err?.output?.statusCode || err?.output?.payload?.statusCode
+    const message = `${err?.message || err?.output?.payload?.message || ''}`.toLowerCase()
+    return statusCode === 401 || message.includes('not-authorized') || message.includes('not authorized')
   }
 
   private buildOutgoingWebhookMessage(

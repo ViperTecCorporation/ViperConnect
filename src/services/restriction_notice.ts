@@ -12,8 +12,8 @@ type RestrictionNoticeContext = {
 
 type RestrictionNoticeInfo = {
   destination: string
-  restrictionUntilIso: string
-  restrictionUntilFormatted: string
+  restrictionUntilIso?: string
+  restrictionUntilFormatted?: string
   body: string
 }
 
@@ -28,6 +28,14 @@ const getRestrictionError = (statusPayload: any) => {
   const restrictionUntilIso = `${reachout?.timeEnforcementEnds || ''}`.trim()
   if (!restrictionUntilIso) return undefined
   return { error, reachout, restrictionUntilIso }
+}
+
+const getMissingTcTokenQuotaError = (statusPayload: any) => {
+  const status = getStatus(statusPayload)
+  const error = status?.errors?.[0]
+  const reason = `${error?.error_data?.reason || ''}`
+  if (reason !== 'missing_tc_token_quota_exceeded') return undefined
+  return { status, error, quota: error?.error_data || {} }
 }
 
 export const formatRestrictionEnd = (
@@ -65,6 +73,34 @@ const summarizeOriginalMessage = (payload: any): string => {
 }
 
 export const getRestrictionNoticeInfo = (ctx: RestrictionNoticeContext): RestrictionNoticeInfo | undefined => {
+  const missingTcQuota = getMissingTcTokenQuotaError(ctx.statusPayload)
+  if (missingTcQuota) {
+    const destination = normalizeUserOrGroupIdForWebhook(
+      missingTcQuota.status?.recipient_id || ctx.payload?.to || '',
+    )
+    const original = summarizeOriginalMessage(ctx.payload)
+    const resetAt = `${missingTcQuota.quota?.reset_at || ''}`.trim()
+    const resetFormatted = resetAt ? formatRestrictionEnd(resetAt) : ''
+    const body = [
+      'Mensagem bloqueada pela Unoapi antes de enviar ao WhatsApp.',
+      '',
+      `Contato: ${destination || '<desconhecido>'}`,
+      `Mensagem: ${ctx.unoMessageId}`,
+      `Motivo: limite de mensagens sem tc token atingido.`,
+      `Uso atual: ${missingTcQuota.quota?.used ?? '?'} de ${missingTcQuota.quota?.limit ?? '?'} em ${missingTcQuota.quota?.window_hours ?? 24}h.`,
+      ...(resetFormatted ? [`Libera em: ${resetFormatted}.`] : []),
+      '',
+      `Conteudo original: ${original}`,
+    ].join('\n')
+
+    return {
+      destination,
+      restrictionUntilIso: resetAt || undefined,
+      restrictionUntilFormatted: resetFormatted || undefined,
+      body,
+    }
+  }
+
   const restriction = getRestrictionError(ctx.statusPayload)
   if (!restriction) return undefined
   const status = getStatus(ctx.statusPayload)
