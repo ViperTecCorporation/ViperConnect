@@ -1122,7 +1122,15 @@ export const extractDestinyPhone = (payload: object, throwError = true) => {
   )
   // Normalize JIDs (LID/PN) to plain phone when possible
   try {
-    if (typeof number === 'string' && number.includes('@')) {
+    if (
+      typeof number === 'string' &&
+      (
+        number.endsWith('@s.whatsapp.net') ||
+        number.endsWith('@lid') ||
+        number.endsWith('@g.us') ||
+        number.endsWith('@newsletter')
+      )
+    ) {
       // Prefer a normalized PN JID, then extract phone if it's an individual user
       const normalizedJid = jidNormalizedUser(number)
       number = jidToPhoneNumberIfUser(normalizedJid).replace('+', '')

@@ -29,6 +29,7 @@ import {
   fetchImageUrl,
   fetchGroupMetadata,
   exists,
+  resolveUsername,
   logout,
   close,
   OnReconnect,
@@ -226,23 +227,37 @@ const existsDefault: exists = async (_jid: string) => {
   throw sendError
 }
 
+const resolveUsernameDefault: resolveUsername = async (_jid: string) => undefined
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const logoutDefault: logout = async () => {}
 
 const closeDefault = async () => logger.info(`Close connection`)
 const groupUnavailable = async () => { throw new Error('group management unavailable') }
 
+const normalizeUsernameInput = (value?: string): string => {
+  const raw = `${value || ''}`.trim()
+  if (!raw || raw.includes('@s.whatsapp.net') || raw.includes('@lid') || raw.includes('@g.us') || raw.includes('@newsletter')) return ''
+  if (/^\+?\d+$/.test(raw)) return ''
+  const username = raw.replace(/^@/, '').trim().toLowerCase()
+  return /^[a-z0-9._]{3,35}$/.test(username) ? username : ''
+}
+
 const buildSendOkResponse = (to: string, keyId: string) => {
   const target = `${to || ''}`.trim()
-  const waId = target.endsWith('@g.us') ? target : jidToPhoneNumber(target, '')
+  const username = normalizeUsernameInput(target)
+  const waId = username ? '' : (target.endsWith('@g.us') ? target : jidToPhoneNumber(target, ''))
+  const contact: any = {
+    input: target,
+  }
+  if (waId) contact.wa_id = waId
+  if (username) {
+    contact.username = username
+    contact.profile = { username }
+  }
   return {
     messaging_product: 'whatsapp',
-    contacts: [
-      {
-        input: target,
-        wa_id: waId,
-      },
-    ],
+    contacts: [contact],
     messages: [
       {
         id: keyId,
@@ -610,6 +625,7 @@ export class ClientBaileys implements Client {
   private event
   private fetchImageUrl = fetchImageUrlDefault
   private exists = existsDefault
+  private resolveUsername = resolveUsernameDefault
   private socketLogout: logout = logoutDefault
   private fetchGroupMetadata = fetchGroupMetadataDefault
   private groupMetadataFn: groupMetadata = groupMetadataDefault
@@ -640,6 +656,7 @@ export class ClientBaileys implements Client {
   private getConfig: getConfig
   private onNewLogin
   private clientRegistry: Map<string, Client>
+  private usernameResolveLastAt = new Map<string, number>()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private onWebhookError = async (error: any) => {
@@ -689,6 +706,74 @@ export class ClientBaileys implements Client {
       } else {
         await this.listener.process(this.phone, [payload], 'status')
       }
+    }
+  }
+
+  private getMessageSenderJidForUsername(message: any): string {
+    const key = message?.key || {}
+    const remoteJid = `${key?.remoteJid || ''}`.trim()
+    const participant = `${key?.participant || ''}`.trim()
+    if (remoteJid.endsWith('@g.us') && participant) return participant
+    if (remoteJid.endsWith('@newsletter') || remoteJid === 'status@broadcast') return ''
+    return remoteJid
+  }
+
+  private setMessageUsername(message: any, username: string) {
+    const normalized = `${username || ''}`.replace(/^@/, '').trim().toLowerCase()
+    if (!normalized) return
+    if (!message.key) message.key = {}
+    const key = message.key
+    const senderJid = this.getMessageSenderJidForUsername(message)
+    if (`${key?.remoteJid || ''}`.endsWith('@g.us') && senderJid) {
+      key.participantUsername = normalized
+    } else if (senderJid) {
+      key.remoteJidUsername = normalized
+      key.senderUsername = normalized
+    }
+    message.username = normalized
+    message.contact = { ...(message.contact || {}), username: normalized }
+  }
+
+  private async enrichUsernameForMessage(message: any) {
+    try {
+      const existing = `${message?.key?.participantUsername || message?.key?.remoteJidUsername || message?.key?.senderUsername || message?.username || message?.contact?.username || ''}`.trim()
+      if (existing) return
+      const senderJid = this.getMessageSenderJidForUsername(message)
+      if (!senderJid || senderJid.endsWith('@g.us') || senderJid.endsWith('@newsletter')) return
+
+      const cached = await this.store?.dataStore?.getContactInfo?.(senderJid)
+      const cachedUsername = `${cached?.username || ''}`.replace(/^@/, '').trim().toLowerCase()
+      if (cachedUsername) {
+        this.setMessageUsername(message, cachedUsername)
+        return
+      }
+
+      const now = Date.now()
+      const cooldownKey = `${this.phone}:${senderJid}`
+      const last = this.usernameResolveLastAt.get(cooldownKey) || 0
+      if (now - last < 6 * 60 * 60 * 1000) return
+      this.usernameResolveLastAt.set(cooldownKey, now)
+
+      const resolved = await this.resolveUsername(senderJid)
+      const username = `${resolved?.username || ''}`.replace(/^@/, '').trim().toLowerCase()
+      if (!username) {
+        logger.info('USERNAME_WEBHOOK_ENRICH_NONE: jid=%s', senderJid)
+        return
+      }
+      this.setMessageUsername(message, username)
+
+      const info = {
+        ...(cached || {}),
+        username,
+        name: cached?.name || `@${username}`,
+        ...(resolved?.pnJid ? { pnJid: resolved.pnJid, pn: `${resolved.pnJid}`.split('@')[0] } : {}),
+        ...(resolved?.lidJid ? { lidJid: resolved.lidJid } : {}),
+      }
+      try { await this.store?.dataStore?.setContactInfo?.(senderJid, info) } catch {}
+      try { await this.store?.dataStore?.setContactInfo?.(`username:${username}`, info) } catch {}
+      logger.info('USERNAME_WEBHOOK_ENRICH: jid=%s username=%s', senderJid, username)
+    } catch (e) {
+      logger.debug(e as any, 'Ignore username webhook enrichment error')
     }
   }
 
@@ -870,6 +955,7 @@ export class ClientBaileys implements Client {
       fetchGroupMetadata,
       groupMetadata,
       exists,
+      resolveUsername,
       close,
       logout,
       groupCreate,
@@ -914,6 +1000,7 @@ export class ClientBaileys implements Client {
     this.groupMetadataFn = groupMetadata || groupMetadataDefault
     this.close = close
     this.exists = exists
+    this.resolveUsername = resolveUsername || resolveUsernameDefault
     this.socketLogout = logout
     this.config.getMessageMetadata = async <T>(data: T) => {
       logger.debug(data, 'Put metadata in message')
@@ -942,6 +1029,7 @@ export class ClientBaileys implements Client {
     this.fetchGroupMetadata = fetchGroupMetadataDefault
     this.groupMetadataFn = groupMetadataDefault
     this.exists = existsDefault
+    this.resolveUsername = resolveUsernameDefault
     this.close = closeDefault
     this.config = defaultConfig
     this.socketLogout = logoutDefault
@@ -1021,9 +1109,11 @@ export class ClientBaileys implements Client {
               if (typeof k?.participant === 'string') candidates.push(k.participant)
               if (typeof k?.remoteJid === 'string') candidates.push(k.remoteJid)
               for (const j of candidates) {
-                try {
-                  if (j && typeof j === 'string' && !j.endsWith('@g.us')) {
-                    const info: any = { name }
+	                try {
+	                  if (j && typeof j === 'string' && !j.endsWith('@g.us')) {
+	                    let currentInfo: any
+	                    try { currentInfo = await store.dataStore.getContactInfo?.(j) } catch {}
+	                    const info: any = { ...(currentInfo || {}), ...(name ? { name } : {}) }
                     if (isLidUser(j)) {
                       info.lidJid = j
                       try {
@@ -1044,17 +1134,20 @@ export class ClientBaileys implements Client {
                         }
                       } catch {}
                     }
-                    await store.dataStore.setContactInfo?.(j, info)
-                    await store.dataStore.setContactName?.(j, name)
-                    try { logger.info('CONTACT_CACHE upsert from upsert: jid=%s name=%s pn=%s lid=%s', j, name || '<none>', info.pn || '<none>', info.lidJid || '<none>') } catch {}
-                  }
+	                    await store.dataStore.setContactInfo?.(j, info)
+	                    if (name) await store.dataStore.setContactName?.(j, name)
+	                    try { logger.info('CONTACT_CACHE upsert from upsert: jid=%s name=%s pn=%s lid=%s', j, name || '<none>', info.pn || '<none>', info.lidJid || '<none>') } catch {}
+	                  }
                 } catch {}
               }
             }
           }
         } catch {}
       } catch { logger.debug('messages.upsert %s', this.phone) }
-      await this.listener.process(this.phone, payload.messages, payload.type)
+	      try {
+	        await Promise.all(((payload?.messages || []) as any[]).map((message) => this.enrichUsernameForMessage(message)))
+	      } catch {}
+	      await this.listener.process(this.phone, payload.messages, payload.type)
       if (this.config.readOnReceipt && payload.messages[0] && !payload.messages[0]?.fromMe) {
         await Promise.all(
           payload.messages

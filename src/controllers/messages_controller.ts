@@ -161,7 +161,9 @@ export class MessagesController {
         options.font = bodyOptions.font
       }
       // Anti-spam: enforce per-session and per-destination minute limits
-      const to = (payload?.to && phoneNumberToJid(payload.to)) || ''
+      const toValue = `${payload?.to || ''}`.trim()
+      const isUsernameTo = !!toValue && !toValue.includes('@s.whatsapp.net') && !toValue.includes('@lid') && !toValue.includes('@g.us') && !/^\+?\d+$/.test(toValue)
+      const to = toValue ? (isUsernameTo ? `username:${toValue.replace(/^@/, '').toLowerCase()}` : phoneNumberToJid(toValue)) : ''
       const decision = await allowSend(sessionPhone, to || '')
       if (!decision.allowed) {
         // Não retorna 429: agenda o envio via fila com atraso

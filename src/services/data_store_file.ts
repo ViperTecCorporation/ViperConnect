@@ -640,7 +640,7 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
   dataStore.getContactInfo = async (jid: string) => {
     try { const raw = contactInfo.get(jid); return raw ? JSON.parse(raw) : undefined } catch { return undefined }
   }
-  dataStore.setContactInfo = async (jid: string, info: { name?: string; pnJid?: string; lidJid?: string; pn?: string }) => {
+  dataStore.setContactInfo = async (jid: string, info: { name?: string; username?: string; pnJid?: string; lidJid?: string; pn?: string }) => {
     try { contactInfo.set(jid, JSON.stringify(info || {})) } catch {}
   }
   // --- PN <-> LID mapping helpers (optional) ---

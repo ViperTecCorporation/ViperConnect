@@ -4,6 +4,16 @@ import { release } from 'os'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _undefined: any = undefined
 
+const setDefaultEnv = (key: string, value: string) => {
+  if (process.env[key] === _undefined || process.env[key] === '') {
+    process.env[key] = value
+  }
+}
+
+setDefaultEnv('BAILEYS_WAM_TELEMETRY', 'true')
+setDefaultEnv('BAILEYS_WAM_TELEMETRY_FLUSH_MS', '5000')
+setDefaultEnv('BAILEYS_WAM_TELEMETRY_MAX_EVENTS', '50')
+
 // security
 export const UNOAPI_AUTH_TOKEN = process.env.UNOAPI_AUTH_TOKEN
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY
@@ -142,6 +152,10 @@ export const BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT =
   process.env.BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT === _undefined
     ? false
     : process.env.BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT == 'true'
+export const BAILEYS_WAM_TELEMETRY =
+  process.env.BAILEYS_WAM_TELEMETRY === _undefined ? true : process.env.BAILEYS_WAM_TELEMETRY == 'true'
+export const BAILEYS_WAM_TELEMETRY_FLUSH_MS = parseInt(process.env.BAILEYS_WAM_TELEMETRY_FLUSH_MS || '5000')
+export const BAILEYS_WAM_TELEMETRY_MAX_EVENTS = parseInt(process.env.BAILEYS_WAM_TELEMETRY_MAX_EVENTS || '50')
 export const UNOAPI_RETRY_REQUEST_DELAY_MS = parseInt(process.env.UNOAPI_RETRY_REQUEST_DELAY || process.env.UNOAPI_RETRY_REQUEST_DELAY_MS || '5000')
 // export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT || '30000')
 // export const SLEEP_TIME = parseInt(process.env.SLEEP_TIME || '5000')

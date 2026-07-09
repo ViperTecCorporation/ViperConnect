@@ -7,6 +7,29 @@ import { DecryptError } from '../services/transformer'
 import { getConfig } from '../services/config'
 import { proto } from '@whiskeysockets/baileys'
 
+const getUsernameMeta = (m: any): string | undefined => {
+  const raw = `${m?.key?.participantUsername || m?.key?.remoteJidUsername || m?.key?.senderUsername || m?.participantUsername || m?.remoteJidUsername || m?.senderUsername || m?.contact?.username || m?.username || ''}`
+    .replace(/^@/, '')
+    .trim()
+    .toLowerCase()
+  return raw || undefined
+}
+
+const applyUsernameMeta = (m: any, username: string | undefined) => {
+  const normalized = `${username || ''}`.replace(/^@/, '').trim().toLowerCase()
+  if (!normalized || !m) return m
+  if (!m.key) m.key = {}
+  if (`${m.key?.remoteJid || ''}`.endsWith('@g.us')) {
+    m.key.participantUsername = normalized
+  } else {
+    m.key.remoteJidUsername = normalized
+    m.key.senderUsername = normalized
+  }
+  m.username = normalized
+  m.contact = { ...(m.contact || {}), username: normalized }
+  return m
+}
+
 export class ListenerJob {
   private listener: Listener
   private outgoing: Outgoing
@@ -38,7 +61,7 @@ export class ListenerJob {
           if (m && m.__wa_b64) {
             try {
               const bytes = Buffer.from(m.__wa_b64, 'base64')
-              return proto.WebMessageInfo.decode(bytes)
+              return applyUsernameMeta(proto.WebMessageInfo.decode(bytes), m.__unoapi_username)
             } catch {}
           }
           return m
@@ -77,7 +100,11 @@ export class ListenerJob {
               try {
                 if (m && (m.key || m.message)) {
                   const bytes = proto.WebMessageInfo.encode(m as any).finish()
-                  payloadMsg = { __wa_b64: Buffer.from(bytes).toString('base64') }
+                  const username = getUsernameMeta(m)
+                  payloadMsg = {
+                    __wa_b64: Buffer.from(bytes).toString('base64'),
+                    ...(username ? { __unoapi_username: username } : {}),
+                  }
                 }
               } catch {}
             }

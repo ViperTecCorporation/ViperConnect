@@ -55,8 +55,8 @@ export type DataStore  = {
   getContactName?: (jid: string) => Promise<string | undefined>
   setContactName?: (jid: string, name: string) => Promise<void>
   // Contact enriched cache (name + pn/lid variants)
-  getContactInfo?: (jid: string) => Promise<{ name?: string; pnJid?: string; lidJid?: string; pn?: string } | undefined>
-  setContactInfo?: (jid: string, info: { name?: string; pnJid?: string; lidJid?: string; pn?: string }) => Promise<void>
+  getContactInfo?: (jid: string) => Promise<{ name?: string; username?: string; pnJid?: string; lidJid?: string; pn?: string } | undefined>
+  setContactInfo?: (jid: string, info: { name?: string; username?: string; pnJid?: string; lidJid?: string; pn?: string }) => Promise<void>
   // Última mensagem recebida por chat (para ler ao responder)
   getLastIncomingKey?: (jid: string) => Promise<WAMessageKey | undefined>
   setLastIncomingKey?: (jid: string, key: WAMessageKey) => Promise<void>
