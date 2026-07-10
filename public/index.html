@@ -1373,9 +1373,11 @@
                 const limit = Number(quota.limit || 0);
                 const remaining = Math.max(0, Number(quota.remaining || 0));
                 const reset = quota.resetAt ? new Date(quota.resetAt).toLocaleString() : '';
-                const blocked = !!quota.blocked;
+                const blocked = !!quota.blocked && quota.blockEnabled !== false;
                 const cls = blocked ? 'text-danger fw-bold' : (remaining <= 5 ? 'text-warning fw-bold' : 'text-muted');
-                const title = reset ? `Libera em ${reset}` : `Janela ${quota.windowHours || 24}h`;
+                const title = quota.blockEnabled === false
+                    ? `Contador ativo; bloqueio desativado. Janela ${quota.windowHours || 24}h`
+                    : (reset ? `Libera em ${reset}` : `Janela ${quota.windowHours || 24}h`);
                 return `<span class="${cls}" title="${htmlAttr(title)}">${htmlText(`${used}/${limit}`)}</span>`;
             }
 

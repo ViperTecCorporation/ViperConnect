@@ -48,6 +48,8 @@ export interface Client {
 
   resyncAppState?(forceSnapshot?: boolean): Promise<void>
 
+  fetchPrivacyTokens?(jids: string[], timeoutMs?: number): Promise<any>
+
   fetchMessageHistory?(payload: {
     count?: number
     chat_jid?: string

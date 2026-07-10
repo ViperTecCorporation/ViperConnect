@@ -16,6 +16,7 @@ import { Logout } from '../../src/services/logout'
 jest.mock('../../src/services/privacy_token_quota', () => ({
   getMissingTcTokenQuotaStatus: jest.fn().mockResolvedValue({
     enabled: true,
+    blockEnabled: false,
     limit: 40,
     used: 0,
     remaining: 40,

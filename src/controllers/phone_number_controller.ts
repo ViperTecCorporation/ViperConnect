@@ -229,20 +229,42 @@ export class PhoneNumberController {
     logger.warn('privacy token debug params %s query %s body %s', JSON.stringify(req.params), JSON.stringify(req.query), JSON.stringify(req.body))
     try {
       const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const queryTargets = Array.isArray((req.query as any)?.targets)
+        ? (req.query as any).targets
+        : [(req.query as any)?.targets]
+      const bodyTargets = Array.isArray((req.body as any)?.targets)
+        ? (req.body as any).targets
+        : [(req.body as any)?.targets]
       const rawTargets = [
         (req.query as any)?.target,
         (req.query as any)?.jid,
         (req.body as any)?.target,
         (req.body as any)?.jid,
-        ...(Array.isArray((req.body as any)?.targets) ? (req.body as any).targets : []),
-        ...(Array.isArray((req.query as any)?.targets) ? (req.query as any).targets : []),
+        ...bodyTargets,
+        ...queryTargets,
       ]
         .flatMap((value: any) => `${value || ''}`.split(','))
         .map((value: string) => value.trim())
         .filter(Boolean)
+      const shouldFetch = `${(req.query as any)?.fetch ?? (req.body as any)?.fetch ?? 'false'}` === 'true'
+      let fetch_result: any
+      if (shouldFetch) {
+        const client = clients.get(sessionPhone)
+        if (!client) {
+          return sendGraphError(res, 404, `Session ${sessionPhone} is not loaded`, { code: 131016, type: 'GraphMethodException' })
+        }
+        if (typeof client.fetchPrivacyTokens !== 'function') {
+          return sendGraphError(res, 409, `Session ${sessionPhone} does not support privacy token fetch`, { code: 131016, type: 'GraphMethodException' })
+        }
+        const rawTimeout = (req.query as any)?.timeoutMs ?? (req.query as any)?.timeout_ms ?? (req.body as any)?.timeoutMs ?? (req.body as any)?.timeout_ms
+        const parsedTimeout = Number.parseInt(`${rawTimeout ?? '5000'}`, 10)
+        const timeoutMs = Number.isFinite(parsedTimeout) ? Math.min(Math.max(parsedTimeout, 1000), 15000) : 5000
+        fetch_result = await client.fetchPrivacyTokens(rawTargets, timeoutMs)
+      }
       const result = await getPrivacyTokenDebug(sessionPhone, rawTargets)
       return res.status(200).json({
         success: true,
+        ...(fetch_result ? { fetch_result } : {}),
         ...result,
       })
     } catch (e) {

@@ -2980,6 +2980,36 @@ export class ClientBaileys implements Client {
     return this.resyncAppStateFn(undefined, true, forceSnapshot)
   }
 
+  public async fetchPrivacyTokens(jids: string[], timeoutMs = 5000) {
+    if (!this.ensurePrivacyTokensFn) {
+      throw new SendError(409, 'privacy_token_fetch_unavailable')
+    }
+    const normalized = Array.from(new Set((jids || []).map((jid) => jidNormalizedUser(jid)).filter(Boolean)))
+    if (!normalized.length) {
+      throw new SendError(400, 'privacy_token_targets_required')
+    }
+    const results: any[] = []
+    for (const jid of normalized) {
+      try {
+        const result = await this.ensurePrivacyTokensFn([jid], timeoutMs)
+        results.push({ jid, ...result })
+      } catch (error) {
+        results.push({
+          jid,
+          error: (error as any)?.message || `${error}`,
+          statusCode: (error as any)?.output?.statusCode,
+        })
+      }
+    }
+    return {
+      targets: results,
+      stored: results.reduce((total, item: any) => total + (Number(item?.stored) || 0), 0),
+      tokenNodes: results.reduce((total, item: any) => total + (Number(item?.tokenNodes) || 0), 0),
+      tokensNodeFound: results.some((item: any) => item?.tokensNodeFound === true),
+      storedJids: Array.from(new Set(results.flatMap((item: any) => item?.storedJids || []))),
+    }
+  }
+
   public async sendPasskeyResponse(payload: { credentialId: Buffer, assertionJson: Buffer | string }): Promise<Response> {
     await this.sendPasskeyResponseFn(payload)
     return { ok: true }
