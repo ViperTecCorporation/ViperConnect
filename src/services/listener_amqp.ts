@@ -46,6 +46,13 @@ const delays = {
   'delete': _ => 0,
 }
 
+const getUsernameMeta = (m: any): string | undefined => {
+  const raw = `${m?.key?.participantUsername || m?.key?.remoteJidUsername || m?.key?.senderUsername || m?.participantUsername || m?.remoteJidUsername || m?.senderUsername || m?.contact?.username || m?.username || ''}`
+    .replace(/^@/, '')
+    .trim()
+    .toLowerCase()
+  return raw || undefined
+}
 
 export class ListenerAmqp implements Listener {
   public async process(phone: string, messages: object[], type: eventType) {
@@ -60,7 +67,11 @@ export class ListenerAmqp implements Listener {
           try {
             if (m && (m.key || m.message)) {
               const bytes = proto.WebMessageInfo.encode(m as any).finish()
-              return { __wa_b64: Buffer.from(bytes).toString('base64') }
+              const username = getUsernameMeta(m)
+              return {
+                __wa_b64: Buffer.from(bytes).toString('base64'),
+                ...(username ? { __unoapi_username: username } : {}),
+              }
             }
           } catch {}
           return m

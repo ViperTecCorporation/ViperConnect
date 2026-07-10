@@ -5,6 +5,7 @@ import { Store } from './store'
 import {
   connect,
   sendMessage,
+  ensurePrivacyTokens,
   readMessages,
   rejectCall,
   resyncAppState,
@@ -29,6 +30,7 @@ import {
   fetchImageUrl,
   fetchGroupMetadata,
   exists,
+  resolveUsername,
   logout,
   close,
   OnReconnect,
@@ -43,6 +45,7 @@ import { Template } from './template'
 import logger from './logger'
 import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS, BASE_URL } from '../defaults'
 import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
+import { checkMissingTcTokenQuota, recordMissingTcTokenSend, MissingTcTokenQuotaDecision } from './privacy_token_quota'
 import { createPasskeyBridgeSession, updatePasskeyBridgeSession } from './passkey_bridge'
 import { normalizeLidJid } from './transformer/jid'
 import { convertToOggPtt } from '../utils/audio_convert'
@@ -226,23 +229,37 @@ const existsDefault: exists = async (_jid: string) => {
   throw sendError
 }
 
+const resolveUsernameDefault: resolveUsername = async (_jid: string) => undefined
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const logoutDefault: logout = async () => {}
 
 const closeDefault = async () => logger.info(`Close connection`)
 const groupUnavailable = async () => { throw new Error('group management unavailable') }
 
+const normalizeUsernameInput = (value?: string): string => {
+  const raw = `${value || ''}`.trim()
+  if (!raw || raw.includes('@s.whatsapp.net') || raw.includes('@lid') || raw.includes('@g.us') || raw.includes('@newsletter')) return ''
+  if (/^\+?\d+$/.test(raw)) return ''
+  const username = raw.replace(/^@/, '').trim().toLowerCase()
+  return /^[a-z0-9._]{3,35}$/.test(username) ? username : ''
+}
+
 const buildSendOkResponse = (to: string, keyId: string) => {
   const target = `${to || ''}`.trim()
-  const waId = target.endsWith('@g.us') ? target : jidToPhoneNumber(target, '')
+  const username = normalizeUsernameInput(target)
+  const waId = username ? '' : (target.endsWith('@g.us') ? target : jidToPhoneNumber(target, ''))
+  const contact: any = {
+    input: target,
+  }
+  if (waId) contact.wa_id = waId
+  if (username) {
+    contact.username = username
+    contact.profile = { username }
+  }
   return {
     messaging_product: 'whatsapp',
-    contacts: [
-      {
-        input: target,
-        wa_id: waId,
-      },
-    ],
+    contacts: [contact],
     messages: [
       {
         id: keyId,
@@ -251,7 +268,134 @@ const buildSendOkResponse = (to: string, keyId: string) => {
   }
 }
 
+const isTcTokenExpiredForQuota = (timestamp: number | string | null | undefined): boolean => {
+  if (timestamp === null || timestamp === undefined) return true
+  const ts = typeof timestamp === 'string' ? parseInt(timestamp) : timestamp
+  if (!Number.isFinite(ts)) return true
+  const bucketDuration = 604800
+  const numBuckets = 4
+  const currentBucket = Math.floor(Math.floor(Date.now() / 1000) / bucketDuration)
+  const cutoffTimestamp = (currentBucket - (numBuckets - 1)) * bucketDuration
+  return ts < cutoffTimestamp
+}
+
+const privacyTokenSummaryFromResponse = (response: any) => response?.__privacyToken || response?.privacyToken || response?.message?.__privacyToken
+
 export class ClientBaileys implements Client {
+  private async resolveTcTokenCandidates(jid: string): Promise<string[]> {
+    const candidates = new Set<string>()
+    const normalized = jidNormalizedUser(jid)
+    candidates.add(normalized)
+    try {
+      if (isPnUser(normalized as any)) {
+        const lid = await this.store?.dataStore?.getLidForPn?.(this.phone, normalized)
+        if (lid) candidates.add(jidNormalizedUser(lid))
+        const authLid = await getLidForPnFromAuthCache(this.phone, normalized)
+        if (authLid) candidates.add(jidNormalizedUser(authLid))
+      } else if (isLidUser(normalized as any)) {
+        const pn = await this.store?.dataStore?.getPnForLid?.(this.phone, normalized)
+        if (pn) candidates.add(jidNormalizedUser(pn))
+        const authPn = await getPnForLidFromAuthCache(this.phone, normalized)
+        if (authPn) candidates.add(jidNormalizedUser(authPn))
+      }
+    } catch {}
+    return [...candidates].filter(Boolean)
+  }
+
+  private async hasUsableTcToken(jid: string): Promise<{ hasTcToken: boolean; candidates: string[]; activeJid?: string }> {
+    const candidates = await this.resolveTcTokenCandidates(jid)
+    try {
+      const data = await this.store?.state?.keys?.get?.('tctoken' as any, candidates)
+      for (const candidate of candidates) {
+        const entry = data?.[candidate]
+        if (entry?.token?.length && !isTcTokenExpiredForQuota(entry.timestamp)) {
+          return { hasTcToken: true, candidates, activeJid: candidate }
+        }
+      }
+    } catch (error) {
+      logger.warn(error as any, 'Could not inspect tctoken before send for %s -> %s', this.phone, jid)
+    }
+    return { hasTcToken: false, candidates }
+  }
+
+  private async recoverTcTokenBeforeQuotaBlock(jid: string, candidates: string[]): Promise<{ hasTcToken: boolean; activeJid?: string }> {
+    if (!this.ensurePrivacyTokensFn) return { hasTcToken: false }
+    const fetchJids = Array.from(new Set([jid, ...candidates])).filter(Boolean)
+    try {
+      const result = await this.ensurePrivacyTokensFn(fetchJids, 5000)
+      logger.warn(
+        {
+          phone: this.phone,
+          jid,
+          fetchJids,
+          stored: result?.stored,
+          tokenNodes: result?.tokenNodes,
+          tokensNodeFound: result?.tokensNodeFound,
+          storedJids: result?.storedJids,
+        },
+        'Missing tctoken quota reached; attempted token recovery before blocking',
+      )
+    } catch (error) {
+      logger.warn(error as any, 'Missing tctoken quota reached; token recovery failed for %s -> %s', this.phone, jid)
+    }
+    const refreshed = await this.hasUsableTcToken(jid)
+    return { hasTcToken: refreshed.hasTcToken, activeJid: refreshed.activeJid }
+  }
+
+  private buildMissingTcTokenQuotaResponse(to: string, quota: MissingTcTokenQuotaDecision): Response {
+    const id = uuid()
+    const recipient = `${to || ''}`.endsWith('@g.us') ? to : jidToPhoneNumber(to || this.phone, '')
+    const errorDetails = {
+      code: 463,
+      title: 'Missing tctoken quota exceeded',
+      message: `Mensagem bloqueada porque a sessao ja enviou ${quota.used} mensagens sem tc token nas ultimas ${quota.windowHours} horas.`,
+      error_data: {
+        reason: 'missing_tc_token_quota_exceeded',
+        limit: quota.limit,
+        used: quota.used,
+        remaining: quota.remaining,
+        window_hours: quota.windowHours,
+        reset_at: quota.resetAt,
+      },
+    }
+    return {
+      ok: {
+        messaging_product: 'whatsapp',
+        contacts: [{ wa_id: recipient }],
+        messages: [{ id }],
+      },
+      error: {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: this.phone,
+            changes: [
+              {
+                value: {
+                  messaging_product: 'whatsapp',
+                  metadata: {
+                    display_phone_number: this.phone,
+                    phone_number_id: this.phone,
+                  },
+                  statuses: [
+                    {
+                      id,
+                      recipient_id: recipient,
+                      status: 'failed',
+                      timestamp: Math.floor(Date.now() / 1000),
+                      errors: [errorDetails],
+                    },
+                  ],
+                },
+                field: 'messages',
+              },
+            ],
+          },
+        ],
+      },
+    }
+  }
+
   private async resolveContactCardPn(digits: string): Promise<string | undefined> {
     const variants = getBrNinthDigitVariants(digits)
     for (const variant of variants) {
@@ -607,9 +751,11 @@ export class ClientBaileys implements Client {
   private config: Config = defaultConfig
   private close: close = closeDefault
   private sendMessage = this.sendMessageDefault
+  private ensurePrivacyTokensFn: ensurePrivacyTokens | undefined
   private event
   private fetchImageUrl = fetchImageUrlDefault
   private exists = existsDefault
+  private resolveUsername = resolveUsernameDefault
   private socketLogout: logout = logoutDefault
   private fetchGroupMetadata = fetchGroupMetadataDefault
   private groupMetadataFn: groupMetadata = groupMetadataDefault
@@ -640,6 +786,7 @@ export class ClientBaileys implements Client {
   private getConfig: getConfig
   private onNewLogin
   private clientRegistry: Map<string, Client>
+  private usernameResolveLastAt = new Map<string, number>()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private onWebhookError = async (error: any) => {
@@ -689,6 +836,74 @@ export class ClientBaileys implements Client {
       } else {
         await this.listener.process(this.phone, [payload], 'status')
       }
+    }
+  }
+
+  private getMessageSenderJidForUsername(message: any): string {
+    const key = message?.key || {}
+    const remoteJid = `${key?.remoteJid || ''}`.trim()
+    const participant = `${key?.participant || ''}`.trim()
+    if (remoteJid.endsWith('@g.us') && participant) return participant
+    if (remoteJid.endsWith('@newsletter') || remoteJid === 'status@broadcast') return ''
+    return remoteJid
+  }
+
+  private setMessageUsername(message: any, username: string) {
+    const normalized = `${username || ''}`.replace(/^@/, '').trim().toLowerCase()
+    if (!normalized) return
+    if (!message.key) message.key = {}
+    const key = message.key
+    const senderJid = this.getMessageSenderJidForUsername(message)
+    if (`${key?.remoteJid || ''}`.endsWith('@g.us') && senderJid) {
+      key.participantUsername = normalized
+    } else if (senderJid) {
+      key.remoteJidUsername = normalized
+      key.senderUsername = normalized
+    }
+    message.username = normalized
+    message.contact = { ...(message.contact || {}), username: normalized }
+  }
+
+  private async enrichUsernameForMessage(message: any) {
+    try {
+      const existing = `${message?.key?.participantUsername || message?.key?.remoteJidUsername || message?.key?.senderUsername || message?.username || message?.contact?.username || ''}`.trim()
+      if (existing) return
+      const senderJid = this.getMessageSenderJidForUsername(message)
+      if (!senderJid || senderJid.endsWith('@g.us') || senderJid.endsWith('@newsletter')) return
+
+      const cached = await this.store?.dataStore?.getContactInfo?.(senderJid)
+      const cachedUsername = `${cached?.username || ''}`.replace(/^@/, '').trim().toLowerCase()
+      if (cachedUsername) {
+        this.setMessageUsername(message, cachedUsername)
+        return
+      }
+
+      const now = Date.now()
+      const cooldownKey = `${this.phone}:${senderJid}`
+      const last = this.usernameResolveLastAt.get(cooldownKey) || 0
+      if (now - last < 6 * 60 * 60 * 1000) return
+      this.usernameResolveLastAt.set(cooldownKey, now)
+
+      const resolved = await this.resolveUsername(senderJid)
+      const username = `${resolved?.username || ''}`.replace(/^@/, '').trim().toLowerCase()
+      if (!username) {
+        logger.info('USERNAME_WEBHOOK_ENRICH_NONE: jid=%s', senderJid)
+        return
+      }
+      this.setMessageUsername(message, username)
+
+      const info = {
+        ...(cached || {}),
+        username,
+        name: cached?.name || `@${username}`,
+        ...(resolved?.pnJid ? { pnJid: resolved.pnJid, pn: `${resolved.pnJid}`.split('@')[0] } : {}),
+        ...(resolved?.lidJid ? { lidJid: resolved.lidJid } : {}),
+      }
+      try { await this.store?.dataStore?.setContactInfo?.(senderJid, info) } catch {}
+      try { await this.store?.dataStore?.setContactInfo?.(`username:${username}`, info) } catch {}
+      logger.info('USERNAME_WEBHOOK_ENRICH: jid=%s username=%s', senderJid, username)
+    } catch (e) {
+      logger.debug(e as any, 'Ignore username webhook enrichment error')
     }
   }
 
@@ -863,6 +1078,7 @@ export class ClientBaileys implements Client {
     }
     const {
       send,
+      ensurePrivacyTokens,
       read,
       event,
       rejectCall,
@@ -870,6 +1086,7 @@ export class ClientBaileys implements Client {
       fetchGroupMetadata,
       groupMetadata,
       exists,
+      resolveUsername,
       close,
       logout,
       groupCreate,
@@ -891,6 +1108,7 @@ export class ClientBaileys implements Client {
     } = result
     this.event = event
     this.sendMessage = send
+    this.ensurePrivacyTokensFn = ensurePrivacyTokens
     this.readMessages = read
     this.rejectCall = rejectCall
     this.resyncAppStateFn = resyncAppState || resyncAppStateDefault
@@ -914,6 +1132,7 @@ export class ClientBaileys implements Client {
     this.groupMetadataFn = groupMetadata || groupMetadataDefault
     this.close = close
     this.exists = exists
+    this.resolveUsername = resolveUsername || resolveUsernameDefault
     this.socketLogout = logout
     this.config.getMessageMetadata = async <T>(data: T) => {
       logger.debug(data, 'Put metadata in message')
@@ -932,6 +1151,7 @@ export class ClientBaileys implements Client {
     this.clientRegistry.delete(this?.phone)
     configs.delete(this?.phone)
     this.sendMessage = this.sendMessageDefault
+    this.ensurePrivacyTokensFn = undefined
     this.readMessages = readMessagesDefault
     this.rejectCall = rejectCallDefault
     this.resyncAppStateFn = resyncAppStateDefault
@@ -942,6 +1162,7 @@ export class ClientBaileys implements Client {
     this.fetchGroupMetadata = fetchGroupMetadataDefault
     this.groupMetadataFn = groupMetadataDefault
     this.exists = existsDefault
+    this.resolveUsername = resolveUsernameDefault
     this.close = closeDefault
     this.config = defaultConfig
     this.socketLogout = logoutDefault
@@ -1021,9 +1242,11 @@ export class ClientBaileys implements Client {
               if (typeof k?.participant === 'string') candidates.push(k.participant)
               if (typeof k?.remoteJid === 'string') candidates.push(k.remoteJid)
               for (const j of candidates) {
-                try {
-                  if (j && typeof j === 'string' && !j.endsWith('@g.us')) {
-                    const info: any = { name }
+	                try {
+	                  if (j && typeof j === 'string' && !j.endsWith('@g.us')) {
+	                    let currentInfo: any
+	                    try { currentInfo = await store.dataStore.getContactInfo?.(j) } catch {}
+	                    const info: any = { ...(currentInfo || {}), ...(name ? { name } : {}) }
                     if (isLidUser(j)) {
                       info.lidJid = j
                       try {
@@ -1044,17 +1267,20 @@ export class ClientBaileys implements Client {
                         }
                       } catch {}
                     }
-                    await store.dataStore.setContactInfo?.(j, info)
-                    await store.dataStore.setContactName?.(j, name)
-                    try { logger.info('CONTACT_CACHE upsert from upsert: jid=%s name=%s pn=%s lid=%s', j, name || '<none>', info.pn || '<none>', info.lidJid || '<none>') } catch {}
-                  }
+	                    await store.dataStore.setContactInfo?.(j, info)
+	                    if (name) await store.dataStore.setContactName?.(j, name)
+	                    try { logger.info('CONTACT_CACHE upsert from upsert: jid=%s name=%s pn=%s lid=%s', j, name || '<none>', info.pn || '<none>', info.lidJid || '<none>') } catch {}
+	                  }
                 } catch {}
               }
             }
           }
         } catch {}
       } catch { logger.debug('messages.upsert %s', this.phone) }
-      await this.listener.process(this.phone, payload.messages, payload.type)
+	      try {
+	        await Promise.all(((payload?.messages || []) as any[]).map((message) => this.enrichUsernameForMessage(message)))
+	      } catch {}
+	      await this.listener.process(this.phone, payload.messages, payload.type)
       if (this.config.readOnReceipt && payload.messages[0] && !payload.messages[0]?.fromMe) {
         await Promise.all(
           payload.messages
@@ -1933,6 +2159,59 @@ export class ClientBaileys implements Client {
             ...options,
             ...extraSendOptions,
           }
+          const missingTcTokenPreflight = {
+            required: false,
+            hasTcToken: true,
+            candidates: [] as string[],
+            activeJid: undefined as string | undefined,
+          }
+          try {
+            const targetJid = typeof targetTo === 'string' && targetTo.includes('@') ? targetTo : phoneNumberToJid(targetTo)
+            const shouldCheckTcToken =
+              targetJid &&
+              (isPnUser(targetJid as any) || isLidUser(targetJid as any)) &&
+              !targetJid.endsWith('@g.us') &&
+              targetJid !== 'status@broadcast' &&
+              !['reaction', 'message_edit'].includes(type)
+            if (shouldCheckTcToken) {
+              const tokenStatus = await this.hasUsableTcToken(targetJid)
+              missingTcTokenPreflight.required = true
+              missingTcTokenPreflight.hasTcToken = tokenStatus.hasTcToken
+              missingTcTokenPreflight.candidates = tokenStatus.candidates
+              missingTcTokenPreflight.activeJid = tokenStatus.activeJid
+              if (!tokenStatus.hasTcToken) {
+                const quota = await checkMissingTcTokenQuota(this.phone)
+                if (!quota.allowed) {
+                  const recovered = await this.recoverTcTokenBeforeQuotaBlock(targetJid, tokenStatus.candidates)
+                  if (recovered.hasTcToken) {
+                    missingTcTokenPreflight.hasTcToken = true
+                    missingTcTokenPreflight.activeJid = recovered.activeJid
+                    logger.warn(
+                      {
+                        phone: this.phone,
+                        to: targetJid,
+                        activeJid: recovered.activeJid,
+                      },
+                      'Missing tctoken quota reached, but token was recovered; proceeding with send',
+                    )
+                  } else {
+                  logger.warn(
+                    {
+                      phone: this.phone,
+                      to: targetJid,
+                      quota,
+                      candidates: tokenStatus.candidates,
+                    },
+                    'Blocking send without tctoken: quota exceeded',
+                  )
+                  return this.buildMissingTcTokenQuotaResponse(targetJid, quota)
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            logger.warn(error as any, 'Ignore missing tctoken preflight error for %s', this.phone)
+          }
           // Apply addressing mode para grupos
           // Se GROUP_SEND_ADDRESSING_MODE estiver setada, respeita. Caso contrário, usa LID por padrão
           // para reduzir "session not found" em grupos grandes.
@@ -2042,6 +2321,33 @@ export class ClientBaileys implements Client {
             await this.store?.dataStore?.setMessage(key.remoteJid, response)
             const ok = buildSendOkResponse(to, externalId || key.id)
             try {
+              const privacyToken = privacyTokenSummaryFromResponse(response)
+              const missingTcToken =
+                privacyToken?.required === true
+                  ? privacyToken?.hasTcToken !== true
+                  : missingTcTokenPreflight.required && !missingTcTokenPreflight.hasTcToken
+              if (privacyToken || missingTcTokenPreflight.required) {
+                const tokenSummary = {
+                  required: privacyToken?.required ?? missingTcTokenPreflight.required,
+                  token_type: privacyToken?.tokenType || (missingTcTokenPreflight.hasTcToken ? 'tc' : 'none'),
+                  has_tc_token: privacyToken?.hasTcToken ?? missingTcTokenPreflight.hasTcToken,
+                  has_privacy_token: privacyToken?.hasPrivacyToken ?? missingTcTokenPreflight.hasTcToken,
+                  source: privacyToken?.source || (missingTcTokenPreflight.hasTcToken ? 'cache' : 'missing'),
+                  destination_jid: privacyToken?.destinationJid || key.remoteJid,
+                  storage_jid: privacyToken?.storageJid || missingTcTokenPreflight.candidates[0],
+                  active_jid: privacyToken?.activeJid || missingTcTokenPreflight.activeJid,
+                }
+                if (missingTcToken) {
+                  const quota = await recordMissingTcTokenSend(this.phone, externalId || key.id)
+                  ;(tokenSummary as any).quota = quota
+                  logger.warn({ phone: this.phone, to: key.remoteJid, id: key.id, quota }, 'Recorded send without tctoken')
+                }
+                ;(ok.messages[0] as any).privacy_token = tokenSummary
+              }
+            } catch (error) {
+              logger.warn(error as any, 'Ignore error recording privacy token send quota')
+            }
+            try {
               if (to === 'status@broadcast') {
                 const skipped = (response as any).__statusSkipped || []
                 // expose auxiliary info without breaking Cloud API shape
@@ -2103,6 +2409,11 @@ export class ClientBaileys implements Client {
       if (e instanceof SendError) {
         const code = e.code
         const title = e.title
+        const errorDetails: any = { code, title }
+        const errorMessage = (e as any)?.message
+        if (errorMessage && errorMessage !== `${code}: ${title}`) errorDetails.message = errorMessage
+        const errorData = (e as any)?.error_data || (e as any)?.errorData
+        if (errorData && typeof errorData === 'object') errorDetails.error_data = errorData
         // Retry de mídia quando o presigned ainda não está disponível (erro de link)
         try {
           const asStr = `${code}`
@@ -2228,10 +2539,7 @@ export class ClientBaileys implements Client {
                         status: 'failed',
                         timestamp: Math.floor(Date.now() / 1000),
                         errors: [
-                          {
-                            code,
-                            title,
-                          },
+                          errorDetails,
                         ],
                       },
                     ],

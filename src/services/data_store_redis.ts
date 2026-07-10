@@ -194,7 +194,7 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
   store.getContactInfo = async (jid: string) => {
     try { const raw = await redisGetContactInfo(phone, jid); return raw ? JSON.parse(raw) : undefined } catch { return undefined }
   }
-  store.setContactInfo = async (jid: string, info: { name?: string; pnJid?: string; lidJid?: string; pn?: string }) => {
+  store.setContactInfo = async (jid: string, info: { name?: string; username?: string; pnJid?: string; lidJid?: string; pn?: string }) => {
     const normalize = (j?: string) => `${(j || '').toString().trim()}`.replace(/@+/g, '@')
     const cleanPnJid = (j: string) => toRawPnJid(j)
     const cleanLidJid = (j: string) => normalizeLidJid(j) || `${(j || '').split('@')[0].split(':')[0]}@lid`
@@ -221,6 +221,7 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
       // Persist under both keys when available
       if (pnJid) { try { await redisSetContactInfo(phone, pnJid, merged) } catch {} }
       if (lidJid) { try { await redisSetContactInfo(phone, lidJid, merged) } catch {} }
+      if (raw.startsWith('username:')) { try { await redisSetContactInfo(phone, raw, merged) } catch {} }
       if (!pnJid && !lidJid) { try { await redisSetContactInfo(phone, raw, merged) } catch {} }
     } catch {}
     return

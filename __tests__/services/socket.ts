@@ -46,6 +46,8 @@ jest.mock('../../src/services/redis', () => {
     ...actual,
     getHistorySyncMarker: jest.fn(async () => false),
     setHistorySyncMarker: jest.fn(async () => undefined),
+    getPrivacyBootstrapSync: jest.fn(async () => false),
+    delPrivacyBootstrapSync: jest.fn(async () => undefined),
   }
 })
 import { OnDisconnected, OnQrCode, OnReconnect, OnNotification, connect, shouldAcceptHistorySync } from '../../src/services/socket'
@@ -162,12 +164,14 @@ describe('service socket', () => {
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.ON_DEMAND, { ...config, allowFullHistorySync: true }, marked)).toBe(true)
   })
 
-  test('history sync decision only allows push names when history is ignored', async () => {
+  test('history sync decision allows privacy payload sync when history is ignored', async () => {
     const config = { ignoreHistoryMessages: true, allowFullHistorySync: true }
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.PUSH_NAME, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA, config)).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.ON_DEMAND, config)).toBe(true)
-    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.RECENT, config)).toBe(false)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.RECENT, config)).toBe(true)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP, config)).toBe(false)
+    expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP, config, { privacyBootstrapSyncEnabled: true })).toBe(true)
     expect(shouldAcceptHistorySync(proto.HistorySync.HistorySyncType.FULL, config)).toBe(false)
   })
 

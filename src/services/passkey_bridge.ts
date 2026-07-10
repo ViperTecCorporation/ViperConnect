@@ -46,7 +46,7 @@ const parseRequestOptions = (requestOptions: Buffer) => {
   }
 }
 
-const ttlSeconds = () => Math.max(30, PASSKEY_BRIDGE_TTL_SECONDS || 300)
+const ttlSeconds = () => Math.max(30, PASSKEY_BRIDGE_TTL_SECONDS || 120)
 
 export const createPasskeyBridgeSession = async (phone: string, bridgeId: string, requestOptions: Buffer) => {
   const now = new Date()

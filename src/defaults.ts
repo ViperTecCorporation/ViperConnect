@@ -4,6 +4,20 @@ import { release } from 'os'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const _undefined: any = undefined
 
+const setDefaultEnv = (key: string, value: string) => {
+  if (process.env[key] === _undefined || process.env[key] === '') {
+    process.env[key] = value
+  }
+}
+
+setDefaultEnv('BAILEYS_WAM_TELEMETRY', 'true')
+setDefaultEnv('BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS', 'false')
+setDefaultEnv('BAILEYS_WAM_TELEMETRY_FLUSH_MS', '5000')
+setDefaultEnv('BAILEYS_WAM_TELEMETRY_MAX_EVENTS', '50')
+setDefaultEnv('UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED', 'true')
+setDefaultEnv('UNOAPI_MISSING_TC_TOKEN_LIMIT', '40')
+setDefaultEnv('UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS', '24')
+
 // security
 export const UNOAPI_AUTH_TOKEN = process.env.UNOAPI_AUTH_TOKEN
 export const OPENAI_API_KEY = process.env.OPENAI_API_KEY
@@ -65,7 +79,7 @@ export const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN || UNOAPI_AUTH_TOKEN || '
 export const WEBHOOK_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_MS || '6000')
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '6000')
 export const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'qrcode'
-export const PASSKEY_BRIDGE_TTL_SECONDS = parseInt(process.env.PASSKEY_BRIDGE_TTL_SECONDS || '300')
+export const PASSKEY_BRIDGE_TTL_SECONDS = parseInt(process.env.PASSKEY_BRIDGE_TTL_SECONDS || '120')
 
 export const CONSUMER_TIMEOUT_MS = parseInt(process.env.CONSUMER_TIMEOUT_MS || '15000')
 export const WEBHOOK_SEND_NEW_MESSAGES = process.env.WEBHOOK_SEND_NEW_MESSAGES == _undefined ? false : process.env.WEBHOOK_SEND_NEW_MESSAGES == 'true'
@@ -89,6 +103,7 @@ export const WEBHOOK_ASYNC =
   process.env.WEBHOOK_ASYNC == _undefined ? true : process.env.WEBHOOK_ASYNC == 'true'
 export const WEBHOOK_ASYNC_MODE = process.env.WEBHOOK_ASYNC_MODE || 'amqp'
 export const WEBHOOK_SESSION = process.env.WEBHOOK_SESSION || ''
+export const UNOAPI_RESTRICTION_TIME_ZONE = process.env.UNOAPI_RESTRICTION_TIME_ZONE || 'America/Sao_Paulo'
 // Webhook circuit breaker (fail fast when endpoints are offline)
 export const WEBHOOK_CB_ENABLED =
   process.env.WEBHOOK_CB_ENABLED == _undefined ? true : process.env.WEBHOOK_CB_ENABLED == 'true'
@@ -141,6 +156,16 @@ export const BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT =
   process.env.BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT === _undefined
     ? false
     : process.env.BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT == 'true'
+export const BAILEYS_WAM_TELEMETRY =
+  process.env.BAILEYS_WAM_TELEMETRY === _undefined ? true : process.env.BAILEYS_WAM_TELEMETRY == 'true'
+export const BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS =
+  process.env.BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS === _undefined ? false : process.env.BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS == 'true'
+export const BAILEYS_WAM_TELEMETRY_FLUSH_MS = parseInt(process.env.BAILEYS_WAM_TELEMETRY_FLUSH_MS || '5000')
+export const BAILEYS_WAM_TELEMETRY_MAX_EVENTS = parseInt(process.env.BAILEYS_WAM_TELEMETRY_MAX_EVENTS || '50')
+export const UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED =
+  process.env.UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED === _undefined ? true : process.env.UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED == 'true'
+export const UNOAPI_MISSING_TC_TOKEN_LIMIT = parseInt(process.env.UNOAPI_MISSING_TC_TOKEN_LIMIT || '40')
+export const UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS = parseInt(process.env.UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS || '24')
 export const UNOAPI_RETRY_REQUEST_DELAY_MS = parseInt(process.env.UNOAPI_RETRY_REQUEST_DELAY || process.env.UNOAPI_RETRY_REQUEST_DELAY_MS || '5000')
 // export const QR_TIMEOUT = parseInt(process.env.QR_TIMEOUT || '30000')
 // export const SLEEP_TIME = parseInt(process.env.SLEEP_TIME || '5000')

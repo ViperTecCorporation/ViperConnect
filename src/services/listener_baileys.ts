@@ -11,6 +11,7 @@ import { UNOAPI_DELAY_AFTER_FIRST_MESSAGE_MS, UNOAPI_DELAY_BETWEEN_MESSAGES_MS, 
 import { v1 as uuid } from 'uuid'
 import { createDecipheriv, createHash, createHmac, hkdfSync } from 'crypto'
 import { getPollState, setPollState, getStatusMediaState, setStatusMediaState, getUnoIdsForProviderAnySession } from './redis'
+import { buildRestrictionNoticeWebhooks } from './restriction_notice'
 
 const  delays: Map<String, number> = new Map()
 const GCM_TAG_LENGTH = 128 >> 3
@@ -1589,6 +1590,31 @@ export class ListenerBaileys implements Listener {
           logger.info('STATUS decision: forward prev=%s -> new=%s id=%s', prev || '<none>', st.status, sid)
         }
       } catch {}
+      try {
+        const st = (data as any)?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]
+        const notices = buildRestrictionNoticeWebhooks({
+          phone,
+          payload: {
+            to: st?.recipient_id,
+            type: 'text',
+            text: { body: '' },
+            __restrictionOriginalSummary: '<indisponivel no update de status>',
+          },
+          unoMessageId: `${st?.id || i?.key?.id || ''}`,
+          statusPayload: data,
+          timestamp: `${st?.timestamp || Math.floor(Date.now() / 1000)}`,
+        })
+        if (notices.length) {
+          logger.warn(
+            'Sending %s restriction notice webhook(s) from listener for %s',
+            notices.length,
+            st?.id || i?.key?.id || '<none>',
+          )
+          await Promise.all(notices.map((notice) => this.outgoing.send(phone, notice)))
+        }
+      } catch (e) {
+        logger.warn(e as any, 'Failed to send restriction notice webhooks from listener')
+      }
       const response = this.outgoing.send(phone, data)
       // Após enviar com sucesso, persiste o novo status (se existir)
       try {

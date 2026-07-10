@@ -8,6 +8,7 @@ import logger from '../services/logger'
 import fetch, { Response } from 'node-fetch'
 import mime from 'mime-types'
 import { v1 as uuid } from 'uuid'
+import { buildRestrictionNoticeWebhooks } from '../services/restriction_notice'
 
 export class IncomingJob {
   private incoming: Incoming
@@ -47,7 +48,30 @@ export class IncomingJob {
     if (typeof fn !== 'function') {
       throw new Error(`Incoming provider does not support group management action ${action}`)
     }
-    return fn.call(this.incoming, phone, ...args)
+    try {
+      return await fn.call(this.incoming, phone, ...args)
+    } catch (error) {
+      if (this.isGroupInviteNotAuthorized(action, error)) {
+        const err = error as any
+        logger.warn({
+          errorCode: err?.data || err?.statusCode || err?.output?.statusCode || err?.output?.payload?.statusCode,
+          errorMessage: err?.message || err?.output?.payload?.message || 'not-authorized',
+          phone,
+          groupJid: args[0],
+          action,
+        }, 'Group invite code unavailable: not authorized')
+        return undefined
+      }
+      throw error
+    }
+  }
+
+  private isGroupInviteNotAuthorized(action: string, error: unknown) {
+    if (action !== 'groupInviteCode' && action !== 'groupRevokeInvite') return false
+    const err = error as any
+    const statusCode = err?.data || err?.statusCode || err?.output?.statusCode || err?.output?.payload?.statusCode
+    const message = `${err?.message || err?.output?.payload?.message || ''}`.toLowerCase()
+    return statusCode === 401 || message.includes('not-authorized') || message.includes('not authorized')
   }
 
   private buildOutgoingWebhookMessage(
@@ -259,7 +283,9 @@ export class IncomingJob {
       } catch (e) {
         logger.warn(e as any, 'Ignore error reconciling status after id mapping')
       }
-    } else if (!ok.success) {
+    } else if (error) {
+      logger.warn('Provider returned error response for %s without ok message id; emitting failed status', idUno)
+    } else if (!ok?.success) {
       throw `Unknow response ${JSON.stringify(response)}`
     } else if (ok.success) {
       // Fallback: provedor não retornou id da mensagem, ainda assim notificar "new message" no webhook
@@ -340,6 +366,31 @@ export class IncomingJob {
         { type: 'topic' }
       )
       await Promise.all(config.webhooks.map((w) => this.outgoing.sendHttp(phone, w, outgingPayload, optionsOutgoing)))
+      if (error) {
+        try {
+          const notices = buildRestrictionNoticeWebhooks({
+            phone,
+            payload,
+            unoMessageId: idUno,
+            statusPayload: outgingPayload,
+            timestamp,
+          })
+          const webhooks = config.webhooks
+          if (notices.length && webhooks.length) {
+            logger.warn(
+              'Sending %s restriction notice webhook(s) for %s to %s webhook(s)',
+              notices.length,
+              idUno,
+              webhooks.length,
+            )
+            await Promise.all(
+              notices.flatMap((notice) => webhooks.map((w) => this.outgoing.sendHttp(phone, w, notice, {}))),
+            )
+          }
+        } catch (e) {
+          logger.warn(e as any, 'Failed to send restriction notice webhooks for %s', idUno)
+        }
+      }
     }
     return response
   }

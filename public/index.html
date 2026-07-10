@@ -555,6 +555,7 @@
                     <th data-i18n="thLabel">${t('thLabel')}</th>
                     <th data-i18n="thNumber">${t('thNumber')}</th>
                     <th data-i18n="thStatus">${t('thStatus')}</th>
+                    <th>TC token</th>
                     <th data-i18n="thServer">${t('thServer')}</th>
                     <th data-i18n="thActions">${t('thActions')}</th>
                   </tr>
@@ -641,6 +642,7 @@
                     <th data-i18n="thLabel">Label</th>
                     <th data-i18n="thNumber">Number</th>
                     <th data-i18n="thStatus">Status</th>
+                    <th>TC token</th>
                     <th data-i18n="thServer">Server</th>
                     <th data-i18n="thActions">Actions</th>
                 </tr>
@@ -1332,8 +1334,8 @@
                         { responsivePriority: 1, targets: 0 }, // Label
                         { responsivePriority: 2, targets: 2 }, // Status
                         { responsivePriority: 3, targets: 1 }, // Number
-                        { responsivePriority: 4, targets: 3 }, // Server
-                        { responsivePriority: 5, targets: 4 }  // Actions
+                        { responsivePriority: 4, targets: 4 }, // Server
+                        { responsivePriority: 5, targets: 5 }  // Actions
                       ]
                     });
                 }
@@ -1360,6 +1362,21 @@
                     return `<span class="status status-restart_required" title="${htmlAttr(raw)}"><span class="dot"></span><span>${htmlText(raw)}</span></span>`;
                 }
                 return `<span class="status" title="${htmlAttr(raw)}"><span class="dot" style="background: var(--muted)"></span><span>${htmlText(raw)}</span></span>`;
+            }
+
+            function renderMissingTcTokenQuota(quota) {
+                if (quota && quota.enabled === false) return '<span class="text-muted">-</span>';
+                if (!quota) {
+                    return '<span class="text-muted" title="Aguardando status da API">0/40</span>';
+                }
+                const used = Number(quota.used || 0);
+                const limit = Number(quota.limit || 0);
+                const remaining = Math.max(0, Number(quota.remaining || 0));
+                const reset = quota.resetAt ? new Date(quota.resetAt).toLocaleString() : '';
+                const blocked = !!quota.blocked;
+                const cls = blocked ? 'text-danger fw-bold' : (remaining <= 5 ? 'text-warning fw-bold' : 'text-muted');
+                const title = reset ? `Libera em ${reset}` : `Janela ${quota.windowHours || 24}h`;
+                return `<span class="${cls}" title="${htmlAttr(title)}">${htmlText(`${used}/${limit}`)}</span>`;
             }
 
             // Populate Datatable with session numbers
@@ -1413,6 +1430,7 @@
                         htmlText(safeCell(session.label, displayPhone)),
                         htmlText(displayPhone),
                         renderStatus(session.status),
+                        renderMissingTcTokenQuota(session.missing_tc_token_quota),
                         htmlText(safeCell(session.server)),
                         `
                         <button class=\"btn btn-sm btn-warning edit-btn\" data-number=\"${actionAttr}\">\n                            <i class=\"fas fa-edit\"></i> ${t('btnEdit')}\n                        </button>\n                        <button class=\"btn btn-sm btn-success connect-btn\" data-bs-toggle=\"modal\" data-bs-target=\"#connectModal\" data-number=\"${actionAttr}\">\n                            <i class=\"fas fa-link\"></i> ${t('btnConnect')}\n                        </button>\n                        <button class=\"btn btn-sm btn-danger delete-btn\" data-number=\"${actionAttr}\">\n                            <i class=\"fas fa-trash\"></i> ${t('btnDelete')}\n                        </button>\n                        <button class=\"btn btn-sm btn-success message-btn\" data-bs-target=\"#messageModal\" data-number=\"${actionAttr}\">\n                            <i class=\"fas fa-message\"></i> ${t('btnTest')}\n                        </button>`

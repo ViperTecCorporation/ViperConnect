@@ -9,7 +9,10 @@ import { sendGraphError } from '../services/graph_error'
 import { generateBusinessAccountId } from '../services/meta_ids'
 import { isEmbeddedAccessToken } from '../services/embedded_tokens'
 import { clients } from '../services/client'
-import { pruneAuthSignalCache } from '../services/redis'
+import { pruneAuthSignalCache, setPrivacyBootstrapSync } from '../services/redis'
+import { getPrivacyTokenDebug } from '../services/privacy_token_debug'
+import { preparePrivacyBootstrapSync } from '../services/privacy_bootstrap_sync'
+import { getMissingTcTokenQuotaStatus } from '../services/privacy_token_quota'
 
 export class PhoneNumberController {
   private getConfig: getConfig
@@ -106,7 +109,9 @@ export class PhoneNumberController {
         const config = await this.getConfig(phone)
         const status = config.provider == 'forwarder' ? 'forwarder' : await this.sessionStore.getStatus(phone)
         if (this.isAuthorizedToken(token, config)) {
-          return { ...config, id: phone, phone, display_phone_number: phone, status }
+          let missingTcTokenQuota
+          try { missingTcTokenQuota = await getMissingTcTokenQuotaStatus(phone) } catch {}
+          return { ...config, id: phone, phone, display_phone_number: phone, status, missing_tc_token_quota: missingTcTokenQuota }
         }
         return undefined
       }))
@@ -215,6 +220,67 @@ export class PhoneNumberController {
       })
     } catch (e) {
       logger.error(e as any, 'Failed to request history on-demand')
+      return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async privacyTokens(req: Request, res: Response) {
+    logger.warn('privacy token debug method %s', req.method)
+    logger.warn('privacy token debug params %s query %s body %s', JSON.stringify(req.params), JSON.stringify(req.query), JSON.stringify(req.body))
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const rawTargets = [
+        (req.query as any)?.target,
+        (req.query as any)?.jid,
+        (req.body as any)?.target,
+        (req.body as any)?.jid,
+        ...(Array.isArray((req.body as any)?.targets) ? (req.body as any).targets : []),
+        ...(Array.isArray((req.query as any)?.targets) ? (req.query as any).targets : []),
+      ]
+        .flatMap((value: any) => `${value || ''}`.split(','))
+        .map((value: string) => value.trim())
+        .filter(Boolean)
+      const result = await getPrivacyTokenDebug(sessionPhone, rawTargets)
+      return res.status(200).json({
+        success: true,
+        ...result,
+      })
+    } catch (e) {
+      logger.error(e as any, 'Failed to read privacy token debug')
+      return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
+    }
+  }
+
+  public async privacyBootstrapSync(req: Request, res: Response) {
+    logger.warn('privacy bootstrap sync method %s', req.method)
+    logger.warn('privacy bootstrap sync params %s query %s body %s', JSON.stringify(req.params), JSON.stringify(req.query), JSON.stringify(req.body))
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const rawTtl = (req.body as any)?.ttlSeconds ?? (req.body as any)?.ttl_seconds ?? (req.query as any)?.ttlSeconds ?? (req.query as any)?.ttl_seconds
+      const parsedTtl = Number.parseInt(`${rawTtl ?? '300'}`, 10)
+      const ttlSeconds = Number.isFinite(parsedTtl) ? Math.min(Math.max(parsedTtl, 30), 600) : 300
+
+      await setPrivacyBootstrapSync(sessionPhone, ttlSeconds)
+      const prepared = await preparePrivacyBootstrapSync(sessionPhone)
+
+      const client = clients.get(sessionPhone)
+      let reconnectRequested = false
+      if (client) {
+        // Closing the active Baileys socket triggers the existing reconnect path.
+        // Calling connect() here as well can create two live sockets and a 440 conflict.
+        await client.disconnect()
+        reconnectRequested = true
+      }
+
+      return res.status(200).json({
+        success: true,
+        phone: sessionPhone,
+        ttl_seconds: ttlSeconds,
+        reconnect_requested: reconnectRequested,
+        prepared,
+      })
+    } catch (e) {
+      logger.error(e as any, 'Failed to force privacy bootstrap sync')
       return sendGraphError(res, e?.code || 500, e.message, { code: 131016, type: 'GraphMethodException' })
     }
   }

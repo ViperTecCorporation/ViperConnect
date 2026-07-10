@@ -18,11 +18,13 @@ import makeWASocket, {
   WAMessageAddressingMode,
   ALL_WA_PATCH_NAMES,
   WAPatchName,
+  USyncQuery,
+  USyncUser,
 } from '@whiskeysockets/baileys'
 import MAIN_LOGGER from '@whiskeysockets/baileys/lib/Utils/logger'
 import { Config, defaultConfig } from './config'
 import { Store } from './store'
-import { isIndividualJid, isValidPhoneNumber, jidToPhoneNumber, phoneNumberToJid, ensurePn, normalizeTransportJid } from './transformer'
+import { isIndividualJid, isValidPhoneNumber, jidToPhoneNumber, phoneNumberToJid, ensurePn, normalizeTransportJid, normalizeLidJid } from './transformer'
 import logger from './logger'
 import { Level } from 'pino'
 import { SocksProxyAgent } from 'socks-proxy-agent'
@@ -38,6 +40,10 @@ import {
   CLEAN_CONFIG_ON_DISCONNECT,
   VALIDATE_SESSION_NUMBER,
   QR_POST_LOGIN_SUPPRESS_MS,
+  BAILEYS_WAM_TELEMETRY,
+  BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS,
+  BAILEYS_WAM_TELEMETRY_FLUSH_MS,
+  BAILEYS_WAM_TELEMETRY_MAX_EVENTS,
 } from '../defaults'
 import { ACK_RETRY_DELAYS_MS, ACK_RETRY_MAX_ATTEMPTS, ACK_RETRY_ENABLED } from '../defaults'
 import { SELFHEAL_ASSERT_ON_DECRYPT, PERIODIC_ASSERT_ENABLED, PERIODIC_ASSERT_INTERVAL_MS, PERIODIC_ASSERT_MAX_TARGETS, PERIODIC_ASSERT_RECENT_WINDOW_MS, PERIODIC_ASSERT_FORCE, PERIODIC_ASSERT_INCLUDE_GROUPS } from '../defaults'
@@ -58,7 +64,7 @@ import {
   DELIVERY_STALE_RECOVERY_GROUPS,
 } from '../defaults'
 import { SESSION_DIR } from './session_store_file'
-import { BASE_KEY, redisGet, redisSetAndExpire, delSignalSessionsForJids, countSignalSessionsForJids, enrichJidMapFromAuthLidCache, configKey, getLidForPnFromAuthCache, getPnForLidFromAuthCache, getHistorySyncMarker, setHistorySyncMarker } from './redis'
+import { BASE_KEY, redisGet, redisSetAndExpire, delSignalSessionsForJids, countSignalSessionsForJids, enrichJidMapFromAuthLidCache, configKey, getLidForPnFromAuthCache, getPnForLidFromAuthCache, getHistorySyncMarker, setHistorySyncMarker, getPrivacyBootstrapSync } from './redis'
 import { readdirSync, rmSync } from 'fs'
 import { STATUS_BROADCAST_ENABLED } from '../defaults'
 import { LID_RESOLVER_ENABLED, LID_RESOLVER_BACKOFF_MS, LID_RESOLVER_SWEEP_INTERVAL_MS, LID_RESOLVER_MAX_PENDING } from '../defaults'
@@ -85,14 +91,18 @@ export const historySyncTypeName = (syncType: proto.HistorySync.HistorySyncType 
 export const shouldAcceptHistorySync = (
   syncType: proto.HistorySync.HistorySyncType | undefined,
   config: Pick<Partial<Config>, 'ignoreHistoryMessages' | 'allowFullHistorySync'>,
-  state: { historyAlreadySynced?: boolean; historySyncInProgress?: boolean } = {},
+  state: { historyAlreadySynced?: boolean; historySyncInProgress?: boolean; privacyBootstrapSyncEnabled?: boolean } = {},
 ): boolean => {
   if (syncType === undefined) return false
   if (syncType === proto.HistorySync.HistorySyncType.PUSH_NAME) return true
   if (syncType === proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA) return true
   if (syncType === proto.HistorySync.HistorySyncType.ON_DEMAND) return true
-  if (config.ignoreHistoryMessages) return false
+  // Keep RECENT enabled even when message history import is ignored: Baileys can
+  // still extract privacy payloads such as nctSalt/tctokens without Uno
+  // registering the history-message webhook importer.
   if (syncType === proto.HistorySync.HistorySyncType.RECENT) return true
+  if (syncType === proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP && state.privacyBootstrapSyncEnabled) return true
+  if (config.ignoreHistoryMessages) return false
   if (state.historySyncInProgress) return true
   if (state.historyAlreadySynced && !config.allowFullHistorySync) return false
   return [
@@ -144,6 +154,10 @@ export interface sendMessage {
   (_phone: string, _message: AnyMessageContent, _options: unknown): Promise<any>
 }
 
+export interface ensurePrivacyTokens {
+  (_jids: string[], _timeoutMs?: number): Promise<any>
+}
+
 export interface readMessages {
   (_keys: WAMessageKey[]): Promise<boolean>
 }
@@ -160,6 +174,22 @@ const normalizeReceiptJid = (jid?: string | null): string | undefined => {
     return user ? `${user}@s.whatsapp.net` : raw
   }
   return raw
+}
+
+const normalizeUsernameRecipient = (value?: string | null): string => {
+  const raw = `${value || ''}`.trim()
+  if (!raw) return ''
+  if (
+    raw.includes('@s.whatsapp.net') ||
+    raw.includes('@lid') ||
+    raw.includes('@g.us') ||
+    raw.includes('@newsletter') ||
+    raw === 'status@broadcast'
+  ) return ''
+  if (/^\+?\d+$/.test(raw)) return ''
+  const username = raw.replace(/^@/, '').trim().toLowerCase()
+  if (!username || username.includes('@') || username.includes(' ')) return ''
+  return /^[a-z0-9._]{3,35}$/.test(username) ? username : ''
 }
 
 export interface rejectCall {
@@ -196,6 +226,10 @@ export interface groupMetadata {
 
 export interface exists {
   (_jid: string): Promise<string | undefined>
+}
+
+export interface resolveUsername {
+  (_jid: string): Promise<{ username?: string; pnJid?: string; lidJid?: string } | undefined>
 }
 
 export interface groupCreate {
@@ -1811,6 +1845,131 @@ export const connect = async ({
     }
   }
 
+  const resolveUsernameRecipient = async (recipient: string): Promise<string | undefined> => {
+    const username = normalizeUsernameRecipient(recipient)
+    if (!username) return undefined
+    const cacheKey = `username:${username}`
+    try {
+      const cached = await (dataStore as any).getContactInfo?.(cacheKey)
+      const cachedLid = normalizeLidJid(cached?.lidJid)
+      const cachedPn = cached?.pnJid && isPnUser(cached.pnJid as any) ? `${cached.pnJid}` : ''
+      const addressingMode = getOneToOneAddressingMode()
+      if (addressingMode === 'pn' && cachedPn) return cachedPn
+      if (cachedLid) return cachedLid
+      if (cachedPn) return cachedPn
+    } catch {}
+
+    try {
+      const query = new USyncQuery()
+        .withContext('interactive')
+        .withContactProtocol()
+        .withUsernameProtocol()
+        .withUser(new USyncUser().withUsername(username))
+      const result = await (sock as any)?.executeUSyncQuery?.(query)
+      const list = Array.isArray(result?.list) ? result.list : []
+      for (const entry of list) {
+        const attrs = (entry?.attrs || {}) as any
+        const contact = (entry?.contact || {}) as any
+        const returnedUsername = `${contact?.username || entry?.username || username}`.replace(/^@/, '').trim().toLowerCase()
+        const rawId = `${entry?.id || attrs?.jid || contact?.jid || ''}`.trim()
+        const rawLid = `${contact?.lid || attrs?.lid || (isLidUser(rawId as any) ? rawId : '')}`.trim()
+        const rawPn = `${contact?.phoneNumber || contact?.phone_number || attrs?.phone_number || (isPnUser(rawId as any) ? rawId : '')}`.trim()
+        const lidJid = normalizeLidJid(rawLid)
+        const pnJid = rawPn
+          ? (rawPn.includes('@s.whatsapp.net') ? rawPn.split(':')[0] : phoneNumberToJid(rawPn))
+          : ''
+        const validPn = pnJid && isPnUser(pnJid as any) ? pnJid : ''
+        if (!lidJid && !validPn && !rawId) continue
+
+        const info = {
+          username: returnedUsername || username,
+          name: returnedUsername ? `@${returnedUsername}` : `@${username}`,
+          ...(validPn ? { pnJid: validPn, pn: validPn.split('@')[0] } : {}),
+          ...(lidJid ? { lidJid } : {}),
+        }
+        try { await (dataStore as any).setContactInfo?.(cacheKey, info) } catch {}
+        try { if (returnedUsername && returnedUsername !== username) await (dataStore as any).setContactInfo?.(`username:${returnedUsername}`, info) } catch {}
+        try { if (validPn) await (dataStore as any).setContactInfo?.(validPn, info) } catch {}
+        try { if (lidJid) await (dataStore as any).setContactInfo?.(lidJid, info) } catch {}
+        try { if (validPn && lidJid) await (dataStore as any).setJidMapping?.(phone, validPn, lidJid) } catch {}
+
+        const resolved = getOneToOneAddressingMode() === 'pn' && validPn ? validPn : (lidJid || validPn || rawId)
+        logger.info('USERNAME_RESOLVE: %s -> %s pn=%s lid=%s', recipient, resolved, validPn || '<none>', lidJid || '<none>')
+        return resolved
+      }
+      logger.warn('USERNAME_RESOLVE: no WhatsApp contact found for %s', recipient)
+    } catch (e) {
+      logger.warn(e as any, 'USERNAME_RESOLVE: failed for %s', recipient)
+    }
+    return undefined
+  }
+
+  const resolveUsernameForJid: resolveUsername = async (jid: string) => {
+    const target = normalizeTransportJid(jid)
+    if (
+      !target ||
+      target.endsWith('@g.us') ||
+      target.endsWith('@newsletter') ||
+      target === 'status@broadcast' ||
+      (!isPnUser(target as any) && !isLidUser(target as any))
+    ) return undefined
+
+    try {
+      const cached = await (dataStore as any).getContactInfo?.(target)
+      const cachedUsername = `${cached?.username || ''}`.replace(/^@/, '').trim().toLowerCase()
+      if (cachedUsername) {
+        return {
+          username: cachedUsername,
+          ...(cached?.pnJid ? { pnJid: cached.pnJid } : {}),
+          ...(cached?.lidJid ? { lidJid: cached.lidJid } : {}),
+        }
+      }
+    } catch {}
+
+    try {
+      const query = new USyncQuery()
+        .withContext('interactive')
+        .withUsernameProtocol()
+        .withUser(new USyncUser().withId(target))
+      const result = await (sock as any)?.executeUSyncQuery?.(query)
+      const entry = Array.isArray(result?.list) ? result.list.find((item: any) => item?.id === target || item?.attrs?.jid === target) || result.list[0] : undefined
+      const username = `${entry?.username || ''}`.replace(/^@/, '').trim().toLowerCase()
+      if (!username) {
+        try {
+          logger.info(
+            'USERNAME_CONTACT_RESOLVE_NONE: jid=%s entries=%s entry=%s',
+            target,
+            Array.isArray(result?.list) ? result.list.length : 0,
+            entry ? JSON.stringify(entry) : '<none>'
+          )
+        } catch {
+          logger.info('USERNAME_CONTACT_RESOLVE_NONE: jid=%s entries=%s entry=<unserializable>', target, Array.isArray(result?.list) ? result.list.length : 0)
+        }
+        return undefined
+      }
+
+      let pnJid = isPnUser(target as any) ? target : undefined
+      let lidJid = isLidUser(target as any) ? target : undefined
+      if (!pnJid) { try { pnJid = await (dataStore as any).getPnForLid?.(phone, target) } catch {} }
+      if (!lidJid) { try { lidJid = await (dataStore as any).getLidForPn?.(phone, target) } catch {} }
+      const info = {
+        username,
+        name: `@${username}`,
+        ...(pnJid ? { pnJid, pn: `${pnJid}`.split('@')[0] } : {}),
+        ...(lidJid ? { lidJid } : {}),
+      }
+      try { await (dataStore as any).setContactInfo?.(target, info) } catch {}
+      try { await (dataStore as any).setContactInfo?.(`username:${username}`, info) } catch {}
+      try { if (pnJid) await (dataStore as any).setContactInfo?.(pnJid, info) } catch {}
+      try { if (lidJid) await (dataStore as any).setContactInfo?.(lidJid, info) } catch {}
+      logger.info('USERNAME_CONTACT_RESOLVE: jid=%s username=%s pn=%s lid=%s', target, username, pnJid || '<none>', lidJid || '<none>')
+      return { username, ...(pnJid ? { pnJid } : {}), ...(lidJid ? { lidJid } : {}) }
+    } catch (e) {
+      logger.debug(e as any, 'USERNAME_CONTACT_RESOLVE: failed for %s', target)
+      return undefined
+    }
+  }
+
   /**
    * Send a message to a target JID.
    * Handles:
@@ -1834,6 +1993,13 @@ export const connect = async ({
     const forceSessionDeviceList = options?.forceDeviceList !== false
     const oneToOneAddressingMode = getOneToOneAddressingMode()
     let idCandidate = forceRemoteJid || to
+    if (!forceRemoteJid) {
+      const usernameResolved = await resolveUsernameRecipient(idCandidate)
+      if (usernameResolved) {
+        logger.info('USERNAME_SEND: overriding destination %s -> %s', idCandidate, usernameResolved)
+        idCandidate = usernameResolved
+      }
+    }
     try {
       if (!forceRemoteJid && isIndividualJid(idCandidate)) {
         if (isLidUser(idCandidate as any)) {
@@ -2691,8 +2857,27 @@ export const connect = async ({
       }
     }
     historyAlreadySynced = await getHistorySyncMarker(phone)
+    const privacyBootstrapSyncEnabled = await getPrivacyBootstrapSync(phone)
+    if (privacyBootstrapSyncEnabled && state?.creds) {
+      try {
+        const previousAccountSyncCounter = (state.creds as any).accountSyncCounter
+        const previousProcessedHistoryMessages = Array.isArray((state.creds as any).processedHistoryMessages)
+          ? (state.creds as any).processedHistoryMessages.length
+          : undefined
+        ;(state.creds as any).accountSyncCounter = 0
+        ;(state.creds as any).processedHistoryMessages = []
+        logger.warn(
+          'Privacy bootstrap sync reset in-memory creds for %s: accountSyncCounter %s -> 0, processedHistoryMessages %s -> 0',
+          phone,
+          previousAccountSyncCounter ?? '<none>',
+          previousProcessedHistoryMessages ?? '<none>',
+        )
+      } catch (e) {
+        logger.warn(e as any, 'Failed to reset in-memory creds for privacy bootstrap sync %s', phone)
+      }
+    }
     historySyncInProgress = false
-    const allowFullHistoryForSession = !config.ignoreHistoryMessages && (!historyAlreadySynced || config.allowFullHistorySync)
+    const allowFullHistoryForSession = privacyBootstrapSyncEnabled || (!config.ignoreHistoryMessages && (!historyAlreadySynced || config.allowFullHistorySync))
     const socketConfig: UserFacingSocketConfig = {
       auth: state,
       logger: loggerBaileys,
@@ -2701,7 +2886,10 @@ export const connect = async ({
       shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
         const syncType = msg?.syncType as proto.HistorySync.HistorySyncType | undefined
         const syncTypeName = historySyncTypeName(syncType)
-        const shouldSync = shouldAcceptHistorySync(syncType, config, { historyAlreadySynced, historySyncInProgress })
+        const shouldSync = shouldAcceptHistorySync(syncType, config, { historyAlreadySynced, historySyncInProgress, privacyBootstrapSyncEnabled })
+        const allowedByPrivacyBootstrapSync = shouldSync
+          && privacyBootstrapSyncEnabled
+          && syncType === proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP
         if (shouldSync && [
           proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP,
           proto.HistorySync.HistorySyncType.ON_DEMAND,
@@ -2712,11 +2900,12 @@ export const connect = async ({
             status: 'started',
             syncType: syncTypeName,
             startedAt: new Date().toISOString(),
+            source: allowedByPrivacyBootstrapSync ? 'privacy-bootstrap-sync' : 'history-sync',
           }).catch(() => {})
         }
         try {
           logger.info(
-            'History sync decision %s syncType=%s chunkOrder=%s progress=%s phone=%s historyAlreadySynced=%s historySyncInProgress=%s',
+            'History sync decision %s syncType=%s chunkOrder=%s progress=%s phone=%s historyAlreadySynced=%s historySyncInProgress=%s privacyBootstrapSyncEnabled=%s privacyBootstrapSyncAllowed=%s',
             shouldSync ? 'accept' : 'skip',
             syncTypeName,
             `${msg?.chunkOrder ?? '<none>'}`,
@@ -2724,6 +2913,8 @@ export const connect = async ({
             phone,
             historyAlreadySynced,
             historySyncInProgress,
+            privacyBootstrapSyncEnabled,
+            allowedByPrivacyBootstrapSync,
           )
         } catch {}
         return shouldSync
@@ -2737,6 +2928,12 @@ export const connect = async ({
       fetchAgent,
       qrTimeout: config.qrTimeoutMs,
       countryCode: `${(config as any).baileysCountryCode || 'BR'}`.toUpperCase(),
+    }
+    ;(socketConfig as any).wamTelemetry = {
+      enabled: BAILEYS_WAM_TELEMETRY,
+      debugEvents: BAILEYS_WAM_TELEMETRY_DEBUG_EVENTS,
+      flushIntervalMs: BAILEYS_WAM_TELEMETRY_FLUSH_MS,
+      maxEvents: BAILEYS_WAM_TELEMETRY_MAX_EVENTS,
     }
     if (whatsappVersion) {
       socketConfig.version = whatsappVersion
@@ -2871,6 +3068,7 @@ export const connect = async ({
     event,
     status,
     send,
+    ensurePrivacyTokens: (sock as any).ensurePrivacyTokens,
     read,
     rejectCall,
     resyncAppState,
@@ -2881,6 +3079,7 @@ export const connect = async ({
     fetchGroupMetadata,
     groupMetadata,
     exists,
+    resolveUsername: resolveUsernameForJid,
     close,
     logout,
     groupCreate,
