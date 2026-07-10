@@ -1,5 +1,6 @@
 import { v1 as uuid } from 'uuid'
 import {
+  UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED,
   UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED,
   UNOAPI_MISSING_TC_TOKEN_LIMIT,
   UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS,
@@ -16,6 +17,7 @@ import {
 
 export type MissingTcTokenQuotaStatus = {
   enabled: boolean
+  blockEnabled: boolean
   limit: number
   used: number
   remaining: number
@@ -48,6 +50,7 @@ const resetAtFromOldest = async (key: string): Promise<string | undefined> => {
 
 export const getMissingTcTokenQuotaStatus = async (phone: string): Promise<MissingTcTokenQuotaStatus> => {
   const enabled = UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED
+  const blockEnabled = UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED
   const limit = Math.max(0, UNOAPI_MISSING_TC_TOKEN_LIMIT || 40)
   const key = missingTcTokenQuotaKey(phone)
   const now = Date.now()
@@ -56,12 +59,13 @@ export const getMissingTcTokenQuotaStatus = async (phone: string): Promise<Missi
   const resetAt = used > 0 ? await resetAtFromOldest(key) : undefined
   return {
     enabled,
+    blockEnabled,
     limit,
     used,
     remaining: Math.max(0, limit - used),
     windowHours: Math.max(1, UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS || 24),
     resetAt,
-    blocked: enabled && limit > 0 && used >= limit,
+    blocked: enabled && blockEnabled && limit > 0 && used >= limit,
   }
 }
 
@@ -77,6 +81,7 @@ export const checkMissingTcTokenQuota = async (phone: string): Promise<MissingTc
     logger.warn(error as any, 'Missing tctoken quota check failed; allowing send for %s', phone)
     return {
       enabled: false,
+      blockEnabled: UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED,
       limit: Math.max(0, UNOAPI_MISSING_TC_TOKEN_LIMIT || 40),
       used: 0,
       remaining: Math.max(0, UNOAPI_MISSING_TC_TOKEN_LIMIT || 40),

@@ -103,6 +103,7 @@ Objetivo: gerar evidencia comparavel entre Baileys, Zapo e whatsmeow sem mudar o
 Implementado na Uno como protecao por sessao:
 
 - `UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED=true`
+- `UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED=false`
 - `UNOAPI_MISSING_TC_TOKEN_LIMIT=40`
 - `UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS=24`
 

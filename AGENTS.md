@@ -86,7 +86,8 @@ Quando retomar melhorias nessa area, use [docs/wam-telemetry-follow-up-plan.md](
 A Uno aplica uma politica por sessao para reduzir risco de shadow ban/erro `463`: envios 1:1 sem `tctoken` entram em uma janela movel no Redis. Por padrao:
 
 - `UNOAPI_MISSING_TC_TOKEN_GUARD_ENABLED=true`
+- `UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED=false`
 - `UNOAPI_MISSING_TC_TOKEN_LIMIT=40`
 - `UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS=24`
 
-Ao atingir o limite, a Uno nao deve bloquear apenas porque o token nao esta no Redis/auth store local. Primeiro ela tenta recuperar `tctoken` no servidor via Baileys; se recuperar, envia normalmente. Se continuar sem `tctoken`, bloqueia antes de chamar o envio real, retorna status `failed` e emite webhook auxiliar para a aplicacao e para a propria sessao com o resumo da mensagem original. A Baileys deve continuar sendo a fonte de verdade para metadata final de token quando disponivel.
+Por padrao, a Uno apenas conta envios 1:1 sem `tctoken` e expoe o uso por sessao. Ela nao deve bloquear o envio enquanto `UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED=false`, porque alguns contatos podem nao ter token recuperavel. Se a env de bloqueio estiver `true` e o limite for atingido, antes de bloquear a Uno tenta recuperar `tctoken` no servidor via Baileys; se recuperar, envia normalmente. Se continuar sem `tctoken`, bloqueia antes de chamar o envio real, retorna status `failed` e emite webhook auxiliar para a aplicacao e para a propria sessao com o resumo da mensagem original. A Baileys deve continuar sendo a fonte de verdade para metadata final de token quando disponivel.
