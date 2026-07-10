@@ -13,6 +13,17 @@ import { addToBlacklist } from '../../src/services/blacklist'
 import { Reload } from '../../src/services/reload'
 import { Logout } from '../../src/services/logout'
 
+jest.mock('../../src/services/privacy_token_quota', () => ({
+  getMissingTcTokenQuotaStatus: jest.fn().mockResolvedValue({
+    enabled: true,
+    limit: 40,
+    used: 0,
+    remaining: 40,
+    windowHours: 24,
+    blocked: false,
+  }),
+}))
+
 const addToBlacklist = mock<addToBlacklist>()
 
 describe('phone number meta-like routes', () => {
@@ -49,47 +60,44 @@ describe('phone number meta-like routes', () => {
   })
 
   test('lists whatsapp business accounts for authorized token', async () => {
-    const res = await request(app.server)
-      .get('/v19.0/me/whatsapp_business_accounts')
-      .set('Authorization', 'Bearer client-token')
+    const res = await request(app.server).get('/v19.0/me/whatsapp_business_accounts').set('Authorization', 'Bearer client-token')
 
     expect(res.status).toEqual(200)
     expect(res.body).toEqual({ data: [{ id: businessAccountId, name: 'Viper' }] })
   })
 
   test('lists phone numbers under a business account id', async () => {
-    const res = await request(app.server)
-      .get(`/v19.0/${businessAccountId}/phone_numbers`)
-      .set('Authorization', 'Bearer client-token')
+    const res = await request(app.server).get(`/v19.0/${businessAccountId}/phone_numbers`).set('Authorization', 'Bearer client-token')
 
     expect(res.status).toEqual(200)
-    expect(res.body.data[0]).toEqual(expect.objectContaining({
-      id: phoneNumberId,
-      business_account_id: businessAccountId,
-      display_phone_number: businessAccountId,
-      verified_name: 'Viper',
-    }))
+    expect(res.body.data[0]).toEqual(
+      expect.objectContaining({
+        id: phoneNumberId,
+        business_account_id: businessAccountId,
+        display_phone_number: businessAccountId,
+        verified_name: 'Viper',
+      }),
+    )
   })
 
   test('lists sessions with stable edit identifiers when status is offline', async () => {
     ;(sessionStore.getStatus as jest.Mock).mockResolvedValue('offline')
 
-    const res = await request(app.server)
-      .get('/sessions')
-      .set('Authorization', 'Bearer client-token')
+    const res = await request(app.server).get('/sessions').set('Authorization', 'Bearer client-token')
 
     expect(res.status).toEqual(200)
-    expect(res.body.data[0]).toEqual(expect.objectContaining({
-      id: sessionPhone,
-      phone: sessionPhone,
-      display_phone_number: sessionPhone,
-      status: 'offline',
-    }))
+    expect(res.body.data[0]).toEqual(
+      expect.objectContaining({
+        id: sessionPhone,
+        phone: sessionPhone,
+        display_phone_number: sessionPhone,
+        status: 'offline',
+      }),
+    )
   })
 
   test('returns debug token scopes for valid token', async () => {
-    const res = await request(app.server)
-      .get('/v19.0/debug_token?input_token=client-token')
+    const res = await request(app.server).get('/v19.0/debug_token?input_token=client-token')
 
     expect(res.status).toEqual(200)
     expect(res.body.data.is_valid).toBe(true)
@@ -98,17 +106,17 @@ describe('phone number meta-like routes', () => {
   })
 
   test('returns administrative meta mappings', async () => {
-    const res = await request(app.server)
-      .get('/sessions/meta/mappings')
-      .set('Authorization', 'Bearer client-token')
+    const res = await request(app.server).get('/sessions/meta/mappings').set('Authorization', 'Bearer client-token')
 
     expect(res.status).toEqual(200)
     expect(res.body).toEqual({
-      data: [{
-        session_phone: sessionPhone,
-        phone_number_id: phoneNumberId,
-        business_account_id: businessAccountId,
-      }],
+      data: [
+        {
+          session_phone: sessionPhone,
+          phone_number_id: phoneNumberId,
+          business_account_id: businessAccountId,
+        },
+      ],
     })
   })
 })
