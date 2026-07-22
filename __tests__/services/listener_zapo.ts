@@ -45,6 +45,75 @@ describe('ListenerZapo', () => {
     expect(outgoing.send).toHaveBeenCalledWith('5566999999999', expect.objectContaining({ entry: expect.any(Array) }))
   })
 
+  test('normalizes a legacy Brazilian mobile PN only at the Zapo webhook boundary', async () => {
+    await service.process('5566999999999', [{
+      key: {
+        id: 'legacy-mobile',
+        remoteJid: '123@lid',
+        remoteJidAlt: '556699554300@s.whatsapp.net',
+        fromMe: false,
+      },
+      message: { conversation: 'oi' },
+      messageTimestamp: 1,
+    }], 'notify')
+
+    const payload: any = (outgoing.send as jest.Mock).mock.calls[0][1]
+    const value = payload.entry[0].changes[0].value
+    expect(value.contacts[0]).toEqual(expect.objectContaining({
+      wa_id: '5566999554300',
+      user_id: '123@lid',
+    }))
+    expect(value.messages[0]).toEqual(expect.objectContaining({
+      from: '5566999554300',
+      from_user_id: '123@lid',
+    }))
+  })
+
+  test('normalizes a legacy Brazilian mobile group sender without replacing its LID', async () => {
+    await service.process('5566999999999', [{
+      key: {
+        id: 'legacy-group-mobile',
+        remoteJid: '120363427999345040@g.us',
+        participant: '456@lid',
+        participantAlt: '556699554300@s.whatsapp.net',
+        fromMe: false,
+        isGroup: true,
+      },
+      message: { conversation: 'grupo' },
+      messageTimestamp: 1,
+    }], 'notify')
+
+    const payload: any = (outgoing.send as jest.Mock).mock.calls[0][1]
+    const value = payload.entry[0].changes[0].value
+    expect(value.contacts[0]).toEqual(expect.objectContaining({
+      wa_id: '5566999554300',
+      user_id: '456@lid',
+      group_id: '120363427999345040@g.us',
+    }))
+    expect(value.messages[0]).toEqual(expect.objectContaining({
+      from: '5566999554300',
+      from_user_id: '456@lid',
+    }))
+  })
+
+  test('keeps a Brazilian landline unchanged in the Zapo webhook', async () => {
+    await service.process('5566999999999', [{
+      key: {
+        id: 'landline',
+        remoteJid: '789@lid',
+        remoteJidAlt: '556635211234@s.whatsapp.net',
+        fromMe: false,
+      },
+      message: { conversation: 'fixo' },
+      messageTimestamp: 1,
+    }], 'notify')
+
+    const payload: any = (outgoing.send as jest.Mock).mock.calls[0][1]
+    const value = payload.entry[0].changes[0].value
+    expect(value.contacts[0].wa_id).toBe('556635211234')
+    expect(value.messages[0].from).toBe('556635211234')
+  })
+
   test('deduplicates repeated provider events', async () => {
     const event = {
       key: { id: 'same', remoteJid: '123@lid', fromMe: false },

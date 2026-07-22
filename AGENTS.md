@@ -102,3 +102,14 @@ A Uno aplica uma politica por sessao para reduzir risco de shadow ban/erro `463`
 - `UNOAPI_MISSING_TC_TOKEN_WINDOW_HOURS=24`
 
 Por padrao, a Uno apenas conta envios 1:1 sem `tctoken` e expoe o uso por sessao. Ela nao deve bloquear o envio enquanto `UNOAPI_MISSING_TC_TOKEN_BLOCK_ENABLED=false`, porque alguns contatos podem nao ter token recuperavel. Se a env de bloqueio estiver `true` e o limite for atingido, antes de bloquear a Uno tenta recuperar `tctoken` no servidor via Baileys; se recuperar, envia normalmente. Se continuar sem `tctoken`, bloqueia antes de chamar o envio real, retorna status `failed` e emite webhook auxiliar para a aplicacao e para a propria sessao com o resumo da mensagem original. A Baileys deve continuar sendo a fonte de verdade para metadata final de token quando disponivel.
+
+## Diretorio de contatos Zapo
+
+A rota `GET /{phone}/contacts` lista o cache de contatos da sessao Zapo com paginacao por cursor. Preserve o contrato LID-first:
+
+- `user_id` deve conter o LID canonico;
+- `phone_number` deve conter somente digitos, sem sufixo JID;
+- celulares brasileiros de 8 digitos devem receber o nono digito, mas telefones fixos nao podem ser alterados;
+- `username` deve ser incluido como campo opcional assim que a Zapo passar a fornecer ou sincronizar esse dado no store;
+- `username` complementa a identidade e nunca deve substituir `user_id` ou `phone_number`;
+- toda alteracao de normalizacao, paginacao ou username exige teste de service e teste da rota HTTP.
