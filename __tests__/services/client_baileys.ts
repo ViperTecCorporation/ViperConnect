@@ -2,6 +2,10 @@ jest.mock('../../src/utils/audio_convert', () => ({
   __esModule: true,
   convertToOggPtt: jest.fn(async () => ({ buffer: Buffer.from('OGG'), mimetype: 'audio/ogg; codecs=opus' }))
 }))
+jest.mock('../../src/utils/sticker_convert', () => ({
+  __esModule: true,
+  convertToWebpSticker: jest.fn(async (buffer: Buffer) => buffer),
+}))
 jest.mock('../../src/defaults', () => {
   const actual = jest.requireActual('../../src/defaults')
   return {

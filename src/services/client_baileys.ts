@@ -500,11 +500,13 @@ export class ClientBaileys implements Client {
       // - Em LID: manter origem
       let toMsg = from
       try {
-        if (ONE_TO_ONE_ADDRESSING_MODE === 'pn') {
+        if (callerPn && isPnUser(callerPn)) {
+          // Baileys already resolved the caller PN. It is the safest address for
+          // the reply even when regular 1:1 traffic is configured as LID-first.
+          toMsg = callerPn
+        } else if (ONE_TO_ONE_ADDRESSING_MODE === 'pn') {
           let pnJid: string | undefined
-          if (callerPn && isPnUser(callerPn)) {
-            pnJid = callerPn
-          } else if (isLidUser(from)) {
+          if (isLidUser(from)) {
             try { pnJid = await this.store?.dataStore?.getPnForLid?.(this.phone, from) } catch {}
             if (!pnJid) { try { const cand = jidNormalizedUser(from); if (cand && isPnUser(cand as any)) pnJid = cand as any } catch {} }
           } else if (isPnUser(from)) {
