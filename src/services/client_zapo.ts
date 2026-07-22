@@ -72,6 +72,7 @@ export class ClientZapo implements Client {
   private lease?: RedisLease
   private leaseRenewTimer?: NodeJS.Timeout
   private maintenanceTimer?: NodeJS.Timeout
+  private reconnectTimer?: NodeJS.Timeout
   private pendingPasskey?: {
     bridgeId: string
     resolve: (value: { credentialId: Uint8Array; webauthnAssertion: Uint8Array }) => void
@@ -544,14 +545,16 @@ export class ClientZapo implements Client {
   }
 
   private scheduleReconnect() {
-    const timer = setTimeout(() => {
+    if (this.intentionalDisconnect || this.reconnectTimer) return
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
       if (!this.intentionalDisconnect) {
         void this.connect(2).catch((error) => {
           logger.error(error as any, 'Zapo reconnect attempt failed for %s', this.phone)
         })
       }
     }, Math.max(1000, this.config.retryRequestDelayMs))
-    timer.unref?.()
+    this.reconnectTimer.unref?.()
   }
 
   private async acquireRuntimeOwnership() {
@@ -641,6 +644,13 @@ export class ClientZapo implements Client {
       return await this.connectTask
     } catch (error) {
       await this.releaseRuntimeOwnership()
+      if (
+        error instanceof SendError
+        && error.code === 409
+        && error.title.startsWith('zapo_session_owned_by_another_worker:')
+      ) {
+        this.scheduleReconnect()
+      }
       throw error
     } finally {
       this.connectTask = undefined
@@ -733,6 +743,8 @@ export class ClientZapo implements Client {
 
   async disconnect() {
     this.intentionalDisconnect = true
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
     this.connected = false
     this.pendingPasskey?.reject(new SendError(409, 'zapo_passkey_connection_disconnected'))
     const socket = this.socket

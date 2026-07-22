@@ -667,6 +667,28 @@ describe('ClientZapo', () => {
     expect(lease.release).not.toHaveBeenCalled()
   })
 
+  test('retries after a stale Zapo ownership lease expires', async () => {
+    jest.useFakeTimers()
+    config.useRedis = true
+    config.retryRequestDelayMs = 1_000
+    const lease = {
+      acquire: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+      renew: jest.fn().mockResolvedValue(true),
+      release: jest.fn().mockResolvedValue(true),
+    }
+    ;(service as any).leaseFactory = jest.fn().mockReturnValue(lease)
+    ;(service as any).maintenance = { pruneMessageIndexBatch: jest.fn().mockResolvedValue({ scanned: 0, removed: 0 }) }
+
+    await expect(service.connect(1)).rejects.toMatchObject({ code: 409 })
+    await jest.advanceTimersByTimeAsync(1_000)
+
+    expect(lease.acquire).toHaveBeenCalledTimes(2)
+    expect(client.connect).toHaveBeenCalledTimes(1)
+    await service.disconnect()
+    jest.clearAllTimers()
+    jest.useRealTimers()
+  })
+
   test('disconnects conservatively when Redis session ownership can no longer be confirmed', async () => {
     config.useRedis = true
     const lease = {
