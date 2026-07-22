@@ -430,6 +430,36 @@ describe('ClientZapo', () => {
     )
   })
 
+  test('enriches an incoming direct message when Zapo only provides its LID', async () => {
+    session.contacts.getByJid.mockResolvedValue({ phoneNumber: '556699554300' } as never)
+    await service.connect(1)
+
+    await handlers.message({
+      key: {
+        id: 'incoming-lid-only',
+        remoteJid: '123456789@lid',
+        fromMe: false,
+        isGroup: false,
+        isNewsletter: false,
+      },
+      timestampSeconds: 1,
+      message: { conversation: 'primeiro contato' },
+    })
+
+    expect(listener.process).toHaveBeenCalledWith(phone, [expect.objectContaining({
+      key: expect.objectContaining({
+        remoteJid: '123456789@lid',
+        remoteJidAlt: '5566999554300@s.whatsapp.net',
+        fromMe: false,
+      }),
+    })], 'notify')
+    expect(dataStore.setJidMapping).toHaveBeenCalledWith(
+      phone,
+      '5566999554300@s.whatsapp.net',
+      '123456789@lid',
+    )
+  })
+
   test('normalizes an existing legacy recipient PN instead of accepting it as-is', async () => {
     await service.connect(1)
 

@@ -173,6 +173,27 @@ export class ClientZapo implements Client {
     }
   }
 
+  private async enrichDirectPhoneAlias(message: any, event: any) {
+    if (event.key.isGroup) return
+    const recipientLid = `${event.key.remoteJid || ''}`
+    if (!recipientLid.endsWith('@lid')) return
+
+    const currentPhoneJid = normalizeZapoPhoneJid(`${message.key.remoteJidAlt || ''}`)
+    const ownPhoneJid = normalizeZapoPhoneJid(this.phone)
+    const canUseCurrentPhone = currentPhoneJid && (!event.key.fromMe || currentPhoneJid !== ownPhoneJid)
+    const phoneJid = canUseCurrentPhone
+      ? currentPhoneJid
+      : await resolveZapoPhoneJid(
+        this.zapoSession?.contacts,
+        recipientLid,
+        event.key.fromMe ? {} : { attempts: 4, delayMs: 100 },
+      )
+    if (!phoneJid) return
+
+    message.key.remoteJidAlt = phoneJid
+    await this.unoStore?.dataStore.setJidMapping?.(this.phone, phoneJid, recipientLid)
+  }
+
   private bindEvents(client: ZapoClient, resolvePrompt: () => void) {
     client.on('auth_qr', ({ qr }) => {
       resolvePrompt()
@@ -240,18 +261,7 @@ export class ClientZapo implements Client {
     })
     client.on('message', async (event) => {
       const message = toUnoMessageEvent(event)
-      if (event.key.fromMe && !event.key.isGroup) {
-        const recipientLid = `${event.key.remoteJid || ''}`
-        const currentPhoneJid = normalizeZapoPhoneJid(`${message.key.remoteJidAlt || ''}`)
-        const ownPhoneJid = normalizeZapoPhoneJid(this.phone)
-        const phoneJid = currentPhoneJid && currentPhoneJid !== ownPhoneJid
-          ? currentPhoneJid
-          : await resolveZapoPhoneJid(this.zapoSession?.contacts, recipientLid)
-        if (phoneJid) {
-          message.key.remoteJidAlt = phoneJid
-          await this.unoStore?.dataStore.setJidMapping?.(this.phone, phoneJid, recipientLid)
-        }
-      }
+      await this.enrichDirectPhoneAlias(message, event)
       if (event.key.isGroup || `${event.key.remoteJid || ''}`.endsWith('@g.us')) {
         logger.info(
           'ZAPO_GROUP_MESSAGE phone=%s id=%s chat=%s fromMe=%s participant=%s participantAlt=%s types=%s',
