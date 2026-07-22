@@ -294,7 +294,7 @@ describe('ClientZapo', () => {
     expect(listener.process).not.toHaveBeenCalled()
   })
 
-  test('seeds canonical PN and LID mappings from Zapo group metadata', async () => {
+  test('seeds the exact Zapo PN and LID mappings from group metadata', async () => {
     client.group.queryAllGroups.mockResolvedValue([{
       id: '120363@g.us',
       subject: 'Equipe',
@@ -310,7 +310,7 @@ describe('ClientZapo', () => {
 
     expect(dataStore.setJidMapping).toHaveBeenCalledWith(
       phone,
-      '5566996328386@s.whatsapp.net',
+      '556696328386@s.whatsapp.net',
       '86110369755163@lid',
     )
   })
@@ -449,18 +449,18 @@ describe('ClientZapo', () => {
     expect(listener.process).toHaveBeenCalledWith(phone, [expect.objectContaining({
       key: expect.objectContaining({
         remoteJid: '123456789@lid',
-        remoteJidAlt: '5566999554300@s.whatsapp.net',
+        remoteJidAlt: '556699554300@s.whatsapp.net',
         fromMe: false,
       }),
     })], 'notify')
     expect(dataStore.setJidMapping).toHaveBeenCalledWith(
       phone,
-      '5566999554300@s.whatsapp.net',
+      '556699554300@s.whatsapp.net',
       '123456789@lid',
     )
   })
 
-  test('normalizes an existing legacy recipient PN instead of accepting it as-is', async () => {
+  test('preserves an existing legacy recipient PN in the Zapo envelope', async () => {
     await service.connect(1)
 
     await handlers.message({
@@ -478,12 +478,12 @@ describe('ClientZapo', () => {
 
     expect(listener.process).toHaveBeenCalledWith(phone, [expect.objectContaining({
       key: expect.objectContaining({
-        remoteJidAlt: '5566999554300@s.whatsapp.net',
+        remoteJidAlt: '556699554300@s.whatsapp.net',
       }),
     })], 'notify')
     expect(dataStore.setJidMapping).toHaveBeenCalledWith(
       phone,
-      '5566999554300@s.whatsapp.net',
+      '556699554300@s.whatsapp.net',
       '11343495192601@lid',
     )
   })

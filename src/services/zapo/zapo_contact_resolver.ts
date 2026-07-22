@@ -11,7 +11,7 @@ const wait = (delayMs: number) => new Promise<void>((resolve) => setTimeout(reso
 
 export const normalizeZapoPhoneJid = (value: string) => {
   const digits = `${value || ''}`.split('@')[0].split(':')[0].replace(/\D/g, '')
-  return digits ? phoneNumberToJid(digits) : undefined
+  return digits ? `${digits}@s.whatsapp.net` : undefined
 }
 
 export const resolveZapoPhoneJid = async (
@@ -31,4 +31,3 @@ export const resolveZapoPhoneJid = async (
   }
   return undefined
 }
-import { phoneNumberToJid } from '../transformer/jid'

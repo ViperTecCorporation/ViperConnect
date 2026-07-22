@@ -1,9 +1,9 @@
 import { normalizeZapoPhoneJid, resolveZapoPhoneJid } from '../../src/services/zapo/zapo_contact_resolver'
 
 describe('resolveZapoPhoneJid', () => {
-  test('normalizes a persisted BR PN JID to the canonical ninth-digit form', () => {
+  test('preserves the persisted Zapo PN instead of applying presentation normalization', () => {
     expect(normalizeZapoPhoneJid('556699554300@s.whatsapp.net'))
-      .toBe('5566999554300@s.whatsapp.net')
+      .toBe('556699554300@s.whatsapp.net')
   })
 
   test('ignores non-LID identifiers without querying the contact store', async () => {
@@ -28,7 +28,7 @@ describe('resolveZapoPhoneJid', () => {
     expect(contacts.getByJid).toHaveBeenCalledTimes(3)
   })
 
-  test('normalizes a legacy PN returned by the Zapo contact store', async () => {
+  test('preserves a legacy PN returned by the Zapo contact store', async () => {
     const contacts = {
       getByJid: jest.fn().mockResolvedValue({
         jid: '11343495192601@lid',
@@ -39,7 +39,7 @@ describe('resolveZapoPhoneJid', () => {
     await expect(resolveZapoPhoneJid(contacts, '11343495192601@lid', {
       attempts: 1,
       delayMs: 0,
-    })).resolves.toBe('5566999554300@s.whatsapp.net')
+    })).resolves.toBe('556699554300@s.whatsapp.net')
   })
 
   test('stops after the configured number of attempts when no mapping exists', async () => {

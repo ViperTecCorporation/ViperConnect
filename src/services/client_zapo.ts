@@ -290,7 +290,12 @@ export class ClientZapo implements Client {
       }
       if (message.key.id) this.pendingIncoming.set(message.key.id, event)
       if (!event.key.fromMe && !event.key.isNewsletter) {
-        const recipientAliases = [event.key.participantAlt, event.key.participant, event.key.remoteJidAlt, event.key.remoteJid]
+        const recipientAliases = [
+          message.key.participantAlt,
+          message.key.participant,
+          message.key.remoteJidAlt,
+          message.key.remoteJid,
+        ]
           .map((jid) => `${jid || ''}`)
           .filter((jid) => jid.endsWith('@s.whatsapp.net'))
         if (recipientAliases.length) {
