@@ -1,7 +1,12 @@
 import { join } from 'node:path'
 import { createRedisStore } from '@zapo-js/store-redis'
 import { createStore } from 'zapo-js'
-import { createZapoStore, redisOptionsFromUrl, zapoSqlitePath } from '../../src/services/zapo/zapo_store'
+import {
+  createZapoStore,
+  redisOptionsFromUrl,
+  resolveZapoRedisKeyPrefix,
+  zapoSqlitePath,
+} from '../../src/services/zapo/zapo_store'
 
 jest.mock('@zapo-js/store-redis', () => ({ createRedisStore: jest.fn(() => ({ stores: {}, caches: {} })) }))
 jest.mock('@zapo-js/store-sqlite', () => ({ createSqliteStore: jest.fn(() => ({ stores: {}, caches: {} })) }))
@@ -27,6 +32,14 @@ describe('zapo store', () => {
     expect(zapoSqlitePath('/data')).toBe(join('/data', 'zapo', 'sessions.sqlite'))
   })
 
+  test('maps the legacy Redis prefix to the canonical safe prefix', () => {
+    expect(resolveZapoRedisKeyPrefix('unoapi-zapo:')).toBe('unoapi:zapo:')
+  })
+
+  test('rejects unsafe custom Redis prefixes', () => {
+    expect(() => resolveZapoRedisKeyPrefix('unoapi/zapo:')).toThrow('ZAPO_REDIS_KEY_PREFIX')
+  })
+
   test('creates a durable Redis-backed Zapo store', () => {
     const store = createZapoStore({
       useRedis: true,
@@ -35,7 +48,7 @@ describe('zapo store', () => {
     })
 
     expect(createRedisStore).toHaveBeenCalledWith(expect.objectContaining({
-      keyPrefix: 'unoapi-zapo:',
+      keyPrefix: 'unoapi:zapo:',
       storeTtlMs: expect.objectContaining({ contactsMs: expect.any(Number), messagesMs: expect.any(Number) }),
     }))
     expect(createStore).toHaveBeenCalledWith(expect.objectContaining({

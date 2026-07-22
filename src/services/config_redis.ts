@@ -45,7 +45,12 @@ export const getConfigRedis: getConfig = async (phone: string): Promise<Config> 
   }
   if (!configs.has(phone)) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const configRedis: any = { ...((await getConfigCache(phone)) || {}) }
+    const storedConfig = await getConfigCache(phone)
+    const hasStoredConfig = storedConfig !== null && storedConfig !== undefined
+    const hasStoredProvider = hasStoredConfig
+      && Object.prototype.hasOwnProperty.call(storedConfig, 'provider')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const configRedis: any = { ...(storedConfig || {}) }
     logger.info('Retrieve config default for %s', phone)
     const config: Config = { ...(await getConfigByEnv(phone)) }
 
@@ -91,7 +96,11 @@ export const getConfigRedis: getConfig = async (phone: string): Promise<Config> 
     }
 
     config.server = config.server || 'server_1'
-    config.provider = resolveSessionProvider(config.provider)
+    // Configs persisted before multi-provider support belong to Baileys. The
+    // environment default is reserved for sessions that do not exist yet.
+    config.provider = hasStoredConfig && !hasStoredProvider
+      ? 'baileys'
+      : resolveSessionProvider(config.provider)
     try {
       const fwd: any = (config as any).webhookForward || {}
       if (!`${fwd?.businessAccountId || ''}`.trim()) {

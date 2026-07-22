@@ -33,6 +33,19 @@ const cacheDomains = (backend: string) => ({
   messageSecret: backend,
 } as const)
 
+const DEFAULT_REDIS_KEY_PREFIX = 'unoapi:zapo:'
+const LEGACY_REDIS_KEY_PREFIX = 'unoapi-zapo:'
+const SAFE_REDIS_KEY_PREFIX = /^[A-Za-z0-9_:]*$/
+
+export const resolveZapoRedisKeyPrefix = (value?: string) => {
+  const prefix = value?.trim() || DEFAULT_REDIS_KEY_PREFIX
+  if (prefix === LEGACY_REDIS_KEY_PREFIX) return DEFAULT_REDIS_KEY_PREFIX
+  if (!SAFE_REDIS_KEY_PREFIX.test(prefix)) {
+    throw new Error('ZAPO_REDIS_KEY_PREFIX must contain only letters, numbers, underscores, and colons')
+  }
+  return prefix
+}
+
 export const redisOptionsFromUrl = (redisUrl: string): RedisOptions => {
   const url = new URL(redisUrl)
   if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
@@ -65,7 +78,7 @@ export const createZapoStore = (config: ZapoStoreConfig): WaStore => {
     if (!config.redisUrl) throw new Error('REDIS_URL is required for the Zapo Redis store')
     backend = createRedisStore({
       redis: redisOptionsFromUrl(config.redisUrl),
-      keyPrefix: config.redisKeyPrefix || 'unoapi-zapo:',
+      keyPrefix: resolveZapoRedisKeyPrefix(config.redisKeyPrefix),
       storeTtlMs: {
         preKeyMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
         sessionMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,

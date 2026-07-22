@@ -31,7 +31,11 @@ export class RegistrationController {
     const phone = await resolveSessionPhoneByMetaId(req.params.phone)
     try {
       const previousConfig = await this.getConfig(phone)
-      await setConfig(phone, req.body)
+      const requestedConfig = {
+        ...req.body,
+        provider: req.body.provider ?? previousConfig.provider,
+      }
+      await setConfig(phone, requestedConfig)
       const config = await this.getConfig(phone)
       const providerChanged = resolveWhatsAppEngine(previousConfig.provider) !== resolveWhatsAppEngine(config.provider)
       const now = Date.now()

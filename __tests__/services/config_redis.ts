@@ -2,7 +2,8 @@ jest.mock('../../src/services/redis')
 import { getConfig } from '../../src/services/redis'
 import { getConfigRedis } from '../../src/services/config_redis'
 import { configs } from '../../src/services/config'
-import { WEBHOOK_HEADER } from '../../src/defaults'
+import { WEBHOOK_HEADER, WHATSAPP_ENGINE } from '../../src/defaults'
+import { resolveSessionProvider } from '../../src/services/providers/provider_resolver'
 const mockGetConfig = getConfig as jest.MockedFunction<typeof getConfig>
 
 describe('service config redis', () => {
@@ -18,10 +19,17 @@ describe('service config redis', () => {
   })
 
   test('use default', async () => {
-    mockGetConfig.mockResolvedValue({})
+    mockGetConfig.mockResolvedValue(undefined)
     const config = await getConfigRedis(`${new Date().getTime()}`)
     expect(config.ignoreGroupMessages).toBe(true)
     expect(config.ignoreBroadcastMessages).toBe(false)
+    expect(config.provider).toBe(resolveSessionProvider(WHATSAPP_ENGINE))
+  })
+
+  test('keeps a persisted legacy session on Baileys when provider is absent', async () => {
+    mockGetConfig.mockResolvedValue({ autoConnect: true })
+    const config = await getConfigRedis(`${new Date().getTime()}`)
+    expect(config.provider).toBe('baileys')
   })
 
   // test('use env', async () => {
