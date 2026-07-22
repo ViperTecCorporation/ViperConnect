@@ -28,7 +28,19 @@ jest.mock('@redis/client', () => ({
 
 process.env.REDIS_URL = 'redis://mock'
 
-import { getProviderId, getUnoId, setUnoId, setJidMapping, getLidForPn, getPnForLid } from '../../src/services/redis'
+import {
+  acquireWebhookCircuitProbe,
+  closeWebhookCircuit,
+  getProviderId,
+  getUnoId,
+  isWebhookCircuitOpen,
+  isWebhookCircuitRecovering,
+  openWebhookCircuit,
+  setUnoId,
+  setJidMapping,
+  getLidForPn,
+  getPnForLid,
+} from '../../src/services/redis'
 
 describe('redis.setUnoId', () => {
   beforeEach(() => {
@@ -88,5 +100,30 @@ describe('redis.setJidMapping', () => {
     expect(await getPnForLid(phone, '190280070385782@lid')).toBe(pn)
     expect(await getPnForLid(phone, '190280070385782:35@lid')).toBe(pn)
     expect(await getLidForPn(phone, pn)).toBe('190280070385782@lid')
+  })
+})
+
+describe('redis webhook circuit breaker', () => {
+  beforeEach(() => {
+    mockClient.__reset()
+  })
+
+  it('keeps recovery state and grants only one half-open probe', async () => {
+    await openWebhookCircuit('5511', 'chatwoot', 120000, 30000)
+
+    expect(await isWebhookCircuitOpen('5511', 'chatwoot')).toBe(true)
+    expect(await isWebhookCircuitRecovering('5511', 'chatwoot')).toBe(true)
+    expect(await acquireWebhookCircuitProbe('5511', 'chatwoot', 30000)).toBe(true)
+    expect(await acquireWebhookCircuitProbe('5511', 'chatwoot', 30000)).toBe(false)
+  })
+
+  it('clears open, failure, recovery and probe state after success', async () => {
+    await openWebhookCircuit('5511', 'chatwoot', 120000, 30000)
+    await acquireWebhookCircuitProbe('5511', 'chatwoot', 30000)
+    await closeWebhookCircuit('5511', 'chatwoot')
+
+    expect(await isWebhookCircuitOpen('5511', 'chatwoot')).toBe(false)
+    expect(await isWebhookCircuitRecovering('5511', 'chatwoot')).toBe(false)
+    expect(await acquireWebhookCircuitProbe('5511', 'chatwoot', 30000)).toBe(true)
   })
 })

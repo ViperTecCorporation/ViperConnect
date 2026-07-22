@@ -1251,7 +1251,7 @@
                 "properties": {
                   "message_id": {
                     "type": "string",
-                    "description": "ID Unoapi da mensagem original. A Unoapi resolve esse ID para a key original do Baileys em cache antes de chamar sendMessage(..., { edit: key })."
+                    "description": "ID Unoapi da mensagem original enviada pela conta conectada. A Unoapi resolve o ID para a key do provider; na Zapo usa editKey com id e participante opcional."
                   }
                 }
               },

@@ -70,11 +70,11 @@ export class ListenerZapo implements Listener {
     }
   }
 
-  private isDuplicate(message: any) {
+  private isDuplicate(message: any, messageType?: string) {
     const id = `${message?.key?.id || ''}`
     const jid = `${message?.key?.remoteJid || ''}`
     if (!id || !jid || message?.update) return false
-    const key = `${jid}|${id}`
+    const key = `${jid}|${id}|${messageType || 'unknown'}`
     const now = Date.now()
     const previous = this.seen.get(key) || 0
     this.seen.set(key, now)
@@ -95,6 +95,7 @@ export class ListenerZapo implements Listener {
     const content = getBinMessage(message as any)?.message
     await map(content?.contextInfo, 'stanzaId')
     await map(message?.message?.reactionMessage?.key, 'id')
+    await map(message?.message?.pollUpdateMessage?.pollCreationMessageKey, 'id')
     await map(message?.message?.protocolMessage?.key, 'id')
     await map(message?.update?.message?.protocolMessage?.key, 'id')
   }
@@ -143,16 +144,16 @@ export class ListenerZapo implements Listener {
   }
 
   async sendOne(phone: string, raw: object) {
-    if (this.isDuplicate(raw)) return
     const source: any = raw
     const message: any = {
       ...source,
       key: { ...(source?.key || {}) },
       ...(source?.update ? { update: { ...source.update } } : {}),
     }
+    const messageType = this.messageType(message)
+    if (this.isDuplicate(message, messageType)) return
     const config = await this.getConfig(phone)
     const store = await config.getStore(phone, config)
-    const messageType = this.messageType(message)
     const normalized = await this.normalizeMessageId(store, message, config.getMessageMetadata, messageType)
 
     if (normalized?.key?.id && normalized?.key?.remoteJid && !normalized?.key?.fromMe) {

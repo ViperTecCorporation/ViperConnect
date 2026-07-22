@@ -39,6 +39,19 @@ describe('Zapo session migration', () => {
     expect(deps.readFileSnapshot).toHaveBeenCalledWith('5566', '/data')
   })
 
+  test('does not treat incomplete unpaired Zapo credentials as a migrated session', async () => {
+    const store = mockDeep<WaStoreSession>()
+    store.auth.load.mockResolvedValue({ registrationId: 123 } as never)
+    const deps = dependencies()
+    deps.readRedisSnapshot.mockResolvedValue(undefined)
+
+    await expect(migrateBaileysSessionToZapo('5566', config(true), store, deps)).resolves.toEqual({
+      status: 'source-not-found',
+      losses: [],
+    })
+    expect(deps.readRedisSnapshot).toHaveBeenCalledWith('5566')
+  })
+
   test('converts, writes and validates a Baileys Redis session', async () => {
     const store = mockDeep<WaStoreSession>()
     store.auth.load.mockResolvedValueOnce(null).mockResolvedValueOnce({ meJid: '5566@s.whatsapp.net' } as never)

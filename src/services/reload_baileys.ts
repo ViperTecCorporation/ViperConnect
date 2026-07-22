@@ -43,7 +43,7 @@ export class ReloadBaileys extends Reload {
         const currentClient = clients.get(phone)
         if (currentClient) {
           logger.info('Disconnect session %s from previous %s worker', phone, this.workerEngine)
-          await currentClient.disconnect()
+          await currentClient.disconnect({ preserveStatus: true })
           clients.delete(phone)
         }
         return

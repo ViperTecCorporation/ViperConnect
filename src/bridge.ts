@@ -15,7 +15,7 @@ import {
   UNOAPI_WORKER_ENGINE,
 } from './defaults'
 import { amqpConsume } from './amqp'
-import { startRedis } from './services/redis'
+import { ensureRequiredRedis } from './services/redis_runtime'
 import { getConfig } from './services/config'
 import { getConfigRedis } from './services/config_redis'
 import { getClientProvider } from './services/providers/client_factory'
@@ -35,9 +35,9 @@ import { resolveWhatsAppEngine } from './services/providers/provider_resolver'
 
 const getConfigLocal: getConfig = getConfigRedis
 const outgoingAmqp: Outgoing = new OutgoingAmqp(getConfigLocal)
-const listenerAmqp: Listener = new ListenerAmqp()
-const onNewLogin = onNewLoginGenerateToken(outgoingAmqp)
 const workerEngine = resolveWhatsAppEngine(UNOAPI_WORKER_ENGINE)
+const listenerAmqp: Listener = new ListenerAmqp(workerEngine)
+const onNewLogin = onNewLoginGenerateToken(outgoingAmqp)
 const bindJob = new BindBridgeJob(workerEngine)
 const reload = new ReloadBaileys(getClientProvider, getConfigLocal, listenerAmqp, onNewLogin, workerEngine)
 const reloadJob = new ReloadJob(reload)
@@ -54,7 +54,7 @@ if (process.env.SENTRY_DSN) {
 }
 
 const startBrigde = async () => {
-  await startRedis()
+  await ensureRequiredRedis()
 
   logger.info('Unoapi Cloud version %s starting bridge...', version)
 
@@ -100,7 +100,10 @@ const startBrigde = async () => {
 
   await autoConnect(sessionStore, listenerAmqp, getConfigRedis, getClientProvider, onNewLogin, workerEngine)
 }
-startBrigde()
+startBrigde().catch((error) => {
+  logger.error(error, 'Failed to start bridge: Redis is required')
+  process.exit(1)
+})
 
 process.on('uncaughtException', (reason: any) => {
   if (process.env.SENTRY_DSN) {

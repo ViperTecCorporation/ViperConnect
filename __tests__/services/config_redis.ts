@@ -72,6 +72,28 @@ describe('service config redis', () => {
     expect(config.webhooks[0].enabled).toBe(false)
   })
 
+  test('normalizes an invalid history window stored in redis', async () => {
+    mockGetConfig.mockResolvedValue({ historyMaxAgeDays: 0 })
+    const config = await getConfigRedis(`${new Date().getTime()}`)
+    expect(config.historyMaxAgeDays).toBe(30)
+  })
+
+  test('forces direct-chat addressing to LID even when Redis contains PN', async () => {
+    mockGetConfig.mockResolvedValue({ oneToOneAddressingMode: 'pn' })
+    const config = await getConfigRedis(`${new Date().getTime()}`)
+    expect(config.oneToOneAddressingMode).toBe('lid')
+  })
+
+  test('removes the legacy fake base URL when an absolute webhook exists', async () => {
+    mockGetConfig.mockResolvedValue({ webhooks: [{
+      url: 'http://localhost:9876/webhooks/fake',
+      urlAbsolute: 'https://chatwoot.local/webhook',
+    }] })
+    const config = await getConfigRedis(`${new Date().getTime()}`)
+    expect(config.webhooks[0].url).toBe('')
+    expect(config.webhooks[0].urlAbsolute).toBe('https://chatwoot.local/webhook')
+  })
+
   test('get media store', async () => {
     const phone = `${new Date().getTime()}`
     const config = await getConfigRedis(phone)

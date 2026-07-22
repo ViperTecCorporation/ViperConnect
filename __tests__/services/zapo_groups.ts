@@ -16,6 +16,7 @@ describe('Zapo groups adapter', () => {
       lastUpdatedMs: 1,
     }))
     client.group.revokeInvite.mockResolvedValue({ code: 'new-code', affectedParticipants: [] })
+    client.group.queryGroupMetadata.mockResolvedValue({ id: 'g@g.us', descId: 'previous-description-id' } as never)
     ;(fetch as unknown as jest.Mock).mockResolvedValue({
       ok: true,
       status: 200,
@@ -45,7 +46,7 @@ describe('Zapo groups adapter', () => {
 
     expect(client.group.queryAllGroups).toHaveBeenCalled()
     expect(client.group.createGroup).toHaveBeenCalledWith('Equipe', ['lid-1@lid'])
-    expect(client.group.setDescription).toHaveBeenCalledWith('g@g.us', null)
+    expect(client.group.setDescription).toHaveBeenCalledWith('g@g.us', null, 'previous-description-id')
     expect(client.profile.setProfilePicture).toHaveBeenCalledWith(Uint8Array.from([1, 2]), 'g@g.us')
     expect(client.group.addParticipants).toHaveBeenCalled()
     expect(client.group.removeParticipants).toHaveBeenCalled()

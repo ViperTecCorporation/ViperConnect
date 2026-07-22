@@ -23,6 +23,7 @@ import { Incoming } from './services/incoming'
 import logger from './services/logger'
 import { addToBlacklistRedis, isInBlacklistInRedis } from './services/blacklist'
 import { version } from '../package.json'
+import { ensureRequiredRedis } from './services/redis_runtime'
 
 import * as Sentry from '@sentry/node'
 import { isTransientBaileysError } from './services/error_utils'
@@ -46,6 +47,7 @@ const bulkReportJob = new BulkReportJob(outgoingCloudApi, getConfigRedis)
 const bulkWebhookJob = new BulkWebhookJob(outgoingCloudApi)
 
 const startBulker = async () => {
+  await ensureRequiredRedis()
   logger.info('Unoapi Cloud version %s starting bulker...', version)
 
   logger.info('Starting commander consumer')
@@ -66,7 +68,10 @@ const startBulker = async () => {
   logger.info('Starting bulk webhook consumer')
   await amqpConsume(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_BULK_WEBHOOK, '*', bulkWebhookJob.consume.bind(bulkWebhookJob), { type: 'topic' })
 }
-startBulker()
+startBulker().catch((error) => {
+  logger.error(error, 'Failed to start bulker: Redis is required')
+  process.exit(1)
+})
 
 process.on('uncaughtException', (reason: any) => {
   if (process.env.SENTRY_DSN) {

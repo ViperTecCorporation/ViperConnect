@@ -204,8 +204,11 @@ const resolveParticipantIdentity = async (phone: string, participant: any) => {
     if (candidate.endsWith('@s.whatsapp.net')) pnJid = candidate
   }
 
-  if (!pnJid && lid) {
-    try { pnJid = `${await getPnForLid(phone, lid) || ''}`.trim() } catch {}
+  if (lid) {
+    try {
+      const mappedPnJid = `${await getPnForLid(phone, lid) || ''}`.trim()
+      if (mappedPnJid) pnJid = mappedPnJid
+    } catch {}
   }
 
   if (!lid && pnJid) {
@@ -260,8 +263,11 @@ const groupCreatedAt = (group: any): string | undefined => {
 }
 
 const groupJoinApprovalMode = (group: any): string | undefined => {
+  if (typeof group?.membershipApprovalEnabled === 'boolean') {
+    return group.membershipApprovalEnabled ? 'approval_required' : 'open'
+  }
   if (typeof group?.joinApprovalMode !== 'undefined') return `${group.joinApprovalMode}`
-  if (typeof group?.memberAddMode !== 'undefined') return group.memberAddMode ? 'approval_required' : 'open'
+  if (typeof group?.memberAddMode === 'boolean') return group.memberAddMode ? 'approval_required' : 'open'
   return undefined
 }
 

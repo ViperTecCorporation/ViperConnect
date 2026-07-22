@@ -7,7 +7,8 @@ import logger from './logger'
 import { stores } from './store'
 import { dataStores } from './data_store'
 import { mediaStores } from './media_store'
-import { delSessionStatus } from './redis'
+import { delConfig, delSessionStatus, delSessionTransientKeys } from './redis'
+import { resolveWhatsAppEngine } from './providers/provider_resolver'
 
 export class LogoutBaileys implements Logout {
   private getClient: getClient
@@ -23,12 +24,9 @@ export class LogoutBaileys implements Logout {
   }
 
   async run(phone: string) {
-    logger.debug('Logout baileys for phone %s', phone)
-    try {
-      const stack = new Error('logout_trace').stack
-      logger.warn('LogoutBaileys.run invoked for %s stack=%s', phone, stack)
-    } catch {}
     const config = await this.getConfig(phone)
+    const provider = resolveWhatsAppEngine(config.provider)
+    logger.debug('Logout provider session for phone %s (provider=%s)', phone, provider)
     const store = await config.getStore(phone, config)
     const { sessionStore, dataStore } = store
     const existingClient = clients.get(phone)
@@ -48,18 +46,29 @@ export class LogoutBaileys implements Logout {
       try {
         await client.logout()
       } catch (e) {
-        logger.warn(e as any, 'Ignore error while forcing Baileys logout for %s', phone)
+        logger.warn(e as any, 'Ignore error while forcing %s logout for %s', provider, phone)
       }
     }
-    await dataStore.cleanSession(true)
+    if (provider === 'baileys') {
+      await dataStore.cleanSession(true)
+    } else if (config.useRedis) {
+      // Zapo clears its own persistent store after the server confirms logout.
+      // Do not call the legacy DataStore cleanup here: it owns Baileys auth and
+      // would destroy the rollback credentials during a Zapo deregistration.
+      await delConfig(phone)
+      await delSessionStatus(phone)
+      await delSessionTransientKeys(phone)
+    } else {
+      await sessionStore.setStatus(phone, 'disconnected')
+    }
     clients.delete(phone)
     stores.delete(phone)
     dataStores.delete(phone)
     mediaStores.delete(phone)
     configs.delete(phone)
-    if (config.useRedis) {
+    if (config.useRedis && provider === 'baileys') {
       await delSessionStatus(phone)
-    } else {
+    } else if (!config.useRedis && provider === 'baileys') {
       await sessionStore.setStatus(phone, 'disconnected')
     }
   }

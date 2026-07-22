@@ -125,14 +125,14 @@ Estados permitidos: `nao iniciado`, `adapter`, `testado`, `documentado`, `conclu
 | Dominio | Contrato UnoAPI | Zapo oficial | Estado inicial |
 |---|---|---|---|
 | Sessao | connect, QR, pairing, reconnect, logout | auth/connection | testado |
-| Mensagens | texto, midia, contato, interativo, raw e reacao | `client.message` | testado |
+| Mensagens | texto, midia, contato, interativo, enquete, raw e reacao | `client.message` | testado |
 | Operacoes | responder, editar, apagar e recibos | `client.message` | testado |
 | Midia | upload, download e decriptacao | message/media + media-utils | testado |
 | Grupos | listar/cache, criar, metadata, alterar e sair | `client.group` | testado |
 | Participantes | add/remove/promote/demote/aprovacoes | `client.group` | testado |
 | Presenca | online/offline, composing, recording e paused | `client.presence` | testado |
 | Contatos/perfil | verificacao de numeros e foto de grupo | profile/privacy | testado |
-| Historico | sync inicial e sob demanda | history sync | testado |
+| Historico | sync inicial, replay persistido e sob demanda | history sync | documentado |
 | Eventos | message, receipt, addon, connection, group e username | event map/MEX | testado |
 | Privacy token | consulta, bootstrap e cache | privacy token | testado |
 | Passkey | bridge WebAuthn externo | `signPasskeyAssertion` | testado |
@@ -142,9 +142,79 @@ Estados permitidos: `nao iniciado`, `adapter`, `testado`, `documentado`, `conclu
 | Recuperacao | reenviar preservando ID publico | `message.send({ id })` e retry interno | testado |
 | Newsletter/broadcast list | rotas e eventos atuais | coordinators dedicados | nao iniciado |
 
-`sem capability` e uma limitacao explicita, sem fallback silencioso para Baileys. O fluxo manual de passkey continua fora do adapter. Newsletter e listas de transmissao devem permanecer desabilitadas para sessoes Zapo ate ganharem adapter e testes de contrato.
+`sem capability` e uma limitacao explicita, sem fallback silencioso para Baileys. O
+passkey manual usa o callback oficial `signPasskeyAssertion` e o bridge HTTP/Redis da
+Uno; nao existe confirmacao manual adicional na Zapo. Newsletter e listas de transmissao
+devem permanecer desabilitadas para sessoes Zapo ate ganharem adapter e testes de contrato.
+
+### Lifecycle do passkey Zapo
+
+Segundo a [documentacao oficial de autenticacao](https://zapo.to/en/concepts/authentication),
+`auth_passkey_required` e apenas um aviso. A biblioteca executa o Shortcake internamente,
+chama `signPasskeyAssertion` com as opcoes WebAuthn e conclui pelo evento `auth_paired`.
+
+- o evento libera a requisicao de conexao para a aplicacao continuar consultando
+  `/passkey-bridge/pending`;
+- `response-sent` significa somente que a assertion foi devolvida ao signer;
+- apenas `auth_paired` muda o bridge para `completed`;
+- falha, timeout ou fechamento da conexao rejeitam o signer pendente;
+- reconexao normal reutiliza credenciais persistidas e nao exige novo passkey/QR;
+- `logout()` remove o dispositivo e exige novo pareamento; `disconnect()` preserva as
+  credenciais.
 
 Manter esta tabela atualizada no mesmo commit que muda o estado de uma capacidade.
+
+### Enquetes Zapo
+
+A Uno traduz `type: poll` para a API tipada documentada pela Zapo. O formato aceito pela
+rota de mensagens e:
+
+```json
+{
+  "to": "5511999999999",
+  "type": "poll",
+  "poll": {
+    "name": "Almoco?",
+    "options": ["Pizza", "Sushi", "Salada"],
+    "selectableCount": 1,
+    "allowAddOption": false
+  }
+}
+```
+
+Para votar, informe o ID UnoAPI devolvido ou recebido para a enquete. O adapter resolve
+o ID interno da Zapo e le o `messageSecret` no store oficial; a aplicacao nao deve calcular
+hashes nem persistir segredo de enquete no Redis:
+
+```json
+{
+  "to": "5511999999999",
+  "type": "poll_vote",
+  "poll_vote": {
+    "message_id": "ID_UNOAPI_DA_ENQUETE",
+    "selected_options": ["Pizza"]
+  }
+}
+```
+
+Votos recebidos chegam pela Zapo como `message_addon` ja descriptografado. O webhook Uno
+expoe um texto como `*Voto em enquete*: Pizza` e inclui `context.message_id` com o ID da
+enquete original. A ordem e a grafia das opcoes devem ser preservadas, conforme o
+[guia oficial de mensagens interativas](https://zapo.to/en/guides/interactive-messages).
+
+### Edicao de mensagens Zapo
+
+O payload publico permanece `type: message_edit`, com o ID UnoAPI original em
+`context.message_id` e o novo texto em `text.body`. O adapter resolve o ID do provider,
+confirma que a mensagem original e `fromMe` e chama `client.message.send` com o novo
+conteudo e `editKey: { id, participant? }`. O participante somente e preservado em grupo.
+Ausencia do ID, mensagem desconhecida ou tentativa de editar mensagem recebida retornam
+erro e nunca viram silenciosamente uma nova mensagem de texto.
+
+Edicoes recebidas pelo evento `message_addon` sao convertidas para `MESSAGE_EDIT`; antes
+do webhook, o listener converte o ID original Zapo novamente para o ID UnoAPI.
+
+O contrato operacional, as configurações por sessão e os exemplos da rota de replay/sync estão em [MESSAGE_HISTORY.md](MESSAGE_HISTORY.md).
 
 ## Username
 

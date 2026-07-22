@@ -27,6 +27,8 @@ import {
   isValidPhoneNumber,
   jidToPhoneNumber,
   jidToPhoneNumberIfUser,
+  jidToMentionDigits,
+  normalizeMentionText,
   jidToRawPhoneNumber,
   normalizeLidJid,
   normalizeGroupId,
@@ -70,6 +72,8 @@ export {
   isValidPhoneNumber,
   jidToPhoneNumber,
   jidToPhoneNumberIfUser,
+  jidToMentionDigits,
+  normalizeMentionText,
   jidToRawPhoneNumber,
   normalizeLidJid,
   normalizeGroupId,
@@ -1000,8 +1004,9 @@ export const getNumberAndId = (payload: any): [string, string] => {
   const id = split.length >= 2 ? `${split[0].split(':')[0]}@${split[1]}` : `${lid}`
 
   // Prefer a PN JID if any is available (explicit PN fields or alt PN fields)
-  const pnCandidate = participantPn || senderPn || participantPn2 || participant || participant2 || remoteJidAlt || participantAlt || participantAlt2
-  const pnIsValid = pnCandidate && isPnUser(pnCandidate)
+  const pnCandidate = [participantPn, senderPn, participantPn2, remoteJidAlt, participantAlt, participantAlt2, participant, participant2]
+    .find((candidate) => typeof candidate === 'string' && isPnUser(candidate))
+  const pnIsValid = !!pnCandidate
   let phone: string | undefined
   if (pnIsValid) {
     phone = jidToPhoneNumber(pnCandidate, '')
@@ -1481,6 +1486,8 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
         const fpn = (
           ensurePn((payload as any)?.key?.senderPn) ||
           ensurePn((payload as any)?.key?.participantPn) ||
+          ensurePn((payload as any)?.key?.participantAlt) ||
+          ensurePn((payload as any)?.participantAlt) ||
           ensurePn(senderPhone) ||
           ensurePn(senderId)
         )
@@ -1699,102 +1706,9 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
       case 'conversation':
       case 'extendedTextMessage':
         {
-          // Build text body and normalize @mentions to preferred alias
+          // Keep protocol JIDs in contextInfo and expose only numeric mention text.
           const raw = (binMessage?.text || binMessage) as string
-          const ctx: any = (binMessage as any)?.contextInfo || {}
-          const nameMap: Record<string, string> = ((payload as any)?.groupMetadata?.names || (payload as any)?.contactNames || {}) as any
-          const participants: any[] = Array.isArray((payload as any)?.groupMetadata?.participants)
-            ? ((payload as any)?.groupMetadata?.participants as any[])
-            : []
-          const mentioned: string[] = Array.isArray(ctx?.mentionedJid) ? ctx.mentionedJid : []
-          const toPn = (jid: string) => {
-            try {
-              if (isLidUser(jid)) {
-                return jidToPhoneNumber(jidNormalizedUser(jid), '').replace('+', '')
-              } else {
-                return jidToPhoneNumber(jid, '').replace('+', '')
-              }
-            } catch {
-              return ''
-            }
-          }
-          let body = `${raw || ''}`
-          try {
-            if (mentioned.length && body) {
-              for (const mj of mentioned) {
-                const lidDigits = `${mj}`.split('@')[0]
-                let pnDigits = toPn(mj)
-                // Fallback: derive PN from group participants when mention is a LID and mapping isn't obvious
-                if ((!pnDigits || pnDigits === lidDigits) && isLidUser(mj) && participants.length) {
-                  try {
-                    const found = participants.find((p: any) => `${p?.lid || ''}` === `${mj}`)
-                    const pnJid: string | undefined = found?.id || found?.jid
-                    if (pnJid) pnDigits = jidToPhoneNumber(pnJid, '').replace('+', '')
-                  } catch {}
-                }
-                // Prefer contactName > PN > LID digits
-                let alias = pnDigits || lidDigits
-                try {
-                  const normalizedPnJid = (isLidUser(mj) ? jidNormalizedUser(mj) : mj) as any
-                  const contactName = (
-                    nameMap && (
-                      nameMap[mj] ||
-                      nameMap[normalizedPnJid] ||
-                      // direct PN JID when known via participants
-                      (participants.length ? (() => {
-                        try {
-                          const found = participants.find((p: any) => `${p?.lid || ''}` === `${mj}`)
-                          const pnJ = found?.id || found?.jid
-                          return pnJ ? (nameMap[pnJ] || undefined) : undefined
-                        } catch { return undefined }
-                      })() : undefined) ||
-                      (pnDigits ? (nameMap[`${pnDigits}@s.whatsapp.net`] || nameMap[pnDigits]) : undefined) ||
-                      (lidDigits ? nameMap[lidDigits] : undefined)
-                    )
-                  ) as string | undefined
-                  if (contactName && contactName.trim()) alias = contactName.trim()
-                } catch {}
-                if (alias) {
-                  const patterns = new Set<string>()
-                  if (lidDigits) patterns.add(lidDigits)
-                  if (pnDigits) patterns.add(pnDigits)
-                  for (const d of patterns) {
-                    if (!d) continue
-                    // replace all occurrences of @<digits>
-                    const re = new RegExp(`@${d}\b`, 'g')
-                    body = body.replace(re, `@${alias}`)
-                  }
-                }
-              }
-            }
-            // Fallback: se não houver mentionedJid ou houver @<digits> soltos no texto,
-            // tentar substituir por alias usando o nameMap conhecido (participantes do grupo/contatos)
-            try {
-              if (body && typeof body === 'string' && /@\d{6,}/.test(body)) {
-                // Coletar todos @<digits> e @<digits>@lid
-                const seen = new Set<string>()
-                const reAll = /@(\d{6,})(?:@lid)?\b/g
-                let m: RegExpExecArray | null
-                while ((m = reAll.exec(body)) !== null) {
-                  const digits = m[1]
-                  if (!digits || seen.has(digits)) continue
-                  seen.add(digits)
-                  // Procurar nome no nameMap via várias chaves
-                  let alias: string | undefined = undefined
-                  try { alias = alias || (nameMap && (nameMap[`${digits}@s.whatsapp.net`] || nameMap[digits])) } catch {}
-                  try { alias = alias || (nameMap && nameMap[`${digits}@lid`]) } catch {}
-                  if (alias && alias.trim()) {
-                    const safe = alias.trim()
-                    // Substituir todas aparições dessa menção solta
-                    const re1 = new RegExp(`@${digits}\\b`, 'g')
-                    const re2 = new RegExp(`@${digits}@lid\\b`, 'g')
-                    body = body.replace(re1, `@${safe}`)
-                    body = body.replace(re2, `@${safe}`)
-                  }
-                }
-              }
-            } catch {}
-          } catch {}
+          const body = normalizeMentionText(`${raw || ''}`)
           try { logger.debug('MENTION normalized: "%s" -> "%s"', raw || '', body || '') } catch {}
           message.text = { body }
         }
@@ -2284,8 +2198,18 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
       }
 
       case 'pollUpdateMessage': {
+        const pollUpdate: any = binMessage || payload?.message?.pollUpdateMessage || {}
+        const pollMessageId = `${pollUpdate?.pollCreationMessageKey?.id || ''}`.trim()
+        const selectedOptionNames = Array.isArray(pollUpdate?.vote?.selectedOptionNames)
+          ? pollUpdate.vote.selectedOptionNames.map((name: unknown) => `${name || ''}`.trim()).filter(Boolean)
+          : []
         message.type = 'text'
-        message.text = { body: '*Atualização de enquete*' }
+        message.text = {
+          body: selectedOptionNames.length
+            ? `*Voto em enquete*: ${selectedOptionNames.join(' | ')}`
+            : '*Atualização de enquete*',
+        }
+        if (pollMessageId) message.context = { message_id: pollMessageId, id: pollMessageId }
         break
       }
 

@@ -36,8 +36,9 @@ This guide explains key environment variables, when to use them, and why. Copy `
 
 ## Redis & RabbitMQ
 
-- `REDIS_URL` Ã¢â‚¬â€ Redis connection string.
-  - Use to enable Redis store (sessions/data). Without it, filesystem store is used.
+- `REDIS_URL` Ã¢â‚¬â€ Redis/Valkey connection string. Required for every UnoAPI runtime.
+  - Startup fails before opening HTTP or AMQP consumers when it is missing or Redis cannot answer `PING`.
+  - Filesystem is only a media backend when S3 is absent; it is not a fallback for sessions, configuration, IDs, leases or caches.
   - Example: `REDIS_URL=redis://localhost:6379`
 - `WHATSAPP_ENGINE` — default engine for sessions without a persisted `provider`; defaults to `baileys`.
 - `UNOAPI_WORKER_ENGINE` — engine owned by the worker process (`baileys` or `zapo`). In cloud mode, run one worker container for each engine.
@@ -120,9 +121,7 @@ DELIVERY_STALE_RECOVERY_BATCH_SIZE=3
 
 ## One‑to‑One (Direct) Sending
 
-- `ONE_TO_ONE_ADDRESSING_MODE` — Prefer addressing for direct chats. `pn` | `lid`. Default `pn`.
-  - `pn`: send using phone‑number JID (`@s.whatsapp.net`). Avoids split threads in some clients (iPhone).
-  - `lid`: prefer LID (`@lid`) when mapping exists; may reduce first‑contact session issues.
+- Direct chats always use the canonical LID (`@lid`) for transport. Phone numbers remain additional identity metadata and this behavior is not configurable.
 - `ONE_TO_ONE_PREASSERT_ENABLED` — Pre‑assert Signal sessions for the peer before sending. Default `true`.
   - Improves reliability in the first message after long idle periods or device changes.
 - `ONE_TO_ONE_PREASSERT_COOLDOWN_MS` — Per‑recipient cooldown for pre‑assert (milliseconds). Default `7200000` (120 minutes).
@@ -132,8 +131,7 @@ DELIVERY_STALE_RECOVERY_BATCH_SIZE=3
 
 Example:
 ```env
-# Prefer PN for 1:1 and pre‑assert at most once every 2 hours per recipient
-ONE_TO_ONE_ADDRESSING_MODE=pn
+# Pre-assert at most once every 2 hours per recipient
 ONE_TO_ONE_PREASSERT_ENABLED=true
 ONE_TO_ONE_PREASSERT_COOLDOWN_MS=7200000
 # Keep probe disabled to save Redis
@@ -195,16 +193,7 @@ GROUP_ONLY_DELIVERED_STATUS=false
 
 ## One-to-One (Direct) Sending
 
-- ONE_TO_ONE_ADDRESSING_MODE â€” Prefer addressing mode for direct chats (1:1). Default pn.
-  - pn (recommended): send via PN. Avoids cases where @lid opens a separate conversation or messages do not show up on some devices.
-  - lid: prefer sending via LID when available (can reduce first-contact session/decrypt errors, but may split threads).
-  - Example:
-    ```env
-    # default (PN)
-    ONE_TO_ONE_ADDRESSING_MODE=pn
-    # or prefer LID
-    # ONE_TO_ONE_ADDRESSING_MODE=lid
-    ```
+Direct chats always use the canonical LID (`@lid`) for transport. Phone numbers remain additional identity metadata and this behavior is not configurable.
 
 Webhook normalization
 - WEBHOOK_PREFER_PN_OVER_LID â€” If 	rue (default), webhook payloads prefer PN in wa_id, rom and 
@@ -280,16 +269,18 @@ PERIODIC_ASSERT_RECENT_WINDOW_MS=3600000
 Fail fast when a webhook endpoint is offline to avoid queue backlog.
 
 - `WEBHOOK_CB_ENABLED` — Enable/disable the circuit breaker. Default `true`.
-- `WEBHOOK_CB_FAILURE_THRESHOLD` — Failures within the window required to open the circuit. Default `1`.
+- `WEBHOOK_CB_FAILURE_THRESHOLD` — Transient failures within the window required to open the circuit. Default `3`.
 - `WEBHOOK_CB_FAILURE_TTL_MS` — Failure counting window (ms). Default `300000`.
 - `WEBHOOK_CB_OPEN_MS` — How long the circuit stays open (skip sends) after tripping. Default `120000`.
-- `WEBHOOK_CB_REQUEUE_DELAY_MS` — Delay (ms) used to requeue when the circuit is open. Default `300000`.
+- `WEBHOOK_CB_REQUEUE_DELAY_MS` — Delay (ms) used to requeue when the circuit is open. Default `120000`.
+- `WEBHOOK_CB_HALF_OPEN_PROBE_MS` — Minimum lease for the single half-open recovery probe. Default `30000`; the webhook timeout wins when larger.
 - `WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS` — Local CB map cleanup interval (ms). Default `3600000`.
 
 Behavior:
 - When open, webhook delivery is skipped for that endpoint.
-- After the open window, sends are attempted again automatically.
-- When open, the message is requeued with a longer delay to avoid retry storms.
+- Network errors, HTTP `408`, `425`, `429`, and `5xx` count as circuit failures. Permanent `4xx` payload/auth errors do not take the whole endpoint offline.
+- After the open window, exactly one request probes the endpoint. Other deliveries remain queued until the probe succeeds or the circuit opens again.
+- The default requeue delay matches the open window so recovered endpoints resume without an extra idle gap.
 
 ## Media & Timeouts
 
@@ -326,8 +317,9 @@ Skip sending the same message again when a job retry happens after a successful 
 
 ### Profile Pictures
 
-- Canonical filename: always by phone number (PN). If input is LID, map to PN first and save `<pn>.jpg`.
+- Canonical identity: Zapo uses LID and preserves PN as an additional alias when known; groups keep `@g.us`. Baileys remains compatible with PN-first lookups.
 - Force refresh: `PROFILE_PICTURE_FORCE_REFRESH=true` (default) re-fetches from WhatsApp before returning the local/storage URL.
+- Webhook interval: `PROFILE_PICTURE_WEBHOOK_INTERVAL_SEC=10800` (default: 3 hours) controls when the same contact/group picture is included again. Redis stores one ZSET per session, not one key per contact. Set `0` for the legacy always-populated behavior.
 - Prefetch on send: the client prefetches the destination picture on outbound messages (1:1 and groups) to keep the cache fresh.
 - Robust fetch order: for 1:1, attempts PN first, then mapped LID, using modes `image` then `preview`.
 - S3 safety: checks object existence (HeadObject) before generating a presigned URL.
@@ -353,7 +345,7 @@ Skip sending the same message again when a job retry happens after a successful 
 - URLs returned to webhooks
   - S3: A preÃ¢â‚¬â€˜signed URL is generated per request using `DATA_URL_TTL` (seconds). Link expires after TTL.
   - Filesystem: A public URL is generated from `BASE_URL`, using the download route: `BASE_URL/v15.0/download/<phone>/profile-pictures/<canonical>.jpg`.
-  - First fetch: on the very first retrieval the service may return the WhatsApp CDN URL while it downloads and persists the image; subsequent events will use the storage URL (S3 or filesystem).
+  - First fetch: the provider URL is persisted before enrichment; webhooks receive the Uno storage URL, never the temporary Zapo CDN URL.
 
 - Lifetime and cleanup
   - `DATA_TTL` Ã¢â‚¬â€ Default retention for stored media (including profile pictures) in seconds. Default 30 days.
@@ -452,4 +444,4 @@ Layout das chaves:
 - `unoapi-zapo-username-lid:<sessao>` e `:seen`: hash de aliases mais sorted set de expiracao por campo.
 - `unoapi-id*`, status e media: contratos publicos Uno compartilhados pelos dois motores.
 
-O indice oficial `msg:idx` e limpo incrementalmente porque o TTL do sorted set de uma conversa ativa pode ser renovado enquanto hashes de mensagens antigas ja expiraram. Se a renovacao da trava falhar, o worker Zapo desconecta de forma conservadora para evitar dois sockets na mesma conta. Replicas Zapo exigem Redis; em SQLite, use apenas um processo dono das sessoes.
+O indice oficial `msg:idx` e limpo incrementalmente porque o TTL do sorted set de uma conversa ativa pode ser renovado enquanto hashes de mensagens antigas ja expiraram. Se a renovacao da trava falhar, o worker Zapo desconecta de forma conservadora para evitar dois sockets na mesma conta. Todos os runtimes e replicas Zapo exigem Redis; SQLite permanece apenas como codigo de migracao/compatibilidade e nao e um modo de execucao suportado.

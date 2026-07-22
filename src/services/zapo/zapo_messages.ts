@@ -8,10 +8,12 @@ import { phoneNumberToJid } from '../transformer/jid'
 import { ZapoIdentity } from './zapo_identity'
 import { toZapoMessageContent } from './zapo_message_mapper'
 import { resolveProviderMessageId } from '../message_id_map'
+import logger from '../logger'
 
 type ZapoMessagesOptions = {
   customMessageCharactersFunction?: (message: string) => string
   composingMessage?: boolean
+  readOnReply?: boolean
   store?: WaStoreSession
   phone?: string
   bindTemplate?: (payload: any) => Promise<any>
@@ -26,8 +28,11 @@ const toJid = (value: string) => {
 
 export class ZapoMessages {
   private readonly identity?: ZapoIdentity
+  private readonly store?: WaStoreSession
   private readonly customMessageCharactersFunction: (message: string) => string
   private readonly composingMessage: boolean
+  private readonly readOnReply: boolean
+  private readonly phone: string
   private readonly bindTemplate?: (payload: any) => Promise<any>
 
   constructor(
@@ -37,7 +42,10 @@ export class ZapoMessages {
   ) {
     this.customMessageCharactersFunction = options.customMessageCharactersFunction || ((message) => message)
     this.composingMessage = options.composingMessage || false
+    this.readOnReply = options.readOnReply || false
+    this.phone = options.phone || ''
     this.bindTemplate = options.bindTemplate
+    this.store = options.store
     if (options.store) this.identity = new ZapoIdentity(client, options.store, options.phone || '')
   }
 
@@ -92,6 +100,79 @@ export class ZapoMessages {
       remoteJid: key.remoteJid,
       fromMe: !!key.fromMe,
       ...(key.participant ? { participant: key.participant } : {}),
+    }
+  }
+
+  private async buildEditTarget(payload: any) {
+    const messageId = `${
+      payload?.context?.message_id
+      || payload?.context?.id
+      || payload?.edit?.message_id
+      || payload?.edit?.messageId
+      || payload?.message_id
+      || ''
+    }`.trim()
+    if (!messageId) throw new SendError(400, 'message_edit_message_id_required')
+
+    const key = await this.resolveKey(messageId)
+    if (!key.fromMe) throw new SendError(400, `message_edit_original_not_from_me: ${messageId}`)
+
+    return {
+      target: key.remoteJid,
+      editKey: {
+        id: key.id,
+        ...(key.remoteJid.endsWith('@g.us') && key.participant
+          ? { participant: key.participant }
+          : {}),
+      },
+    }
+  }
+
+  private async buildPollVote(payload: any) {
+    if (!this.store) throw new SendError(409, 'zapo_poll_vote_store_unavailable')
+    const vote = payload?.poll_vote || payload?.pollVote || payload?.vote || payload?.poll || {}
+    const messageId = `${
+      vote?.message_id
+      || vote?.messageId
+      || vote?.id
+      || payload?.context?.message_id
+      || payload?.context?.id
+      || ''
+    }`.trim()
+    if (!messageId) throw new SendError(400, 'poll_vote_message_id_required')
+    const providerId = `${await resolveProviderMessageId(this.dataStore, messageId) || ''}`.trim() || messageId
+    const key = await this.dataStore.loadKey(providerId) || await this.dataStore.loadKey(messageId)
+    if (!key?.remoteJid) throw new SendError(404, `poll_message_not_found: ${messageId}`)
+    const parent = await this.store.messageSecret.get(providerId)
+    if (!parent?.secret?.length || !parent.senderJid) {
+      throw new SendError(404, `poll_message_secret_not_found: ${messageId}`)
+    }
+    const selectedOptions = (
+      vote?.selectedOptionNames
+      || vote?.selected_options
+      || vote?.selectedOptions
+      || vote?.options
+      || []
+    )
+    const selectedOptionNames = (Array.isArray(selectedOptions) ? selectedOptions : [selectedOptions])
+      .map((name: unknown) => `${name || ''}`.trim())
+      .filter(Boolean)
+    if (!selectedOptionNames.length) throw new SendError(400, 'poll_vote_options_required')
+
+    const target = await this.canonicalJid(key.remoteJid)
+    return {
+      target,
+      content: {
+        type: 'poll-vote' as const,
+        poll: {
+          id: providerId,
+          fromMe: !!key.fromMe,
+          authorJid: parent.senderJid,
+          messageSecret: parent.secret,
+          ...(target.endsWith('@g.us') ? { participant: key.participant || parent.senderJid } : {}),
+        },
+        selectedOptionNames,
+      },
     }
   }
 
@@ -169,7 +250,20 @@ export class ZapoMessages {
     delete options.endpoint
     delete options.requestId
 
-    if (type === 'reaction') {
+    if (type === 'message_edit') {
+      const edit = await this.buildEditTarget(payload)
+      const mapped = await toZapoMessageContent(this.client, payload, this.customMessageCharactersFunction)
+      target = edit.target
+      content = mapped.content
+      Object.assign(options, mapped.options, { editKey: edit.editKey })
+      if (Array.isArray(options.mentions)) {
+        options.mentions = await this.canonicalJids(options.mentions.map((jid) => `${jid}`))
+      }
+    } else if (type === 'poll_vote' || type === 'poll-vote') {
+      const vote = await this.buildPollVote(payload)
+      target = vote.target
+      content = vote.content
+    } else if (type === 'reaction') {
       const messageId = `${payload?.reaction?.message_id || payload?.reaction?.messageId || payload?.message_id || payload?.context?.message_id || ''}`
       const key = await this.resolveKey(messageId)
       target = key.remoteJid
@@ -181,14 +275,11 @@ export class ZapoMessages {
       if (Array.isArray(options.mentions)) {
         options.mentions = await this.canonicalJids(options.mentions.map((jid) => `${jid}`))
       }
-      const contextId = type === 'message_edit'
-        ? `${payload?.context?.message_id || payload?.edit?.message_id || payload?.message_id || ''}`
-        : `${payload?.context?.message_id || payload?.context?.id || ''}`
+      const contextId = `${payload?.context?.message_id || payload?.context?.id || ''}`
       if (contextId) {
         const key = await this.resolveKey(contextId)
         target = key.remoteJid
-        if (type === 'message_edit') options.editKey = key
-        else options.quote = key
+        options.quote = key
       }
       if (payload?.ttl !== undefined) options.expirationSeconds = Number(payload.ttl)
     }
@@ -196,16 +287,18 @@ export class ZapoMessages {
     const result = target === 'status@broadcast'
       ? await this.sendStatus(content, options)
       : await this.sendDirect(target, content, options)
+    if (target !== 'status@broadcast') await this.markLastIncomingRead(target)
     const key = { remoteJid: target, id: result.id, fromMe: true }
     let unoId = requestedUnoId || `${await this.dataStore.loadUnoId(result.id) || ''}`.trim() || uuid()
     unoId = await this.dataStore.setUnoId(result.id, unoId) || unoId
     await this.dataStore.setKey(result.id, key)
     await this.dataStore.setKey(unoId, key)
-    const input = `${payload?.to || ''}`
-    const isUsername = /[a-z_]/i.test(input.replace(/@(s\.whatsapp\.net|lid)$/i, ''))
+    const input = `${payload?.to || target || ''}`
+    const isGroup = input.endsWith('@g.us')
+    const isUsername = !isGroup && /[a-z_]/i.test(input.replace(/@(s\.whatsapp\.net|lid)$/i, ''))
     const contact = {
       input,
-      ...(!isUsername ? { wa_id: toJid(input).split('@')[0] } : {}),
+      ...(isGroup ? { wa_id: input, group_id: input } : (!isUsername ? { wa_id: toJid(input).split('@')[0] } : {})),
       ...(target.endsWith('@lid') ? { user_id: target } : {}),
       ...(isUsername ? { username: input.replace(/^@/, '').toLowerCase() } : {}),
     }
@@ -219,17 +312,91 @@ export class ZapoMessages {
   }
 
   private async sendDirect(target: string, content: WaSendMessageContent, options: Record<string, unknown>) {
+    try {
+      return await this.sendDirectOnce(target, content, options)
+    } catch (error) {
+      if (!this.isPrivacyTokenNack(error) || !await this.recoverPrivacyMaterial(target)) throw error
+      logger.info('Retry Zapo send after privacy material recovery target=%s', target)
+      return this.sendDirectOnce(target, content, options)
+    }
+  }
+
+  private async sendDirectOnce(target: string, content: WaSendMessageContent, options: Record<string, unknown>) {
     if (!this.composingMessage) return this.client.message.send(target, content, options as WaSendMessageOptions)
     const contentType = typeof content === 'object' && content && 'type' in content
       ? `${(content as { type?: unknown }).type || ''}`
       : ''
     const media = contentType === 'audio' || contentType === 'ptt' ? 'audio' : undefined
-    await this.client.presence.sendChatstate(target, { state: 'composing', ...(media ? { media } : {}) })
+    await this.sendChatstate(target, { state: 'composing', ...(media ? { media } : {}) })
     try {
       return await this.client.message.send(target, content, options as WaSendMessageOptions)
     } finally {
-      await this.client.presence.sendChatstate(target, { state: 'paused' })
+      await this.sendChatstate(target, { state: 'paused' })
     }
+  }
+
+  private async sendChatstate(target: string, state: { state: 'composing' | 'paused', media?: 'audio' }) {
+    try {
+      await this.client.presence.sendChatstate(target, state)
+    } catch (error) {
+      logger.warn(error as any, 'Ignore Zapo chatstate error target=%s state=%s', target, state.state)
+    }
+  }
+
+  private async markLastIncomingRead(target: string) {
+    if (!this.readOnReply) return
+    try {
+      const candidates = new Set([target])
+      if (target.endsWith('@lid')) {
+        const pn = await this.dataStore.getPnForLid?.(this.phone, target)
+        if (pn) candidates.add(pn)
+      } else if (target.endsWith('@s.whatsapp.net')) {
+        const lid = await this.dataStore.getLidForPn?.(this.phone, target)
+        if (lid) candidates.add(lid)
+      }
+
+      let key
+      for (const jid of candidates) {
+        key = await this.dataStore.getLastIncomingKey?.(jid)
+        if (key) break
+      }
+      if (!key?.remoteJid || !key.id || key.fromMe) return
+
+      await this.client.message.sendReceipt(key.remoteJid, key.id, {
+        type: 'read',
+        ...(key.participant ? { participant: key.participant } : {}),
+      })
+      logger.info('Zapo read-on-reply target=%s message=%s', target, key.id)
+    } catch (error) {
+      logger.warn(error as any, 'Ignore Zapo read-on-reply error target=%s', target)
+    }
+  }
+
+  private isPrivacyTokenNack(error: unknown) {
+    const value = error as any
+    return Number(value?.code || value?.data || value?.errorCode) === 463 || /(?:error|code)[= :]+463\b/i.test(`${value?.message || ''}`)
+  }
+
+  private async recoverPrivacyMaterial(target: string): Promise<boolean> {
+    if (!this.store || target.endsWith('@g.us')) return false
+    const hasMaterial = async () => {
+      const [token, salt] = await Promise.all([
+        this.store!.privacyToken.getByJid(target),
+        this.store!.privacyToken.getByJid('__nct_salt__'),
+      ])
+      return !!token?.tcToken || !!salt?.nctSalt
+    }
+    if (await hasMaterial()) return true
+    try { await this.client.chat.sync() } catch (error) {
+      logger.warn(error as any, 'Zapo app-state sync failed during 463 recovery target=%s', target)
+    }
+    if (await hasMaterial()) return true
+    try { await this.client.profile.getProfiles([target]) } catch (error) {
+      logger.warn(error as any, 'Zapo profile token fetch failed during 463 recovery target=%s', target)
+    }
+    const recovered = await hasMaterial()
+    logger.warn('Zapo 463 recovery target=%s privacy_material=%s', target, recovered ? 'available' : 'missing')
+    return recovered
   }
 
   private async sendStatus(content: WaSendMessageContent, options: Record<string, unknown>) {

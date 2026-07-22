@@ -75,7 +75,7 @@ export const WEBHOOK_FORWARD_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_M
 
 // comunication
 export const WEBHOOK_URL_ABSOLUTE = process.env.WEBHOOK_URL_ABSOLUTE || ''
-export const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:9876/webhooks/fake'
+export const WEBHOOK_URL = process.env.WEBHOOK_URL || ''
 export const WEBHOOK_HEADER = process.env.WEBHOOK_HEADER || 'Authorization'
 export const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN || UNOAPI_AUTH_TOKEN || '123abc'
 export const WEBHOOK_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_MS || '6000')
@@ -111,10 +111,11 @@ export const UNOAPI_RESTRICTION_TIME_ZONE = process.env.UNOAPI_RESTRICTION_TIME_
 // Webhook circuit breaker (fail fast when endpoints are offline)
 export const WEBHOOK_CB_ENABLED =
   process.env.WEBHOOK_CB_ENABLED == _undefined ? true : process.env.WEBHOOK_CB_ENABLED == 'true'
-export const WEBHOOK_CB_FAILURE_THRESHOLD = parseInt(process.env.WEBHOOK_CB_FAILURE_THRESHOLD || '1')
+export const WEBHOOK_CB_FAILURE_THRESHOLD = parseInt(process.env.WEBHOOK_CB_FAILURE_THRESHOLD || '3')
 export const WEBHOOK_CB_OPEN_MS = parseInt(process.env.WEBHOOK_CB_OPEN_MS || '120000')
 export const WEBHOOK_CB_FAILURE_TTL_MS = parseInt(process.env.WEBHOOK_CB_FAILURE_TTL_MS || '300000')
-export const WEBHOOK_CB_REQUEUE_DELAY_MS = parseInt(process.env.WEBHOOK_CB_REQUEUE_DELAY_MS || '300000')
+export const WEBHOOK_CB_REQUEUE_DELAY_MS = parseInt(process.env.WEBHOOK_CB_REQUEUE_DELAY_MS || '120000')
+export const WEBHOOK_CB_HALF_OPEN_PROBE_MS = parseInt(process.env.WEBHOOK_CB_HALF_OPEN_PROBE_MS || '30000')
 export const WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS = parseInt(process.env.WEBHOOK_CB_LOCAL_CLEANUP_INTERVAL_MS || '3600000')
 export const CONTACT_SYNC_ENABLED =
   process.env.CONTACT_SYNC_ENABLED == _undefined ? false : process.env.CONTACT_SYNC_ENABLED == 'true'
@@ -289,6 +290,8 @@ export const PROFILE_PICTURE_FORCE_REFRESH: boolean =
   process.env.PROFILE_PICTURE_FORCE_REFRESH === _undefined ? true : process.env.PROFILE_PICTURE_FORCE_REFRESH == 'true'
 // Tempo mínimo entre atualizações forçadas de foto de perfil (segundos). Padrão 24h.
 export const PROFILE_PICTURE_REFRESH_INTERVAL_SEC = parseInt(process.env.PROFILE_PICTURE_REFRESH_INTERVAL_SEC || `${60 * 60 * 24}`)
+// Intervalo minimo para repetir a foto do mesmo contato/grupo no payload de webhook. Padrao 3h.
+export const PROFILE_PICTURE_WEBHOOK_INTERVAL_SEC = parseInt(process.env.PROFILE_PICTURE_WEBHOOK_INTERVAL_SEC || `${60 * 60 * 3}`)
 export const IGNORED_CONNECTIONS_NUMBERS = JSON.parse(process.env.IGNORED_CONNECTIONS_NUMBERS || '[]')
 export const IGNORED_TO_NUMBERS = JSON.parse(process.env.IGNORED_TO_NUMBERS || '[]')
 export const CLEAN_CONFIG_ON_DISCONNECT =
@@ -467,13 +470,8 @@ export const BR_SEND_ORDER_ENABLED =
   process.env.BR_SEND_ORDER_ENABLED === _undefined ? false : process.env.BR_SEND_ORDER_ENABLED == 'true'
 
 
-// Endereçamento para conversas 1:1 (envio)
-// 'pn' (padrão): quando possível, envia usando PN; 'lid': força envio usando lid.
-export const ONE_TO_ONE_ADDRESSING_MODE: 'lid' | 'pn' = (() => {
-  // Default to 'lid' as documented; allow override via env
-  const v = (process.env.ONE_TO_ONE_ADDRESSING_MODE || 'pn').toString().toLowerCase()
-  return (v === 'lid' ? 'lid' : 'pn')
-})()
+// Direct chats always use the canonical LID address. PN remains metadata only.
+export const ONE_TO_ONE_ADDRESSING_MODE: 'lid' | 'pn' = 'lid'
 
 // Background resolver: try to map LIDs seen to PN asynchronously (accelerates JIDMAP population)
 export const LID_RESOLVER_ENABLED: boolean =

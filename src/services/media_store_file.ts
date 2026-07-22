@@ -447,6 +447,7 @@ export const mediaStoreFile = (phone: string, config: Config, getDataStore: getD
       }
       logger.info('PROFILE_PICTURE saving (FS) targets: %s (from %s)', targetIds.join(','), originalId)
       const response: FetchResponse = await fetch(contact.imgUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), method: 'GET'})
+      if (!response.ok) throw new Error(`Could not download profile picture: HTTP ${response.status}`)
       const buffer = toBuffer(await response.arrayBuffer())
       for (const targetId of targetIds) {
         const fName = profilePictureFileName(targetId)

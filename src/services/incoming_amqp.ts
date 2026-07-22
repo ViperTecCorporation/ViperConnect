@@ -69,6 +69,25 @@ export class IncomingAmqp implements Incoming {
     }, { type: 'direct', priority: 5, maxRetries: 0 })
   }
 
+  private async providerOperation<T>(phone: string, action: string, args: unknown[] = []): Promise<T> {
+    const config = await this.getConfig(phone)
+    return amqpRpc<T>(UNOAPI_EXCHANGE_BRIDGE_NAME, this.queue(config), phone, {
+      type: 'provider_operation', action, args,
+    }, { type: 'direct', priority: 5, maxRetries: 0 })
+  }
+
+  public resyncAppState(phone: string, forceSnapshot = true) {
+    return this.providerOperation<void>(phone, 'resyncAppState', [forceSnapshot])
+  }
+
+  public fetchPrivacyTokens(phone: string, jids: string[], timeoutMs?: number) {
+    return this.providerOperation<any>(phone, 'fetchPrivacyTokens', [jids, timeoutMs])
+  }
+
+  public fetchMessageHistory(phone: string, payload: object = {}) {
+    return this.providerOperation<any>(phone, 'fetchMessageHistory', [payload])
+  }
+
   public async send(phone: string, payload: object, options: object = {}) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body = payload as any

@@ -748,6 +748,10 @@ export const webhookCircuitOpenKey = (session: string, webhookId: string) =>
   `${BASE_KEY}webhook-cb:${session}:${webhookId}:open`
 export const webhookCircuitFailKey = (session: string, webhookId: string) =>
   `${BASE_KEY}webhook-cb:${session}:${webhookId}:fail`
+export const webhookCircuitRecoveryKey = (session: string, webhookId: string) =>
+  `${BASE_KEY}webhook-cb:${session}:${webhookId}:recovery`
+export const webhookCircuitProbeKey = (session: string, webhookId: string) =>
+  `${BASE_KEY}webhook-cb:${session}:${webhookId}:probe`
 
 export const isWebhookCircuitOpen = async (session: string, webhookId: string): Promise<boolean> => {
   if (!process.env.REDIS_URL) return false
@@ -760,11 +764,36 @@ export const isWebhookCircuitOpen = async (session: string, webhookId: string): 
   }
 }
 
-export const openWebhookCircuit = async (session: string, webhookId: string, openMs: number): Promise<void> => {
+export const isWebhookCircuitRecovering = async (session: string, webhookId: string): Promise<boolean> => {
+  if (!process.env.REDIS_URL) return false
+  try { return !!(await redisGet(webhookCircuitRecoveryKey(session, webhookId))) } catch { return false }
+}
+
+export const acquireWebhookCircuitProbe = async (session: string, webhookId: string, probeMs: number): Promise<boolean> => {
+  if (!process.env.REDIS_URL) return false
+  return redisSetIfNotExists(
+    webhookCircuitProbeKey(session, webhookId),
+    `${Date.now()}`,
+    Math.max(1, Math.ceil((probeMs || 0) / 1000)),
+  )
+}
+
+export const openWebhookCircuit = async (
+  session: string,
+  webhookId: string,
+  openMs: number,
+  probeMs = 30000,
+): Promise<void> => {
   if (!process.env.REDIS_URL) return
   const ttlSec = Math.max(1, Math.ceil((openMs || 0) / 1000))
   try {
     await redisSetAndExpire(webhookCircuitOpenKey(session, webhookId), '1', ttlSec)
+    await redisSetAndExpire(
+      webhookCircuitRecoveryKey(session, webhookId),
+      '1',
+      Math.max(1, Math.ceil(((openMs || 0) + (probeMs || 0)) / 1000)),
+    )
+    await redisDel(webhookCircuitProbeKey(session, webhookId))
   } catch {}
 }
 
@@ -772,6 +801,8 @@ export const closeWebhookCircuit = async (session: string, webhookId: string): P
   if (!process.env.REDIS_URL) return
   try { await redisDel(webhookCircuitOpenKey(session, webhookId)) } catch {}
   try { await redisDel(webhookCircuitFailKey(session, webhookId)) } catch {}
+  try { await redisDel(webhookCircuitRecoveryKey(session, webhookId)) } catch {}
+  try { await redisDel(webhookCircuitProbeKey(session, webhookId)) } catch {}
 }
 
 export const bumpWebhookCircuitFailure = async (session: string, webhookId: string, ttlMs: number): Promise<number> => {
@@ -1223,11 +1254,7 @@ export const setConfig = async (phone: string, value: any) => {
   })
   value.webhooks = updatedWebooks
   const config = { ...currentConfig, ...value }
-  try {
-    const mode = `${(config as any).oneToOneAddressingMode || ''}`.trim().toLowerCase()
-    if (mode === 'pn' || mode === 'lid') (config as any).oneToOneAddressingMode = mode
-    else delete (config as any).oneToOneAddressingMode
-  } catch {}
+  ;(config as any).oneToOneAddressingMode = 'lid'
   // Enforce per-session storage flags to avoid false overrides via templates/UI
   // Since this setter persists to Redis, sessions using Redis must have useRedis/useS3 true
   try { (config as any).useRedis = true } catch {}

@@ -29,15 +29,28 @@ describe('service outgoing whatsapp cloud api', () => {
   let textPayload: any, outgoingPayload: any, updatePayload: any
 
   beforeEach(() => {
+    jest.clearAllMocks()
     process.env.WEBHOOK_ASYNC = 'false'
     jest.resetModules()
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     ;({ OutgoingCloudApi: OutgoingCloudApiClass } = require('../../src/services/outgoing_cloud_api'))
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     mockFetch = require('node-fetch') as jest.MockedFunction<typeof fetchType>
-    config = defaultConfig
+    config = {
+      ...defaultConfig,
+      webhooks: [{
+        ...defaultConfig.webhooks[0],
+        url,
+        enabled: true,
+        sendIncomingMessages: true,
+        sendOutgoingMessages: true,
+        sendGroupMessages: true,
+        sendUpdateMessages: true,
+        sendNewsletterMessages: true,
+      }],
+    }
     config.ignoreGroupMessages = true
-    webhook.timeoutMs = 1
+    Object.assign(webhook, config.webhooks[0], { timeoutMs: 1 })
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getStore = async (_phone: string): Promise<Store> => store
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -168,9 +181,17 @@ describe('service outgoing whatsapp cloud api', () => {
     const ttl = 1
     const w: Partial<Webhook> = {
       id: `${new Date().getTime() / 5}`,
-      addToBlackListOnOutgoingMessageWithTtl: ttl
+      urlAbsolute: `${url}/blacklist`,
+      enabled: true,
+      sendIncomingMessages: true,
+      sendOutgoingMessages: true,
+      sendGroupMessages: true,
+      sendUpdateMessages: true,
+      sendNewsletterMessages: true,
+      addToBlackListOnOutgoingMessageWithTtl: ttl,
     }
     mockFetch.mockReset()
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
     await service.sendHttp(phone!, w as Webhook, outgoingPayload, {})
     expect(addToBlacklistMock).toHaveBeenCalledWith(phone!, w.id, wa_id, ttl)
   })
@@ -428,5 +449,78 @@ describe('service outgoing whatsapp cloud api', () => {
 
     const body = JSON.parse((mockFetch.mock.calls[0] as any)[1].body)
     expect(body.entry[0].changes[0].value.statuses[0].recipient_id).toBe('5566996269251')
+  })
+
+  test('classifies only transient HTTP responses as circuit breaker failures', () => {
+    const { isWebhookCircuitFailureStatus } = require('../../src/services/outgoing_cloud_api')
+    expect([408, 425, 429, 500, 503].every(isWebhookCircuitFailureStatus)).toBe(true)
+    expect([400, 401, 403, 404, 409, 422].some(isWebhookCircuitFailureStatus)).toBe(false)
+  })
+
+  test('does not open the webhook circuit for permanent 4xx responses', async () => {
+    const target = {
+      id: `cb-4xx-${phone}`,
+      urlAbsolute: 'https://example.com/cb-4xx',
+      enabled: true,
+      sendIncomingMessages: true,
+      sendOutgoingMessages: true,
+      sendGroupMessages: true,
+      sendUpdateMessages: true,
+      sendNewsletterMessages: true,
+      timeoutMs: 1000,
+    } as Webhook
+    mockFetch.mockReset()
+    const unavailable = { ok: false, status: 503, statusText: 'Unavailable', text: async () => 'offline' } as any
+    const invalid = { ok: false, status: 422, statusText: 'Unprocessable', text: async () => 'invalid payload' } as any
+    mockFetch
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce(invalid)
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce(unavailable)
+
+    await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 503')
+    await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 503')
+    await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 422')
+    await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 503')
+    await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 503')
+    expect(mockFetch).toHaveBeenCalledTimes(5)
+  })
+
+  test('opens after the threshold and allows only one half-open probe', async () => {
+    const target = {
+      id: `cb-half-open-${phone}`,
+      urlAbsolute: 'https://example.com/cb-half-open',
+      enabled: true,
+      sendIncomingMessages: true,
+      sendOutgoingMessages: true,
+      sendGroupMessages: true,
+      sendUpdateMessages: true,
+      sendNewsletterMessages: true,
+      timeoutMs: 1000,
+    } as Webhook
+    let now = 10_000
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      mockFetch.mockReset()
+      mockFetch.mockResolvedValue({ ok: false, status: 503, statusText: 'Unavailable', text: async () => 'offline' } as any)
+      await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 503')
+      await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toThrow('Webhook response 503')
+      await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toMatchObject({ code: 'WEBHOOK_CB_OPEN' })
+      await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toMatchObject({ code: 'WEBHOOK_CB_OPEN' })
+      expect(mockFetch).toHaveBeenCalledTimes(3)
+
+      now += 120_001
+      let finishProbe: ((value: any) => void) | undefined
+      mockFetch.mockImplementationOnce(() => new Promise((resolve) => { finishProbe = resolve }) as any)
+      const probe = service.sendHttp(phone!, target, textPayload, {})
+      await Promise.resolve()
+      await expect(service.sendHttp(phone!, target, textPayload, {})).rejects.toMatchObject({ code: 'WEBHOOK_CB_OPEN' })
+      finishProbe?.({ ok: true, status: 200, text: async () => 'ok' })
+      await expect(probe).resolves.toBeUndefined()
+      expect(mockFetch).toHaveBeenCalledTimes(4)
+    } finally {
+      nowSpy.mockRestore()
+    }
   })
 })

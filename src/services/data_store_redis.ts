@@ -29,6 +29,8 @@ import {
   setTemplates,
   setMedia,
   getMedia,
+  profilePictureKey,
+  redisDelKey,
 } from './redis'
 import { Config } from './config'
 import logger from './logger'
@@ -36,6 +38,7 @@ import { getDataStoreFile } from './data_store_file'
 import { defaultConfig } from './config'
 import { CLEAN_CONFIG_ON_DISCONNECT, JIDMAP_CACHE_ENABLED } from '../defaults'
 import { getPnForLid as redisGetPnForLid, getLidForPn as redisGetLidForPn, setJidMapping as redisSetJidMapping, getLastIncomingKey as redisGetLastIncomingKey, setLastIncomingKey as redisSetLastIncomingKey, getContactName as redisGetContactName, setContactName as redisSetContactName, getContactInfo as redisGetContactInfo, setContactInfo as redisSetContactInfo, getPnForLidFromAuthCache as redisGetPnForLidFromAuthCache, getLidForPnFromAuthCache as redisGetLidForPnFromAuthCache } from './redis'
+import { profilePictureCacheIds } from './profile_picture_cache'
 
 export const getDataStoreRedis: getDataStore = async (phone: string, config: Config): Promise<DataStore> => {
   if (!dataStores.has(phone)) {
@@ -63,9 +66,11 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
   store.getImageUrl = async (jid: string) => {
     // Tentar tanto pelo JID informado quanto por sua variante mapeada (PN<->LID)
     const tryGet = async (keyJid: string): Promise<string | undefined> => {
-      const phoneKey = jidToPhoneNumber(keyJid)
-      const cached = await getProfilePicture(phone, phoneKey)
-      return cached || undefined
+      for (const cacheId of profilePictureCacheIds(keyJid)) {
+        const cached = await getProfilePicture(phone, cacheId)
+        if (cached) return cached
+      }
+      return undefined
     }
     let url = await tryGet(jid)
     if (!url) {
@@ -91,8 +96,10 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
       if (profileUrl) {
         // salvar para ambos (jid e variante)
         const saveFor = async (keyJid: string) => {
-          const phoneKey = jidToPhoneNumber(keyJid)
-          try { await setProfilePicture(phone, phoneKey, profileUrl) } catch {}
+          const [cacheId] = profilePictureCacheIds(keyJid)
+          if (cacheId) {
+            try { await setProfilePicture(phone, cacheId, profileUrl) } catch {}
+          }
         }
         await saveFor(jid)
         try {
@@ -113,6 +120,19 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
       }
     }
     return url
+  }
+  const removeLocalImageUrl = store.removeImageUrl
+  store.removeImageUrl = async (jid: string) => {
+    await removeLocalImageUrl?.(jid)
+    const aliases = [jid]
+    try {
+      if (isLidUser(jid)) aliases.push(`${await store.getPnForLid?.(phone, jid) || ''}`)
+      else aliases.push(`${await store.getLidForPn?.(phone, jid) || ''}`)
+    } catch {}
+    const cacheIds = aliases.filter(Boolean).flatMap(profilePictureCacheIds)
+    await Promise.all(Array.from(new Set(cacheIds)).map((cacheId) => (
+      redisDelKey(profilePictureKey(phone, cacheId))
+    )))
   }
   store.getGroupMetada = async (jid: string) => {
     return getGroup(phone, jid)
@@ -432,10 +452,7 @@ const dataStoreRedis = async (phone: string, config: Config): Promise<DataStore>
     return undefined
   }
   store.setJidMapping = async (sessionPhone: string, pnJid: string, lidJid: string) => {
-    void sessionPhone
-    void pnJid
-    void lidJid
-    return
+    await redisSetJidMapping(sessionPhone, pnJid, lidJid)
   }
   return store
 }

@@ -277,7 +277,7 @@ export interface groupJoinApprovalMode {
 }
 
 export interface close {
-  (): Promise<void>
+  (options?: { preserveStatus?: boolean }): Promise<void>
 }
 
 export interface logout {
@@ -316,6 +316,7 @@ export const connect = async ({
   config: Partial<Config>
 }) => {
   let sock: WASocket | undefined = undefined
+  let intentionalProviderHandoff = false
   const getOneToOneAddressingMode = (): 'pn' | 'lid' => {
     const value = `${config.oneToOneAddressingMode || ONE_TO_ONE_ADDRESSING_MODE}`.toLowerCase()
     return value === 'lid' ? 'lid' : 'pn'
@@ -1143,6 +1144,11 @@ export const connect = async ({
     // Limpar timer do assert periódico ao desconectar
     try { if (periodicAssertTimer) { clearInterval(periodicAssertTimer); periodicAssertTimer = undefined; logger.debug('PERIODIC_ASSERT: timer cleared on close') } } catch {}
     try { if (idleReconnectTimer) { clearInterval(idleReconnectTimer); idleReconnectTimer = undefined; logger.debug('IDLE_WATCHDOG: timer cleared on close') } } catch {}
+    if (intentionalProviderHandoff) {
+      logger.info('%s ignore close event during provider handoff', phone)
+      sock = undefined
+      return
+    }
     const { lastDisconnect } = payload || {}
     const statusCode = lastDisconnect?.error?.output?.statusCode
     if (await sessionStore.isStatusOffline(phone)) {
@@ -1681,6 +1687,10 @@ export const connect = async ({
   } catch {}
 
   const reconnect = async (lastStatusCode?: number) => {
+    if (intentionalProviderHandoff) {
+      logger.info('%s reconnect skipped during provider handoff', phone)
+      return
+    }
     if (config.useRedis) {
       try {
         const key = configKey(phone)
@@ -1726,7 +1736,9 @@ export const connect = async ({
     }
   }
 
-  const close = async () => {
+  const close = async (options?: { preserveStatus?: boolean }) => {
+    const preserveStatus = options?.preserveStatus === true
+    if (preserveStatus) intentionalProviderHandoff = true
     logger.info(`${phone} close`)
     try { if (lidResolverTimer) { clearInterval(lidResolverTimer); lidResolverTimer = undefined } } catch {}
     try { if (idleReconnectTimer) { clearInterval(idleReconnectTimer); idleReconnectTimer = undefined } } catch {}
@@ -1759,7 +1771,7 @@ export const connect = async ({
       }
     }
     sock = undefined
-    if (!await sessionStore.isStatusRestartRequired(phone)) {
+    if (!preserveStatus && !await sessionStore.isStatusRestartRequired(phone)) {
       await sessionStore.setStatus(phone, 'offline')
     }
   }

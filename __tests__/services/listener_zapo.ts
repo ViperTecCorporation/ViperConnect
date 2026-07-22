@@ -56,6 +56,81 @@ describe('ListenerZapo', () => {
     expect(outgoing.send).toHaveBeenCalledTimes(1)
   })
 
+  test('does not let a group sender-key event suppress the message with the same provider id', async () => {
+    const key = {
+      id: 'same-group-id',
+      remoteJid: '120363427999345040@g.us',
+      participant: '86110369755163@lid',
+      participantAlt: '5566996328386@s.whatsapp.net',
+      fromMe: true,
+      isGroup: true,
+    }
+
+    await service.process('5566996328386', [{
+      key,
+      message: { senderKeyDistributionMessage: { groupId: key.remoteJid } },
+      messageTimestamp: 1,
+    }], 'notify')
+    await service.process('5566996328386', [{
+      key,
+      message: { conversation: 'grupo aparelho depois patch' },
+      messageTimestamp: 1,
+    }], 'notify')
+
+    expect(outgoing.send).toHaveBeenCalledTimes(1)
+    expect(outgoing.send).toHaveBeenCalledWith('5566996328386', expect.objectContaining({
+      entry: [expect.objectContaining({
+        changes: [expect.objectContaining({
+          value: expect.objectContaining({
+            messages: [expect.objectContaining({
+              text: { body: 'grupo aparelho depois patch' },
+              group_id: key.remoteJid,
+            })],
+          }),
+        })],
+      })],
+    }))
+  })
+
+  test('maps an incoming poll vote context from the Zapo id to the parent Uno id', async () => {
+    ;(store.dataStore.loadUnoId as jest.Mock).mockImplementation(async (id: string) => (
+      id === 'poll-provider-id' ? 'poll-uno-id' : undefined
+    ))
+
+    await service.process('5566996328386', [{
+      key: {
+        id: 'vote-provider-id',
+        remoteJid: '120363427999345040@g.us',
+        participant: '86110369755163@lid',
+        fromMe: false,
+      },
+      message: {
+        pollUpdateMessage: {
+          pollCreationMessageKey: {
+            id: 'poll-provider-id',
+            remoteJid: '120363427999345040@g.us',
+            fromMe: false,
+          },
+          vote: { selectedOptionNames: ['Pizza'] },
+        },
+      },
+      messageTimestamp: 1,
+    }], 'notify')
+
+    expect(outgoing.send).toHaveBeenCalledWith('5566996328386', expect.objectContaining({
+      entry: [expect.objectContaining({
+        changes: [expect.objectContaining({
+          value: expect.objectContaining({
+            messages: [expect.objectContaining({
+              text: { body: '*Voto em enquete*: Pizza' },
+              context: { message_id: 'poll-uno-id', id: 'poll-uno-id' },
+            })],
+          }),
+        })],
+      })],
+    }))
+  })
+
   test('maps receipt ids and suppresses status regression', async () => {
     ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-1')
     ;(store.dataStore.loadStatus as jest.Mock).mockResolvedValue('read')

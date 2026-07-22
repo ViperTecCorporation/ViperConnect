@@ -1,7 +1,10 @@
 import { eventType, Listener } from './listener'
 import { PublishOption, amqpPublish } from '../amqp'
-import { UNOAPI_EXCHANGE_BRIDGE_NAME, UNOAPI_QUEUE_LISTENER, UNOAPI_SERVER_NAME } from '../defaults'
-import { proto } from '@whiskeysockets/baileys'
+import { UNOAPI_EXCHANGE_BRIDGE_NAME, UNOAPI_QUEUE_LISTENER, UNOAPI_SERVER_NAME, UNOAPI_WORKER_ENGINE } from '../defaults'
+import { providerQueueName } from './providers/provider_queue'
+import { resolveWhatsAppEngine } from './providers/provider_resolver'
+import type { WhatsAppEngine } from './providers/provider_types'
+import { packWaMessage } from './wa_message_envelope'
 
 const priorities = {
   'qrcode': 5,
@@ -46,15 +49,9 @@ const delays = {
   'delete': _ => 0,
 }
 
-const getUsernameMeta = (m: any): string | undefined => {
-  const raw = `${m?.key?.participantUsername || m?.key?.remoteJidUsername || m?.key?.senderUsername || m?.participantUsername || m?.remoteJidUsername || m?.senderUsername || m?.contact?.username || m?.username || ''}`
-    .replace(/^@/, '')
-    .trim()
-    .toLowerCase()
-  return raw || undefined
-}
-
 export class ListenerAmqp implements Listener {
+  constructor(private readonly workerEngine: WhatsAppEngine = resolveWhatsAppEngine(UNOAPI_WORKER_ENGINE)) {}
+
   public async process(phone: string, messages: object[], type: eventType) {
     const options: Partial<PublishOption> = {}
     options.priority = options.priority || priorities[type] || 5
@@ -63,23 +60,11 @@ export class ListenerAmqp implements Listener {
     // Pack WAProto messages only for types that carry full WebMessageInfo
     const shouldPack = ['message', 'notify', 'qrcode', 'append', 'history'].includes(type as string)
     const packed = shouldPack
-      ? messages.map((m: any) => {
-          try {
-            if (m && (m.key || m.message)) {
-              const bytes = proto.WebMessageInfo.encode(m as any).finish()
-              const username = getUsernameMeta(m)
-              return {
-                __wa_b64: Buffer.from(bytes).toString('base64'),
-                ...(username ? { __unoapi_username: username } : {}),
-              }
-            }
-          } catch {}
-          return m
-        })
+      ? messages.map(packWaMessage)
       : messages
     await amqpPublish(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_LISTENER}.${UNOAPI_SERVER_NAME}`,
+      providerQueueName(UNOAPI_QUEUE_LISTENER, UNOAPI_SERVER_NAME, this.workerEngine),
       phone,
       { messages: packed, type }, 
       options

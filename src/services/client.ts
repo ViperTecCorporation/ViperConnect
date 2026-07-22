@@ -38,7 +38,7 @@ export class ConnectionInProgress extends Error {
 export interface Client {
   connect(time: number): Promise<void>
 
-  disconnect(): Promise<void>
+  disconnect(options?: { preserveStatus?: boolean }): Promise<void>
   
   logout(): Promise<void>
 
@@ -61,7 +61,12 @@ export interface Client {
     from_me?: boolean
     fromMe?: boolean
     timestamp?: number | string
-  }): Promise<{ request_id: string }>
+    replay_stored?: boolean
+    replayStored?: boolean
+    force_replay?: boolean
+    forceReplay?: boolean
+    days?: number
+  }): Promise<{ request_id?: string, forwarded?: number }>
 
   sendPasskeyResponse?(payload: {
     credentialId: Buffer

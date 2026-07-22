@@ -46,6 +46,8 @@ describe('service media store s3', () => {
     dataStore.getLidForPn.mockResolvedValue(undefined)
     dataStore.getPnForLid.mockResolvedValue(undefined)
     fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
       headers: { get: () => 'image/jpeg' },
       arrayBuffer: async () => Buffer.from('profile-picture'),
     })
@@ -65,7 +67,7 @@ describe('service media store s3', () => {
     await mediaStore.saveProfilePicture({
       id: '120363039221813429@g.us',
       imgUrl: 'https://example.test/group.jpg',
-    } as any)
+    })
 
     expect(amqpPublishMock).not.toHaveBeenCalled()
   })
@@ -90,5 +92,21 @@ describe('service media store s3', () => {
         content_type: 'image/jpeg',
       },
     })
+  })
+
+  test('does not persist a profile picture when the download fails', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      headers: { get: () => 'text/plain' },
+    })
+    const mediaStore = mediaStoreS3(phone, defaultConfig, getTestDataStore)
+
+    await expect(mediaStore.saveProfilePicture({
+      id: '111@lid',
+      imgUrl: 'https://example.test/denied.jpg',
+    })).rejects.toThrow('HTTP 403')
+
+    expect(amqpPublishMock).not.toHaveBeenCalled()
   })
 })

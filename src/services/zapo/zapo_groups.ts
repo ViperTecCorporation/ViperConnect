@@ -28,8 +28,10 @@ export class ZapoGroups {
     return this.client.group.setSubject(jid, subject)
   }
 
-  updateDescription(jid: string, description?: string) {
-    return this.client.group.setDescription(jid, description || null)
+  async updateDescription(jid: string, description?: string) {
+    const metadata: any = await this.client.group.queryGroupMetadata(jid)
+    const previousId = `${metadata?.descId || metadata?.descriptionId || ''}`.trim() || undefined
+    return this.client.group.setDescription(jid, description || null, previousId)
   }
 
   async updatePicture(jid: string, pictureUrl: string) {

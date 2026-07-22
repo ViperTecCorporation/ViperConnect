@@ -3,8 +3,16 @@ import type { WaClient, WaSendMessageContent, WaSendMessageOptions } from 'zapo-
 import fetch from 'node-fetch'
 import { getMimetype, toBaileysMessageContent } from '../transformer'
 import { SendError } from '../send_error'
+import { SEND_AUDIO_MESSAGE_AS_PTT } from '../../defaults'
 
 const mediaTypes = ['image', 'audio', 'document', 'video', 'sticker'] as const
+
+const resolveMedia = async (type: string, link: string) => {
+  if (!/^https?:\/\//i.test(link)) return link
+  const response = await fetch(link)
+  if (!response.ok) throw new SendError(11, `${type}_download_failed: HTTP ${response.status}`)
+  return new Uint8Array(await response.arrayBuffer())
+}
 
 const normalizeMention = (value: unknown) => {
   const raw = `${value || ''}`.trim().replace(/^@/, '')
@@ -19,6 +27,41 @@ const getMentions = (payload: any) => {
   const body = `${payload?.text?.body || ''}`
   const fromBody = Array.from(body.matchAll(/@(\d{8,20})\b/g)).map((match) => match[1])
   return Array.from(new Set([...explicit, ...fromBody].map(normalizeMention).filter(Boolean))) as string[]
+}
+
+const pollContent = (payload: any): WaSendMessageContent => {
+  const poll = payload?.poll || payload
+  const name = `${poll?.name || poll?.question || poll?.title || ''}`.trim()
+  const rawOptions = Array.isArray(poll?.options)
+    ? poll.options
+    : (Array.isArray(poll?.values) ? poll.values : [])
+  const options = rawOptions.map((option: any) => (
+    typeof option === 'string'
+      ? option.trim()
+      : `${option?.name || option?.optionName || option?.title || ''}`.trim()
+  )).filter(Boolean)
+  const selectableCount = Number(
+    poll?.selectableCount
+      ?? poll?.selectable_count
+      ?? poll?.selectableOptionsCount
+      ?? poll?.selectable_options_count
+      ?? 1,
+  )
+
+  if (!name) throw new SendError(400, 'poll_name_required')
+  if (!options.length) throw new SendError(400, 'poll_options_required')
+  if (!Number.isInteger(selectableCount) || selectableCount < 1 || selectableCount > options.length) {
+    throw new SendError(400, 'invalid_poll_selectable_count')
+  }
+
+  return {
+    type: 'poll',
+    name,
+    options,
+    selectableCount,
+    allowAddOption: !!(poll?.allowAddOption ?? poll?.allow_add_option),
+    hideParticipantName: !!(poll?.hideParticipantName ?? poll?.hide_participant_name),
+  }
 }
 
 export type ZapoMappedMessage = {
@@ -149,12 +192,13 @@ export const toZapoMessageContent = async (
     const media = payload?.[type] || {}
     const link = `${media.link || ''}`.trim()
     if (!link) throw new SendError(11, `invalid_${type}_payload: missing link`)
-    const mappedType = type === 'audio' && (media.ptt === true || payload?.ptt === true) ? 'ptt' : type
+    const isPtt = type === 'audio' && (SEND_AUDIO_MESSAGE_AS_PTT || media.ptt === true || payload?.ptt === true)
     return {
       content: {
-        type: mappedType,
-        media: link,
+        type,
+        media: await resolveMedia(type, link),
         mimetype: media.mime_type || media.mimetype || getMimetype(payload) || undefined,
+        ...(isPtt ? { ptt: true } : {}),
         ...(media.caption ? { caption: customMessageCharactersFunction(media.caption) } : {}),
         ...(media.filename ? { fileName: media.filename } : {}),
       } as WaSendMessageContent,
@@ -163,6 +207,8 @@ export const toZapoMessageContent = async (
   }
 
   if (type === 'baileys') return { content: payload.message || {}, options: {} }
+
+  if (type === 'poll') return { content: pollContent(payload), options: {} }
 
   if (type === 'interactive') {
     return { content: await interactiveContent(client, payload), options: mentions.length ? { mentions } : {} }

@@ -7,15 +7,15 @@ import { Incoming } from './services/incoming'
 import { Outgoing } from './services/outgoing'
 import { OutgoingCloudApi } from './services/outgoing_cloud_api'
 import { OutgoingAmqp } from './services/outgoing_amqp'
-import { SessionStoreFile } from './services/session_store_file'
+import { SessionStoreRedis } from './services/session_store_redis'
 import { SessionStore } from './services/session_store'
 import { autoConnect } from './services/auto_connect'
-import { getConfigByEnv } from './services/config_by_env'
+import { getConfigRedis } from './services/config_redis'
 import { getClientProvider } from './services/providers/client_factory'
 import { onNewLoginAlert } from './services/on_new_login_alert'
 import ContactBaileys from './services/contact_baileys'
 import { Broadcast } from './services/broadcast'
-import { isInBlacklistInMemory, addToBlacklistInMemory, addToBlacklistRedis } from './services/blacklist'
+import { isInBlacklistInRedis, addToBlacklistRedis } from './services/blacklist'
 import { version } from '../package.json'
 
 import logger from './services/logger'
@@ -37,6 +37,7 @@ import { LogoutBaileys } from './services/logout_baileys'
 import { amqpConnect, amqpConsume } from './amqp'
 import { OutgoingJob } from './jobs/outgoing'
 import { startContactSyncScheduler } from './jobs/contact_sync'
+import { ensureRequiredRedis, requiredRedisUrl } from './services/redis_runtime'
 
 import * as Sentry from '@sentry/node'
 import { isTransientBaileysError } from './services/error_utils'
@@ -47,7 +48,9 @@ if (process.env.SENTRY_DSN) {
   })
 }
 
-const outgoingCloudApi: Outgoing = new OutgoingCloudApi(getConfigByEnv, isInBlacklistInMemory, addToBlacklistRedis)
+requiredRedisUrl()
+
+const outgoingCloudApi: Outgoing = new OutgoingCloudApi(getConfigRedis, isInBlacklistInRedis, addToBlacklistRedis)
 let outgoing: Outgoing = outgoingCloudApi
 
 const webhookAsyncAmqp = WEBHOOK_ASYNC_MODE === 'amqp'
@@ -56,14 +59,14 @@ if (webhookAsyncAmqp) {
   if (!amqpUrl) {
     logger.warn('WEBHOOK_ASYNC_MODE=amqp set but AMQP_URL is not configured; falling back to direct webhooks')
   } else {
-    outgoing = new OutgoingAmqp(getConfigByEnv)
+    outgoing = new OutgoingAmqp(getConfigRedis)
     amqpConnect(AMQP_URL).catch((error) => {
       logger.error(error, 'Erro on start rabbitmq for webhook async mode')
       process.exit(1)
     })
     const notifyFailedMessages = NOTIFY_FAILED_MESSAGES
     const prefetch = UNOAPI_QUEUE_OUTGOING_PREFETCH
-    const outgoingJob = new OutgoingJob(getConfigByEnv, outgoingCloudApi)
+    const outgoingJob = new OutgoingJob(getConfigRedis, outgoingCloudApi)
     amqpConsume(
       UNOAPI_EXCHANGE_BROKER_NAME,
       UNOAPI_QUEUE_OUTGOING,
@@ -75,22 +78,27 @@ if (webhookAsyncAmqp) {
 }
 
 const broadcast: Broadcast = new Broadcast()
-const listenerBaileys: Listener = new ProviderListener(outgoing, broadcast, getConfigByEnv)
+const listenerBaileys: Listener = new ProviderListener(outgoing, broadcast, getConfigRedis)
 const onNewLoginn = onNewLoginAlert(listenerBaileys)
-const incomingBaileys: Incoming = new IncomingProvider(listenerBaileys, getConfigByEnv, getClientProvider, onNewLoginn)
-const sessionStore: SessionStore = new SessionStoreFile()
-const contact = new ContactBaileys(listenerBaileys, getConfigByEnv, getClientProvider, onNewLoginn)
+const incomingBaileys: Incoming = new IncomingProvider(listenerBaileys, getConfigRedis, getClientProvider, onNewLoginn)
+const sessionStore: SessionStore = new SessionStoreRedis()
+const contact = new ContactBaileys(listenerBaileys, getConfigRedis, getClientProvider, onNewLoginn)
 
-const reload = new ReloadBaileys(getClientProvider, getConfigByEnv, listenerBaileys, onNewLoginn)
-const logout = new LogoutBaileys(getClientProvider, getConfigByEnv, listenerBaileys, onNewLoginn)
+const reload = new ReloadBaileys(getClientProvider, getConfigRedis, listenerBaileys, onNewLoginn)
+const logout = new LogoutBaileys(getClientProvider, getConfigRedis, listenerBaileys, onNewLoginn)
 
-const app: App = new App(incomingBaileys, outgoing, BASE_URL, getConfigByEnv, sessionStore, onNewLoginn, addToBlacklistInMemory, reload, logout, undefined, undefined, contact)
+const app: App = new App(incomingBaileys, outgoing, BASE_URL, getConfigRedis, sessionStore, onNewLoginn, addToBlacklistRedis, reload, logout, undefined, undefined, contact)
 broadcast.setSever(app.socket)
 
-app.server.listen(PORT, '0.0.0.0', async () => {
-  logger.info('Unoapi Cloud version: %s, listening on port: %s', version, PORT)
-  autoConnect(sessionStore, listenerBaileys, getConfigByEnv, getClientProvider, onNewLoginn)
-  startContactSyncScheduler(outgoing)
+ensureRequiredRedis().then(() => {
+  app.server.listen(PORT, '0.0.0.0', async () => {
+    logger.info('Unoapi Cloud version: %s, listening on port: %s', version, PORT)
+    autoConnect(sessionStore, listenerBaileys, getConfigRedis, getClientProvider, onNewLoginn)
+    startContactSyncScheduler(outgoing)
+  })
+}).catch((error) => {
+  logger.error(error, 'Failed to start index: Redis is required')
+  process.exit(1)
 })
 
 export default app

@@ -37,7 +37,17 @@ export const toUnoAddonEvent = (event: WaIncomingAddonEvent) => {
       message = { reactionMessage: { ...decrypted.reaction, key: decrypted.reaction?.key || target } }
       break
     case 'poll_vote':
-      message = { pollUpdateMessage: { pollCreationMessageKey: target, vote: decrypted.pollVote } }
+      message = {
+        pollUpdateMessage: {
+          pollCreationMessageKey: target,
+          vote: {
+            ...decrypted.pollVote,
+            ...(Array.isArray(decrypted.selectedOptionNames)
+              ? { selectedOptionNames: decrypted.selectedOptionNames }
+              : {}),
+          },
+        },
+      }
       break
     case 'event_response':
       message = { eventResponseMessage: decrypted.eventResponse }

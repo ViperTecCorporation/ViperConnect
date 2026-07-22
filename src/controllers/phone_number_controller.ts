@@ -13,12 +13,13 @@ import { pruneAuthSignalCache, setPrivacyBootstrapSync } from '../services/redis
 import { getPrivacyTokenDebug } from '../services/privacy_token_debug'
 import { preparePrivacyBootstrapSync } from '../services/privacy_bootstrap_sync'
 import { getMissingTcTokenQuotaStatus } from '../services/privacy_token_quota'
+import type { Incoming } from '../services/incoming'
 
 export class PhoneNumberController {
   private getConfig: getConfig
   private sessionStore: SessionStore
 
-  constructor(getConfig: getConfig, sessionStore: SessionStore) {
+  constructor(getConfig: getConfig, sessionStore: SessionStore, private readonly incoming?: Incoming) {
     this.getConfig = getConfig
     this.sessionStore = sessionStore
   }
@@ -178,15 +179,14 @@ export class PhoneNumberController {
     logger.warn('app-state resync params %s', JSON.stringify(req.params))
     try {
       const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const operation = this.incoming?.resyncAppState
       const client = clients.get(sessionPhone)
-      if (!client) {
-        return sendGraphError(res, 404, `Session ${sessionPhone} is not loaded`, { code: 131016, type: 'GraphMethodException' })
-      }
-      if (typeof client.resyncAppState !== 'function') {
+      if (!operation && typeof client?.resyncAppState !== 'function') {
         return sendGraphError(res, 409, `Session ${sessionPhone} does not support app-state resync`, { code: 131016, type: 'GraphMethodException' })
       }
       const forceSnapshot = `${(req.body as any)?.force_snapshot ?? (req.body as any)?.forceSnapshot ?? 'true'}` !== 'false'
-      await client.resyncAppState(forceSnapshot)
+      if (operation) await operation.call(this.incoming, sessionPhone, forceSnapshot)
+      else await client!.resyncAppState!(forceSnapshot)
       return res.status(200).json({
         success: true,
         phone: sessionPhone,
@@ -205,14 +205,14 @@ export class PhoneNumberController {
     logger.warn('history on-demand params %s body %s', JSON.stringify(req.params), JSON.stringify(req.body))
     try {
       const sessionPhone = await resolveSessionPhoneByMetaId(req.params.phone)
+      const operation = this.incoming?.fetchMessageHistory
       const client = clients.get(sessionPhone)
-      if (!client) {
-        return sendGraphError(res, 404, `Session ${sessionPhone} is not loaded`, { code: 131016, type: 'GraphMethodException' })
-      }
-      if (typeof client.fetchMessageHistory !== 'function') {
+      if (!operation && typeof client?.fetchMessageHistory !== 'function') {
         return sendGraphError(res, 409, `Session ${sessionPhone} does not support history on-demand`, { code: 131016, type: 'GraphMethodException' })
       }
-      const result = await client.fetchMessageHistory(req.body || {})
+      const result = operation
+        ? await operation.call(this.incoming, sessionPhone, req.body || {})
+        : await client!.fetchMessageHistory!(req.body || {})
       return res.status(200).json({
         success: true,
         phone: sessionPhone,
@@ -249,17 +249,17 @@ export class PhoneNumberController {
       const shouldFetch = `${(req.query as any)?.fetch ?? (req.body as any)?.fetch ?? 'false'}` === 'true'
       let fetch_result: any
       if (shouldFetch) {
+        const operation = this.incoming?.fetchPrivacyTokens
         const client = clients.get(sessionPhone)
-        if (!client) {
-          return sendGraphError(res, 404, `Session ${sessionPhone} is not loaded`, { code: 131016, type: 'GraphMethodException' })
-        }
-        if (typeof client.fetchPrivacyTokens !== 'function') {
+        if (!operation && typeof client?.fetchPrivacyTokens !== 'function') {
           return sendGraphError(res, 409, `Session ${sessionPhone} does not support privacy token fetch`, { code: 131016, type: 'GraphMethodException' })
         }
         const rawTimeout = (req.query as any)?.timeoutMs ?? (req.query as any)?.timeout_ms ?? (req.body as any)?.timeoutMs ?? (req.body as any)?.timeout_ms
         const parsedTimeout = Number.parseInt(`${rawTimeout ?? '5000'}`, 10)
         const timeoutMs = Number.isFinite(parsedTimeout) ? Math.min(Math.max(parsedTimeout, 1000), 15000) : 5000
-        fetch_result = await client.fetchPrivacyTokens(rawTargets, timeoutMs)
+        fetch_result = operation
+          ? await operation.call(this.incoming, sessionPhone, rawTargets, timeoutMs)
+          : await client!.fetchPrivacyTokens!(rawTargets, timeoutMs)
       }
       const result = await getPrivacyTokenDebug(sessionPhone, rawTargets)
       return res.status(200).json({

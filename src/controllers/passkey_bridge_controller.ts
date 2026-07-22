@@ -116,9 +116,17 @@ export class PasskeyBridgeController {
       const sendPasskeyConfirmation = client?.sendPasskeyConfirmation
       if (!sendPasskeyConfirmation) return sendGraphError(res, 409, 'Passkey confirmation is unavailable for this connected session.', { code: 131016, type: 'GraphMethodException' })
 
-      await sendPasskeyConfirmation.call(client)
-      const updated = await updatePasskeyBridgeSession(bridgeId, { status: 'completed' })
-      return res.status(200).json({ ok: true, bridge_id: bridgeId, status: updated?.status || 'completed' })
+      const result = await sendPasskeyConfirmation.call(client)
+      const providerManaged = !!(result as any)?.ok?.provider_managed_confirmation
+      const updated = providerManaged
+        ? await getPasskeyBridgeSession(bridgeId)
+        : await updatePasskeyBridgeSession(bridgeId, { status: 'completed' })
+      return res.status(200).json({
+        ok: true,
+        bridge_id: bridgeId,
+        status: updated?.status || session.status,
+        provider_managed_confirmation: providerManaged,
+      })
     } catch (error) {
       logger.warn(error as any, 'PASSKEY bridge confirm failed')
       return sendGraphError(res, 500, error.message, { code: 131016, type: 'GraphMethodException' })

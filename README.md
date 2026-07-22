@@ -28,7 +28,7 @@ This project is maintained by ViperTec Corporation and is based on the original 
 - Webhooks por sessão, com suporte a múltiplos endpoints.
 - Controle para desabilitar um webhook específico sem remover a configuração.
 - Integração com Chatwoot e Typebot.
-- Redis/Valkey para sessões, cache e configurações.
+- Redis/Valkey obrigatório para sessões, cache, configurações, IDs e coordenação dos workers.
 - RabbitMQ para processamento assíncrono.
 - Storage S3 compatível para mídias.
 - Normalização PN/LID para reduzir problemas de endereçamento no WhatsApp.
@@ -153,6 +153,8 @@ Arquivos principais:
 - [Arquitetura](docs/ARCHITECTURE.md)
 - [Desenvolvimento](docs/DEVELOPMENT.md)
 - [Embedded Signup](docs/WHATSAPP_EMBEDDED.md)
+- [Histórico de mensagens](docs/MESSAGE_HISTORY.md)
+- [Migração para o provider Zapo](docs/zapo-provider-migration.md)
 - [JIDMAP PN/LID](docs/pt-BR/JIDMAP.md)
 - [Status/Broadcast](docs/STATUS_BROADCAST.md)
 - [Transcrição de áudio](docs/TRANSCRIPTION_AUDIO.md)

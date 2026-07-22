@@ -209,6 +209,10 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
       await saveProfilePicture({ imgUrl: url, id: jid })
     } catch {}
   }
+  dataStore.removeImageUrl = async (jid: string) => {
+    const { mediaStore } = await config.getStore(phone, config)
+    await mediaStore.saveProfilePicture({ id: jid, imgUrl: 'removed' })
+  }
   dataStore.loadImageUrl = async (jid: string, sock: WASocket) => {
     logger.debug('Search profile picture for %s', jid)
     const { mediaStore } = await config.getStore(phone, config)

@@ -3,6 +3,7 @@ import { getStoreFile } from './store_file'
 import { WAMessageKey, WAVersion } from '@whiskeysockets/baileys'
 import { Level } from 'pino'
 import { SessionProvider } from './providers/provider_types'
+import { webhookHasTarget } from './webhook_config'
 
 export const configs: Map<string, Config> = new Map()
 
@@ -39,7 +40,7 @@ export const isWebhookEnabled = (webhook: Partial<Webhook> | undefined): boolean
   if (!webhook) return false
   if (webhook.enabled === false) return false
   if (webhook.disabled === true) return false
-  return true
+  return webhookHasTarget(webhook)
 }
 
 export type WebhookForward = {
@@ -65,6 +66,7 @@ export type Config = {
   readOnReply: boolean
   markOnlineOnConnect: boolean
   ignoreHistoryMessages: boolean
+  historyMaxAgeDays: number
   clearAppStateSyncOnConnect: boolean
   allowFullHistorySync: boolean
   ignoreYourselfMessages: boolean
@@ -135,6 +137,7 @@ export const defaultConfig: Config = {
   readOnReply: false,
   markOnlineOnConnect: false,
   ignoreHistoryMessages: true,
+  historyMaxAgeDays: 30,
   clearAppStateSyncOnConnect: false,
   allowFullHistorySync: false,
   ignoreOwnMessages: true,

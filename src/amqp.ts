@@ -215,6 +215,17 @@ const bindingKey = (queueName, routingKey) => {
   return `${queueName}${routingKey ? `.${routingKey}` : ''}`
 }
 
+export const bindPublishRoute = async (
+  channel: Pick<Channel, 'bindQueue'>,
+  exchangeName: string,
+  queueName: string,
+  routingKey: string,
+) => {
+  const destiny = bindingKey(queueName, routingKey)
+  await channel.bindQueue(queueName, exchangeName, destiny)
+  return destiny
+}
+
 const bindQueue = async (channel, exchangeName, queueName, routingKey, delayed = false) => {
   const queueNameToBind = delayed ? queueDelayedName(queueName) : queueName
   const destiny = bindingKey(queueNameToBind, routingKey)
@@ -331,8 +342,11 @@ export const amqpPublish = async (
     queueUsed = queueDead
     exchangeUsed = queueDeadName(exchange)
   }
-  const destiny = bindingKey(queueUsed.queue, routingKey)
-  await channel?.publish(exchangeUsed, destiny, Buffer.from(JSON.stringify(payload)), properties)
+  if (!channel) throw new Error('AMQP channel is not available')
+  // Bind before publishing so the first provider message is durable even when
+  // the worker has not registered its consumer for this session yet.
+  const destiny = await bindPublishRoute(channel, exchangeUsed, queueUsed.queue, routingKey)
+  await channel.publish(exchangeUsed, destiny, Buffer.from(JSON.stringify(payload)), properties)
   logger.debug(
     'Published at exchange %s, with binding key: %s, payload: %s, properties: %s',
     exchangeUsed,

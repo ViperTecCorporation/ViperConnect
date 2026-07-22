@@ -33,4 +33,21 @@ describe('Zapo canonical identity resolver', () => {
 
     await expect(identity.resolve('desconhecido')).rejects.toThrow('zapo_username_lid_not_cached')
   })
+
+  test('preserves group JIDs without treating them as usernames', async () => {
+    const usernames = { resolve: jest.fn() } as unknown as ZapoUsernameIndex
+    const identity = new ZapoIdentity(mockDeep<WaClient>(), mockDeep<WaStoreSession>(), 'session', usernames)
+
+    await expect(identity.resolve('120363409038491818@g.us')).resolves.toBe('120363409038491818@g.us')
+    expect(usernames.resolve).not.toHaveBeenCalled()
+  })
+
+  test('does not fall back to PN when the canonical LID cannot be resolved', async () => {
+    const client = mockDeep<WaClient>()
+    const store = mockDeep<WaStoreSession>()
+    client.profile.getLidsByPhoneNumbers.mockResolvedValue([{ exists: false, invalid: true }] as never)
+    const identity = new ZapoIdentity(client, store, 'session')
+
+    await expect(identity.resolve('5511999999999')).rejects.toThrow('zapo_phone_lid_not_found')
+  })
 })

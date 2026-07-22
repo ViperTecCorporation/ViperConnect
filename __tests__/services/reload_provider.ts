@@ -22,7 +22,7 @@ describe('worker reload provider isolation', () => {
 
     await reload.run('5566')
 
-    expect(oldClient.disconnect).toHaveBeenCalledTimes(1)
+    expect(oldClient.disconnect).toHaveBeenCalledWith({ preserveStatus: true })
     expect(getClient).not.toHaveBeenCalled()
     expect(clients.has('5566')).toBe(false)
   })

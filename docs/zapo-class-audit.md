@@ -1,6 +1,6 @@
 # Auditoria classe a classe: Baileys e Zapo
 
-Data da revisao: 2026-07-21. Fonte Zapo validada: repositorio oficial
+Data da revisao: 2026-07-22. Fonte Zapo validada: repositorio oficial
 `vinikjkkj/zapo`, commit `2a415d9524365c986b1b11a4b10667b504e9ac92`, versao 1.6.1.
 
 ## Criterio
@@ -140,10 +140,64 @@ Revisados sem mudanca de provider: `blacklist`, `broadcast`, `broadcast_amqp`,
 
 ## Eventos oficiais cobertos
 
-`auth_qr`, `auth_pairing_required`, `auth_pairing_code`, `connection`, `message`,
-`message_send`, `message_addon`, `receipt`, `group`, `mex_notification` e
+`auth_qr`, `auth_pairing_required`, `auth_pairing_code`, `auth_passkey_required`,
+`auth_paired`, `connection`, `message`, `message_protocol`, `message_send`,
+`message_addon`, `message_unavailable`, `receipt`, `group`, `picture`, `mex_notification`,
+`history_sync_chunk`, `offline_resume`, `stream_failure`, `stanza_error`,
+`debug_client_error`, `debug_unhandled_stanza`, `debug_privacy_token` e
 `voip_call_incoming`. History sync e app-state sao persistidos pelos stores/coordinators
-oficiais. Presence e Status usam coordinators dedicados.
+oficiais. Presence e Status usam coordinators dedicados; a Uno nao assina `presence` e
+`chatstate` recebidos porque nao mantem subscriptions de contatos.
+
+Eventos MEX de username atualizam o indice temporal, `lid_change` move o contato oficial
+e renova o mapping PN/LID, e `message_capping` gera alerta operacional com uso e quota.
+`message_protocol` encaminha edits/revokes ao mesmo listener Cloud API das mensagens.
+
+## Fotos de perfil na Zapo
+
+- `ZapoProfilePictures` concentra consulta, persistencia, enriquecimento e invalidacao;
+  `ClientZapo` apenas encaminha mensagens e o evento oficial `picture`.
+- LID e a identidade canonica de contatos. PN e mantido como alias adicional quando o
+  store oficial conhece a relacao; grupos preservam o JID `@g.us`.
+- A consulta usa `profile.getProfilePicture(jid, 'image', existingId)`, com `preview`
+  somente quando nao existe original nem copia local. O ID retornado evita download
+  repetido dentro do runtime e o intervalo configurado limita novas consultas.
+- A URL temporaria da CDN Zapo nao e enviada diretamente no webhook: a imagem e copiada
+  para S3/filesystem e o webhook recebe a URL Uno com metadata do objeto quando houver.
+- `picture/delete` remove arquivo e aliases do cache Redis; `picture/set` e
+  `picture/set_avatar` forcam atualizacao imediata. Falha de privacy, SQLite, CDN ou
+  storage nunca bloqueia o encaminhamento da mensagem.
+- `SEND_PROFILE_PICTURE=false` desativa consultas e eventos de foto. Os defaults
+  `PROFILE_PICTURE_FORCE_REFRESH` e `PROFILE_PICTURE_REFRESH_INTERVAL_SEC` valem para
+  ambos os motores.
+- `PROFILE_PICTURE_WEBHOOK_INTERVAL_SEC` define quando a mesma foto volta ao payload
+  (padrao 3h). O marcador e um ZSET por sessao no Redis, sobrevive a restart e so e
+  gravado depois que uma foto foi realmente anexada; falha sem foto continua elegivel.
+  Evento `picture` remove o marcador e libera inclusao na proxima mensagem.
 
 Eventos de newsletter, bot streaming e broadcast-list permanecem fora da liberacao Zapo
 ate os respectivos endpoints e testes de contrato existirem.
+
+## Pente-fino de transformer e ClientZapo
+
+Revalidado em 2026-07-22 com checagem TypeScript e as 15 suites de transformer/Zapo:
+
+- mencoes visiveis ficam sempre no formato `@numeros`, sem `+`, device, `@lid` ou
+  substituicao por nome; os JIDs completos permanecem apenas no contexto do protocolo;
+- o transformer procura PN em todos os aliases do envelope, sem deixar um LID anterior
+  ocultar `participantAlt`/`remoteJidAlt` validos;
+- envio 1:1 falha explicitamente quando a Zapo nao resolve PN para LID, em vez de enviar
+  para um endereco nao canonico;
+- falhas opcionais de `composing`, `paused`, leitura ao receber e webhook de status nao
+  transformam uma mensagem ja enviada/recebida em falha operacional;
+- historico so marca IDs como encaminhados depois da confirmacao do listener, permitindo
+  nova tentativa quando o webhook falha;
+- falha de handshake, fechamento inesperado e erro de `disconnect` desmontam o client e
+  liberam o lease Redis; rejeicoes do reconector sao capturadas e registradas;
+- midias do mapper usam bytes na API tipada da Zapo, inclusive audio PTT como
+  `{ type: 'audio', ptt: true }`.
+
+O `proxyUrl` continua aplicado somente ao caminho Baileys. Na Zapo ele deve ser entregue
+por um adapter dedicado: WebSocket e CDN aceitam `http.Agent`, enquanto link preview
+exige dispatcher `undici`; proxy SOCKS nao pode ser reutilizado cegamente nos dois
+contratos. Ate esse adapter existir, a interface nao deve afirmar que o proxy cobre Zapo.

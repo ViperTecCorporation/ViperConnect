@@ -54,6 +54,7 @@ describe('config', () => {
 
   test('does not allow full Baileys history sync by default', async () => {
     expect((await getConfig(phone)).allowFullHistorySync).toBe(false)
+    expect((await getConfig(phone)).historyMaxAgeDays).toBe(30)
   })
 
   test('does not mark the WhatsApp account online on connect by default', async () => {

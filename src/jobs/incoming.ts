@@ -75,7 +75,13 @@ export class IncomingJob {
   }
 
   private async consumeProviderOperation(phone: string, data: any) {
-    const allowedActions = ['contacts', 'requestPairingCode']
+    const allowedActions = [
+      'contacts',
+      'requestPairingCode',
+      'resyncAppState',
+      'fetchPrivacyTokens',
+      'fetchMessageHistory',
+    ]
     if (!allowedActions.includes(data.action)) throw new Error(`Unknown provider operation ${data.action}`)
     const fn = this.incoming[data.action]
     if (typeof fn !== 'function') throw new Error(`Incoming provider does not support operation ${data.action}`)

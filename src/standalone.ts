@@ -28,11 +28,9 @@ import { Outgoing } from './services/outgoing'
 import { OutgoingCloudApi } from './services/outgoing_cloud_api'
 import { OutgoingAmqp } from './services/outgoing_amqp'
 import { SessionStore } from './services/session_store'
-import { SessionStoreFile } from './services/session_store_file'
 import { SessionStoreRedis } from './services/session_store_redis'
 import { autoConnect } from './services/auto_connect'
 import { getConfig } from './services/config'
-import { getConfigByEnv } from './services/config_by_env'
 import { getConfigRedis } from './services/config_redis'
 import { getClientProvider } from './services/providers/client_factory'
 import { OnNewLogin } from './services/socket'
@@ -40,18 +38,14 @@ import { onNewLoginAlert } from './services/on_new_login_alert'
 import { onNewLoginGenerateToken } from './services/on_new_login_generate_token'
 import { Broadcast } from './services/broadcast'
 import { 
-  isInBlacklistInMemory,
-  addToBlacklistInMemory,
   addToBlacklist,
   addToBlacklistRedis,
   addToBlacklistJob,
-  isInBlacklist,
   isInBlacklistInRedis
 } from './services/blacklist'
 import { Listener } from './services/listener'
 import { ProviderListener } from './services/providers/listener_router'
 import middleware from './services/middleware'
-import { middlewareNext } from './services/middleware_next'
 import Security from './services/security'
 import { ReloadBaileys } from './services/reload_baileys'
 import { LogoutBaileys } from './services/logout_baileys'
@@ -62,7 +56,7 @@ import { Logout } from './services/logout'
 import { LogoutAmqp } from './services/logout_amqp'
 import { ReloadJob } from './jobs/reload'
 import { amqpConnect, amqpConsume } from './amqp'
-import { startRedis } from './services/redis'
+import { ensureRequiredRedis, requiredRedisUrl } from './services/redis_runtime'
 import ContactBaileys from './services/contact_baileys'
 import injectRouteDummy from './services/inject_route_dummy'
 import { Contact } from './services/contact'
@@ -84,38 +78,21 @@ if (process.env.SENTRY_DSN) {
 }
 
 const broadcast: Broadcast = new Broadcast()
+requiredRedisUrl()
+const redisReady = ensureRequiredRedis()
 
-let addToBlacklistVar: addToBlacklist = addToBlacklistInMemory
-let isInBlacklistVar: isInBlacklist = isInBlacklistInMemory
-let outgoing: Outgoing = new OutgoingCloudApi(getConfigByEnv, isInBlacklistVar, addToBlacklistVar)
-let getConfigVar: getConfig = getConfigByEnv
-let sessionStore: SessionStore = new SessionStoreFile()
+let addToBlacklistVar: addToBlacklist = addToBlacklistRedis
+let outgoing: Outgoing = new OutgoingCloudApi(getConfigRedis, isInBlacklistInRedis, addToBlacklistVar)
+const getConfigVar: getConfig = getConfigRedis
+const sessionStore: SessionStore = new SessionStoreRedis()
 let listener: Listener = new ProviderListener(outgoing, broadcast, getConfigVar)
 let onNewLoginn: OnNewLogin = onNewLoginAlert(listener)
 let incoming: Incoming = new IncomingProvider(listener, getConfigVar, getClientProvider, onNewLoginn)
 let reload: Reload = new ReloadBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
 let logout: Logout = new LogoutBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
-let middlewareVar: middleware = middlewareNext
-if (process.env.REDIS_URL) {
-  logger.info('Starting with redis')
-  startRedis().catch( error => {
-    console.error(error, 'Erro on start')
-    process.exit(1)
-  })
-  addToBlacklistVar = addToBlacklistRedis
-  getConfigVar = getConfigRedis
-  outgoing = new OutgoingCloudApi(getConfigVar, isInBlacklistInRedis, addToBlacklistVar)
-  sessionStore = new SessionStoreRedis()
-  const securityVar = new Security(sessionStore)
-  middlewareVar = securityVar.run.bind(securityVar) as middleware
-  listener = new ProviderListener(outgoing, broadcast, getConfigVar)
-  onNewLoginn = onNewLoginAlert(listener)
-  incoming = new IncomingProvider(listener, getConfigVar, getClientProvider, onNewLoginn)
-  reload = new ReloadBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
-  logout = new LogoutBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
-} else {
-  logger.info('Starting with file system')
-}
+const securityVar = new Security(sessionStore)
+let middlewareVar: middleware = securityVar.run.bind(securityVar) as middleware
+logger.info('Starting with required Redis backend')
 
 if (process.env.AMQP_URL) {
   logger.info('Starting with broker')
@@ -222,10 +199,15 @@ const app: App = new App(
 )
 broadcast.setSever(app.socket)
 
-app.server.listen(PORT, '0.0.0.0', async () => {
-  logger.info('Unoapi standalone mode up version: %s, listening on port: %s', version, PORT)
-  autoConnect(sessionStore, listener, getConfigVar, getClientProvider, onNewLoginn)
-  startContactSyncScheduler(outgoing)
+redisReady.then(() => {
+  app.server.listen(PORT, '0.0.0.0', async () => {
+    logger.info('Unoapi standalone mode up version: %s, listening on port: %s', version, PORT)
+    autoConnect(sessionStore, listener, getConfigVar, getClientProvider, onNewLoginn)
+    startContactSyncScheduler(outgoing)
+  })
+}).catch((error) => {
+  logger.error(error, 'Failed to start standalone: Redis is required')
+  process.exit(1)
 })
 
 process.on('uncaughtException', (reason: any) => {

@@ -53,4 +53,45 @@ describe('Zapo event mapper', () => {
       },
     }))
   })
+
+  test('preserves the option names decrypted by Zapo for incoming poll votes', () => {
+    const mapped = toUnoAddonEvent({
+      key: { remoteJid: '120363@g.us', id: 'vote-1', fromMe: false },
+      targetMessageId: 'poll-1',
+      kind: 'poll_vote',
+      decrypted: {
+        kind: 'poll_vote',
+        pollVote: { encPayload: Uint8Array.from([1]), encIv: Uint8Array.from([2]) },
+        selectedOptionNames: ['Pizza', 'Sushi'],
+      },
+    } as never)
+
+    expect(mapped).toEqual(expect.objectContaining({
+      message: {
+        pollUpdateMessage: {
+          pollCreationMessageKey: expect.objectContaining({ id: 'poll-1' }),
+          vote: expect.objectContaining({ selectedOptionNames: ['Pizza', 'Sushi'] }),
+        },
+      },
+    }))
+  })
+
+  test('maps a Zapo message edit addon to the established protocol edit shape', () => {
+    const mapped = toUnoAddonEvent({
+      key: { remoteJid: '123@lid', id: 'edit-1', fromMe: true },
+      targetMessageId: 'original-1',
+      kind: 'message_edit',
+      decrypted: { kind: 'message_edit', message: { conversation: 'texto corrigido' } },
+    } as never)
+
+    expect(mapped).toEqual(expect.objectContaining({
+      message: {
+        protocolMessage: {
+          key: expect.objectContaining({ id: 'original-1' }),
+          type: 'MESSAGE_EDIT',
+          editedMessage: { conversation: 'texto corrigido' },
+        },
+      },
+    }))
+  })
 })

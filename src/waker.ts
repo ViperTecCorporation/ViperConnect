@@ -22,6 +22,7 @@ if (process.env.SENTRY_DSN) {
 
 import logger from './services/logger'
 import { queueDeadName, amqpPublish, extractRoutingKeyFromBindingKey } from './amqp'
+import { ensureRequiredRedis } from './services/redis_runtime'
 
 logger.info('Starting with waker...')
 
@@ -40,7 +41,8 @@ const getExchangeName = queue => {
   }
 }
 
-(async () => {
+const startWaker = async () => {
+  await ensureRequiredRedis()
   return Promise.all(
     queues.map(async queue => {
       const amqpChannelModel = await connect(AMQP_URL)
@@ -67,7 +69,12 @@ const getExchangeName = queue => {
       })
     })
   )
-})()
+}
+
+startWaker().catch((error) => {
+  logger.error(error, 'Failed to start waker: Redis is required')
+  process.exit(1)
+})
 
 process.on('uncaughtException', (reason: any) => {
   if (process.env.SENTRY_DSN) {

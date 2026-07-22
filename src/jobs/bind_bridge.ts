@@ -27,10 +27,11 @@ import { IncomingProvider } from '../services/incoming_provider'
 import { providerQueueName } from '../services/providers/provider_queue'
 import { resolveWhatsAppEngine } from '../services/providers/provider_resolver'
 import { WhatsAppEngine } from '../services/providers/provider_types'
+import { shouldNotifyFailureByWhatsApp } from '../services/providers/failure_notification'
 
 const getConfigLocal: getConfig = getConfigRedis
 const outgoingAmqp: Outgoing = new OutgoingAmqp(getConfigLocal)
-const listenerAmqp: Listener = new ListenerAmqp()
+const listenerAmqp: Listener = new ListenerAmqp(resolveWhatsAppEngine(UNOAPI_WORKER_ENGINE))
 const broadcastAmqp: Broadcast = new BroadcastAmqp()
 const listenerBaileys: Listener = new ProviderListener(outgoingAmqp, broadcastAmqp, getConfigLocal)
 const outgoingCloudApi: Outgoing = new OutgoingCloudApi(getConfigLocal, isInBlacklistInRedis, addToBlacklistRedis)
@@ -62,12 +63,12 @@ export class BindBridgeJob {
     processeds.set(routingKey, true)
     logger.info('Binding queues consumer bridge server %s routingKey %s', server, routingKey)
 
-    const notifyFailedMessages = config.notifyFailedMessages
+    const notifyFailedMessages = shouldNotifyFailureByWhatsApp(this.workerEngine, config.notifyFailedMessages)
 
-    logger.info('Starting listener baileys consumer %s', routingKey)
+    logger.info('Starting listener %s consumer %s', this.workerEngine, routingKey)
     await amqpConsume(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_LISTENER}.${UNOAPI_SERVER_NAME}`, 
+      providerQueueName(UNOAPI_QUEUE_LISTENER, UNOAPI_SERVER_NAME, this.workerEngine),
       routingKey,
       listenerJob.consume.bind(listenerJob),
       {

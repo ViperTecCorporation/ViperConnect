@@ -19,6 +19,9 @@ x-base: &base
     REDIS_URL: redis://redis:6379
     STORAGE_ENDPOINT: https://af1ce4a18c7a153046fbdc9ce50db632.r2.cloudflarestorage.com/
     GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
+  depends_on:
+    redis:
+      condition: service_healthy
 
 services:
   web:
@@ -78,6 +81,11 @@ services:
     volumes:
       - redis:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     ports:
       - 6379:6379
 

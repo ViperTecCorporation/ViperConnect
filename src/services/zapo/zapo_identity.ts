@@ -4,6 +4,7 @@ import { SendError } from '../send_error'
 import { zapoUsernameIndex, type ZapoUsernameIndex } from './zapo_username_index'
 
 const isPhoneJid = (value: string) => /^\d+@s\.whatsapp\.net$/.test(value)
+const isExplicitJid = (value: string) => value.indexOf('@') > 0
 const toLidJid = (value?: string | null) => {
   const raw = `${value || ''}`.trim()
   if (!raw) return undefined
@@ -31,7 +32,7 @@ export class ZapoIdentity {
   async resolveMany(values: readonly string[]): Promise<string[]> {
     const normalized = await Promise.all(values.map(async (value) => {
       const raw = `${value || ''}`.trim()
-      if (raw && !raw.includes('@lid') && !raw.includes('@s.whatsapp.net') && /[a-z_]/i.test(raw)) {
+      if (raw && !isExplicitJid(raw) && /[a-z_]/i.test(raw)) {
         const lid = await this.usernames.resolve(this.phone, raw)
         if (!lid) throw new SendError(404, `zapo_username_lid_not_cached: ${raw.replace(/^@/, '')}`)
         return lid
@@ -67,6 +68,11 @@ export class ZapoIdentity {
         })
       }
       if (contacts.length) await this.store.contacts.upsertBatch(contacts)
+    }
+
+    const unresolvedPhone = resolved.find(isPhoneJid)
+    if (unresolvedPhone) {
+      throw new SendError(404, `zapo_phone_lid_not_found: ${unresolvedPhone.split('@')[0]}`)
     }
 
     return resolved

@@ -19,6 +19,8 @@ import {
   toRawPnJid,
   jidToRawPhoneNumber,
   normalizeTransportJid,
+  jidToMentionDigits,
+  normalizeMentionText,
 } from '../../src/services/transformer'
 import { BASE_URL, WEBHOOK_FORWARD_VERSION } from '../../src/defaults'
 const key = { remoteJid: 'XXXX@s.whatsapp.net', id: 'abc' }
@@ -41,6 +43,17 @@ const inputDocumentMessage: WAMessage = {
 }
 
 describe('service transformer', () => {
+  test('jidToMentionDigits removes plus, device and technical JID suffix', () => {
+    expect(jidToMentionDigits('+94047083475061@lid')).toBe('94047083475061')
+    expect(jidToMentionDigits('@94047083475061:21@lid')).toBe('94047083475061')
+    expect(jidToMentionDigits('5566999554300@s.whatsapp.net')).toBe('5566999554300')
+  })
+
+  test('normalizeMentionText keeps only numeric mention text', () => {
+    expect(normalizeMentionText('oi @+94047083475061@lid e @5566999554300:21@s.whatsapp.net'))
+      .toBe('oi @94047083475061 e @5566999554300')
+  })
+
   test('return y extractDestinyPhone from webhook payload message', async () => {
     const payload = {
       entry: [
@@ -229,6 +242,21 @@ describe('service transformer', () => {
 
   test('phoneNumberToJid with fixed line', async () => {
     expect(phoneNumberToJid('554936213155')).toEqual('554936213155@s.whatsapp.net')
+  })
+
+  test('getChatAndNumberAndId uses PN alias even when participant is a LID', () => {
+    const payload = {
+      key: {
+        remoteJid: '120363039221813429@g.us',
+        participant: '94047083475061@lid',
+        participantAlt: '5566999554300@s.whatsapp.net',
+      },
+    }
+    expect(getChatAndNumberAndId(payload)).toEqual([
+      '120363039221813429@g.us',
+      '5566999554300',
+      '94047083475061@lid',
+    ])
   })
 
   test('toRawPnJid preserves brazilian pn without inserting ninth digit', async () => {
@@ -475,6 +503,50 @@ describe('service transformer', () => {
       text: { body },
       type: 'text',
     })
+  })
+
+  test('fromBaileysMessageContent renders group LID mentions with digits only', () => {
+    const value = fromBaileysMessageContent('5566996328386', {
+      key: {
+        remoteJid: '120363039221813429@g.us',
+        participant: '11343495192601@lid',
+        fromMe: false,
+        id: 'group-lid-mention',
+      },
+      messageTimestamp: 1,
+      message: {
+        extendedTextMessage: {
+          text: 'teste @+94047083475061@lid',
+          contextInfo: { mentionedJid: ['94047083475061@lid'] },
+        },
+      },
+    })[0].entry[0].changes[0].value
+
+    expect(value.messages[0].text.body).toBe('teste @94047083475061')
+  })
+
+  test('does not replace a group LID mention with contact name or PN', () => {
+    const value = fromBaileysMessageContent('5566996328386', {
+      key: {
+        remoteJid: '120363039221813429@g.us',
+        participant: '11343495192601@lid',
+        fromMe: false,
+        id: 'group-lid-mention-name',
+      },
+      messageTimestamp: 1,
+      groupMetadata: {
+        names: { '94047083475061@lid': 'Maria' },
+        participants: [{ lid: '94047083475061@lid', id: '5566999554300@s.whatsapp.net' }],
+      },
+      message: {
+        extendedTextMessage: {
+          text: 'teste @+94047083475061@lid',
+          contextInfo: { mentionedJid: ['94047083475061@lid'] },
+        },
+      },
+    })[0].entry[0].changes[0].value
+
+    expect(value.messages[0].text.body).toBe('teste @94047083475061')
   })
 
   test('fromBaileysMessageContent with messageContextInfo', async () => {
@@ -866,6 +938,28 @@ describe('service transformer', () => {
     expect(m.type).toEqual('text')
     expect(m.text.body).toContain('*Enquete*')
     expect(m.text.body).toContain('A | B')
+  })
+
+  test('fromBaileysMessageContent exposes a decrypted poll vote and its parent context', async () => {
+    const input = {
+      key: { remoteJid: '120363@g.us', fromMe: false, id: 'vote-1', participant: '123@lid' },
+      message: {
+        pollUpdateMessage: {
+          pollCreationMessageKey: { remoteJid: '120363@g.us', fromMe: false, id: 'poll-1' },
+          vote: { selectedOptionNames: ['Pizza', 'Sushi'] },
+        },
+      },
+      pushName: 'Mary',
+      messageTimestamp: Math.floor(Date.now() / 1000).toString(),
+    }
+
+    const out = fromBaileysMessageContent('5549998360838', input)[0]
+    const message = out.entry[0].changes[0].value.messages[0]
+    expect(message).toEqual(expect.objectContaining({
+      type: 'text',
+      text: { body: '*Voto em enquete*: Pizza | Sushi' },
+      context: { message_id: 'poll-1', id: 'poll-1' },
+    }))
   })
 
   test('fromBaileysMessageContent with eventMessage', async () => {
@@ -2830,6 +2924,26 @@ describe('service transformer', () => {
     expect(value.messages[0].group_id).toEqual(groupJid)
     expect(value.contacts[0].wa_id).toEqual(remotePhoneNumber)
     expect(value.messages[0].from).toEqual(remotePhoneNumber)
+  })
+
+  test('uses the participant phone alias while preserving the group sender LID', () => {
+    const value = fromBaileysMessageContent('5566996269251', {
+      key: {
+        remoteJid: '120363399416467795@g.us',
+        participant: '165373622128695@lid',
+        participantAlt: '5566991112222@s.whatsapp.net',
+        fromMe: false,
+        id: 'group-zapo-1',
+      },
+      messageTimestamp: 1,
+      message: { conversation: 'oi grupo' },
+    })[0].entry[0].changes[0].value
+
+    expect(value.messages[0]).toEqual(expect.objectContaining({
+      from: '5566991112222',
+      from_user_id: '165373622128695@lid',
+      group_id: '120363399416467795@g.us',
+    }))
   })
 
   test('fromBaileysMessageContent group status uses group recipient contract', async () => {

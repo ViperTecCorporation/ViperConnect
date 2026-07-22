@@ -29,7 +29,13 @@ export const parseBaileysAuthStorageKey = (phone: string, storageKey: string): P
 
   const category = BAILEYS_KEY_TYPES.find((type) => logicalKey.startsWith(`${type}-`))
   if (!category) return undefined
-  const id = logicalKey.slice(category.length + 1).replace(/__/g, '/')
+  const rawId = logicalKey.slice(category.length + 1)
+  // Baileys keeps an internal tctoken index beside real token records. It is
+  // metadata, not a contact JID, and must never be migrated as `/index`.
+  if (category === 'tctoken' && rawId === '__index') return undefined
+  const id = category === 'tctoken' && rawId === '__nct_salt__'
+    ? rawId
+    : rawId.replace(/__/g, '/')
   return id ? { type: category, id } : undefined
 }
 

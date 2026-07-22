@@ -58,6 +58,24 @@ export class IncomingProvider implements Incoming {
     return client.requestPairingCode()
   }
 
+  public async resyncAppState(phone: string, forceSnapshot = true) {
+    const client = await this.client(phone)
+    if (typeof client.resyncAppState !== 'function') throw new Error(`Client ${phone} does not support app-state resync`)
+    return client.resyncAppState(forceSnapshot)
+  }
+
+  public async fetchPrivacyTokens(phone: string, jids: string[], timeoutMs?: number) {
+    const client = await this.client(phone)
+    if (typeof client.fetchPrivacyTokens !== 'function') throw new Error(`Client ${phone} does not support privacy token fetch`)
+    return client.fetchPrivacyTokens(jids, timeoutMs)
+  }
+
+  public async fetchMessageHistory(phone: string, payload: object = {}) {
+    const client = await this.client(phone)
+    if (typeof client.fetchMessageHistory !== 'function') throw new Error(`Client ${phone} does not support history sync`)
+    return client.fetchMessageHistory(payload)
+  }
+
   public async groupCreate(phone: string, subject: string, participants: string[]) {
     return (await this.client(phone)).groupCreate!(subject, participants)
   }

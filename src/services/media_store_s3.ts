@@ -297,6 +297,7 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     if (contact.imgUrl) {
       logger.info('PROFILE_PICTURE saving (S3) targets: %s (from %s)', targetIds.join(','), sanitizeProfileId(originalId))
       const response: FetchResponse = await fetch(contact.imgUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), method: 'GET'})
+      if (!response.ok) throw new Error(`Could not download profile picture: HTTP ${response.status}`)
       const responseContentType = `${response.headers.get('content-type') || ''}`.split(';')[0].trim().toLowerCase()
       const profilePictureContentType = responseContentType.startsWith('image/') ? responseContentType : 'image/jpeg'
       const buffer = toBuffer(await response.arrayBuffer())

@@ -186,6 +186,24 @@ describe('groups routes', () => {
     })
   })
 
+  test('list maps Zapo membership approval independently from member add policy', async () => {
+    const phone = '556600000000'
+    const groupJid = '120363040468224422@g.us'
+    const { app, redis } = await loadApp(true)
+    redis.redisKeys.mockResolvedValue([`unoapi-group:${phone}:${groupJid}`])
+    redis.getGroup.mockResolvedValue({
+      subject: 'Grupo Zapo',
+      membershipApprovalEnabled: false,
+      memberAddMode: 'admin_add',
+      participants: [],
+    })
+
+    const res = await request(app.server).get(`/v15.0/${phone}/groups`)
+
+    expect(res.status).toEqual(200)
+    expect(res.body.groups[0].join_approval_mode).toBe('open')
+  })
+
   test('details returns participants only when requested by fields', async () => {
     const phone = '556600000000'
     const groupJid = '120363040468224422@g.us'
@@ -345,6 +363,34 @@ describe('groups routes', () => {
     ])
     expect(redis.getPnForLid).toHaveBeenCalledWith(phone, '777777777777777@lid')
     expect(res.body.total_participant_count).toEqual(1)
+  })
+
+  test('participants route normalizes Zapo legacy Brazilian mobile PN', async () => {
+    const phone = '5566996328386'
+    const groupJid = '120363040468224422@g.us'
+    const { app, redis } = await loadApp(true)
+    redis.getGroup.mockResolvedValue({
+      subject: cachedGroup.subject,
+      participants: [{
+        jid: '86110369755163@lid',
+        lid: '86110369755163@lid',
+        phoneNumber: '556696328386',
+        admin: 'admin',
+      }],
+    })
+    redis.getPnForLid.mockResolvedValue(`${phone}@s.whatsapp.net`)
+
+    const res = await request(app.server).get(`/v15.0/${phone}/groups/${groupJid}/participants`)
+
+    expect(res.status).toEqual(200)
+    expect(res.body.participants).toEqual([
+      expect.objectContaining({
+        jid: phone,
+        wa_id: phone,
+        user_id: '86110369755163@lid',
+        role: 'admin',
+      }),
+    ])
   })
 
   test('participants route enriches legacy payload with wa_id and user_id', async () => {

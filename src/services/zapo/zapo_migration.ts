@@ -21,7 +21,16 @@ type MigrationDependencies = {
 const defaultDependencies: MigrationDependencies = {
   readFileSnapshot: readBaileysFileSnapshot,
   readRedisSnapshot: readBaileysRedisSnapshot,
-  convert: (snapshot) => migrate({ from: 'baileys', to: 'zapo', data: snapshot, validate: true }),
+  convert: (snapshot) => {
+    const converted = migrate({ from: 'baileys', to: 'zapo', data: snapshot, validate: true })
+    const salt = (snapshot.keys as any)?.tctoken?.__nct_salt__?.nctSalt
+    if (salt) {
+      const privacyTokens = [...(converted.data.privacyTokens || [])]
+      privacyTokens.push({ jid: '__nct_salt__', nctSalt: salt, updatedAtMs: Date.now() })
+      return { ...converted, data: { ...converted.data, privacyTokens } }
+    }
+    return converted
+  },
   write: writeZapoSnapshot,
 }
 
@@ -31,7 +40,8 @@ export const migrateBaileysSessionToZapo = async (
   store: WaStoreSession,
   dependencies: MigrationDependencies = defaultDependencies,
 ): Promise<ZapoMigrationResult> => {
-  if (await store.auth.load()) return { status: 'already-migrated', losses: [] }
+  const existingCredentials = await store.auth.load()
+  if (existingCredentials?.meJid) return { status: 'already-migrated', losses: [] }
   const source = config.useRedis
     ? await dependencies.readRedisSnapshot(phone)
     : dependencies.readFileSnapshot(phone, config.baseStore)
@@ -39,7 +49,7 @@ export const migrateBaileysSessionToZapo = async (
 
   const converted = dependencies.convert(source)
   await dependencies.write(store, converted.data)
-  if (!(await store.auth.load())) throw new Error(`Zapo migration validation failed for session ${phone}`)
+  if (!(await store.auth.load())?.meJid) throw new Error(`Zapo migration validation failed for session ${phone}`)
   return { status: 'migrated', losses: converted.losses }
 }
 

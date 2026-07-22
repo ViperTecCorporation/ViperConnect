@@ -8,7 +8,6 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/logos/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/logos/favicon-16x16.png">
     <meta name="theme-color" content="#6F3935">
-    <script src="/embedded/config.js"></script>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- DataTables CSS -->
@@ -325,12 +324,8 @@
           fldLabel: 'Label', fldLabelPh: 'Label',
           rejectCallsWebhookLabel: 'Incoming/Rejected Call Message', rejectCallsWebhookPh: 'I was calling you...',
           connectionType: 'Connection Type', providerLabel: 'WhatsApp Engine', providerBaileys: 'Baileys (default)', providerZapo: 'Zapo', providerHelp: 'Changing to Zapo migrates existing credentials automatically and keeps the Baileys data for rollback.', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
-          oneToOneAddressingMode: '1:1 addressing',
-          oneToOneAddressingModeDefault: 'Use global setting',
-          oneToOneAddressingModePn: 'Prefer PN',
-          oneToOneAddressingModeLid: 'Prefer LID',
           rejectCallsLabel: 'Message when rejecting calls', rejectCallsPh: 'Leave blank to not auto-reject calls', serverLabel: 'Server',
-          ignoreGroupMessages: 'Ignore Group Messages', ignoreNewsletterMessages: 'Ignore Newsletter Messages', ignoreHistoryMessages: 'Ignore Message History',
+          ignoreGroupMessages: 'Ignore Group Messages', ignoreNewsletterMessages: 'Ignore Newsletter Messages', ignoreHistoryMessages: 'Ignore Message History', historyMaxAgeDays: 'History window (days)',
           readOnReceipt: 'Mark as read on receive',
           readOnReply: 'Mark as read on reply',
           markOnlineOnConnect: 'Mark online on connect',
@@ -353,24 +348,7 @@
           groqApiTranscribeModelLabel: 'Groq Transcribe Model',
           groqApiTranscribeModelPh: 'e.g. whisper-large-v3',
           groqApiBaseUrlLabel: 'Groq API Base URL',
-          groqApiBaseUrlPh: 'https://api.groq.com/openai/v1',
-          coexistenceEnabled: 'Enable Web + Meta coexistence',
-          coexistenceWindow: 'Coexistence window (seconds)',
-          coexistenceWindowPh: '86400 = 24h',
-          forwardUrlLabel: 'Cloud API Base URL',
-          forwardUrlPh: 'https://graph.facebook.com',
-          forwardVersionLabel: 'Cloud API Version',
-          forwardVersionPh: 'v17.0',
-          forwardPhoneIdLabel: 'Cloud phone_number_id',
-          forwardPhoneIdPh: 'phone_number_id',
-          forwardTokenLabel: 'Cloud API Token',
-          forwardTokenPh: 'Bearer ...',
-          forwardBusinessIdLabel: 'Business Account ID (optional)',
-          forwardBusinessIdPh: 'business_account_id',
-          forwardHelper: 'Use WhatsApp Cloud Embedded Signup to fetch token and phone_number_id.',
-          forwardImport: 'Import Embedded return',
-          forwardLaunch: 'Start Embedded Signup',
-          forwardUpdated: 'Cloud data updated. Review and save.'
+          groqApiBaseUrlPh: 'https://api.groq.com/openai/v1'
         },
         'pt-BR': {
           langLabel: 'Idioma:',
@@ -393,12 +371,8 @@
           fldLabel: 'Identificação', fldLabelPh: 'Identificação',
           rejectCallsWebhookLabel: 'Mensagem de Ligação Recebida e/ou Rejeitada', rejectCallsWebhookPh: 'Estava te ligando...',
           connectionType: 'Tipo de Conexão', providerLabel: 'Motor WhatsApp', providerBaileys: 'Baileys (padrão)', providerZapo: 'Zapo', providerHelp: 'Ao mudar para Zapo, as credenciais existentes são migradas automaticamente e os dados Baileys permanecem disponíveis para rollback.', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
-          oneToOneAddressingMode: 'Endereçamento 1:1',
-          oneToOneAddressingModeDefault: 'Usar configuração global',
-          oneToOneAddressingModePn: 'Preferir PN',
-          oneToOneAddressingModeLid: 'Preferir LID',
           rejectCallsLabel: 'Mensagem ao Rejeitar Chamadas', rejectCallsPh: 'Deixe em Branco para não Rejeitar ligações automaticamente', serverLabel: 'Server',
-          ignoreGroupMessages: 'Ignorar Mensagens de Grupo', ignoreNewsletterMessages: 'Ignorar Mensagens de Newsletter', ignoreHistoryMessages: 'Ignorar Histórico de Mensagens',
+          ignoreGroupMessages: 'Ignorar Mensagens de Grupo', ignoreNewsletterMessages: 'Ignorar Mensagens de Newsletter', ignoreHistoryMessages: 'Ignorar Histórico de Mensagens', historyMaxAgeDays: 'Janela do histórico (dias)',
           readOnReceipt: 'Ler a mensagem ao receber',
           readOnReply: 'Ler a mensagem ao responder',
           markOnlineOnConnect: 'Marcar online ao conectar',
@@ -421,131 +395,20 @@
           groqApiTranscribeModelLabel: 'Modelo de Transcrição (Groq)',
           groqApiTranscribeModelPh: 'ex.: whisper-large-v3',
           groqApiBaseUrlLabel: 'URL Base da API Groq',
-          groqApiBaseUrlPh: 'https://api.groq.com/openai/v1',
-          coexistenceEnabled: 'Ativar coexistência Web + Meta',
-          coexistenceWindow: 'Janela de coexistência (segundos)',
-          coexistenceWindowPh: '86400 = 24h',
-          forwardUrlLabel: 'URL Base Cloud API',
-          forwardUrlPh: 'https://graph.facebook.com',
-          forwardVersionLabel: 'Versão Cloud API',
-          forwardVersionPh: 'v17.0',
-          forwardPhoneIdLabel: 'Cloud phone_number_id',
-          forwardPhoneIdPh: 'phone_number_id',
-          forwardTokenLabel: 'Token Cloud API',
-          forwardTokenPh: 'Bearer ...',
-          forwardBusinessIdLabel: 'Business Account ID (opcional)',
-          forwardBusinessIdPh: 'business_account_id',
-          forwardHelper: 'Use o Embedded Signup do WhatsApp Cloud para obter token e phone_number_id.',
-          forwardImport: 'Importar retorno do Embedded',
-          forwardLaunch: 'Iniciar Embedded Signup',
-          forwardUpdated: 'Dados de Cloud atualizados. Revise e salve.'
+          groqApiBaseUrlPh: 'https://api.groq.com/openai/v1'
         }
       };
       function t(key){ var d=I18N[currentLang]||I18N['en']; return d[key]||key }
-      // Inicializa FB SDK assim que carregar (se appId estiver configurado)
-      window.fbAsyncInit = function() {
-        try {
-          const appId = window.EMBEDDED_SIGNUP_APP_ID || ''
-          if (!appId) return
-          FB.init({ appId, xfbml: true, version: window.EMBEDDED_SIGNUP_GRAPH_VERSION || 'v24.0' })
-        } catch (e) { console.warn('FB init failed', e) }
-      }
       function applyI18n(){
         document.querySelectorAll('[data-i18n]').forEach(function(el){ el.textContent = t(el.getAttribute('data-i18n')) })
         document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el){ el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder'))) })
         document.querySelectorAll('[data-i18n-title]').forEach(function(el){ el.setAttribute('title', t(el.getAttribute('data-i18n-title'))) })
       }
-      // Embedded signup helpers: expect appId from window.EMBEDDED_SIGNUP_APP_ID or data attribute on body
-      const EMBEDDED_APP_ID = window.EMBEDDED_SIGNUP_APP_ID || document.body.getAttribute('data-embedded-app-id') || '';
-      const EMBEDDED_REDIRECT_URI = window.EMBEDDED_SIGNUP_REDIRECT_URI || '';
-      function parseEmbeddedFromUrl() {
-        try {
-          const params = new URLSearchParams(window.location.search || '');
-          const phoneId = params.get('wa_phone_id');
-          const wabaId = params.get('wa_waba_id');
-          const token = params.get('wa_token');
-          const version = params.get('wa_version') || 'v17.0';
-          if (phoneId || token) {
-            return { phoneId, wabaId, token, version };
-          }
-        } catch {}
-        return undefined;
-      }
-      function storeEmbeddedPayload() {
-        const payload = parseEmbeddedFromUrl();
-        if (payload) {
-          localStorage.setItem('embeddedSignupPayload', JSON.stringify(payload));
-        }
-        return payload;
-      }
-      function consumeEmbeddedPayload() {
-        try {
-          const raw = localStorage.getItem('embeddedSignupPayload');
-          if (!raw) return undefined;
-          const data = JSON.parse(raw);
-          return data;
-        } catch { return undefined; }
-      }
-      function applyEmbeddedToForm(showAlert) {
-        const payload = consumeEmbeddedPayload();
-        if (!payload) return;
-        if (payload.phoneId) { $('#webhookForwardPhoneNumberId').val(payload.phoneId); }
-        if (payload.token) { $('#webhookForwardToken').val(payload.token); }
-        if (payload.wabaId) { $('#webhookForwardBusinessAccountId').val(payload.wabaId); }
-        if (payload.version) { $('#webhookForwardVersion').val(payload.version); }
-        // Ao importar, já marca coexistência ativa e janela padrão
-        try { $('#coexistenceEnabled').prop('checked', true); } catch {}
-        try {
-          const curr = Number($('#coexistenceWindowSeconds').val() || 0);
-          if (!curr) $('#coexistenceWindowSeconds').val(86400);
-        } catch {}
-        if (showAlert) {
-          $('#embeddedSuccess').removeClass('d-none');
-        }
-      }
       (function() {
         const saved = (localStorage.getItem('unoapi_docs_theme') || '').toLowerCase();
         const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         setTheme(saved || (prefersDark ? 'dark' : 'light'));
-        // Armazena retorno do Embedded se vier via querystring
-        storeEmbeddedPayload();
         window.addEventListener('DOMContentLoaded', function() {
-          // Embedded helpers: mostrar appId e bind do botão de importação
-        try {
-          if (EMBEDDED_APP_ID) {
-            const el = document.getElementById('embeddedAppIdDisplay');
-            if (el) { el.textContent = `appId: ${EMBEDDED_APP_ID}`; }
-          }
-        } catch {}
-        try {
-          const btn = document.getElementById('importEmbeddedBtn');
-          if (btn) {
-            btn.addEventListener('click', function() {
-              const payload = consumeEmbeddedPayload();
-              if (!payload) {
-                alert('Nenhum retorno do Embedded encontrado nesta aba. Conclua o fluxo ou abra pelo link de retorno.');
-                return;
-              }
-              applyEmbeddedToForm(true);
-            });
-          }
-          const launch = document.getElementById('launchEmbeddedBtn');
-          if (launch) {
-            launch.addEventListener('click', function() {
-              console.log('Embedded launch clicked');
-              const redirect = window.EMBEDDED_SIGNUP_REDIRECT_URI || '';
-              const appId = window.EMBEDDED_SIGNUP_APP_ID || '';
-              if (!appId || !redirect) {
-                alert('Configure EMBEDDED_SIGNUP_APP_ID e EMBEDDED_SIGNUP_REDIRECT_URI.');
-                return;
-              }
-              const version = window.EMBEDDED_SIGNUP_GRAPH_VERSION || 'v24.0';
-              const scope = encodeURIComponent('whatsapp_business_messaging,whatsapp_business_management,business_management');
-              const fallback = `https://www.facebook.com/${version}/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirect)}&state=embedded_signup&scope=${scope}`;
-              window.open(fallback, 'embeddedSignup', 'width=800,height=700,resizable=yes,scrollbars=yes');
-            });
-          }
-        } catch {}
           function reinitDataTableLang() {
             if (window.$ && window.$.fn && window.$.fn.dataTable && window.$.fn.dataTable.isDataTable('#sessionsTable')) {
               try { $('#sessionsTable').DataTable().destroy(); } catch {}
@@ -734,49 +597,8 @@
                               </select>
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
-                              <label for="oneToOneAddressingMode" class="form-label" data-i18n="oneToOneAddressingMode">1:1 addressing</label>
-                              <select id="oneToOneAddressingMode" name="oneToOneAddressingMode" class="form-control">
-                                <option value="" data-i18n="oneToOneAddressingModeDefault">Use global setting</option>
-                                <option value="pn" data-i18n="oneToOneAddressingModePn">Prefer PN</option>
-                                <option value="lid" data-i18n="oneToOneAddressingModeLid">Prefer LID</option>
-                              </select>
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
                                 <label for="proxyUrl" class="form-label" data-i18n="proxyUrlLabel">Proxy URL (Restart Unoapi after change)</label>
                                 <input type="text" class="form-control" id="proxyUrl" name="proxyUrl" placeholder="Ex: socks5://user:pass@host:port" data-i18n-placeholder="proxyUrlPh">
-                            </div>
-                            <div class="col-12">
-                              <div class="alert alert-secondary py-2">
-                                <div><strong>Cloud / Embedded Signup</strong></div>
-                                <div style="font-size: 13px;">
-                                  <span data-i18n="forwardHelper">Use Embedded Signup do WhatsApp Cloud para obter token e phone_number_id.</span>
-                                  <span id="embeddedAppIdDisplay"></span>
-                                </div>
-                                <button type="button" class="btn btn-sm btn-secondary mt-2" id="launchEmbeddedBtn" data-i18n="forwardLaunch">Iniciar Embedded Signup</button>
-                                <button type="button" class="btn btn-sm btn-primary mt-2" id="importEmbeddedBtn" data-i18n="forwardImport">Importar retorno do Embedded</button>
-                                <div class="alert alert-success mt-2 d-none" id="embeddedSuccess" role="alert" data-i18n="forwardUpdated">Dados de Cloud atualizados. Confira antes de salvar.</div>
-                                <div id="embeddedWidgetContainer" class="mt-2" style="min-height:80px;"></div>
-                              </div>
-                            </div>
-                            <div class="col-12 col-md-12 col-lg-6">
-                                <label for="webhookForwardUrl" class="form-label" data-i18n="forwardUrlLabel">Cloud API Base URL</label>
-                                <input type="text" class="form-control" id="webhookForwardUrl" name="webhookForwardUrl" placeholder="https://graph.facebook.com" data-i18n-placeholder="forwardUrlPh">
-                            </div>
-                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
-                                <label for="webhookForwardVersion" class="form-label" data-i18n="forwardVersionLabel">Cloud API Version</label>
-                                <input type="text" class="form-control" id="webhookForwardVersion" name="webhookForwardVersion" placeholder="v17.0" data-i18n-placeholder="forwardVersionPh">
-                            </div>
-                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
-                                <label for="webhookForwardPhoneNumberId" class="form-label" data-i18n="forwardPhoneIdLabel">Cloud phone_number_id</label>
-                                <input type="text" class="form-control" id="webhookForwardPhoneNumberId" name="webhookForwardPhoneNumberId" placeholder="phone_number_id" data-i18n-placeholder="forwardPhoneIdPh">
-                            </div>
-                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
-                                <label for="webhookForwardToken" class="form-label" data-i18n="forwardTokenLabel">Cloud API Token</label>
-                                <input type="text" class="form-control" id="webhookForwardToken" name="webhookForwardToken" placeholder="Bearer ..." data-i18n-placeholder="forwardTokenPh">
-                            </div>
-                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
-                                <label for="webhookForwardBusinessAccountId" class="form-label" data-i18n="forwardBusinessIdLabel">Business Account ID (optional)</label>
-                                <input type="text" class="form-control" id="webhookForwardBusinessAccountId" name="webhookForwardBusinessAccountId" placeholder="business_account_id" data-i18n-placeholder="forwardBusinessIdPh">
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
                               <label for="rejectCalls" class="form-label" data-i18n="rejectCallsLabel">Message when rejecting calls</label>
@@ -808,6 +630,10 @@
                                     <span class="slider round"></span>
                                 </label>
                                 <label for="ignoreHistoryMessages" class="form-label" data-i18n="ignoreHistoryMessages">Ignore Message History</label>
+                            </div>
+                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
+                                <label for="historyMaxAgeDays" class="form-label" data-i18n="historyMaxAgeDays">History window (days)</label>
+                                <input type="number" class="form-control" id="historyMaxAgeDays" name="historyMaxAgeDays" min="1" max="3650" value="30">
                             </div>
                             <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
                                 <label class="switch">
@@ -892,17 +718,6 @@
                                   <span class="slider round"></span>
                               </label>
                               <label for="autoConnect" class="form-label" data-i18n="autoConnect">Auto Connect</label>
-                            </div>
-                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
-                              <label class="switch">
-                                  <input type="checkbox" id="coexistenceEnabled" name="coexistenceEnabled">
-                                  <span class="slider round"></span>
-                              </label>
-                              <label for="coexistenceEnabled" class="form-label" data-i18n="coexistenceEnabled">Enable Web + Meta coexistence</label>
-                            </div>
-                            <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
-                                <label for="coexistenceWindowSeconds" class="form-label" data-i18n="coexistenceWindow">Coexistence window (seconds)</label>
-                                <input type="number" min="0" class="form-control" id="coexistenceWindowSeconds" placeholder="86400" data-i18n-placeholder="coexistenceWindowPh">
                             </div>
                             <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
                               <label class="switch">
@@ -1087,7 +902,14 @@
                   statusDiv.textContent = t('qrWaitingNew');
                 }, timeoutMs);
             } else if (data.type === 'status' && data.content) {
-                if (data.content.toLowerCase().indexOf('connected with')  !== -1) {
+                const normalizedStatus = data.content.toLowerCase().trim();
+                if (normalizedStatus.indexOf('connected with') !== -1 || normalizedStatus === 'connected' || normalizedStatus === 'online session') {
+                    if (lastTimeout) {
+                      clearTimeout(lastTimeout);
+                      lastTimeout = undefined;
+                    }
+                    hasFreshQrForCurrent = false;
+                    delete qrcodes[currentPhoneNumber];
                     qrcodeDiv.innerHTML = '';
                     statusDiv.textContent = t('connected');
                 } else if (data.content.toLowerCase().indexOf('generate qrcode is exceded')  !== -1) {
@@ -1537,6 +1359,7 @@
                 $('#ignoreGroupMessages').prop('checked', session.ignoreGroupMessages);
                 $('#ignoreNewsletterMessages').prop('checked', session.ignoreNewsletterMessages);
                 $('#ignoreHistoryMessages').prop('checked', session.ignoreHistoryMessages);
+                $('#historyMaxAgeDays').val(Math.max(1, Number(session.historyMaxAgeDays || 30)));
                 $('#readOnReceipt').prop('checked', session.readOnReceipt);
                 try { $('#readOnReply').prop('checked', !!session.readOnReply); } catch {}
                 try {
@@ -1552,21 +1375,11 @@
                 $('#composingMessage').prop('checked', session.composingMessage);
                 $('#sendReactionAsReply').prop('checked', session.sendReactionAsReply);
                 $('#autoConnect').prop('checked', session.autoConnect);
-                try { $('#coexistenceEnabled').prop('checked', !!session.coexistenceEnabled); } catch {}
-                try { $('#coexistenceWindowSeconds').val(session.coexistenceWindowSeconds ?? 86400); } catch {}
                 $('#ignoreBroadcastMessages').prop('checked', session.ignoreBroadcastMessages);
                 $('#provider').val(session.provider === 'zapo' ? 'zapo' : 'baileys');
                 $('#connectionType').val(session.connectionType ?? '');
-                $('#oneToOneAddressingMode').val(session.oneToOneAddressingMode ?? '');
                 $('#proxyUrl').val(session.proxyUrl ?? '');
-                try { $('#webhookForwardUrl').val(session.webhookForward?.url || '') } catch {}
-                try { $('#webhookForwardVersion').val(session.webhookForward?.version || '') } catch {}
-                try { $('#webhookForwardPhoneNumberId').val(`${session.webhookForward?.phoneNumberId || ''}`.trim()) } catch {}
-                try { $('#webhookForwardToken').val(session.webhookForward?.token || '') } catch {}
-                try { $('#webhookForwardBusinessAccountId').val(`${session.webhookForward?.businessAccountId || ''}`.trim()) } catch {}
                 $('#server').val(session.server ?? '');
-                // Se houver payload do Embedded guardado, aplica e mantém alerta visível
-                applyEmbeddedToForm(true);
                 // Rate limits (anti-spam)
                 try {
                   $('#rateLimitGlobalPerMinute').val(session.rateLimitGlobalPerMinute ?? 0);
@@ -1665,6 +1478,7 @@
                         ignoreGroupMessages: $('#ignoreGroupMessages').is(':checked'),
                         ignoreNewsletterMessages: $('#ignoreNewsletterMessages').is(':checked'),
                         ignoreHistoryMessages: $('#ignoreHistoryMessages').is(':checked'),
+                        historyMaxAgeDays: Math.max(1, Number($('#historyMaxAgeDays').val() || 30)),
                         readOnReceipt: $('#readOnReceipt').is(':checked'),
                         readOnReply: $('#readOnReply').is(':checked'),
                         markOnlineOnConnect: $('#markOnlineOnConnect').is(':checked'),
@@ -1677,20 +1491,10 @@
                         composingMessage: $('#composingMessage').is(':checked'),
                         sendReactionAsReply: $('#sendReactionAsReply').is(':checked'),
                         autoConnect: $('#autoConnect').is(':checked'),
-                        coexistenceEnabled: $('#coexistenceEnabled').is(':checked'),
-                        coexistenceWindowSeconds: Number($('#coexistenceWindowSeconds').val() || 86400),
                         ignoreBroadcastMessages: $('#ignoreBroadcastMessages').is(':checked'),
                         provider: $('#provider').val(),
                         connectionType: $('#connectionType').val(),
-                        oneToOneAddressingMode: $('#oneToOneAddressingMode').val(),
                         proxyUrl: $('#proxyUrl').val(),
-                        webhookForward: {
-                          url: $('#webhookForwardUrl').val(),
-                          version: $('#webhookForwardVersion').val(),
-                          phoneNumberId: `${$('#webhookForwardPhoneNumberId').val() || ''}`.trim(),
-                          token: $('#webhookForwardToken').val(),
-                          businessAccountId: `${$('#webhookForwardBusinessAccountId').val() || ''}`.trim(),
-                        },
                         server: $('#server').val(),
                         // rate limits
                         rateLimitGlobalPerMinute: Number($('#rateLimitGlobalPerMinute').val() || 0),
@@ -1719,8 +1523,6 @@
                     sessionData.webhooks.push(webhook);
                     });
                     sessionData.overrideWebhooks = true
-                    // Se usou Embedded, limpamos o payload para não reaplicar na próxima sessão
-                    localStorage.removeItem('embeddedSignupPayload');
                     fetch(`${apiUrl}/v15.0/${number}/register`, {
                         method: 'POST',
                         headers: {

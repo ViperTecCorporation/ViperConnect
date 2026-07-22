@@ -1,7 +1,6 @@
 import { MessageFilter } from './message_filter'
 import { getConfig, defaultConfig, Config, configs, connectionType } from './config'
 import { getStoreRedis } from './store_redis'
-import { getStoreFile } from './store_file'
 import { RATE_LIMIT_BLOCK_SECONDS, RATE_LIMIT_GLOBAL_PER_MINUTE, RATE_LIMIT_PER_TO_PER_MINUTE, OUTGOING_IDEMPOTENCY_ENABLED } from '../defaults'
 import { GROUP_IGNORE_INDIVIDUAL_RECEIPTS, GROUP_ONLY_DELIVERED_STATUS } from '../defaults'
 import logger from './logger'
@@ -73,6 +72,7 @@ import {
   WEBHOOK_ADD_TO_BLACKLIST_ON_OUTGOING_MESSAGE_WITH_TTL,
   ONE_TO_ONE_ADDRESSING_MODE,
   WHATSAPP_ENGINE,
+  HISTORY_MAX_AGE_DAYS,
 } from '../defaults'
 import { resolveSessionProvider } from './providers/provider_resolver'
 
@@ -89,6 +89,7 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.ignoreGroupIndividualReceipts = GROUP_IGNORE_INDIVIDUAL_RECEIPTS
     config.groupOnlyDeliveredStatus = GROUP_ONLY_DELIVERED_STATUS
     config.ignoreHistoryMessages = IGNORE_HISTORY_MESSAGES
+    config.historyMaxAgeDays = Math.max(1, HISTORY_MAX_AGE_DAYS || 30)
     config.clearAppStateSyncOnConnect = BAILEYS_CLEAR_APP_STATE_SYNC_ON_CONNECT
     config.allowFullHistorySync = BAILEYS_ALLOW_FULL_HISTORY_SYNC
     config.ignoreDataStore = IGNORE_DATA_STORE
@@ -129,7 +130,7 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.outgoingIdempotency = OUTGOING_IDEMPOTENCY_ENABLED
     config.oneToOneAddressingMode = ONE_TO_ONE_ADDRESSING_MODE
     config.provider = resolveSessionProvider(WHATSAPP_ENGINE)
-    config.useRedis = !!process.env.REDIS_URL
+    config.useRedis = true
     config.useS3 = !!process.env.STORAGE_ENDPOINT
     config.webhooks[0].url = WEBHOOK_URL
     config.webhooks[0].urlAbsolute = WEBHOOK_URL_ABSOLUTE
@@ -165,8 +166,7 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
       }
     }
 
-    // Choose backing store based on flags (ensure Redis path actually uses Redis-backed store)
-    config.getStore = config.useRedis ? getStoreRedis : getStoreFile
+    config.getStore = getStoreRedis
 
     const filter: MessageFilter = new MessageFilter(phone, config)
     config.shouldIgnoreJid = filter.isIgnoreJid.bind(filter)

@@ -1,9 +1,22 @@
+jest.mock('node-fetch', () => jest.fn())
+
 import { toZapoMessageContent } from '../../src/services/zapo/zapo_message_mapper'
 import { mockDeep } from 'jest-mock-extended'
 import type { WaClient } from 'zapo-js'
+import fetch from 'node-fetch'
 
 describe('Zapo message mapper', () => {
   const client = mockDeep<WaClient>()
+  const mockFetch = fetch as unknown as jest.Mock
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockFetch.mockResolvedValue({
+      ok: true,
+      headers: { get: jest.fn().mockReturnValue('application/octet-stream') },
+      arrayBuffer: jest.fn().mockResolvedValue(Uint8Array.from([1, 2, 3]).buffer),
+    })
+  })
 
   test('maps text and mentions to the documented typed Zapo content', async () => {
     await expect(toZapoMessageContent(client, {
@@ -15,19 +28,24 @@ describe('Zapo message mapper', () => {
     })
   })
 
-  test('maps every supported media family without downloading it in the mapper', async () => {
+  test('downloads every supported media family into bytes for the Zapo typed API', async () => {
     for (const type of ['image', 'audio', 'document', 'video', 'sticker']) {
       const mapped = await toZapoMessageContent(client, {
         type,
         [type]: { link: `https://example.test/${type}`, mime_type: 'application/octet-stream', caption: 'Legenda' },
       })
-      expect(mapped.content).toEqual(expect.objectContaining({ type, media: `https://example.test/${type}` }))
+      expect(mapped.content).toEqual(expect.objectContaining({
+        type,
+        media: Uint8Array.from([1, 2, 3]),
+        mimetype: 'application/octet-stream',
+      }))
     }
+    expect(mockFetch).toHaveBeenCalledTimes(5)
   })
 
-  test('maps voice-note audio to the Zapo ptt media type', async () => {
+  test('maps voice-note audio to Zapo audio content with the ptt flag', async () => {
     await expect(toZapoMessageContent(client, { type: 'audio', audio: { link: 'https://example.test/a.ogg', ptt: true } }))
-      .resolves.toEqual(expect.objectContaining({ content: expect.objectContaining({ type: 'ptt' }) }))
+      .resolves.toEqual(expect.objectContaining({ content: expect.objectContaining({ type: 'audio', ptt: true }) }))
   })
 
   test('rejects media without a link', async () => {
@@ -37,6 +55,35 @@ describe('Zapo message mapper', () => {
   test('passes raw protocol messages through for advanced compatibility', async () => {
     const message = { conversation: 'raw' }
     await expect(toZapoMessageContent(client, { type: 'baileys', message })).resolves.toEqual({ content: message, options: {} })
+  })
+
+  test('maps poll aliases to the documented native Zapo poll content', async () => {
+    await expect(toZapoMessageContent(client, {
+      type: 'poll',
+      poll: {
+        question: 'Almoço?',
+        options: ['Pizza', { name: 'Sushi' }],
+        selectable_count: 1,
+        allow_add_option: true,
+      },
+    })).resolves.toEqual({
+      content: {
+        type: 'poll',
+        name: 'Almoço?',
+        options: ['Pizza', 'Sushi'],
+        selectableCount: 1,
+        allowAddOption: true,
+        hideParticipantName: false,
+      },
+      options: {},
+    })
+  })
+
+  test('rejects a poll whose selectable count exceeds its options', async () => {
+    await expect(toZapoMessageContent(client, {
+      type: 'poll',
+      poll: { name: 'Escolha', options: ['A'], selectableCount: 2 },
+    })).rejects.toThrow('invalid_poll_selectable_count')
   })
 
   test('rejects message types without a documented mapping', async () => {

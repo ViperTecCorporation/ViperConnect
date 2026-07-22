@@ -37,6 +37,7 @@ export type DataStore  = {
   setMediaPayload: (id: string, payload: any) => Promise<void>
   loadMediaPayload: (id: string) => Promise<any>
   setImageUrl: (jid: string, url: string) => Promise<void>
+  removeImageUrl?: (jid: string) => Promise<void>
   getImageUrl: (jid: string) => Promise<string | undefined>
   loadImageUrl: (jid: string, sock: Partial<WASocket>) => Promise<string | undefined>
   setGroupMetada: (jid: string, data: GroupMetadata) => Promise<void>

@@ -91,7 +91,7 @@ POST /v15.0/{phone}/messages
 ## Message Edit Payload
 
 Unoapi accepts a Meta-like `type: "message_edit"` payload on `POST /v15.0/{phone}/messages`.
-This is an Unoapi/Baileys extension; the official Meta Cloud API does not expose this send payload.
+This is an Unoapi extension supported by both Baileys and Zapo; the official Meta Cloud API does not expose this send payload.
 
 1:1 example:
 
@@ -132,8 +132,9 @@ POST /v15.0/{phone}/messages
 
 Rules:
 - `context.message_id` must be the Unoapi id of the original sent message.
-- Unoapi resolves that id to the original Baileys provider id/key through DataStore/Redis.
-- The final Baileys call is equivalent to `sock.sendMessage(jid, { text, edit: originalMessageKey })`.
+- Unoapi resolves that id to the original provider id/key through DataStore.
+- The original message must have been sent by the connected account (`fromMe: true`).
+- Baileys uses `sock.sendMessage(jid, { text, edit: originalMessageKey })`; Zapo uses `client.message.send(jid, content, { editKey: { id, participant? } })`.
 - For group edits, `to` should be the group id (`@g.us`). Mentions follow the same normalization rules as group text messages.
 
 ## Status/Broadcast Testing

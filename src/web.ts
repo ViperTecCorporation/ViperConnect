@@ -33,6 +33,7 @@ import { ContactIncoming } from './services/contact_incoming'
 
 import * as Sentry from '@sentry/node'
 import { isTransientBaileysError } from './services/error_utils'
+import { ensureRequiredRedis } from './services/redis_runtime'
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
@@ -61,12 +62,20 @@ broadcast.setSever(app.socket)
 
 const broadcastJob = new BroacastJob(broadcast)
 
-app.server.listen(PORT, '0.0.0.0', async () => {
-  logger.info('Starting broadcast consumer')
-  await amqpConsume(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_BROADCAST, '*', broadcastJob.consume.bind(broadcastJob), { type: 'topic' })
-  await amqpConsume(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_RELOAD, '*', reload.run.bind(reloadJob), { type: 'topic' })
-  logger.info('Unoapi Cloud version: %s, listening on port: %s | Linked Device: %s(%s)', version, PORT, CONFIG_SESSION_PHONE_CLIENT, CONFIG_SESSION_PHONE_NAME)
-  startContactSyncScheduler(outgoing)
+const startWeb = async () => {
+  await ensureRequiredRedis()
+  app.server.listen(PORT, '0.0.0.0', async () => {
+    logger.info('Starting broadcast consumer')
+    await amqpConsume(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_BROADCAST, '*', broadcastJob.consume.bind(broadcastJob), { type: 'topic' })
+    await amqpConsume(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_RELOAD, '*', reload.run.bind(reloadJob), { type: 'topic' })
+    logger.info('Unoapi Cloud version: %s, listening on port: %s | Linked Device: %s(%s)', version, PORT, CONFIG_SESSION_PHONE_CLIENT, CONFIG_SESSION_PHONE_NAME)
+    startContactSyncScheduler(outgoing)
+  })
+}
+
+startWeb().catch((error) => {
+  logger.error(error, 'Failed to start web: Redis is required')
+  process.exit(1)
 })
 
 

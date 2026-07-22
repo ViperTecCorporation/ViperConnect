@@ -3,11 +3,13 @@ dotenv.config()
 
 import logger from './services/logger'
 import { resolveCloudProcessRole } from './services/providers/cloud_process_role'
+import { ensureRequiredRedis } from './services/redis_runtime'
 logger.info('Starting...')
 
 const role = resolveCloudProcessRole(process.env.UNOAPI_PROCESS_ROLE)
 
 const start = async () => {
+  await ensureRequiredRedis()
   if (role === 'web') return import('./web.js')
   if (role === 'broker') return import('./broker.js')
   if (role === 'worker') return import('./worker.js')

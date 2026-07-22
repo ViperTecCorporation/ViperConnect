@@ -43,7 +43,7 @@ import { Response } from './response'
 import QRCode from 'qrcode'
 import { Template } from './template'
 import logger from './logger'
-import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, HISTORY_MAX_AGE_DAYS, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS, BASE_URL } from '../defaults'
+import { FETCH_TIMEOUT_MS, VALIDATE_MEDIA_LINK_BEFORE_SEND, CONVERT_AUDIO_MESSAGE_TO_OGG, GROUP_SEND_MEMBERSHIP_CHECK, GROUP_SEND_ADDRESSING_MODE, GROUP_LARGE_THRESHOLD, ONE_TO_ONE_ADDRESSING_MODE, MEDIA_RETRY_ENABLED, MEDIA_RETRY_DELAYS_MS, UNOAPI_DEBUG_BAILEYS_LIST_DUMP, CONTACT_SYNC_PENDING_TTL_SEC, GROUP_METADATA_EVENT_REFRESH_ENABLED, GROUP_METADATA_EVENT_REFRESH_DEBOUNCE_MS, GROUP_METADATA_EVENT_REFRESH_MIN_INTERVAL_MS, BASE_URL } from '../defaults'
 import { setContactSyncPending, getPnForLidFromAuthCache, getLidForPnFromAuthCache } from './redis'
 import { checkMissingTcTokenQuota, recordMissingTcTokenSend, MissingTcTokenQuotaDecision } from './privacy_token_quota'
 import { createPasskeyBridgeSession, updatePasskeyBridgeSession } from './passkey_bridge'
@@ -55,6 +55,7 @@ import { ClientForward } from './client_forward'
 import { ClientCoexistence } from './client_coexistence'
 import { SendError } from './send_error'
 import { getRetryableStaleSendPayload, isRetryableStaleSendError } from './error_utils'
+import { resolveWhatsAppEngine } from './providers/provider_resolver'
 
 const attempts = 3
 const pendingClients: Map<string, Promise<Client>> = new Map()
@@ -958,6 +959,11 @@ export class ClientBaileys implements Client {
   private onReconnect: OnReconnect = async (time: number) => {
     logger.warn('ClientBaileys onReconnect requested for %s (attempt=%s)', this.phone, time)
     try {
+      const config = await this.getConfig(this.phone)
+      if (resolveWhatsAppEngine(config.provider) !== 'baileys') {
+        logger.info('ClientBaileys reconnect skipped for %s after provider handoff to %s', this.phone, config.provider)
+        return
+      }
       await this.connect(time)
       logger.warn('ClientBaileys onReconnect completed for %s', this.phone)
     } catch (e) {
@@ -1142,12 +1148,12 @@ export class ClientBaileys implements Client {
     logger.debug('Client Baileys connected for %s', this.phone)
   }
 
-  async disconnect() {
+  async disconnect(options?: { preserveStatus?: boolean }) {
     logger.debug('Disconnect client store for %s', this?.phone)
     this.clearGroupMetadataRefreshTimers()
     this.store = undefined
 
-    await this.close()
+    await this.close(options)
     this.clientRegistry.delete(this?.phone)
     configs.delete(this?.phone)
     this.sendMessage = this.sendMessageDefault
@@ -1674,7 +1680,8 @@ export class ClientBaileys implements Client {
         const syncTypeName = typeof syncType === 'number'
           ? proto.HistorySync.HistorySyncType[syncType] || `${syncType}`
           : `${syncType || 'unknown'}`
-        const cutoffSec = Math.floor((Date.now() - HISTORY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000) / 1000)
+        const historyMaxAgeDays = Math.max(1, Number(this.config.historyMaxAgeDays) || 30)
+        const cutoffSec = Math.floor((Date.now() - historyMaxAgeDays * 24 * 60 * 60 * 1000) / 1000)
         const filtered = (messages || []).filter((m) => {
           const ts = Number(m?.messageTimestamp || 0)
           return Number.isFinite(ts) && ts >= cutoffSec
@@ -1688,7 +1695,7 @@ export class ClientBaileys implements Client {
           syncTypeName,
           `${chunkOrder ?? '<none>'}`,
           `${progress ?? '<none>'}`,
-          HISTORY_MAX_AGE_DAYS,
+          historyMaxAgeDays,
           messages?.length || 0,
           filtered.length,
           isLatest,
