@@ -24,9 +24,7 @@ export const parseBaileysAuthStorageKey = (phone: string, storageKey: string): P
   if (fileName === 'creds.json') return { type: 'creds' }
 
   const redisPrefix = `${authKey(phone)}:`
-  const logicalKey = storageKey.startsWith(redisPrefix)
-    ? storageKey.slice(redisPrefix.length)
-    : fileName.replace(/\.json$/i, '')
+  const logicalKey = storageKey.startsWith(redisPrefix) ? storageKey.slice(redisPrefix.length) : fileName.replace(/\.json$/i, '')
   if (logicalKey === 'creds') return { type: 'creds' }
 
   const category = BAILEYS_KEY_TYPES.find((type) => logicalKey.startsWith(`${type}-`))
@@ -56,9 +54,12 @@ export const readBaileysFileSnapshot = (phone: string, baseStore: string): Baile
   const directory = join(baseStore, 'sessions', phone)
   const credentialsFile = join(directory, 'creds.json')
   if (!existsSync(credentialsFile)) return undefined
-  const entries = readdirSync(directory)
-    .filter((file) => file.endsWith('.json'))
-    .map((file) => ({ key: file, raw: readFileSync(join(directory, file), 'utf8') }))
+  const entries = [
+    { key: 'creds.json', raw: readFileSync(credentialsFile, 'utf8') },
+    ...readdirSync(directory)
+      .filter((file) => file !== 'creds.json' && file.endsWith('.json'))
+      .map((file) => ({ key: file, raw: readFileSync(join(directory, file), 'utf8') })),
+  ]
   return buildSnapshot(phone, entries)
 }
 
@@ -67,6 +68,6 @@ export const readBaileysRedisSnapshot = async (phone: string): Promise<BaileysAu
   if (!storageKeys.length) storageKeys = await redisScanSome(`${authKey(phone)}:*`, 100_000)
   if (!storageKeys.length) return undefined
   const values = await redisMGet(storageKeys)
-  const entries = storageKeys.flatMap((key, index) => values[index] ? [{ key, raw: values[index]! }] : [])
+  const entries = storageKeys.flatMap((key, index) => (values[index] ? [{ key, raw: values[index]! }] : []))
   return buildSnapshot(phone, entries)
 }
