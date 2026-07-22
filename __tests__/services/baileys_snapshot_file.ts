@@ -1,17 +1,14 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { BufferJSON } from '@whiskeysockets/baileys'
+jest.mock('node:fs', () => ({
+  existsSync: jest.fn(),
+  readFileSync: jest.fn(),
+  readdirSync: jest.fn(),
+}))
+
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { parseBaileysAuthStorageKey, readBaileysFileSnapshot } from '../../src/services/zapo/baileys_snapshot'
 
 describe('Baileys file snapshot', () => {
-  let directory: string
-
-  beforeEach(() => {
-    directory = mkdtempSync(join(tmpdir(), 'unoapi-zapo-migration-'))
-  })
-
-  afterEach(() => rmSync(directory, { recursive: true, force: true }))
+  beforeEach(() => jest.clearAllMocks())
 
   test('parses credentials and key categories without confusing category hyphens', () => {
     expect(parseBaileysAuthStorageKey('5566', 'app-state-sync-key-my-key.json')).toEqual({
@@ -21,20 +18,27 @@ describe('Baileys file snapshot', () => {
   })
 
   test('returns no snapshot when the Baileys credentials do not exist', () => {
-    expect(readBaileysFileSnapshot('5566', directory)).toBeUndefined()
+    jest.mocked(existsSync).mockReturnValue(false)
+
+    expect(readBaileysFileSnapshot('5566', '/store')).toBeUndefined()
+    expect(readFileSync).not.toHaveBeenCalled()
   })
 
   test('reads a Baileys multi-file session into the migration shape', () => {
-    const sessionDirectory = join(directory, 'sessions', '5566')
-    mkdirSync(sessionDirectory, { recursive: true })
-    const write = (file: string, value: unknown) =>
-      writeFileSync(join(sessionDirectory, file), JSON.stringify(value, BufferJSON.replacer))
-    write('creds.json', { registered: true, registrationId: 10 })
-    write('pre-key-7.json', { public: 'public-key', private: 'private-key' })
+    jest.mocked(existsSync).mockReturnValue(true)
+    jest.mocked(readdirSync).mockReturnValue(['creds.json', 'pre-key-7.json'] as never)
+    jest
+      .mocked(readFileSync)
+      .mockImplementation((file) =>
+        `${file}`.endsWith('creds.json')
+          ? JSON.stringify({ registered: true, registrationId: 10 })
+          : JSON.stringify({ public: 'public-key', private: 'private-key' }),
+      )
 
-    const snapshot = readBaileysFileSnapshot('5566', directory)
+    const snapshot = readBaileysFileSnapshot('5566', '/store')
 
     expect(snapshot?.creds).toEqual(expect.objectContaining({ registered: true, registrationId: 10 }))
     expect(snapshot?.keys['pre-key']?.['7']).toEqual({ public: 'public-key', private: 'private-key' })
+    expect(readFileSync).toHaveBeenCalledWith('/store/sessions/5566/creds.json', 'utf8')
   })
 })
