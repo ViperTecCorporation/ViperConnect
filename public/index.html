@@ -324,7 +324,7 @@
           qrScanBelow: 'Scan the QR Code below', qrWaitingNew: 'Waiting for a new QRCode/PairingCode', connected: 'Connected!',
           fldLabel: 'Label', fldLabelPh: 'Label',
           rejectCallsWebhookLabel: 'Incoming/Rejected Call Message', rejectCallsWebhookPh: 'I was calling you...',
-          connectionType: 'Connection Type', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
+          connectionType: 'Connection Type', providerLabel: 'WhatsApp Engine', providerBaileys: 'Baileys (default)', providerZapo: 'Zapo', providerHelp: 'Changing to Zapo migrates existing credentials automatically and keeps the Baileys data for rollback.', proxyUrlLabel: 'Proxy URL (Restart Unoapi after change)', proxyUrlPh: 'Ex: socks5://user:pass@host:port',
           oneToOneAddressingMode: '1:1 addressing',
           oneToOneAddressingModeDefault: 'Use global setting',
           oneToOneAddressingModePn: 'Prefer PN',
@@ -392,7 +392,7 @@
           qrScanBelow: 'Leia o QR Code Abaixo', qrWaitingNew: 'Esperando um novo QrCode/PairingCode', connected: 'Conectado!',
           fldLabel: 'Identificação', fldLabelPh: 'Identificação',
           rejectCallsWebhookLabel: 'Mensagem de Ligação Recebida e/ou Rejeitada', rejectCallsWebhookPh: 'Estava te ligando...',
-          connectionType: 'Tipo de Conexão', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
+          connectionType: 'Tipo de Conexão', providerLabel: 'Motor WhatsApp', providerBaileys: 'Baileys (padrão)', providerZapo: 'Zapo', providerHelp: 'Ao mudar para Zapo, as credenciais existentes são migradas automaticamente e os dados Baileys permanecem disponíveis para rollback.', proxyUrlLabel: 'Proxy Url (Precisa Reiniciar a Unoapi ao Alterar)', proxyUrlPh: 'Ex: socks5://user:pass@ip/domain:port',
           oneToOneAddressingMode: 'Endereçamento 1:1',
           oneToOneAddressingModeDefault: 'Usar configuração global',
           oneToOneAddressingModePn: 'Preferir PN',
@@ -718,6 +718,14 @@
                                 <input type="text" class="form-control" id="rejectCallsWebhook" name="rejectCallsWebhook" placeholder="I was calling you..." data-i18n-placeholder="rejectCallsWebhookPh">
                             </div>
                             <div class="col-12 col-md-12 col-lg-6">
+                              <label for="provider" class="form-label" data-i18n="providerLabel">WhatsApp Engine</label>
+                              <select id="provider" name="provider" class="form-control">
+                                <option value="baileys" selected data-i18n="providerBaileys">Baileys (default)</option>
+                                <option value="zapo" data-i18n="providerZapo">Zapo</option>
+                              </select>
+                              <div class="form-text" data-i18n="providerHelp">Changing to Zapo migrates existing credentials automatically and keeps the Baileys data for rollback.</div>
+                            </div>
+                            <div class="col-12 col-md-12 col-lg-6">
                               <label for="connectionType" class="form-label" data-i18n="connectionType">Connection Type</label>
                               <select id="connectionType" name="connectionType" class="form-control">
                                 <option value="qrcode" selected>QrCode</option>
@@ -817,7 +825,7 @@
                             </div>
                             <div class="col-12 col-md-6 col-lg-6 col-xl-4 col-xxl-3">
                                 <label class="switch">
-                                    <input type="checkbox" id="markOnlineOnConnect" name="markOnlineOnConnect" checked>
+                                    <input type="checkbox" id="markOnlineOnConnect" name="markOnlineOnConnect">
                                     <span class="slider round"></span>
                                 </label>
                                 <label for="markOnlineOnConnect" class="form-label" data-i18n="markOnlineOnConnect">Mark online on connect</label>
@@ -1531,7 +1539,10 @@
                 $('#ignoreHistoryMessages').prop('checked', session.ignoreHistoryMessages);
                 $('#readOnReceipt').prop('checked', session.readOnReceipt);
                 try { $('#readOnReply').prop('checked', !!session.readOnReply); } catch {}
-                try { $('#markOnlineOnConnect').prop('checked', session.markOnlineOnConnect !== false); } catch {}
+                try {
+                    const markOnline = session.markOnlineOnConnect === true || session.markOnlineOnConnect === 'true';
+                    $('#markOnlineOnConnect').prop('checked', markOnline);
+                } catch {}
                 $('#sendProfilePicture').prop('checked', session.sendProfilePicture);
                 $('#ignoreOwnMessages').prop('checked', session.ignoreOwnMessages);
                 $('#ignoreYourselfMessages').prop('checked', session.ignoreYourselfMessages);
@@ -1544,6 +1555,7 @@
                 try { $('#coexistenceEnabled').prop('checked', !!session.coexistenceEnabled); } catch {}
                 try { $('#coexistenceWindowSeconds').val(session.coexistenceWindowSeconds ?? 86400); } catch {}
                 $('#ignoreBroadcastMessages').prop('checked', session.ignoreBroadcastMessages);
+                $('#provider').val(session.provider === 'zapo' ? 'zapo' : 'baileys');
                 $('#connectionType').val(session.connectionType ?? '');
                 $('#oneToOneAddressingMode').val(session.oneToOneAddressingMode ?? '');
                 $('#proxyUrl').val(session.proxyUrl ?? '');
@@ -1668,6 +1680,7 @@
                         coexistenceEnabled: $('#coexistenceEnabled').is(':checked'),
                         coexistenceWindowSeconds: Number($('#coexistenceWindowSeconds').val() || 86400),
                         ignoreBroadcastMessages: $('#ignoreBroadcastMessages').is(':checked'),
+                        provider: $('#provider').val(),
                         connectionType: $('#connectionType').val(),
                         oneToOneAddressingMode: $('#oneToOneAddressingMode').val(),
                         proxyUrl: $('#proxyUrl').val(),

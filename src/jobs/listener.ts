@@ -47,10 +47,6 @@ export class ListenerJob {
       logger.info(`Ignore listener routing key ${phone} server ${config.server} is not server current server ${UNOAPI_SERVER_NAME}...`)
       return;
     }
-    if (config.provider !== 'baileys') {
-      logger.info(`Ignore listener routing key ${phone} is not provider baileys...`)
-      return;
-    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const a = data as any
     const { messages, type } = a

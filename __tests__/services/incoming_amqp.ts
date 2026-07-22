@@ -70,7 +70,7 @@ describe('service incoming amqp', () => {
     expect(amqpRpcMock).toHaveBeenNthCalledWith(
       1,
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_INCOMING}.server_1`,
+      `${UNOAPI_QUEUE_INCOMING}.server_1.baileys`,
       phone,
       {
         type: 'group_management',
@@ -86,7 +86,7 @@ describe('service incoming amqp', () => {
     expect(amqpRpcMock).toHaveBeenNthCalledWith(
       2,
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_INCOMING}.server_1`,
+      `${UNOAPI_QUEUE_INCOMING}.server_1.baileys`,
       phone,
       {
         type: 'group_management',
@@ -98,6 +98,34 @@ describe('service incoming amqp', () => {
         priority: 5,
         maxRetries: 0,
       }
+    )
+  })
+
+  test('routes contact verification to the Zapo worker selected by the session', async () => {
+    const phone = '556600000000'
+    const incoming = new IncomingAmqp(async () => ({ ...defaultConfig, server: 'server_2', provider: 'zapo' }))
+    amqpRpcMock.mockResolvedValue([{ input: '5566111', wa_id: '111@lid', status: 'valid' }])
+
+    await expect(incoming.contacts(phone, ['5566111'])).resolves.toHaveLength(1)
+    expect(amqpRpcMock).toHaveBeenCalledWith(
+      UNOAPI_EXCHANGE_BRIDGE_NAME,
+      `${UNOAPI_QUEUE_INCOMING}.server_2.zapo`,
+      phone,
+      { type: 'provider_operation', action: 'contacts', args: [['5566111']] },
+      { type: 'direct', priority: 5, maxRetries: 0 },
+    )
+  })
+
+  test('requests a pairing code from the selected provider worker', async () => {
+    const incoming = new IncomingAmqp(async () => ({ ...defaultConfig, server: 'server_2', provider: 'zapo' }))
+    amqpRpcMock.mockResolvedValue('1234-5678')
+    await expect(incoming.requestPairingCode('5566')).resolves.toBe('1234-5678')
+    expect(amqpRpcMock).toHaveBeenCalledWith(
+      UNOAPI_EXCHANGE_BRIDGE_NAME,
+      `${UNOAPI_QUEUE_INCOMING}.server_2.zapo`,
+      '5566',
+      { type: 'provider_operation', action: 'requestPairingCode', args: [] },
+      { type: 'direct', priority: 5, maxRetries: 0 },
     )
   })
 })

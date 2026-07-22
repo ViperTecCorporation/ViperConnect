@@ -2,6 +2,8 @@ import { Response } from './response'
 
 export interface Incoming {
   send(phone: string, payload: object, options: object): Promise<Response>
+  contacts?(phone: string, numbers: string[]): Promise<any[]>
+  requestPairingCode?(phone: string): Promise<string>
   recoverDelivery?(phone: string, payload: object, options: object): Promise<Response>
   groupCreate?(phone: string, subject: string, participants: string[]): Promise<any>
   groupUpdateSubject?(phone: string, jid: string, subject: string): Promise<void>

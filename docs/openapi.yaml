@@ -665,6 +665,9 @@ components:
           type: string
         provider:
           type: string
+          enum: [baileys, zapo]
+          default: baileys
+          description: Motor WhatsApp da sessão. Ao alterar de Baileys para Zapo, a autenticação compatível é migrada automaticamente sem apagar a origem.
         connectionType:
           type: string
 

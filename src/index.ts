@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' })
 
 import { App } from './app'
-import { IncomingBaileys } from './services/incoming_baileys'
+import { IncomingProvider } from './services/incoming_provider'
 import { Incoming } from './services/incoming'
 import { Outgoing } from './services/outgoing'
 import { OutgoingCloudApi } from './services/outgoing_cloud_api'
@@ -11,7 +11,7 @@ import { SessionStoreFile } from './services/session_store_file'
 import { SessionStore } from './services/session_store'
 import { autoConnect } from './services/auto_connect'
 import { getConfigByEnv } from './services/config_by_env'
-import { getClientBaileys } from './services/client_baileys'
+import { getClientProvider } from './services/providers/client_factory'
 import { onNewLoginAlert } from './services/on_new_login_alert'
 import ContactBaileys from './services/contact_baileys'
 import { Broadcast } from './services/broadcast'
@@ -20,7 +20,7 @@ import { version } from '../package.json'
 
 import logger from './services/logger'
 import { Listener } from './services/listener'
-import { ListenerBaileys } from './services/listener_baileys'
+import { ProviderListener } from './services/providers/listener_router'
 
 import {
   AMQP_URL,
@@ -75,21 +75,21 @@ if (webhookAsyncAmqp) {
 }
 
 const broadcast: Broadcast = new Broadcast()
-const listenerBaileys: Listener = new ListenerBaileys(outgoing, broadcast, getConfigByEnv)
+const listenerBaileys: Listener = new ProviderListener(outgoing, broadcast, getConfigByEnv)
 const onNewLoginn = onNewLoginAlert(listenerBaileys)
-const incomingBaileys: Incoming = new IncomingBaileys(listenerBaileys, getConfigByEnv, getClientBaileys, onNewLoginn)
+const incomingBaileys: Incoming = new IncomingProvider(listenerBaileys, getConfigByEnv, getClientProvider, onNewLoginn)
 const sessionStore: SessionStore = new SessionStoreFile()
-const contact = new ContactBaileys(listenerBaileys, getConfigByEnv, getClientBaileys, onNewLoginn)
+const contact = new ContactBaileys(listenerBaileys, getConfigByEnv, getClientProvider, onNewLoginn)
 
-const reload = new ReloadBaileys(getClientBaileys, getConfigByEnv, listenerBaileys, onNewLoginn)
-const logout = new LogoutBaileys(getClientBaileys, getConfigByEnv, listenerBaileys, onNewLoginn)
+const reload = new ReloadBaileys(getClientProvider, getConfigByEnv, listenerBaileys, onNewLoginn)
+const logout = new LogoutBaileys(getClientProvider, getConfigByEnv, listenerBaileys, onNewLoginn)
 
 const app: App = new App(incomingBaileys, outgoing, BASE_URL, getConfigByEnv, sessionStore, onNewLoginn, addToBlacklistInMemory, reload, logout, undefined, undefined, contact)
 broadcast.setSever(app.socket)
 
 app.server.listen(PORT, '0.0.0.0', async () => {
   logger.info('Unoapi Cloud version: %s, listening on port: %s', version, PORT)
-  autoConnect(sessionStore, listenerBaileys, getConfigByEnv, getClientBaileys, onNewLoginn)
+  autoConnect(sessionStore, listenerBaileys, getConfigByEnv, getClientProvider, onNewLoginn)
   startContactSyncScheduler(outgoing)
 })
 

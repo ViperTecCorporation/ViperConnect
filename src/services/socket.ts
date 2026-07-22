@@ -2881,7 +2881,8 @@ export const connect = async ({
     const socketConfig: UserFacingSocketConfig = {
       auth: state,
       logger: loggerBaileys,
-      markOnlineOnConnect: config.markOnlineOnConnect !== false,
+      markOnlineOnConnect: config.markOnlineOnConnect === true
+        || (config.markOnlineOnConnect as unknown) === 'true',
       syncFullHistory: allowFullHistoryForSession,
       shouldSyncHistoryMessage: (msg: proto.Message.IHistorySyncNotification) => {
         const syncType = msg?.syncType as proto.HistorySync.HistorySyncType | undefined

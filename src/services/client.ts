@@ -9,6 +9,8 @@ export type ContactStatus = 'valid' | 'processing' | 'invalid'| 'failed'
 
 export interface Contact {
   wa_id: String | undefined
+  user_id?: String | undefined
+  username?: String | undefined
   input: String
   status: ContactStatus
 }
@@ -71,6 +73,8 @@ export interface Client {
   getMessageMetadata<T>(message: T): Promise<T>
 
   contacts(numbers: string[]): Promise<Contact[]>
+
+  requestPairingCode?(): Promise<string>
 
   groupCreate?(subject: string, participants: string[]): Promise<any>
 

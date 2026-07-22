@@ -351,8 +351,11 @@ const dataStoreFile = async (phone: string, config: Config): Promise<DataStore> 
   dataStore.loadUnoId = async (id: string) =>  ids.get(id) || ids.get(`${phone}-${id}`)
   dataStore.loadProviderId = async (id: string) => idsReverse.get(`${phone}-${id}`) || idsReverse.get(id)
   dataStore.setUnoId = async (id: string, unoId: string) => {
-    ids.set(`${phone}-${id}`, unoId)
-    idsReverse.set(`${phone}-${unoId}`, id)
+    const key = `${phone}-${id}`
+    const chosen = ids.get(key) || unoId
+    ids.set(key, chosen)
+    idsReverse.set(`${phone}-${chosen}`, id)
+    return chosen
   }
   dataStore.loadJid = async (phoneOrJid: string, sock: Partial<WASocket>) => {
     /**

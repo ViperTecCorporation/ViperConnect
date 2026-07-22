@@ -128,6 +128,45 @@ describe('service socket', () => {
     expect(mockOn).toHaveBeenCalled()
   })
 
+  test('keeps presence offline unless markOnlineOnConnect is explicitly enabled', async () => {
+    const legacyConfig = { ...defaultConfig, whatsappVersion } as any
+    legacyConfig.markOnlineOnConnect = 'false'
+
+    await connect({
+      phone,
+      store,
+      onQrCode,
+      onNotification,
+      onDisconnected,
+      onReconnect,
+      onNewLogin,
+      attempts: 1,
+      time: 1,
+      config: legacyConfig,
+    })
+
+    expect(mockMakeWASocket).toHaveBeenLastCalledWith(
+      expect.objectContaining({ markOnlineOnConnect: false }),
+    )
+
+    await connect({
+      phone,
+      store,
+      onQrCode,
+      onNotification,
+      onDisconnected,
+      onReconnect,
+      onNewLogin,
+      attempts: 1,
+      time: 1,
+      config: { ...defaultConfig, markOnlineOnConnect: 'true' as any, whatsappVersion },
+    })
+
+    expect(mockMakeWASocket).toHaveBeenLastCalledWith(
+      expect.objectContaining({ markOnlineOnConnect: true }),
+    )
+  })
+
   test('allows full history sync for the first unmarked sync', async () => {
     await connect({
       phone,

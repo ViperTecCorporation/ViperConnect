@@ -22,6 +22,7 @@ import { version } from '../package.json'
 import { extractDestinyPhone } from './services/transformer'
 import { isTransientInfraError } from './services/error_utils'
 import { v1 as uuid } from 'uuid'
+import { providerFromQueueName, providerQueueName } from './services/providers/provider_queue'
 
 const withTimeout = (millis, error, promise) => {
   let timeoutPid
@@ -259,9 +260,14 @@ export const amqpGetQueue = async (
 
 
   validateRoutingKey(routingKey)
-  if (/^\d+$/.test(routingKey) && !routes.get(routingKey)) {
-    await amqpPublish(UNOAPI_EXCHANGE_BRIDGE_NAME, `${UNOAPI_QUEUE_BIND}.${UNOAPI_SERVER_NAME}`, '', { routingKey }, { type: 'direct' })
-    routes.set(routingKey, true)
+  const provider = providerFromQueueName(queue)
+  const routeId = `${routingKey}:${provider || 'legacy'}`
+  if (/^\d+$/.test(routingKey) && !routes.get(routeId)) {
+    const bindQueueName = provider
+      ? providerQueueName(UNOAPI_QUEUE_BIND, UNOAPI_SERVER_NAME, provider)
+      : `${UNOAPI_QUEUE_BIND}.${UNOAPI_SERVER_NAME}`
+    await amqpPublish(UNOAPI_EXCHANGE_BRIDGE_NAME, bindQueueName, '', { routingKey }, { type: 'direct' })
+    routes.set(routeId, true)
     if (routes.size > ROUTES_CACHE_LIMIT) {
       const first = routes.keys().next().value
       routes.delete(first)

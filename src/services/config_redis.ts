@@ -7,6 +7,7 @@ import { getConfigByEnv } from './config_by_env'
 import { MessageFilter } from './message_filter'
 import { CONFIG_CACHE_TTL_MS } from '../defaults'
 import { generateBusinessAccountId } from './meta_ids'
+import { resolveSessionProvider } from './providers/provider_resolver'
 
 const configCacheTs: Map<string, number> = new Map()
 let configSubReady = false
@@ -90,7 +91,7 @@ export const getConfigRedis: getConfig = async (phone: string): Promise<Config> 
     }
 
     config.server = config.server || 'server_1'
-    config.provider = config.provider || 'baileys'
+    config.provider = resolveSessionProvider(config.provider)
     try {
       const fwd: any = (config as any).webhookForward || {}
       if (!`${fwd?.businessAccountId || ''}`.trim()) {

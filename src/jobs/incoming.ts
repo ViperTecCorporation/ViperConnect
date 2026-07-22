@@ -74,6 +74,14 @@ export class IncomingJob {
     return statusCode === 401 || message.includes('not-authorized') || message.includes('not authorized')
   }
 
+  private async consumeProviderOperation(phone: string, data: any) {
+    const allowedActions = ['contacts', 'requestPairingCode']
+    if (!allowedActions.includes(data.action)) throw new Error(`Unknown provider operation ${data.action}`)
+    const fn = this.incoming[data.action]
+    if (typeof fn !== 'function') throw new Error(`Incoming provider does not support operation ${data.action}`)
+    return fn.call(this.incoming, phone, ...(Array.isArray(data.args) ? data.args : []))
+  }
+
   private buildOutgoingWebhookMessage(
     phone: string,
     payload: any,
@@ -150,10 +158,13 @@ export class IncomingJob {
     if (a.type === 'group_management') {
       return this.consumeGroupManagement(phone, a)
     }
+    if (a.type === 'provider_operation') {
+      return this.consumeProviderOperation(phone, a)
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const payload: any = a.payload
-    const options: object = a.options
     const idUno: string = a.id || uuid()
+    const options: object = { ...(a.options || {}), unoMessageId: idUno }
     const waId = normalizeUserOrGroupIdForWebhook(payload.to)
     const timestamp = Math.floor(new Date().getTime() / 1000).toString()
     // const retries: number = a.retries ? a.retries + 1 : 1
@@ -183,9 +194,10 @@ export class IncomingJob {
     const optionsOutgoing: Partial<PublishOption>  =  { delay: 0 } // evitar que 'sent' chegue após delivered/read
     const rankStatus = (s: string) => ({ failed:0, progress:1, pending:1, sent:2, delivered:3, read:4, deleted:5 }[`${s}`] ?? -1)
     if (ok && ok.messages && ok.messages[0] && ok.messages[0].id) {
-      const idProvider: string = ok.messages[0].id
-      logger.debug('%s id %s to Unoapi id %s', config.provider, idProvider, idUno)
+      const returnedId: string = ok.messages[0].id
       const { dataStore } = await config.getStore(phone, config)
+      const idProvider: string = `${await dataStore.loadProviderId?.(returnedId) || returnedId}`
+      logger.debug('%s id %s to Unoapi id %s', config.provider, idProvider, idUno)
       const prevProviderStatus = await dataStore.loadStatus(idProvider)
       const prevUnoStatus = await dataStore.loadStatus(idUno)
       await dataStore.setUnoId(idProvider, idUno)

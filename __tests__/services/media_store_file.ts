@@ -60,4 +60,29 @@ describe('media routes', () => {
     expect(pnUrl).toContain('5566999999999.jpg')
     expect(lidUrl).toContain(`${lid}.jpg`)
   })
+
+  test('persists an already downloaded provider buffer without Baileys decryption', async () => {
+    mediaStore.saveMediaBuffer = jest.fn().mockResolvedValue(true)
+    const waMessage: any = {
+      key: { id: 'zapo-media-1', remoteJid: '123@lid', fromMe: false },
+      message: {
+        imageMessage: {
+          mimetype: 'image/jpeg',
+          fileName: 'foto.jpg',
+          fileLength: 3,
+        },
+      },
+    }
+
+    await mediaStore.saveDownloadedMedia!(waMessage, Buffer.from('img'))
+
+    expect(mediaStore.saveMediaBuffer).toHaveBeenCalledWith(
+      expect.stringContaining('zapo-media-1.jpeg'),
+      Buffer.from('img'),
+    )
+    expect(dataStore.setMediaPayload).toHaveBeenCalledWith(
+      'zapo-media-1',
+      expect.objectContaining({ id: `${phone}/zapo-media-1` }),
+    )
+  })
 })

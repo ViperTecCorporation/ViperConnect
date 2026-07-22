@@ -8,8 +8,65 @@ import { IncomingJob } from '../../src/jobs/incoming'
 import { Incoming } from '../../src/services/incoming'
 import { Outgoing } from '../../src/services/outgoing'
 import { defaultConfig, getConfig } from '../../src/services/config'
+import type { DataStore } from '../../src/services/data_store'
 
 describe('incoming job', () => {
+  test('keeps the queue Uno id associated directly with the real provider id', async () => {
+    const incoming = mock<Incoming>()
+    const outgoing = mock<Outgoing>()
+    const dataStore = mock<DataStore>()
+    dataStore.loadProviderId.mockResolvedValue('3EB0ZAPO')
+    dataStore.setUnoId.mockResolvedValue('uno-request-1')
+    incoming.send = jest.fn().mockResolvedValue({
+      ok: { messaging_product: 'whatsapp', messages: [{ id: 'uno-request-1' }] },
+    })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig,
+      provider: 'zapo',
+      server: 'server_1',
+      outgoingIdempotency: false,
+      webhooks: [],
+      getStore: async () => ({ dataStore } as any),
+    }))
+
+    await job.consume('5566999999999', {
+      id: 'uno-request-1',
+      payload: { to: '5511999999999', type: 'text', text: { body: 'Oi' } },
+      options: { endpoint: 'messages' },
+    })
+
+    expect(incoming.send).toHaveBeenCalledWith(
+      '5566999999999',
+      expect.any(Object),
+      expect.objectContaining({ unoMessageId: 'uno-request-1' }),
+    )
+    expect(dataStore.setUnoId).toHaveBeenCalledWith('3EB0ZAPO', 'uno-request-1')
+    expect(dataStore.setUnoId).not.toHaveBeenCalledWith('uno-request-1', 'uno-request-1')
+  })
+
+  test('dispatches provider contact operations without going through message sending', async () => {
+    const incoming = mock<Incoming>()
+    incoming.contacts = jest.fn().mockResolvedValue([{ input: '5566', status: 'valid' }])
+    const job = new IncomingJob(incoming, mock<Outgoing>(), async () => ({ ...defaultConfig, server: 'server_1' }))
+
+    await expect(job.consume('556600000000', {
+      type: 'provider_operation',
+      action: 'contacts',
+      args: [['5566']],
+    })).resolves.toEqual([{ input: '5566', status: 'valid' }])
+    expect(incoming.contacts).toHaveBeenCalledWith('556600000000', ['5566'])
+    expect(incoming.send).not.toHaveBeenCalled()
+  })
+
+  test('dispatches pairing-code requests to the local client adapter', async () => {
+    const incoming = mock<Incoming>()
+    incoming.requestPairingCode = jest.fn().mockResolvedValue('1234-5678')
+    const job = new IncomingJob(incoming, mock<Outgoing>(), async () => ({ ...defaultConfig, server: 'server_1' }))
+    await expect(job.consume('5566', {
+      type: 'provider_operation', action: 'requestPairingCode', args: [],
+    })).resolves.toBe('1234-5678')
+  })
+
   test('dispatches group management RPC payloads to the local incoming provider', async () => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()

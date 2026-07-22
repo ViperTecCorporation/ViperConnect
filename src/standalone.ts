@@ -22,7 +22,7 @@ import logger from './services/logger'
 import { version } from '../package.json'
 import { App } from './app'
 import { Incoming } from './services/incoming'
-import { IncomingBaileys } from './services/incoming_baileys'
+import { IncomingProvider } from './services/incoming_provider'
 import { IncomingAmqp } from './services/incoming_amqp'
 import { Outgoing } from './services/outgoing'
 import { OutgoingCloudApi } from './services/outgoing_cloud_api'
@@ -34,7 +34,7 @@ import { autoConnect } from './services/auto_connect'
 import { getConfig } from './services/config'
 import { getConfigByEnv } from './services/config_by_env'
 import { getConfigRedis } from './services/config_redis'
-import { getClientBaileys } from './services/client_baileys'
+import { getClientProvider } from './services/providers/client_factory'
 import { OnNewLogin } from './services/socket'
 import { onNewLoginAlert } from './services/on_new_login_alert'
 import { onNewLoginGenerateToken } from './services/on_new_login_generate_token'
@@ -49,7 +49,7 @@ import {
   isInBlacklistInRedis
 } from './services/blacklist'
 import { Listener } from './services/listener'
-import { ListenerBaileys } from './services/listener_baileys'
+import { ProviderListener } from './services/providers/listener_router'
 import middleware from './services/middleware'
 import { middlewareNext } from './services/middleware_next'
 import Security from './services/security'
@@ -90,11 +90,11 @@ let isInBlacklistVar: isInBlacklist = isInBlacklistInMemory
 let outgoing: Outgoing = new OutgoingCloudApi(getConfigByEnv, isInBlacklistVar, addToBlacklistVar)
 let getConfigVar: getConfig = getConfigByEnv
 let sessionStore: SessionStore = new SessionStoreFile()
-let listener: Listener = new ListenerBaileys(outgoing, broadcast, getConfigVar)
+let listener: Listener = new ProviderListener(outgoing, broadcast, getConfigVar)
 let onNewLoginn: OnNewLogin = onNewLoginAlert(listener)
-let incoming: Incoming = new IncomingBaileys(listener, getConfigVar, getClientBaileys, onNewLoginn)
-let reload: Reload = new ReloadBaileys(getClientBaileys, getConfigVar, listener, onNewLoginn)
-let logout: Logout = new LogoutBaileys(getClientBaileys, getConfigVar, listener, onNewLoginn)
+let incoming: Incoming = new IncomingProvider(listener, getConfigVar, getClientProvider, onNewLoginn)
+let reload: Reload = new ReloadBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
+let logout: Logout = new LogoutBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
 let middlewareVar: middleware = middlewareNext
 if (process.env.REDIS_URL) {
   logger.info('Starting with redis')
@@ -108,6 +108,11 @@ if (process.env.REDIS_URL) {
   sessionStore = new SessionStoreRedis()
   const securityVar = new Security(sessionStore)
   middlewareVar = securityVar.run.bind(securityVar) as middleware
+  listener = new ProviderListener(outgoing, broadcast, getConfigVar)
+  onNewLoginn = onNewLoginAlert(listener)
+  incoming = new IncomingProvider(listener, getConfigVar, getClientProvider, onNewLoginn)
+  reload = new ReloadBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
+  logout = new LogoutBaileys(getClientProvider, getConfigVar, listener, onNewLoginn)
 } else {
   logger.info('Starting with file system')
 }
@@ -199,7 +204,7 @@ if (process.env.UNOAPI_AUTH_TOKEN) {
   logger.info('Starting without http security')
 }
 
-const contact: Contact = new ContactBaileys(listener, getConfigVar, getClientBaileys, onNewLoginn)
+const contact: Contact = new ContactBaileys(listener, getConfigVar, getClientProvider, onNewLoginn)
 
 const app: App = new App(
   incoming,
@@ -219,7 +224,7 @@ broadcast.setSever(app.socket)
 
 app.server.listen(PORT, '0.0.0.0', async () => {
   logger.info('Unoapi standalone mode up version: %s, listening on port: %s', version, PORT)
-  autoConnect(sessionStore, listener, getConfigVar, getClientBaileys, onNewLoginn)
+  autoConnect(sessionStore, listener, getConfigVar, getClientProvider, onNewLoginn)
   startContactSyncScheduler(outgoing)
 })
 

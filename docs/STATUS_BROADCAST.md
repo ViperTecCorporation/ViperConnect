@@ -1,20 +1,21 @@
 # Status/Broadcast — Behavior & Safeguards
 
-This document details how Unoapi handles Stories (Status) via Baileys and the protections added to avoid socket disconnects when large recipient lists include invalid numbers.
+This document details how Unoapi handles Stories (Status) through Baileys or Zapo and the protections added for large recipient lists.
 
 ## Inputs
 
 - `to = "status@broadcast"`
-- `type` is a content type supported by Baileys (text, image, video, etc.)
+- `type` is a content type supported by the selected provider (text, image, video, etc.)
 - `options.statusJidList = [numbers | JIDs]` — the recipient list to relay after initial send
 
-Auto-fill (image/video only):
-- If statusJidList is empty or null and type is image/video, Unoapi auto-fills from Redis contact-info keys (unoapi-contact-info:<phone>:*).
-- This happens before normalization; if the list is still empty, relayMessage is skipped.
+Auto-fill:
+- If `statusJidList` is empty, Unoapi reads the compact temporal recipient index for the session.
+- Legacy `contact-info` keys are imported once into that index and receive a TTL.
+- If the list is still empty, the send is rejected with `status_recipients_required`.
 
 ## Validation & Normalization
 
-Implemented in `src/services/socket.ts` inside the `send()` path for `status@broadcast`:
+Baileys validates recipients in `src/services/socket.ts`. Zapo resolves PN/username to canonical LID in `zapo_identity.ts` and publishes through `client.status`:
 
 - For each entry in `statusJidList`, call `exists(raw)` which resolves to a valid JID if the number has WhatsApp, or `undefined` otherwise.
 - Filter out all `undefined` (invalid numbers), log a warning with a small preview of skipped entries.
@@ -43,3 +44,12 @@ These fields are added without breaking the Cloud API response structure (`messa
 - Large lists may contain numbers without WhatsApp, which previously caused Baileys errors and could drop the socket.
 - By filtering and normalizing upfront, Unoapi sends only to valid recipients and keeps the socket stable.
 
+## Cache de destinatarios
+
+Destinatarios recentes ficam em um unico sorted set por sessao, com timestamp e retencao
+configuravel. Na primeira leitura, chaves legadas `contact-info` sao importadas uma vez e
+recebem expiracao. Isso evita uma chave Redis permanente por contato usado em Status e
+remove automaticamente destinatarios inativos.
+
+- `STATUS_RECIPIENT_RETENTION_SEC`: retencao do indice (padrao 30 dias).
+- `CONTACT_INFO_TTL_SEC`: TTL de compatibilidade das chaves antigas (padrao 30 dias).

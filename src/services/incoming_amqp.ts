@@ -4,6 +4,7 @@ import { UNOAPI_EXCHANGE_BRIDGE_NAME, UNOAPI_QUEUE_INCOMING } from '../defaults'
 import { v1 as uuid } from 'uuid'
 import { jidToPhoneNumber, normalizeGroupId } from './transformer'
 import { getConfig } from './config'
+import { providerQueueName } from './providers/provider_queue'
 
 type GroupManagementAction =
   | 'groupCreate'
@@ -27,11 +28,15 @@ export class IncomingAmqp implements Incoming {
     this.getConfig = getConfig
   }
 
+  private queue(config: Awaited<ReturnType<getConfig>>) {
+    return providerQueueName(UNOAPI_QUEUE_INCOMING, config.server || 'server_1', config.provider)
+  }
+
   private async groupManagementRpc<T>(phone: string, action: GroupManagementAction, args: unknown[] = []): Promise<T> {
     const config = await this.getConfig(phone)
     return amqpRpc<T>(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_INCOMING}.${config.server!}`,
+      this.queue(config),
       phone,
       {
         type: 'group_management',
@@ -46,6 +51,24 @@ export class IncomingAmqp implements Incoming {
     )
   }
 
+  public async contacts(phone: string, numbers: string[]) {
+    const config = await this.getConfig(phone)
+    return amqpRpc<any[]>(UNOAPI_EXCHANGE_BRIDGE_NAME, this.queue(config), phone, {
+      type: 'provider_operation',
+      action: 'contacts',
+      args: [numbers],
+    }, { type: 'direct', priority: 5, maxRetries: 0 })
+  }
+
+  public async requestPairingCode(phone: string) {
+    const config = await this.getConfig(phone)
+    return amqpRpc<string>(UNOAPI_EXCHANGE_BRIDGE_NAME, this.queue(config), phone, {
+      type: 'provider_operation',
+      action: 'requestPairingCode',
+      args: [],
+    }, { type: 'direct', priority: 5, maxRetries: 0 })
+  }
+
   public async send(phone: string, payload: object, options: object = {}) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body = payload as any
@@ -56,7 +79,7 @@ export class IncomingAmqp implements Incoming {
       options['priority'] = 3 // update status is always middle important
       await amqpPublish(
         UNOAPI_EXCHANGE_BRIDGE_NAME,
-        `${UNOAPI_QUEUE_INCOMING}.${config.server!}`, 
+        this.queue(config),
         phone,
         { payload, options },
         options
@@ -70,7 +93,7 @@ export class IncomingAmqp implements Incoming {
       options['type'] = 'direct'
       await amqpPublish(
         UNOAPI_EXCHANGE_BRIDGE_NAME,
-        `${UNOAPI_QUEUE_INCOMING}.${config.server!}`,
+        this.queue(config),
         phone,
         { payload, id, options }, 
         options
@@ -107,7 +130,7 @@ export class IncomingAmqp implements Incoming {
     options['forceDeliveryRecovery'] = true
     await amqpPublish(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_INCOMING}.${config.server!}`,
+      this.queue(config),
       phone,
       { payload, id, options, action: 'recover_delivery' },
       options

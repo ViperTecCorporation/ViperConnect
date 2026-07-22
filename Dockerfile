@@ -2,7 +2,7 @@ FROM node:24-bookworm-slim AS builder
 
 ENV NODE_ENV=development
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates \
+    && apt-get install -y --no-install-recommends git ca-certificates python3 make g++ \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

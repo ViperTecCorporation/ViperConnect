@@ -2,6 +2,7 @@ import { amqpPublish } from '../amqp'
 import { UNOAPI_EXCHANGE_BRIDGE_NAME, UNOAPI_QUEUE_LOGOUT } from '../defaults'
 import { getConfig } from './config'
 import { Logout } from './logout'
+import { providerQueueName } from './providers/provider_queue'
 
 export class LogoutAmqp implements Logout {
   private getConfig: getConfig
@@ -14,7 +15,7 @@ export class LogoutAmqp implements Logout {
     const config = await this.getConfig(phone)
     await amqpPublish(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_LOGOUT}.${config.server!}`,
+      providerQueueName(UNOAPI_QUEUE_LOGOUT, config.server || 'server_1', config.provider),
       '',
       { phone, ts: Date.now(), source: 'deregister_api' },
       { type: 'direct' }

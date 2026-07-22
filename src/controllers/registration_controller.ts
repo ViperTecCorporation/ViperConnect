@@ -5,6 +5,7 @@ import logger from '../services/logger'
 import { Logout } from '../services/logout'
 import { Reload } from '../services/reload'
 import { resolveSessionPhoneByMetaId } from '../services/meta_alias'
+import { resolveWhatsAppEngine } from '../services/providers/provider_resolver'
 
 export class RegistrationController {
   private static readonly REGISTER_DEBOUNCE_MS = 15000
@@ -29,20 +30,22 @@ export class RegistrationController {
     logger.debug('register query %s', JSON.stringify(req.query))
     const phone = await resolveSessionPhoneByMetaId(req.params.phone)
     try {
+      const previousConfig = await this.getConfig(phone)
       await setConfig(phone, req.body)
+      const config = await this.getConfig(phone)
+      const providerChanged = resolveWhatsAppEngine(previousConfig.provider) !== resolveWhatsAppEngine(config.provider)
       const now = Date.now()
       const last = RegistrationController.lastRegisterAtByPhone.get(phone) || 0
       const inFlight = RegistrationController.inFlightByPhone.has(phone)
       const inDebounceWindow = (now - last) < RegistrationController.REGISTER_DEBOUNCE_MS
 
-      if (inFlight || inDebounceWindow) {
+      if (!providerChanged && (inFlight || inDebounceWindow)) {
         logger.warn(
           'register suppressed for %s (inFlight=%s debounceMs=%s)',
           phone,
           inFlight,
           Math.max(0, RegistrationController.REGISTER_DEBOUNCE_MS - (now - last))
         )
-        const config = await this.getConfig(phone)
         return res.status(202).json({ ...config, registerSuppressed: true })
       }
 
@@ -54,7 +57,6 @@ export class RegistrationController {
           RegistrationController.inFlightByPhone.delete(phone)
         })
 
-      const config = await this.getConfig(phone)
       return res.status(200).json(config)
     } catch (e) {
       return res.status(400).json({ status: 'error', message: `${phone} could not create, error: ${e.message}` })

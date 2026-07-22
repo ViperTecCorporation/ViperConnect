@@ -14,6 +14,7 @@ export type MediaStore = {
   type: string
   getMedia: (baseUrl: string, mediaId: string) => Promise<object | void>
   saveMedia: (waMessage: WAMessage) => Promise<WAMessage>
+  saveDownloadedMedia?: (waMessage: WAMessage, buffer: Buffer) => Promise<WAMessage>
   saveMediaForwarder: <T>(message: T) => Promise<T>
   saveMediaBuffer: (fileName: string, buffer: Buffer, contentType?: string, scheduleRemoval?: boolean) => Promise<boolean>
   removeMedia: (fileName: string) => Promise<void>

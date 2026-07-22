@@ -4,6 +4,17 @@
 
 Antes de mexer em `src/services/transformer.ts`, leia [docs/transformer-refactor.md](docs/transformer-refactor.md). Esse arquivo documenta a forma segura de modularizar o transformer sem quebrar imports, contratos publicos ou testes.
 
+Antes de mexer em qualquer arquivo de `src/services/providers`, `src/services/zapo`, filas de workers ou selecao de motor por sessao, leia [docs/zapo-provider-migration.md](docs/zapo-provider-migration.md). A documentacao oficial da Zapo e os testes existentes da UnoAPI sao a fonte de verdade para essa migracao.
+
+## Regra obrigatoria para a migracao Zapo
+
+- Nao traduza chamadas por semelhanca de nome. Confirme assinatura, retorno e evento na documentacao ou no codigo publico oficial da Zapo.
+- Todo metodo ou funcao nova deve ter caso de teste proprio. Reaproveite os testes existentes da Baileys como contrato de comportamento da UnoAPI.
+- Um endpoint so pode ser marcado como suportado na Zapo depois de adapter, teste e documentacao estarem concluidos.
+- Capacidade ausente deve retornar erro explicito de capability; nunca use fallback silencioso para Baileys em uma sessao configurada como Zapo.
+- A migracao de credenciais Baileys para Zapo deve ser idempotente, concorrente-segura e nao deve apagar a origem. Isso permite rollback enquanto os dois motores coexistirem.
+- Mantenha arquivos pequenos e separados por dominio. Nao crie um `client_zapo.ts` monolitico equivalente ao `client_baileys.ts`.
+
 ## Organizacao do projeto
 
 Este projeto ja possui uma organizacao base por responsabilidade. Ao criar ou alterar codigo TypeScript, mantenha as novas classes dentro das camadas existentes:

@@ -1,0 +1,2083 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ViperConnect API",
+    "version": "2.5.2",
+    "description": "API compatível com WhatsApp Cloud (formato de payload), utilizando Baileys como transporte.\n- Endpoints espelham em grande parte a estrutura do Cloud API (ex.: `v15.0/{phone}/messages`).\n- Suporta envios de texto, mídia (imagem/áudio/documento/vídeo), contatos e mensagens interativas (botões/listas).\n"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "security": [
+    {
+      "ApiToken": []
+    }
+  ],
+  "paths": {
+    "/ping": {
+      "get": {
+        "summary": "Healthcheck",
+        "responses": {
+          "200": {
+            "description": "pong",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "get": {
+        "summary": "Listar sessões/configurações visíveis",
+        "responses": {
+          "200": {
+            "description": "Lista de conexões/sessões",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{phone}": {
+      "get": {
+        "summary": "UI de sessão (QR/Config)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML com QR/Config da sessão",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}": {
+      "get": {
+        "summary": "Status e configuração da sessão",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Informações da sessão e templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/phone_numbers": {
+      "get": {
+        "summary": "Listar conexões/telefones gerenciados",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de configurações",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/message_templates": {
+      "get": {
+        "summary": "Listar templates",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates disponíveis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/templates": {
+      "post": {
+        "summary": "(Compat) Listar templates",
+        "description": "Compatível com o Cloud API; neste projeto retorna a lista local/forward.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates disponíveis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/messages": {
+      "post": {
+        "summary": "Enviar mensagem (WhatsApp Cloud shape)",
+        "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Suporta opções de broadcast/status: `options.statusJidList` ou `statusJidList` (atalho).\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              },
+              "examples": {
+                "text": {
+                  "summary": "Texto",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "text",
+                    "text": {
+                      "body": "Olá do Unoapi Cloud!"
+                    }
+                  }
+                },
+                "textGroupMentionAll": {
+                  "summary": "Texto em grupo com @all/@todos",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "120363012345678@g.us",
+                    "type": "text",
+                    "text": {
+                      "body": "Aviso @todos"
+                    }
+                  }
+                },
+                "textGroupMentions": {
+                  "summary": "Texto em grupo com @telefone",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "120363012345678@g.us",
+                    "type": "text",
+                    "text": {
+                      "body": "Oi @5566996269251 e @5566996222471"
+                    }
+                  }
+                },
+                "messageEdit": {
+                  "summary": "Editar mensagem enviada",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "message_edit",
+                    "context": {
+                      "message_id": "uno-message-id-original"
+                    },
+                    "text": {
+                      "body": "Texto editado"
+                    }
+                  }
+                },
+                "image": {
+                  "summary": "Imagem por link",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "image",
+                    "image": {
+                      "link": "https://exemplo.com/imagem.jpg",
+                      "caption": "Legenda opcional"
+                    }
+                  }
+                },
+                "document": {
+                  "summary": "Documento",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "document",
+                    "document": {
+                      "link": "https://exemplo.com/arquivo.pdf",
+                      "filename": "contrato.pdf"
+                    }
+                  }
+                },
+                "audio": {
+                  "summary": "Áudio/voice",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "audio",
+                    "audio": {
+                      "link": "https://exemplo.com/audio.ogg"
+                    }
+                  }
+                },
+                "video": {
+                  "summary": "Vídeo",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "video",
+                    "video": {
+                      "link": "https://exemplo.com/video.mp4",
+                      "caption": "Vídeo curto"
+                    }
+                  }
+                },
+                "contacts": {
+                  "summary": "Contatos (vCard simplificado)",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "contacts",
+                    "contacts": [
+                      {
+                        "name": {
+                          "formatted_name": "Fulano"
+                        },
+                        "phones": [
+                          {
+                            "wa_id": "5511988887777",
+                            "phone": "+55 11 98888-7777"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "reaction": {
+                  "summary": "Reacao",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "reaction",
+                    "reaction": {
+                      "message_id": "MESSAGE_ID",
+                      "emoji": "👍"
+                    }
+                  }
+                },
+                "sticker": {
+                  "summary": "Figurinha",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "sticker",
+                    "sticker": {
+                      "link": "https://example.com/sticker.png"
+                    }
+                  }
+                },
+                "interactiveButtons": {
+                  "summary": "Interativo - Botões",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "interactive",
+                    "interactive": {
+                      "type": "button",
+                      "body": {
+                        "text": "Escolha uma opção"
+                      },
+                      "action": {
+                        "buttons": [
+                          {
+                            "type": "reply",
+                            "reply": {
+                              "id": "btn_1",
+                              "title": "Opção 1"
+                            }
+                          },
+                          {
+                            "type": "reply",
+                            "reply": {
+                              "id": "btn_2",
+                              "title": "Opção 2"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "interactiveList": {
+                  "summary": "Interativo - Lista",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "interactive",
+                    "interactive": {
+                      "type": "list",
+                      "body": {
+                        "text": "Selecione"
+                      },
+                      "action": {
+                        "sections": [
+                          {
+                            "title": "Grupo",
+                            "rows": [
+                              {
+                                "id": "r1",
+                                "title": "Item 1"
+                              },
+                              {
+                                "id": "r2",
+                                "title": "Item 2"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro de validação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error400"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/marketing_messages": {
+      "post": {
+        "summary": "Enviar Marketing Messages (compatível)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/preflight/status": {
+      "post": {
+        "summary": "Checagem pré-envio (Status/Broadcast)",
+        "description": "Verifica sessão online e se destinatários existem no WhatsApp.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreflightStatusRequest"
+              },
+              "example": {
+                "statusJidList": [
+                  "5511999999999",
+                  "5511988887777"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado da verificação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreflightStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro na verificação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error400"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/groups": {
+      "get": {
+        "summary": "Listar grupos em cache da sessão",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de grupos em cache",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupsListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/groups/{groupId}/participants": {
+      "get": {
+        "summary": "Listar participantes de um grupo em cache",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "path",
+            "name": "groupId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Aceita 1203... ou 1203...@g.us"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Participantes do grupo em cache",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupParticipantsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Grupo não encontrado em cache",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error400"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/{media_id}": {
+      "get": {
+        "summary": "Obter metadados e URL temporária de mídia",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "path",
+            "name": "media_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dados da mídia",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Não encontrado"
+          }
+        }
+      }
+    },
+    "/v15.0/download/{phone}/{file}": {
+      "get": {
+        "summary": "Download do arquivo de mídia",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arquivo binário",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Não encontrado"
+          }
+        }
+      }
+    },
+    "/{phone}/contacts": {
+      "post": {
+        "summary": "Verificar contatos",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactsRequest"
+              },
+              "example": {
+                "blocking": "no_wait",
+                "force_check": true,
+                "contacts": [
+                  "5511999999999"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado de validação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{phone}/blacklist/{webhook_id}": {
+      "post": {
+        "summary": "Adicionar número ao blacklist de um webhook",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "ttl": {
+                    "type": "integer",
+                    "description": "Tempo de bloqueio em milissegundos"
+                  }
+                }
+              },
+              "example": {
+                "to": "5511999999999",
+                "ttl": 86400000
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "example": {
+                    "success": true
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parâmetros inválidos"
+          }
+        }
+      }
+    },
+    "/{phone}/request_code": {
+      "post": {
+        "summary": "Solicitar Pairing Code (envia mensagem de texto ao próprio número)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "example": {
+                    "success": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timer/{phone}/{to}": {
+      "post": {
+        "summary": "Iniciar timer de mensagem automática",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message",
+                  "timeout"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "timeout": {
+                    "type": "integer",
+                    "description": "Tempo de espera em ms"
+                  }
+                }
+              },
+              "example": {
+                "message": "Ainda precisamos da sua resposta",
+                "timeout": 300000
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Parâmetros ausentes"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancelar timer ativo",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "path",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/register": {
+      "post": {
+        "summary": "Registrar/atualizar configuração da sessão",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterConfig"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configuração aplicada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterConfig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Erro ao aplicar configuração"
+          }
+        }
+      }
+    },
+    "/v15.0/{phone}/deregister": {
+      "post": {
+        "summary": "Encerrar sessão (logout) e remover registro",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sem conteúdo"
+          }
+        }
+      }
+    },
+    "/webhooks/whatsapp/{phone}": {
+      "get": {
+        "summary": "Verificação do Webhook (Facebook/Meta)",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "in": "query",
+            "name": "hub.mode",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hub.verify_token",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hub.challenge",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retorna o challenge",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Token inválido"
+          }
+        }
+      },
+      "post": {
+        "summary": "Receber eventos do WhatsApp (Forward mode)",
+        "security": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookInbound"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WebhookAck"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WebhookStatusFailed"
+                  },
+                  {
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "example": {
+                    "success": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/fake/{phone}": {
+      "post": {
+        "summary": "Webhook de teste (Fake)",
+        "description": "Recebe qualquer payload e responde `{ \"success\": true }`.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookStatusFailed"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WebhookInbound"
+                  },
+                  {
+                    "$ref": "#/components/schemas/WebhookAck"
+                  },
+                  {
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "example": {
+                    "success": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "API token. Ex.: 1 ou Bearer <token>"
+      }
+    },
+    "parameters": {
+      "PhonePath": {
+        "name": "phone",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Número (ID) da sessão, ex.: 5511999999999"
+      }
+    },
+    "schemas": {
+      "Error400": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "error"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "RegisterConfig": {
+        "description": "Configuração da sessão. Campos variam por provedor.",
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "authToken": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "baileys",
+              "zapo"
+            ],
+            "default": "baileys",
+            "description": "Motor WhatsApp da sessão. Ao alterar de Baileys para Zapo, a autenticação compatível é migrada automaticamente sem apagar a origem."
+          },
+          "connectionType": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionsList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "display_phone_number": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PhoneInfo": {
+        "type": "object",
+        "properties": {
+          "display_phone_number": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "message_templates": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "MessageCommon": {
+        "type": "object",
+        "required": [
+          "messaging_product",
+          "to",
+          "type"
+        ],
+        "properties": {
+          "messaging_product": {
+            "type": "string",
+            "example": "whatsapp"
+          },
+          "to": {
+            "type": "string",
+            "description": "Número destino (ou status@broadcast)"
+          },
+          "type": {
+            "type": "string"
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "broadcast": {
+                "type": "boolean"
+              },
+              "statusJidList": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "statusJidList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Atalho equivalente a options.statusJidList. If empty/null with to=status@broadcast and type=image/video, Unoapi auto-fills from Redis contact-info (unoapi-contact-info:<phone>:*)."
+          }
+        }
+      },
+      "MessageText": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "text"
+              },
+              "text": {
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "mentionAll": {
+                    "type": "boolean",
+                    "description": "Opcional. Se true, encaminha mentionAll ao Baileys. Em grupos, `@all`/`@todos` no body também ativa automaticamente."
+                  },
+                  "mentions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Opcional. Lista de números ou JIDs para menção. Em grupos, `@<telefone_valido>` no body também é extraído automaticamente."
+                  }
+                }
+              },
+              "mentionAll": {
+                "type": "boolean",
+                "description": "Atalho opcional equivalente a text.mentionAll"
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Atalho opcional equivalente a text.mentions"
+              }
+            }
+          }
+        ]
+      },
+      "MessageEdit": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "required": [
+              "context",
+              "text"
+            ],
+            "properties": {
+              "type": {
+                "const": "message_edit"
+              },
+              "context": {
+                "type": "object",
+                "required": [
+                  "message_id"
+                ],
+                "properties": {
+                  "message_id": {
+                    "type": "string",
+                    "description": "ID Unoapi da mensagem original. A Unoapi resolve esse ID para a key original do Baileys em cache antes de chamar sendMessage(..., { edit: key })."
+                  }
+                }
+              },
+              "text": {
+                "type": "object",
+                "required": [
+                  "body"
+                ],
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  },
+                  "mentions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Opcional. Lista de números ou JIDs para menção no texto editado."
+                  }
+                }
+              },
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Atalho opcional equivalente a text.mentions."
+              }
+            }
+          }
+        ]
+      },
+      "MessageImage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "image"
+              },
+              "image": {
+                "type": "object",
+                "properties": {
+                  "link": {
+                    "type": "string"
+                  },
+                  "caption": {
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageVideo": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "video"
+              },
+              "video": {
+                "type": "object",
+                "properties": {
+                  "link": {
+                    "type": "string"
+                  },
+                  "caption": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageSticker": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "sticker"
+              },
+              "sticker": {
+                "type": "object",
+                "properties": {
+                  "link": {
+                    "type": "string",
+                    "description": "PNG/JPG/GIF are auto-converted to WEBP before sending"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageAudio": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "audio"
+              },
+              "audio": {
+                "type": "object",
+                "properties": {
+                  "link": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageDocument": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "document"
+              },
+              "document": {
+                "type": "object",
+                "properties": {
+                  "link": {
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageContacts": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "contacts"
+              },
+              "contacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "object",
+                      "properties": {
+                        "formatted_name": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "phones": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "wa_id": {
+                            "type": "string"
+                          },
+                          "phone": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageReaction": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "reaction"
+              },
+              "reaction": {
+                "type": "object",
+                "properties": {
+                  "message_id": {
+                    "type": "string"
+                  },
+                  "emoji": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageInteractiveButtons": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "interactive"
+              },
+              "interactive": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "button"
+                  },
+                  "body": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "action": {
+                    "type": "object",
+                    "properties": {
+                      "buttons": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "const": "reply"
+                            },
+                            "reply": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageInteractiveList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "interactive"
+              },
+              "interactive": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "list"
+                  },
+                  "body": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "action": {
+                    "type": "object",
+                    "properties": {
+                      "sections": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string"
+                            },
+                            "rows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "MessageRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MessageText"
+          },
+          {
+            "$ref": "#/components/schemas/MessageEdit"
+          },
+          {
+            "$ref": "#/components/schemas/MessageImage"
+          },
+          {
+            "$ref": "#/components/schemas/MessageVideo"
+          },
+          {
+            "$ref": "#/components/schemas/MessageSticker"
+          },
+          {
+            "$ref": "#/components/schemas/MessageAudio"
+          },
+          {
+            "$ref": "#/components/schemas/MessageDocument"
+          },
+          {
+            "$ref": "#/components/schemas/MessageContacts"
+          },
+          {
+            "$ref": "#/components/schemas/MessageReaction"
+          },
+          {
+            "$ref": "#/components/schemas/MessageInteractiveButtons"
+          },
+          {
+            "$ref": "#/components/schemas/MessageInteractiveList"
+          }
+        ]
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "messaging_product": {
+            "type": "string"
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "wa_id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "status_skipped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status_recipients": {
+            "type": "integer"
+          }
+        }
+      },
+      "ContactsRequest": {
+        "type": "object",
+        "properties": {
+          "blocking": {
+            "type": "string",
+            "example": "no_wait"
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "force_check": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ContactsResponse": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "wa_id": {
+                  "type": "string"
+                },
+                "input": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "MediaResponse": {
+        "type": "object",
+        "properties": {
+          "messaging_product": {
+            "type": "string",
+            "example": "whatsapp"
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "file_size": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "PreflightStatusRequest": {
+        "type": "object",
+        "properties": {
+          "statusJidList": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PreflightStatusResponse": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              }
+            }
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "requested": {
+                "type": "integer"
+              },
+              "normalized": {
+                "type": "integer"
+              },
+              "valid": {
+                "type": "integer"
+              }
+            }
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "string"
+                },
+                "normalized": {
+                  "type": "string"
+                },
+                "valid": {
+                  "type": "boolean"
+                },
+                "wa_id": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GroupsListResponse": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "jid": {
+                  "type": "string"
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "participantsCount": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GroupParticipantsResponse": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string"
+          },
+          "group": {
+            "type": "object",
+            "properties": {
+              "jid": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              }
+            }
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "jid": {
+                  "type": "string",
+                  "description": "Identificador do participante: PN em dígitos (sem @s.whatsapp.net) ou @lid"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Nome no cache de contatos quando disponível"
+                }
+              }
+            }
+          }
+        }
+      },
+      "WebhookStatusFailed": {
+        "description": "Payload de falha enviado ao webhook (fora da resposta HTTP)",
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string",
+            "example": "whatsapp_business_account"
+          },
+          "entry": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "example": "messages"
+                      },
+                      "value": {
+                        "type": "object",
+                        "properties": {
+                          "messaging_product": {
+                            "type": "string",
+                            "example": "whatsapp"
+                          },
+                          "metadata": {
+                            "type": "object"
+                          },
+                          "statuses": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "recipient_id": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "example": "failed"
+                                },
+                                "timestamp": {
+                                  "type": "integer"
+                                },
+                                "errors": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "code": {
+                                        "type": "integer"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "WebhookInbound": {
+        "description": "Mensagens recebidas (compatível com WhatsApp Cloud API)",
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "entry": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "example": "messages"
+                      },
+                      "value": {
+                        "type": "object",
+                        "properties": {
+                          "messaging_product": {
+                            "type": "string",
+                            "example": "whatsapp"
+                          },
+                          "metadata": {
+                            "type": "object"
+                          },
+                          "contacts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object"
+                            }
+                          },
+                          "messages": {
+                            "type": "array",
+                            "items": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "WebhookAck": {
+        "description": "Acks/Status de mensagens enviadas (delivered/read/deleted)",
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "entry": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string",
+                        "example": "messages"
+                      },
+                      "value": {
+                        "type": "object",
+                        "properties": {
+                          "messaging_product": {
+                            "type": "string"
+                          },
+                          "statuses": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "recipient_id": {
+                                  "type": "string"
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "example": "delivered"
+                                },
+                                "timestamp": {
+                                  "type": "integer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

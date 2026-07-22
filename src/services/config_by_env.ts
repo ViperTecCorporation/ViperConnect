@@ -72,7 +72,9 @@ import {
   GROQ_API_BASE_URL,
   WEBHOOK_ADD_TO_BLACKLIST_ON_OUTGOING_MESSAGE_WITH_TTL,
   ONE_TO_ONE_ADDRESSING_MODE,
+  WHATSAPP_ENGINE,
 } from '../defaults'
+import { resolveSessionProvider } from './providers/provider_resolver'
 
 export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> => {
   if (!configs.has(phone)) {
@@ -126,6 +128,7 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.rateLimitBlockSeconds = RATE_LIMIT_BLOCK_SECONDS
     config.outgoingIdempotency = OUTGOING_IDEMPOTENCY_ENABLED
     config.oneToOneAddressingMode = ONE_TO_ONE_ADDRESSING_MODE
+    config.provider = resolveSessionProvider(WHATSAPP_ENGINE)
     config.useRedis = !!process.env.REDIS_URL
     config.useS3 = !!process.env.STORAGE_ENDPOINT
     config.webhooks[0].url = WEBHOOK_URL

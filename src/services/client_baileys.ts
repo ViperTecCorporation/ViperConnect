@@ -593,7 +593,7 @@ export class ClientBaileys implements Client {
     let idUno = ''
     try { idUno = `${await this.store?.dataStore?.loadUnoId(idBaileys) || ''}`.trim() } catch {}
     if (!idUno) idUno = uuid()
-    try { await this.store?.dataStore?.setUnoId(idBaileys, idUno) } catch {}
+    try { idUno = `${await this.store?.dataStore?.setUnoId(idBaileys, idUno) || idUno}` } catch {}
     try { if (key?.id) await this.store?.dataStore?.setKey(idUno, key as any) } catch {}
     return idUno || idBaileys
   }

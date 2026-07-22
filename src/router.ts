@@ -59,7 +59,7 @@ export const router = (
   const templatesController = new TemplatesController(getConfig)
   const registrationController = new RegistrationController(getConfig, reload, logout)
   const phoneNumberController = new PhoneNumberController(getConfig, sessionStore)
-  const sessionController = new SessionController(getConfig, onNewLogin, socket)
+  const sessionController = new SessionController(getConfig, reload)
   const webhookController = new WebhookController(outgoing, getConfig)
   const blacklistController = new BlacklistController(addToBlacklist)
   const contactsController = new ContactsController(contact)
@@ -67,7 +67,7 @@ export const router = (
   const groupsController = new GroupsController(incoming, outgoing, contact)
   const embeddedController = new EmbeddedController()
   const passkeyBridgeController = new PasskeyBridgeController(getConfig)
-  const pairingCodeController = new PairingCodeController(getConfig, incoming)
+  const pairingCodeController = new PairingCodeController(incoming)
   const connectController = new ConnectController(reload)
   const timerController = new TimerController()
 

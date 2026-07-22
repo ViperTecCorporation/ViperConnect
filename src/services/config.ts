@@ -2,6 +2,7 @@ import { getStore } from './store'
 import { getStoreFile } from './store_file'
 import { WAMessageKey, WAVersion } from '@whiskeysockets/baileys'
 import { Level } from 'pino'
+import { SessionProvider } from './providers/provider_types'
 
 export const configs: Map<string, Config> = new Map()
 
@@ -93,7 +94,7 @@ export type Config = {
   sendProfilePicture: boolean
   authToken: string | undefined
   authHeader: string | undefined
-  provider: 'baileys' | 'forwarder' | undefined
+  provider: SessionProvider | undefined
   server:  string | undefined
   connectionType: connectionType
   baileysCountryCode: string
@@ -132,7 +133,7 @@ export const defaultConfig: Config = {
   groupOnlyDeliveredStatus: true,
   readOnReceipt: false,
   readOnReply: false,
-  markOnlineOnConnect: true,
+  markOnlineOnConnect: false,
   ignoreHistoryMessages: true,
   clearAppStateSyncOnConnect: false,
   allowFullHistorySync: false,

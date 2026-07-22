@@ -2,6 +2,8 @@ import { amqpPublish } from '../amqp'
 import { RELOAD_PUBLISH_BROKER, UNOAPI_EXCHANGE_BRIDGE_NAME, UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_RELOAD } from '../defaults'
 import { getConfig } from './config'
 import { Reload } from './reload'
+import { providerQueueName } from './providers/provider_queue'
+import { WHATSAPP_ENGINES } from './providers/provider_types'
 
 export class ReloadAmqp extends Reload {
   private getConfig: getConfig
@@ -22,12 +24,12 @@ export class ReloadAmqp extends Reload {
         { type: 'topic' }
       )
     }
-    await amqpPublish(
+    await Promise.all(WHATSAPP_ENGINES.map((engine) => amqpPublish(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      `${UNOAPI_QUEUE_RELOAD}.${config.server!}`,
+      providerQueueName(UNOAPI_QUEUE_RELOAD, config.server || 'server_1', engine),
       '',
       { phone },
       { type: 'direct' }
-    )
+    )))
   }
 }

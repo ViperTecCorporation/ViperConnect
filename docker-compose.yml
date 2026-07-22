@@ -10,7 +10,7 @@ x-base: &base
   working_dir: /app
   env_file: 
     - /.env
-  environment:
+  environment: &base-environment
     NODE_ENV: development
     CHOKIDAR_USEPOLLING: "1"
     CHOKIDAR_INTERVAL: "300"
@@ -21,18 +21,47 @@ x-base: &base
     GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
 
 services:
-  cloud:
+  web:
     <<: *base
     restart: on-failure
     entrypoint:
       - sh
       - -lc
       - yarn install --check-files && yarn cloud-dev
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: web
     ports:
       - 9876:9876
       - 9229:9229
-    env_file: 
+    env_file:
     - /.env
+
+  broker:
+    <<: *base
+    restart: on-failure
+    entrypoint: [sh, -lc, "yarn install --check-files && yarn cloud-dev"]
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: broker
+
+  worker-baileys:
+    <<: *base
+    restart: on-failure
+    entrypoint: [sh, -lc, "yarn install --check-files && yarn cloud-dev"]
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: worker
+      UNOAPI_WORKER_ENGINE: baileys
+
+  worker-zapo:
+    <<: *base
+    restart: on-failure
+    entrypoint: [sh, -lc, "yarn install --check-files && yarn cloud-dev"]
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: worker
+      UNOAPI_WORKER_ENGINE: zapo
 
   rabbitmq:
     image: rabbitmq:4-management-alpine

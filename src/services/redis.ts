@@ -26,6 +26,7 @@ import {
   AUTH_SIGNAL_PRUNE_SESSION_LIMIT,
   SESSION_STATUS_CACHE_TTL_MS,
   CONNECT_COUNT_CACHE_TTL_MS,
+  CONTACT_INFO_TTL_SEC,
 } from '../defaults'
 import logger from './logger'
 import { GroupMetadata, proto } from '@whiskeysockets/baileys'
@@ -1637,7 +1638,7 @@ export const getContactInfo = async (phone: string, jid: string) => {
 }
 export const setContactInfo = async (phone: string, jid: string, info: any) => {
   const key = contactInfoKey(phone, jid)
-  return redisSetAndExpire(key, JSON.stringify(info || {}), SESSION_TTL)
+  return redisSetAndExpire(key, JSON.stringify(info || {}), CONTACT_INFO_TTL_SEC)
 }
 
 export const setContactSyncPending = async (phone: string, ttlSec: number) => {
@@ -1937,11 +1938,12 @@ export const setUnoId = async (phone: string, idBaileys: string, idUno: string) 
     const chosen = existing || idUno
     const reverseKey = providerIdKey(phone, chosen)
     await redisSetAndExpire(reverseKey, idBaileys, ttlSec)
-    return
+    return chosen
   }
 
   const reverseKey = providerIdKey(phone, idUno)
   await redisSetAndExpire(reverseKey, idBaileys, ttlSec)
+  return idUno
 }
 
 // Embedded/Meta Cloud mapping: phone_number_id -> phone session

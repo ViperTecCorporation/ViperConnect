@@ -39,6 +39,9 @@ This guide explains key environment variables, when to use them, and why. Copy `
 - `REDIS_URL` Ã¢â‚¬â€ Redis connection string.
   - Use to enable Redis store (sessions/data). Without it, filesystem store is used.
   - Example: `REDIS_URL=redis://localhost:6379`
+- `WHATSAPP_ENGINE` — default engine for sessions without a persisted `provider`; defaults to `baileys`.
+- `UNOAPI_WORKER_ENGINE` — engine owned by the worker process (`baileys` or `zapo`). In cloud mode, run one worker container for each engine.
+- `UNOAPI_PROCESS_ROLE` — role loaded by the cloud entrypoint: `all` (legacy monolith), `web`, `broker` or `worker`.
 - `AMQP_URL` Ã¢â‚¬â€ RabbitMQ URL for broker features.
   - Use to enable queue processing (web/worker model, retries, dead letters).
   - Example: `AMQP_URL=amqp://guest:guest@localhost:5672?frameMax=8192`
@@ -371,12 +374,11 @@ Skip sending the same message again when a job retry happens after a successful 
   - Increase when sending large media from slow servers.
   - Example: `FETCH_TIMEOUT_MS=15000`
 - `SEND_AUDIO_MESSAGE_AS_PTT` Ã¢â‚¬â€ Mark outgoing audio as PTT (voice note). Default `false`.
-- `CONVERT_AUDIO_TO_PTT` Ã¢â‚¬â€ Force conversion to OGG/Opus for PTT. Default `false`.
   - Use when clients expect voice notes with waveform.
   - Example:
     ```env
     SEND_AUDIO_MESSAGE_AS_PTT=true
-    CONVERT_AUDIO_TO_PTT=true
+    CONVERT_AUDIO_MESSAGE_TO_OGG=true
     ```
 
 ## Proxy
@@ -426,3 +428,28 @@ Skip sending the same message again when a job retry happens after a successful 
 ### Id Mapping (Baileys -> Unoapi)
 
 To keep a stable Unoapi id for the same Baileys message under retries or concurrent consumers, the service uses a Redis SET NX guard when persisting idBaileys -> idUno. This prevents multiple unoapi-id_rev entries for the same message when races occur.
+### Zapo e caches temporais
+
+| Variavel | Padrao | Uso |
+|---|---:|---|
+| `STATUS_RECIPIENT_RETENTION_SEC` | `2592000` | Retencao de destinatarios recentes de Status |
+| `CONTACT_INFO_TTL_SEC` | `2592000` | Expiracao do cache legado de contatos |
+| `ZAPO_REDIS_MESSAGES_TTL_MS` | `2592000000` | TTL do store oficial de mensagens Zapo |
+| `ZAPO_REDIS_THREADS_TTL_MS` | `2592000000` | TTL do store oficial de threads Zapo |
+| `ZAPO_REDIS_CONTACTS_TTL_MS` | `2592000000` | TTL do store oficial de contatos Zapo |
+| `ZAPO_REDIS_PRIVACY_TOKEN_TTL_MS` | `2592000000` | TTL do store oficial de privacy tokens Zapo |
+| `ZAPO_REDIS_SESSION_CRYPTO_TTL_MS` | `7776000000` | TTL deslizante de Signal, prekeys, sender keys e app-state; auth principal nao expira |
+| `ZAPO_REDIS_KEY_PREFIX` | `unoapi-zapo:` | Namespace exclusivo do store oficial Zapo |
+| `ZAPO_REDIS_MAINTENANCE_INTERVAL_MS` | `3600000` | Intervalo da remocao incremental de IDs vencidos dos indices de mensagem |
+| `ZAPO_SESSION_LEASE_TTL_MS` | `60000` | Validade da posse distribuida de uma sessao por worker |
+| `ZAPO_SESSION_LEASE_RENEW_MS` | `20000` | Renovacao da posse; o runtime limita o intervalo a metade do TTL |
+
+Layout das chaves:
+
+- `unoapi-zapo:*`: store oficial da Zapo. Mensagens, threads, contatos e tokens possuem TTL por dominio; credencial auth permanece persistente.
+- `unoapi-lease:zapo-session:<sessao>`: trava distribuida. Somente um worker abre o socket e executa a migracao da sessao.
+- `unoapi-status-recipients:<sessao>`: um sorted set temporal por sessao, sem criar uma chave por contato.
+- `unoapi-zapo-username-lid:<sessao>` e `:seen`: hash de aliases mais sorted set de expiracao por campo.
+- `unoapi-id*`, status e media: contratos publicos Uno compartilhados pelos dois motores.
+
+O indice oficial `msg:idx` e limpo incrementalmente porque o TTL do sorted set de uma conversa ativa pode ser renovado enquanto hashes de mensagens antigas ja expiraram. Se a renovacao da trava falhar, o worker Zapo desconecta de forma conservadora para evitar dois sockets na mesma conta. Replicas Zapo exigem Redis; em SQLite, use apenas um processo dono das sessoes.

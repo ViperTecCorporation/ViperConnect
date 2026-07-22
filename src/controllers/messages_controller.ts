@@ -40,10 +40,9 @@ import { Outgoing } from '../services/outgoing'
 import logger from '../services/logger'
 import { phoneNumberToJid } from '../services/transformer'
 import { allowSend } from '../services/rate_limit'
-import { CONTACT_SYNC_SCAN_COUNT } from '../defaults'
-import { BASE_KEY, getRedis } from '../services/redis'
 import { resolveSessionPhoneByMetaId } from '../services/meta_alias'
 import { sendGraphError } from '../services/graph_error'
+import { statusRecipients } from '../services/status/status_recipients'
 
 export class MessagesController {
   protected endpoint = 'messages'
@@ -71,33 +70,6 @@ export class MessagesController {
       }
     }
     return payload
-  }
-
-  private async loadStatusRecipientsFromContactInfo(phone: string): Promise<string[]> {
-    const prefix = `${BASE_KEY}contact-info:${phone}:`
-    const pattern = `${prefix}*`
-    const count = Math.max(10, CONTACT_SYNC_SCAN_COUNT || 500)
-    const out: string[] = []
-    try {
-      const redis: any = await getRedis()
-      let cursor = '0'
-      do {
-        const res: any = await redis.scan(cursor, { MATCH: pattern, COUNT: count })
-        cursor = (typeof res.cursor !== 'undefined') ? `${res.cursor}` : `${res[0]}`
-        const keys: string[] = Array.isArray(res.keys) ? res.keys : (res[1] || [])
-        for (const key of keys || []) {
-          if (!key.startsWith(prefix)) continue
-          const jid = key.substring(prefix.length)
-          if (!/^\d+@s\.whatsapp\.net$/.test(jid)) continue
-          const pn = jid.split('@')[0]
-          if (pn) out.push(pn)
-        }
-      } while (cursor !== '0')
-    } catch (e) {
-      logger.warn(e as any, 'Failed to load contact-info recipients for %s', phone)
-      return []
-    }
-    return Array.from(new Set(out))
   }
 
   public async index(req: Request, res: Response) {
@@ -128,11 +100,11 @@ export class MessagesController {
         if (typeof value === 'string') return value.trim().length === 0
         return false
       }
-      if (rawTo === 'status@broadcast' && (rawType === 'image' || rawType === 'video')) {
+      if (rawTo === 'status@broadcast') {
         if (isBlankStatusList(rawStatusList)) {
-          const statusRecipients = await this.loadStatusRecipientsFromContactInfo(sessionPhone)
-          payload.statusJidList = statusRecipients
-          logger.info('Status@broadcast auto statusJidList for %s: %d recipient(s)', sessionPhone, statusRecipients.length)
+          const recipients = await statusRecipients.loadOrBootstrap(sessionPhone)
+          payload.statusJidList = recipients
+          logger.info('Status@broadcast auto statusJidList for %s: %d recipient(s)', sessionPhone, recipients.length)
         }
       }
       // Allow passing Baileys options via body (e.g., for Stories/Broadcast)

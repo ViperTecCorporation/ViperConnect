@@ -255,6 +255,12 @@ export const mediaStoreFile = (phone: string, config: Config, getDataStore: getD
         throw e
       }
     }
+    return mediaStore.saveDownloadedMedia!(waMessage, buffer)
+  }
+
+  mediaStore.saveDownloadedMedia = async (waMessage: WAMessage, buffer: Buffer) => {
+    const initial = getBinMessage(waMessage)
+    const binMessage = initial
     let chosenMime: string = binMessage?.message?.mimetype
     let outBuffer: Buffer = buffer
     try {

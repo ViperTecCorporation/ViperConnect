@@ -1,10 +1,7 @@
 import { Request, Response } from 'express'
-import { Server } from 'socket.io'
 import { Config, defaultConfig, getConfig } from '../services/config'
 import logger from '../services/logger'
-import { Store } from '../services/store'
-import QRCode from 'qrcode'
-import { OnDisconnected, OnNewLogin, OnNotification, OnQrCode, OnReconnect, connect } from '../services/socket'
+import { Reload } from '../services/reload'
 
 const configuration = async (phone: string, getConfig: getConfig) => {
   const config = await getConfig(phone)
@@ -46,49 +43,16 @@ const configuration = async (phone: string, getConfig: getConfig) => {
   /* eslint-enable indent */
 }
 
-const qrcode = async (phone: string, getConfig: getConfig, onNewLogin: OnNewLogin, socket: Server) => {
-  const onQrCode: OnQrCode = async (qrCode: string) => {
-    logger.debug('Reveived qrcode', qrCode)
-    socket.emit('onQrCode', await QRCode.toString(qrCode))
-  }
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const onNotification: OnNotification = async () => {}
-  const onNewLoginLocal: OnNewLogin = async (phone: string) => {
-    await onNewLogin(phone)
-    const config = await getConfig(phone)
-    socket.emit('onNewLogin', { authToken: config.authToken })
-  }
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const onDisconnected: OnDisconnected = async () => {}
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  const onReconnect: OnReconnect = async () => {}
-  const config = await getConfig(phone)
-  const store: Store = await config.getStore(phone, config)
-  await connect({
-    phone,
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    store: store!,
-    attempts: 3,
-    time: 0,
-    onQrCode,
-    onNotification,
-    onNewLogin: onNewLoginLocal,
-    config,
-    onDisconnected,
-    onReconnect,
-  })
-
+const qrcode = async (phone: string, reload: Reload) => {
+  void reload.run(phone)
   return `<!DOCTYPE html>
     <script src="/socket.io.min.js"></script>
     <script>
-      var socket = io();
-      socket.on('onNewLogin', function(msg){
-        document.getElementById('qrcode').innerHTML = 'Pronto, seu token para authenticar é ' + msg.authToken;
-        socket.on('onQrCode', function() {})
-        socket.on('onNewLogin', function() {})
-      });
-      socket.on('onQrCode', function(qrcode){
-        document.getElementById('qrcode').innerHTML = qrcode;
+      const socket = io(window.location.origin, { path: '/ws' });
+      socket.on('broadcast', function(data){
+        if (String(data.phone || '') !== ${JSON.stringify(phone)}) return;
+        if (data.type === 'qrcode') document.getElementById('qrcode').innerHTML = '<img src="' + data.content + '" alt="QR Code">';
+        else document.getElementById('qrcode').textContent = data.content || '';
       });
     </script>
     <body>
@@ -99,13 +63,11 @@ const qrcode = async (phone: string, getConfig: getConfig, onNewLogin: OnNewLogi
 
 export class SessionController {
   private getConfig: getConfig
-  private onNewLogin: OnNewLogin
-  private socket: Server
+  private reload: Reload
 
-  constructor(getConfig: getConfig, onNewLogin: OnNewLogin, socket: Server) {
+  constructor(getConfig: getConfig, reload: Reload) {
     this.getConfig = getConfig
-    this.onNewLogin = onNewLogin
-    this.socket = socket
+    this.reload = reload
   }
 
   public async index(req: Request, res: Response) {
@@ -119,7 +81,7 @@ export class SessionController {
     const { sessionStore } = store
 
     const generateQrcode = (await sessionStore.isStatusDisconnect(phone)) || (await sessionStore.isStatusOffline(phone))
-    const html = generateQrcode ? await qrcode(phone, this.getConfig, this.onNewLogin, this.socket) : await configuration(phone, this.getConfig)
+    const html = generateQrcode ? await qrcode(phone, this.reload) : await configuration(phone, this.getConfig)
     return res.send(html)
   }
 }

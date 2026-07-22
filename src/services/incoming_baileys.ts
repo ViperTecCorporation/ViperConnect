@@ -5,7 +5,7 @@ import { OnNewLogin } from './socket'
 import logger from './logger'
 import { Listener } from './listener'
 
-export class IncomingBaileys implements Incoming {
+export class IncomingProvider implements Incoming {
   private service: Listener
   private getClient: getClient
   private getConfig: getConfig
@@ -44,6 +44,18 @@ export class IncomingBaileys implements Incoming {
       throw new Error(`Client ${phone} does not support delivery recovery`)
     }
     return client.recoverDelivery(payload, options)
+  }
+
+  public async contacts(phone: string, numbers: string[]) {
+    return (await this.client(phone)).contacts(numbers)
+  }
+
+  public async requestPairingCode(phone: string) {
+    const client = await this.client(phone)
+    if (typeof client.requestPairingCode !== 'function') {
+      throw new Error(`Client ${phone} does not support direct pairing-code requests`)
+    }
+    return client.requestPairingCode()
   }
 
   public async groupCreate(phone: string, subject: string, participants: string[]) {
@@ -102,3 +114,6 @@ export class IncomingBaileys implements Incoming {
     return client.groupMetadata(jid)
   }
 }
+
+/** @deprecated Use IncomingProvider. Kept for public import compatibility. */
+export class IncomingBaileys extends IncomingProvider {}

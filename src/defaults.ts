@@ -1,4 +1,4 @@
-import { WAVersion } from '@whiskeysockets/baileys'
+import type { WAVersion } from '@whiskeysockets/baileys'
 import { release } from 'os'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -8,6 +8,12 @@ const setDefaultEnv = (key: string, value: string) => {
   if (process.env[key] === _undefined || process.env[key] === '') {
     process.env[key] = value
   }
+}
+
+export const booleanEnv = (key: string, fallback: boolean) => {
+  const value = process.env[key]
+  if (value === _undefined || value === '') return fallback
+  return value === 'true'
 }
 
 setDefaultEnv('BAILEYS_WAM_TELEMETRY', 'true')
@@ -34,14 +40,10 @@ export const UNO_LOG_LEVEL = process.env.UNO_LOG_LEVEL || LOG_LEVEL
 
 export const DEFAULT_LOCALE = process.env.DEFAULT_LOCALE || 'en'
 
-export const VALIDATE_MEDIA_LINK_BEFORE_SEND = 
-  process.env.VALIDATE_MEDIA_LINK_BEFORE_SEND == _undefined ? false : process.env.VALIDATE_MEDIA_LINK_BEFORE_SEND == 'false'
+export const VALIDATE_MEDIA_LINK_BEFORE_SEND =
+  booleanEnv('VALIDATE_MEDIA_LINK_BEFORE_SEND', false)
 export const SEND_AUDIO_MESSAGE_AS_PTT = 
   process.env.SEND_AUDIO_MESSAGE_AS_PTT == _undefined ? true : process.env.SEND_AUDIO_MESSAGE_AS_PTT == 'true'
-// Whether to actually convert audio media to OGG/Opus when sending as PTT.
-// Defaults to the same value as SEND_AUDIO_MESSAGE_AS_PTT for backward compatibility.
-export const CONVERT_AUDIO_TO_PTT =
-  process.env.CONVERT_AUDIO_TO_PTT == _undefined ? SEND_AUDIO_MESSAGE_AS_PTT : process.env.CONVERT_AUDIO_TO_PTT == 'true'
 // Align with original behavior: gate conversion explicitly and allow ffmpeg params + waveform
 export const CONVERT_AUDIO_MESSAGE_TO_OGG =
   process.env.CONVERT_AUDIO_MESSAGE_TO_OGG == _undefined ? true : process.env.CONVERT_AUDIO_MESSAGE_TO_OGG == 'true'
@@ -72,7 +74,6 @@ export const WEBHOOK_FORWARD_URL = process.env.WEBHOOK_FORWARD_URL || 'https://g
 export const WEBHOOK_FORWARD_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_MS || '6000')
 
 // comunication
-export const UNOAPI_URL = process.env.UNOAPI_URL || 'http://localhost:9876'
 export const WEBHOOK_URL_ABSOLUTE = process.env.WEBHOOK_URL_ABSOLUTE || ''
 export const WEBHOOK_URL = process.env.WEBHOOK_URL || 'http://localhost:9876/webhooks/fake'
 export const WEBHOOK_HEADER = process.env.WEBHOOK_HEADER || 'Authorization'
@@ -80,6 +81,8 @@ export const WEBHOOK_TOKEN = process.env.WEBHOOK_TOKEN || UNOAPI_AUTH_TOKEN || '
 export const WEBHOOK_TIMEOUT_MS = parseInt(process.env.WEBHOOK_TIMEOUT_MS || '6000')
 export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '6000')
 export const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'qrcode'
+export const WHATSAPP_ENGINE = process.env.WHATSAPP_ENGINE || process.env.UNOAPI_WHATSAPP_ENGINE || 'baileys'
+export const UNOAPI_WORKER_ENGINE = process.env.UNOAPI_WORKER_ENGINE || 'baileys'
 export const PASSKEY_BRIDGE_TTL_SECONDS = parseInt(process.env.PASSKEY_BRIDGE_TTL_SECONDS || '120')
 
 export const CONSUMER_TIMEOUT_MS = parseInt(process.env.CONSUMER_TIMEOUT_MS || '15000')
@@ -119,10 +122,22 @@ export const CONTACT_SYNC_INTERVAL_MS = parseInt(process.env.CONTACT_SYNC_INTERV
 export const CONTACT_SYNC_SCAN_COUNT = parseInt(process.env.CONTACT_SYNC_SCAN_COUNT || '500')
 export const CONTACT_SYNC_PENDING_TTL_SEC = parseInt(process.env.CONTACT_SYNC_PENDING_TTL_SEC || '900')
 export const CONTACT_SYNC_PENDING_POLL_MS = parseInt(process.env.CONTACT_SYNC_PENDING_POLL_MS || '60000')
+// Um sorted-set por sessao evita uma chave Redis por destinatario de Status.
+// O score temporal remove contatos inativos de forma incremental.
+export const STATUS_RECIPIENT_RETENTION_SEC = parseInt(process.env.STATUS_RECIPIENT_RETENTION_SEC || `${30 * 24 * 60 * 60}`)
+export const CONTACT_INFO_TTL_SEC = parseInt(process.env.CONTACT_INFO_TTL_SEC || `${30 * 24 * 60 * 60}`)
+export const ZAPO_REDIS_MESSAGES_TTL_MS = parseInt(process.env.ZAPO_REDIS_MESSAGES_TTL_MS || `${30 * 24 * 60 * 60 * 1000}`)
+export const ZAPO_REDIS_THREADS_TTL_MS = parseInt(process.env.ZAPO_REDIS_THREADS_TTL_MS || `${30 * 24 * 60 * 60 * 1000}`)
+export const ZAPO_REDIS_CONTACTS_TTL_MS = parseInt(process.env.ZAPO_REDIS_CONTACTS_TTL_MS || `${30 * 24 * 60 * 60 * 1000}`)
+export const ZAPO_REDIS_PRIVACY_TOKEN_TTL_MS = parseInt(process.env.ZAPO_REDIS_PRIVACY_TOKEN_TTL_MS || `${30 * 24 * 60 * 60 * 1000}`)
+export const ZAPO_REDIS_SESSION_CRYPTO_TTL_MS = parseInt(process.env.ZAPO_REDIS_SESSION_CRYPTO_TTL_MS || `${90 * 24 * 60 * 60 * 1000}`)
+export const ZAPO_REDIS_KEY_PREFIX = process.env.ZAPO_REDIS_KEY_PREFIX || 'unoapi-zapo:'
+export const ZAPO_REDIS_MAINTENANCE_INTERVAL_MS = parseInt(process.env.ZAPO_REDIS_MAINTENANCE_INTERVAL_MS || `${60 * 60 * 1000}`)
+export const ZAPO_SESSION_LEASE_TTL_MS = parseInt(process.env.ZAPO_SESSION_LEASE_TTL_MS || '60000')
+export const ZAPO_SESSION_LEASE_RENEW_MS = parseInt(process.env.ZAPO_SESSION_LEASE_RENEW_MS || '20000')
 export const AMQP_URL = process.env.AMQP_URL || 'amqp://guest:guest@localhost:5672'
 export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
 // Opcional: força uso de SCAN no redisKeys (se falso, usa KEYS nos prefixos críticos)
-export const REDIS_KEYS_USE_SCAN = process.env.REDIS_KEYS_USE_SCAN === _undefined ? false : process.env.REDIS_KEYS_USE_SCAN === 'true'
 // TTL (ms) para cache local de config por sessao. 0 desabilita TTL (usa apenas invalidacao por pub/sub).
 export const CONFIG_CACHE_TTL_MS = parseInt(process.env.CONFIG_CACHE_TTL_MS || '0')
 // TTLs (ms) para cache local de sessao/auth (0 = somente invalidacao por pub/sub)
@@ -183,17 +198,14 @@ export const UNOAPI_EXCHANGE_BROKER_NAME =`${UNOAPI_EXCHANGE_NAME}.broker`
 export const UNOAPI_EXCHANGE_BRIDGE_NAME = `${UNOAPI_EXCHANGE_NAME}.brigde`
 export const UNOAPI_QUEUE_NAME = process.env.UNOAPI_QUEUE_NAME || 'unoapi'
 export const UNOAPI_QUEUE_OUTGOING_PREFETCH = parseInt(process.env.UNOAPI_QUEUE_OUTGOING_PREFETCH || '4')
-export const UNOAPI_QUEUE_DELAYED = `${UNOAPI_QUEUE_NAME}.delayed`
 export const UNOAPI_QUEUE_WEBHOOK_STATUS_FAILED = `${UNOAPI_QUEUE_NAME}.webhook.status.failed`
 export const UNOAPI_QUEUE_MEDIA = `${UNOAPI_QUEUE_NAME}.media`
 export const UNOAPI_QUEUE_NOTIFICATION = `${UNOAPI_QUEUE_NAME}.notification`
 export const UNOAPI_QUEUE_LISTENER = `${UNOAPI_QUEUE_NAME}.listener`
 export const UNOAPI_QUEUE_BLACKLIST_ADD = `${UNOAPI_QUEUE_NAME}.blacklist.add`
-export const UNOAPI_QUEUE_BLACKLIST_RELOAD = `${UNOAPI_QUEUE_NAME}.blacklist.reload`
 export const UNOAPI_QUEUE_BIND = `${UNOAPI_QUEUE_NAME}.bind`
 export const UNOAPI_QUEUE_TIMER = `${UNOAPI_QUEUE_NAME}.timer`
 export const UNOAPI_QUEUE_OUTGOING = `${UNOAPI_QUEUE_NAME}.outgoing`
-export const UNOAPI_QUEUE_CONTACT = `${UNOAPI_QUEUE_NAME}.contact`
 export const UNOAPI_QUEUE_BULK_PARSER = `${UNOAPI_QUEUE_NAME}.bulk.parser`
 export const UNOAPI_QUEUE_RELOAD = `${UNOAPI_QUEUE_NAME}.reload`
 export const UNOAPI_QUEUE_BROADCAST = `${UNOAPI_QUEUE_NAME}.broadcast`
@@ -331,8 +343,6 @@ export const GROUP_SEND_PREASSERT_SESSIONS =
 // Auto-retry once on 421 toggling addressing mode order (comma-separated: e.g., "pn,lid").
 // Por padrão desabilitado (fallback order vazio) para manter sempre LID em grupos,
 // a menos que explicitamente configurado via env.
-export const GROUP_SEND_RETRY_ON_421 =
-  process.env.GROUP_SEND_RETRY_ON_421 == _undefined ? true : process.env.GROUP_SEND_RETRY_ON_421 == 'true'
 export const GROUP_SEND_FALLBACK_ORDER = (process.env.GROUP_SEND_FALLBACK_ORDER || '')
 // Consider a group as "large" when participant count exceeds this threshold
 export const GROUP_LARGE_THRESHOLD = parseInt(process.env.GROUP_LARGE_THRESHOLD || '800')
@@ -387,7 +397,7 @@ export const PERIODIC_ASSERT_FORCE =
   process.env.PERIODIC_ASSERT_FORCE === _undefined ? false : process.env.PERIODIC_ASSERT_FORCE == 'true'
 // Incluir grupos no assert periódico (custo maior). Recomenda-se false
 export const PERIODIC_ASSERT_INCLUDE_GROUPS =
-  process.env.PERIODIC_ASSERT_INCLUDE_GROUPS === _undefined ? false : process.env.PERIODIC_ASSERT_INCLUDE_GROUPS == 'false'
+  booleanEnv('PERIODIC_ASSERT_INCLUDE_GROUPS', false)
 
 // Preassert 1:1 (assertSessions antes do envio)
 // Permite reduzir a frequência para diminuir latência/CPU em alto volume
@@ -399,7 +409,7 @@ export const ONE_TO_ONE_PREASSERT_COOLDOWN_MS = parseInt(process.env.ONE_TO_ONE_
 export const ONE_TO_ONE_PREASSERT_REDIS_TTL_SEC = parseInt(process.env.ONE_TO_ONE_PREASSERT_REDIS_TTL_SEC || `${0}`)
 // Habilita logs/sonda de contagem de chaves após preassert (custo extra de Redis)
 export const ONE_TO_ONE_ASSERT_PROBE_ENABLED =
-  process.env.ONE_TO_ONE_ASSERT_PROBE_ENABLED === _undefined ? false : process.env.ONE_TO_ONE_ASSERT_PROBE_ENABLED == 'false'
+  booleanEnv('ONE_TO_ONE_ASSERT_PROBE_ENABLED', false)
 export const ONE_TO_ONE_PREASSERT_PURGE_DEVICE_LIST: boolean =
   process.env.ONE_TO_ONE_PREASSERT_PURGE_DEVICE_LIST === _undefined ? false : process.env.ONE_TO_ONE_PREASSERT_PURGE_DEVICE_LIST == 'true'
 // Enable Redis Signal session purge before retrying send (watchdog). Default false for performance.

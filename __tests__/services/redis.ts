@@ -41,7 +41,7 @@ describe('redis.setUnoId', () => {
     const unoA = 'd1e105c0-0151-11f1-8086-41fa32916297'
     const unoB = 'cfc5edf0-0151-11f1-8086-41fa32916297'
 
-    await Promise.all([
+    const results = await Promise.all([
       setUnoId(phone, idBaileys, unoA),
       setUnoId(phone, idBaileys, unoB),
     ])
@@ -49,6 +49,7 @@ describe('redis.setUnoId', () => {
     const chosen = await getUnoId(phone, idBaileys)
     expect(chosen).toBeTruthy()
     expect([unoA, unoB]).toContain(chosen)
+    expect(results).toEqual([chosen, chosen])
 
     const provider = await getProviderId(phone, chosen!)
     expect(provider).toBe(idBaileys)

@@ -5,6 +5,8 @@ import { Listener } from './listener'
 import { OnNewLogin } from './socket'
 import logger from './logger'
 import { AUTO_CONNECT_CONCURRENCY, UNOAPI_SERVER_NAME } from '../defaults'
+import { resolveWhatsAppEngine } from './providers/provider_resolver'
+import { WhatsAppEngine } from './providers/provider_types'
 
 const runWithConcurrency = async <T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>) => {
   let next = 0
@@ -23,6 +25,7 @@ export const autoConnect = async (
   getConfig: getConfig,
   getClient: getClient,
   onNewLogin: OnNewLogin,
+  workerEngine?: WhatsAppEngine,
 ) => {
   try {
     const phones = await sessionStore.getPhones()
@@ -32,7 +35,7 @@ export const autoConnect = async (
       const phone = phones[i]
       try {
         const config = await getConfig(phone)
-        if (config.provider && !['forwarder', 'baileys'].includes(config.provider)) {
+        if (workerEngine && resolveWhatsAppEngine(config.provider) !== workerEngine) {
           continue
         }
         if (config.server && config.server !== UNOAPI_SERVER_NAME) {
@@ -47,7 +50,7 @@ export const autoConnect = async (
       const phone = phones[i]
       try {
         const config = await getConfig(phone)
-        if (config.provider && !['forwarder', 'baileys'].includes(config.provider)) {
+        if (workerEngine && resolveWhatsAppEngine(config.provider) !== workerEngine) {
           logger.info(`Ignore connecting phone ${phone} provider ${config.provider}...`)
           continue;
         }

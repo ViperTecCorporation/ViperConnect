@@ -3,7 +3,7 @@ version: '3'
 x-base: &base
   image: docker.io/clairton/unoapi-cloud:v1.9.0
   entrypoint: echo 'ok!'
-  environment:
+  environment: &base-environment
     AMQP_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672
     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     BASE_URL: ${BASE_URL}
@@ -63,7 +63,10 @@ x-minio: &minio
 services:
   web:
     <<: *base
-    entrypoint: yarn web
+    entrypoint: yarn cloud
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: web
     restart: always
     deploy:
       resources:
@@ -77,9 +80,12 @@ services:
       - default
       - external-dns
 
-  worker:
+  broker:
     <<: *base
-    entrypoint: yarn worker
+    entrypoint: yarn cloud
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: broker
     restart: always
     deploy:
       resources:
@@ -89,6 +95,28 @@ services:
         reservations:
           cpus: '0.25'
           memory: 128M
+    networks:
+      - default
+
+  worker-baileys:
+    <<: *base
+    entrypoint: yarn cloud
+    restart: always
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: worker
+      UNOAPI_WORKER_ENGINE: baileys
+    networks:
+      - default
+
+  worker-zapo:
+    <<: *base
+    entrypoint: yarn cloud
+    restart: always
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: worker
+      UNOAPI_WORKER_ENGINE: zapo
     networks:
       - default
 

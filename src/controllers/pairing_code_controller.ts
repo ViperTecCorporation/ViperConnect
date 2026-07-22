@@ -1,14 +1,11 @@
 import { Request, Response } from 'express'
-import { getConfig } from '../services/config'
 import logger from '../services/logger'
 import { Incoming } from '../services/incoming'
 
 export class PairingCodeController {
   private service: Incoming
-  private getConfig: getConfig
 
-  constructor(getConfig: getConfig, service: Incoming) {
-    this.getConfig = getConfig
+  constructor(service: Incoming) {
     this.service = service
   }
 
@@ -17,9 +14,11 @@ export class PairingCodeController {
     logger.debug('pairing code post params %s', JSON.stringify(req.params))
     logger.debug('pairing code post body %s', JSON.stringify(req.body))
     const { phone } = req.params
-    const config = await this.getConfig(phone)
-    config.connectionType = 'pairing_code'
     try {
+      if (typeof this.service.requestPairingCode === 'function') {
+        const code = await this.service.requestPairingCode(phone)
+        return res.status(200).json({ success: true, code })
+      }
       const message = {
         messaging_product: 'whatsapp',
         to: phone,
