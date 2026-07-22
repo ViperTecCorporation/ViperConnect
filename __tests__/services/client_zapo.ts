@@ -315,6 +315,48 @@ describe('ClientZapo', () => {
     )
   })
 
+  test('enriches group messages with the subject cached in Redis', async () => {
+    dataStore.getGroupMetada.mockResolvedValue({
+      id: '120363363045088699@g.us',
+      subject: 'Grupo correto',
+      participants: [],
+    })
+    await service.connect(1)
+
+    const message = await service.getMessageMetadata({
+      key: { id: 'group-cached', remoteJid: '120363363045088699@g.us' },
+      message: { conversation: 'mensagem' },
+    })
+
+    expect(message).toEqual(expect.objectContaining({
+      groupMetadata: expect.objectContaining({ subject: 'Grupo correto' }),
+    }))
+    expect(client.group.queryGroupMetadata).not.toHaveBeenCalledWith('120363363045088699@g.us')
+  })
+
+  test('queries and caches group metadata before the webhook when Redis is cold', async () => {
+    dataStore.getGroupMetada.mockResolvedValue(undefined)
+    client.group.queryGroupMetadata.mockResolvedValue({
+      id: '120363363045088699@g.us',
+      subject: 'Grupo recuperado',
+      participants: [],
+    } as never)
+    await service.connect(1)
+
+    const message = await service.getMessageMetadata({
+      key: { id: 'group-cold', remoteJid: '120363363045088699@g.us' },
+      message: { conversation: 'mensagem offline' },
+    })
+
+    expect(message).toEqual(expect.objectContaining({
+      groupMetadata: expect.objectContaining({ subject: 'Grupo recuperado' }),
+    }))
+    expect(dataStore.setGroupMetada).toHaveBeenCalledWith(
+      '120363363045088699@g.us',
+      expect.objectContaining({ subject: 'Grupo recuperado' }),
+    )
+  })
+
   test('persists complete Zapo credentials when pairing finishes', async () => {
     const credentials = { meJid: `${phone}@s.whatsapp.net` } as never
     await service.connect(1)

@@ -130,6 +130,24 @@ export class ClientZapo implements Client {
     }))
   }
 
+  private async enrichGroupMetadata<T>(message: T): Promise<T> {
+    const payload: any = message
+    const groupJid = `${payload?.key?.remoteJid || ''}`
+    if (!groupJid.endsWith('@g.us') || !this.unoStore) return message
+
+    let metadata = await this.unoStore.dataStore.getGroupMetada(groupJid)
+    if (!metadata && this.socket) {
+      try {
+        metadata = await this.socket.group.queryGroupMetadata(groupJid) as any
+        if (metadata) await this.unoStore.dataStore.setGroupMetada(groupJid, metadata)
+      } catch (error) {
+        logger.warn(error as any, 'Zapo group metadata lookup failed for %s', groupJid)
+      }
+    }
+    if (metadata) payload.groupMetadata = { ...metadata, ...(payload.groupMetadata || {}) }
+    return message
+  }
+
   private async forwardStoredHistory(maxAgeDays = this.config.historyMaxAgeDays, forceReplay = false) {
     if (!this.zapoSession) throw new SendError(409, 'zapo_client_not_connected')
     if (forceReplay) this.forwardedHistoryIds.clear()
@@ -769,7 +787,8 @@ export class ClientZapo implements Client {
   }
 
   async getMessageMetadata<T>(message: T) {
-    const enriched = await this.profilePictures?.enrich(message) ?? message
+    const withGroupMetadata = await this.enrichGroupMetadata(message)
+    const enriched = await this.profilePictures?.enrich(withGroupMetadata) ?? withGroupMetadata
     if (!this.socket) return enriched
     const value: any = enriched
     const id = `${value?.key?.id || ''}`
