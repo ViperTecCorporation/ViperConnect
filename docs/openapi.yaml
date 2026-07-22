@@ -402,6 +402,26 @@ paths:
           description: Não encontrado
 
   /{phone}/contacts:
+    get:
+      summary: Listar contatos armazenados da sessão Zapo
+      parameters:
+        - $ref: '#/components/parameters/PhonePath'
+        - in: query
+          name: cursor
+          schema: { type: string, default: '0' }
+          description: Cursor Redis devolvido em next_cursor pela página anterior
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
+      responses:
+        '200':
+          description: Página do diretório de contatos sincronizado pela Zapo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactDirectoryResponse'
+        '409':
+          description: A sessão não utiliza o provider Zapo
     post:
       summary: Verificar contatos
       parameters:
@@ -988,6 +1008,24 @@ components:
               wa_id: { type: string }
               input: { type: string }
               status: { type: string }
+
+    ContactDirectoryResponse:
+      type: object
+      required: [contacts, next_cursor, has_more]
+      properties:
+        contacts:
+          type: array
+          items:
+            type: object
+            required: [user_id, last_updated_ms]
+            properties:
+              user_id: { type: string, description: 'LID canônico do contato' }
+              phone_number: { type: string, description: 'Telefone somente em dígitos; celulares brasileiros normalizados com o nono dígito' }
+              display_name: { type: string }
+              push_name: { type: string }
+              last_updated_ms: { type: integer, format: int64 }
+        next_cursor: { type: string }
+        has_more: { type: boolean }
 
     MediaResponse:
       type: object

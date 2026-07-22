@@ -481,7 +481,7 @@ export class ClientZapo implements Client {
       logger.error(error as any, 'Zapo client error for %s', this.phone)
     })
     client.on('voip_call_incoming', (call: CallInfo) => {
-      void this.handleIncomingCall(client, call).catch((error) => {
+      return this.handleIncomingCall(client, call).catch((error) => {
         logger.error(error as any, 'Zapo incoming call rejection failed for %s call %s', this.phone, call.callId)
       })
     })

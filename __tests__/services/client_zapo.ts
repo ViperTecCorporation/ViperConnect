@@ -1,4 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+jest.mock('@zapo-js/voip', () => ({
+  voipPlugin: jest.fn().mockReturnValue({ name: 'voip' }),
+}))
+jest.mock('@zapo-js/media-utils', () => ({
+  createMediaProcessor: jest.fn().mockReturnValue({ process: jest.fn() }),
+}))
 jest.mock('../../src/services/zapo/zapo_migration', () => ({
   ensureZapoSessionMigration: jest.fn().mockResolvedValue({ status: 'migrated', losses: [] }),
 }))
@@ -616,7 +622,6 @@ describe('ClientZapo', () => {
       peerJid: '5511@s.whatsapp.net',
       callerPn: '5522@s.whatsapp.net',
     })
-    await new Promise((resolve) => setImmediate(resolve))
 
     expect(client.voip.rejectCall).toHaveBeenCalledWith('call-1')
     expect(client.message.send).toHaveBeenCalledWith('5522@s.whatsapp.net', {

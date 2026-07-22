@@ -34,6 +34,7 @@ import { PreflightController } from './controllers/preflight_controller'
 import { EmbeddedController } from './controllers/embedded_controller'
 import { GroupsController } from './controllers/groups_controller'
 import { PasskeyBridgeController } from './controllers/passkey_bridge_controller'
+import { ZapoContactDirectory } from './services/zapo/zapo_contact_directory'
 
 
 export const router = (
@@ -62,7 +63,7 @@ export const router = (
   const sessionController = new SessionController(getConfig, reload)
   const webhookController = new WebhookController(outgoing, getConfig)
   const blacklistController = new BlacklistController(addToBlacklist)
-  const contactsController = new ContactsController(contact)
+  const contactsController = new ContactsController(contact, new ZapoContactDirectory(getConfig))
   const preflightController = new PreflightController(getConfig, contact)
   const groupsController = new GroupsController(incoming, outgoing, contact)
   const embeddedController = new EmbeddedController()
@@ -122,6 +123,7 @@ export const router = (
   // Administrative helper: resolved Meta IDs per session (auth required)
   router.get('/sessions/meta/mappings', middleware, phoneNumberController.metaMappings.bind(phoneNumberController))
   router.get('/sessions/:phone', sessionController.index.bind(sessionController))
+  router.get('/:phone/contacts', middleware, contactsController.get.bind(contactsController))
   router.post('/:phone/contacts', middleware, contactsController.post.bind(contactsController))
   router.post('/:version/:phone/register', middleware, registrationController.register.bind(registrationController))
   router.post('/:version/:phone/deregister', middleware, registrationController.deregister.bind(registrationController))
