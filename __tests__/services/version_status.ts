@@ -1,3 +1,4 @@
+import { version as packageVersion } from '../../package.json'
 import {
   compareVersions,
   newestVersionTag,
@@ -6,8 +7,11 @@ import {
 } from '../../src/services/version_status'
 
 describe('version status', () => {
+  test('reads the installed version from the project manifest', () => {
+    expect(readInstalledVersion()).toBe(packageVersion)
+  })
+
   test('compares stable and prerelease tags naturally', () => {
-    expect(readInstalledVersion()).toBe('4.0.30')
     expect(compareVersions('v4.0.0-beta10', '4.0.0-beta9')).toBeGreaterThan(0)
     expect(compareVersions('4.0.0', '4.0.0-beta10')).toBeGreaterThan(0)
     expect(compareVersions('5.0.0-beta', '4.9.9')).toBeGreaterThan(0)
