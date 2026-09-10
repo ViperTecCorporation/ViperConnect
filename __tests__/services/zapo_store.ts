@@ -56,5 +56,9 @@ describe('zapo store', () => {
       cacheProviders: expect.objectContaining({ retry: 'redis', groupMetadata: 'redis', chatMetadata: 'redis' }),
     }))
     expect(store).toBeDefined()
+    const options = jest.mocked(createRedisStore).mock.calls.at(-1)![0]
+    expect(options.storeTtlMs).toEqual({
+      contactsMs: expect.any(Number), messagesMs: expect.any(Number), threadsMs: expect.any(Number),
+    })
   })
 })

@@ -63,13 +63,14 @@ export class ReloadBaileys extends Reload {
       const { sessionStore } = store
       const isConnecting = await sessionStore.isStatusConnecting(phone)
       const isRestartRequired = await sessionStore.isStatusRestartRequired(phone)
-      if (isConnecting || isRestartRequired) {
+      const isZapo = resolveWhatsAppEngine(config.provider) === 'zapo'
+      if (!isZapo && (isConnecting || isRestartRequired)) {
         logger.warn('Skip destructive reload for %s while status is transitional (connecting=%s restartRequired=%s)', phone, isConnecting, isRestartRequired)
         return
       }
       const isOnline = await sessionStore.isStatusOnline(phone)
       const isStandBy = await sessionStore.isStatusStandBy(phone)
-      if (isOnline || isStandBy) {
+      if (isZapo || isOnline || isStandBy) {
         logger.warn('Reload disconnect session %s!', phone)
         await currentClient.disconnect()
       }

@@ -222,6 +222,13 @@ enabled. The local negotiation, initialization order and codec round trips are
 covered by tests. MeowCaller currently provides an in-progress codec-selection
 scaffold; this README does not claim its RFC Opus fallback is complete upstream.
 
+The decoder can legitimately return a duration that is shorter or longer than
+one 960-sample bridge frame. Inbound PCM is therefore accumulated per call and
+emitted only as ordered 960-sample frames: long outputs are split, short outputs
+are joined with the next decode, and an incomplete remainder is discarded on
+call cleanup. Delivery failures are counted separately as `pcmDeliveryErrors`;
+they do not inflate `srtpErrors` after authentication and decoding succeeded.
+
 MeowCaller revision `6d9b7b2` observes settings at inbound offer, outbound ACK,
 and outbound accept, with the last explicit valid value winning, but its media
 loop still instantiates MLow and signals a fixed 16 kHz rate. ViperConnect
@@ -253,7 +260,7 @@ No `koffi` or bundled native codec libraries are required.
 
 The signaling and media stack (RTP/SRTP, SCTP relay, codec, audio engine) is internal to the package; use `client.voip` and the events above.
 
-The vendored suite currently has `201/201` passing tests. On 2026-08-05, eight
+The vendored suite currently has `210/210` passing tests. On 2026-08-05, eight
 live calls (two inbound and two outbound on an iPhone 16, then the same matrix
 on a Galaxy S9e) completed with bidirectional audio and no SRTP or Opus error.
 All used the first relay candidate; forced live failover remains a separate

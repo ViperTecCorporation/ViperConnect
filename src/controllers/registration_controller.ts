@@ -8,6 +8,7 @@ import { resolveSessionPhoneByMetaId } from '../services/meta_alias'
 import { resolveSessionProvider, resolveWhatsAppEngine } from '../services/providers/provider_resolver'
 import { resolveRegistrationConnectionType } from '../services/providers/connection_type_policy'
 import { isProviderRuntimeEnabled } from '../services/providers/provider_runtime_policy'
+import { isWebhookOnlyUpdate } from '../services/webhook_only_update'
 
 export class RegistrationController {
   private static readonly REGISTER_DEBOUNCE_MS = 15000
@@ -73,6 +74,12 @@ export class RegistrationController {
       }
       await setConfig(phone, requestedConfig)
       const config = await this.getConfig(phone)
+      if (storedConfig && config.provider === 'zapo' && Array.isArray(req.body.webhooks) && isWebhookOnlyUpdate(previousConfig, config)) {
+        // setConfig publishes cache invalidation to every process. The webhook
+        // pipeline reads the fresh config; the WhatsApp socket need not restart.
+        logger.info('Applied webhook configuration without reconnect phone=%s', phone)
+        return res.status(200).json(config)
+      }
       const providerChanged = resolveWhatsAppEngine(previousConfig.provider) !== resolveWhatsAppEngine(config.provider)
       const now = Date.now()
       const last = RegistrationController.lastRegisterAtByPhone.get(phone) || 0

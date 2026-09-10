@@ -70,6 +70,9 @@ export declare class WaCallMediaSession implements AudioSender {
     private recvRealCount;
     private recvDtxCount;
     private srtpErrorCount;
+    private pcmDeliveryErrorCount;
+    private pcmDeliveredFrameCount;
+    private readonly inboundPcmFrames;
     private relayPacketCount;
     private stunResponseCount;
     private selfEchoCount;

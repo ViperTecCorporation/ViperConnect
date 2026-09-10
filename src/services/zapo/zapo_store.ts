@@ -7,10 +7,9 @@ import { createStore, WaStore, WaStoreBackend } from 'zapo-js'
 import {
   ZAPO_REDIS_CONTACTS_TTL_MS,
   ZAPO_REDIS_MESSAGES_TTL_MS,
-  ZAPO_REDIS_PRIVACY_TOKEN_TTL_MS,
-  ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
   ZAPO_REDIS_THREADS_TTL_MS,
 } from '../../defaults'
+import { registerZapoStatePreparation } from './zapo_persistent_state'
 
 const persistentDomains = (backend: string) => ({
   auth: backend,
@@ -75,33 +74,30 @@ export type ZapoStoreConfig = {
 export const createZapoStore = (config: ZapoStoreConfig): WaStore => {
   const backendName = config.useRedis ? 'redis' : 'sqlite'
   let backend: WaStoreBackend
+  let redisBackend: ReturnType<typeof createRedisStore> | undefined
   if (config.useRedis) {
     if (!config.redisUrl) throw new Error('REDIS_URL is required for the Zapo Redis store')
-    backend = createRedisStore({
+    redisBackend = createRedisStore({
       redis: redisOptionsFromUrl(config.redisUrl),
       keyPrefix: resolveZapoRedisKeyPrefix(config.redisKeyPrefix),
       storeTtlMs: {
-        preKeyMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
-        sessionMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
-        identityMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
-        signalMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
-        senderKeyMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
-        appStateMs: ZAPO_REDIS_SESSION_CRYPTO_TTL_MS,
         messagesMs: ZAPO_REDIS_MESSAGES_TTL_MS,
         threadsMs: ZAPO_REDIS_THREADS_TTL_MS,
         contactsMs: ZAPO_REDIS_CONTACTS_TTL_MS,
-        privacyTokenMs: ZAPO_REDIS_PRIVACY_TOKEN_TTL_MS,
       },
     })
+    backend = redisBackend
   } else {
     const path = zapoSqlitePath(config.baseStore)
     mkdirSync(dirname(path), { recursive: true })
     backend = createSqliteStore({ path, driver: 'auto' })
   }
 
-  return createStore({
+  const store = createStore({
     backends: { [backendName]: backend },
     providers: persistentDomains(backendName),
     cacheProviders: cacheDomains(backendName),
   })
+  if (redisBackend) registerZapoStatePreparation(store, redisBackend.redis, resolveZapoRedisKeyPrefix(config.redisKeyPrefix))
+  return store
 }

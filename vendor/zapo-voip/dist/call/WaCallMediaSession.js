@@ -10,6 +10,7 @@ const srtcp_js_1 = require("../crypto/srtcp.js");
 const srtp_js_1 = require("../crypto/srtp.js");
 const ssrc_js_1 = require("../crypto/ssrc.js");
 const mlow_codec_js_1 = require("../media/mlow-codec.js");
+const pcm_frame_accumulator_js_1 = require("../media/pcm-frame-accumulator.js");
 const rtp_js_1 = require("../media/rtp.js");
 const WaAudioEngine_js_1 = require("../media/WaAudioEngine.js");
 const relay_ack_js_1 = require("../relay/relay-ack.js");
@@ -27,6 +28,7 @@ const REMOTE_MEDIA_CONTROL_RECHECK_MS = 500;
 const REMOTE_MEDIA_CONTROL_FRESH_MS = 2500;
 const REMOTE_MEDIA_CONTROL_STARTUP_TIMEOUT_MS = 3000;
 const REMOTE_MEDIA_ESTABLISHED_AUDIO_FRAMES = 10;
+const INBOUND_PCM_FRAME_SAMPLES = 960;
 class WaCallMediaSession {
     info;
     deps;
@@ -81,6 +83,9 @@ class WaCallMediaSession {
     recvRealCount = 0;
     recvDtxCount = 0;
     srtpErrorCount = 0;
+    pcmDeliveryErrorCount = 0;
+    pcmDeliveredFrameCount = 0;
+    inboundPcmFrames = new pcm_frame_accumulator_js_1.PcmFrameAccumulator(INBOUND_PCM_FRAME_SAMPLES);
     relayPacketCount = 0;
     stunResponseCount = 0;
     selfEchoCount = 0;
@@ -177,6 +182,7 @@ class WaCallMediaSession {
             this.opusCodec = replacement;
             priorCodec?.destroy();
             this.resetEncodeState();
+            this.inboundPcmFrames.clear();
             codecReinitialized = true;
         }
         this.logger.debug('voip_diag audio_codec_selected', {
@@ -969,6 +975,9 @@ class WaCallMediaSession {
             relayPackets: this.relayPacketCount,
             recvOk: this.audioRecvCount,
             srtpErrors: this.srtpErrorCount,
+            pcmDeliveredFrames: this.pcmDeliveredFrameCount,
+            pcmDeliveryErrors: this.pcmDeliveryErrorCount,
+            pcmPendingSamples: this.inboundPcmFrames.pendingSamples,
             sent: this.audioSendCount,
             dropped: this.audioDropCount,
             opusOk: opusStats?.success ?? 0,
@@ -990,6 +999,9 @@ class WaCallMediaSession {
         this.audioDropCount = 0;
         this.audioRecvCount = 0;
         this.srtpErrorCount = 0;
+        this.pcmDeliveryErrorCount = 0;
+        this.pcmDeliveredFrameCount = 0;
+        this.inboundPcmFrames.clear();
         this.relayPacketCount = 0;
         this.stunResponseCount = 0;
         this.selfEchoCount = 0;
@@ -1292,6 +1304,7 @@ class WaCallMediaSession {
                 }
             }
         }
+        let audioData;
         try {
             const rtpPacket = this.srtpSession.unprotect(data);
             const opusPayload = rtpPacket.payload;
@@ -1330,14 +1343,7 @@ class WaCallMediaSession {
                     recvDtx: this.recvDtxCount
                 });
             }
-            let audioData = this.opusCodec.decode(opusPayload);
-            if (audioData.length > 0 && audioData.length < 960) {
-                const padded = new Float32Array(960);
-                padded.set(audioData);
-                audioData = padded;
-            }
-            this.audioEngine.onPlaybackData(audioData);
-            this.delegate.emitInboundAudio(this.info, audioData);
+            audioData = this.opusCodec.decode(opusPayload);
             if (this.audioRecvCount % 100 === 0) {
                 const stats = this.opusCodec.getStats();
                 this.logger.debug('audio recv stats', {
@@ -1370,6 +1376,26 @@ class WaCallMediaSession {
                     relaySelfParticipantJid: this.info.relayData?.selfParticipantJid,
                     relayPeerParticipantJid: this.info.relayData?.peerParticipantJid,
                     selfMediaJid: this.selfMediaJid,
+                    message: (0, util_1.toError)(err).message
+                });
+            }
+            return;
+        }
+        try {
+            for (const frame of this.inboundPcmFrames.push(audioData)) {
+                this.audioEngine.onPlaybackData(frame);
+                this.delegate.emitInboundAudio(this.info, frame);
+                this.pcmDeliveredFrameCount++;
+            }
+        }
+        catch (err) {
+            this.pcmDeliveryErrorCount++;
+            if (this.pcmDeliveryErrorCount <= 5) {
+                this.logger.debug('inbound pcm delivery error', {
+                    callId: this.info.callId,
+                    errorCount: this.pcmDeliveryErrorCount,
+                    decodedSamples: audioData.length,
+                    pendingSamples: this.inboundPcmFrames.pendingSamples,
                     message: (0, util_1.toError)(err).message
                 });
             }

@@ -277,19 +277,23 @@ capacidade recebe contrato, adaptador, teste e documentação próprios.
 
 ## Verificação do estado atual
 
-- 201/201 testes do plugin incorporado passaram no mesmo runtime Node usado na verificação;
+- 210/210 testes do plugin incorporado passaram no mesmo runtime Node usado na verificação;
 - builds TypeScript CommonJS e ESM do plugin passaram;
 - `git diff --check` passou nos arquivos da auditoria;
-- a revisão 09 foi aplicada como hostpatch somente no worker Zapo sobre a
-  imagem `4.0.20`; o serviço VoIP não foi reiniciado;
+- a revisão 09 foi incorporada à imagem unificada `4.0.29`;
+- o hostpatch `pcm-frame-20260828-01` foi aplicado somente no worker Zapo sobre
+  `4.0.29`; o serviço VoIP não foi reiniciado;
 - as oito chamadas reais descritas acima passaram com áudio bidirecional em
   iPhone 16 e Galaxy S9e;
+- cinco chamadas adicionais validaram o framing PCM variável. No destinatário
+  que reproduzia a falha, 474 decodes viraram 787 quadros válidos e os 787
+  chegaram ao bridge, sem erro SRTP, Opus ou PCM;
 - o serviço SIP/VoIP não precisou ser reiniciado porque a mudança validada está
   no plugin incorporado executado pelo worker.
 
-A revisão 09 ainda não está incorporada a uma imagem publicada. A promoção
-exige uma nova imagem unificada, os mesmos testes e execução sem mounts sobre
-`dist`; até lá, o rollback operacional é a revisão 08 do hostpatch.
+O framing PCM passa a integrar `@vipertec/zapo-voip` `1.0.0-viper.6` e a imagem
+unificada `v4.0.30`. Após atualizar, o canário deve ser repetido sem mounts
+sobre `dist` antes da remoção do hostpatch operacional.
 
 Os testes automatizados provam envelopes, vetores, recuperação e contratos
 locais. Os canários provam o caminho normal com relay vivo e duas chamadas

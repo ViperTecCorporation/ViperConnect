@@ -4,7 +4,7 @@ A UnoAPI usa o pacote `@vipertec/zapo-voip`, mantido diretamente em
 `vendor/zapo-voip` dentro do ViperConnect. Ele nao depende de acompanhar um fork
 completo do repositorio Zapo.
 
-Versão atualmente integrada: `1.0.0-viper.5`.
+Versão atualmente integrada: `1.0.0-viper.6`.
 
 O pacote e incorporado ao build por `file:vendor/zapo-voip`. A pasta contem o
 codigo-fonte auditavel e o `dist` usado em producao, tornando a imagem
@@ -109,12 +109,12 @@ existente; o servico VoIP pode manter RTP/SIP IPv4 para o ramal. Nao ha NAT64
 de pacotes. Em 2026-08-21, uma entrada por dados moveis confirmou RTP remoto
 pelo IPv6 de `bsb1c01`; uma entrada Wi-Fi de regressao confirmou RTP pelo IPv4
 de `gru2c01`. Ambas tiveram audio bidirecional e zero erro SRTP/Opus. Essa
-validacao ocorreu no hostpatch 09 e ainda precisa ser incorporada a uma imagem
-unificada antes da promocao definitiva.
+validacao ocorreu no hostpatch 09 e foi incorporada à imagem unificada
+`v4.0.29`.
 
 ## Estado de verificacao e deploy
 
-- `201/201` testes do plugin vendorizado passaram no runtime usado para a
+- `210/210` testes do plugin vendorizado passaram no runtime usado para a
   verificacao local;
 - os builds CommonJS e ESM incluem a negociacao de codec e o guard da perna
   local espelhada;
@@ -132,6 +132,11 @@ unificada antes da promocao definitiva.
   Zapo. Ele ignora `<reject>` numa chamada inbound sem alterar arquivos de
   midia; o CommonJS ativo foi conferido nos dois caminhos com SHA-256
   `f49be3653f094e78de8b8a71f9d56934060c080be09f310d6e042c0ed2f7d511`;
+- o hostpatch `pcm-frame-20260828-01` foi aplicado somente ao worker Zapo sobre
+  `4.0.29`. Cinco chamadas bidirecionais confirmaram a normalização por blocos
+  de 960; o caso antes problemático produziu 787 quadros, todos recebidos pelo
+  bridge, com zero erro SRTP, Opus ou PCM. O código integra a versão
+  `1.0.0-viper.6` e a imagem unificada `v4.0.30`;
 - em 2026-08-05 foram validadas oito chamadas bidirecionais: duas entradas e
   duas saidas SIP com iPhone 16, seguidas pela mesma matriz com Galaxy S9e;
 - todas estabilizaram no primeiro relay, com contadores remotos autenticados

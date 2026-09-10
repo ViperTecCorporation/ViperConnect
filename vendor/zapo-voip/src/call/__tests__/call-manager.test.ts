@@ -1342,6 +1342,91 @@ test('media path is confirmed only after remote SRTP authentication succeeds', a
     assert.deepEqual(selected, [{ connectionId: 'relay-valid', confirmed: true }])
 })
 
+test('inbound media splits a 1920-sample decode into exact bridge frames', async () => {
+    const { deps, stores } = createMockDeps()
+    const manager = new WaCallManager({ deps, stores })
+    const callId = await manager.startCall({ peerJid: '2222222222@lid' })
+    const session = (manager as any).calls.get(callId)
+    const peerSsrc = session.peerSsrcs[0]
+    const packet = new Uint8Array(12)
+    packet[0] = 0x80
+    packet[1] = 120
+    packet[8] = (peerSsrc >>> 24) & 0xff
+    packet[9] = (peerSsrc >>> 16) & 0xff
+    packet[10] = (peerSsrc >>> 8) & 0xff
+    packet[11] = peerSsrc & 0xff
+    const decoded = Float32Array.from({ length: 1920 }, (_, index) => index)
+    const received: Float32Array[] = []
+
+    session.sctpRelay.selectMediaConnection = () => true
+    session.audioEngine.onPlaybackData = () => undefined
+    session.opusCodec = {
+        decode: () => decoded,
+        getStats: () => ({ success: 1, errors: 0 }),
+        destroy: () => undefined
+    }
+    session.srtpSession = {
+        unprotect: () => ({
+            header: { sequenceNumber: 1, timestamp: 1920, ssrc: peerSsrc },
+            payload: new Uint8Array([0xf8, 0xff, 0xfe])
+        })
+    }
+    manager.on('call_inbound_audio', (_call, pcm) => received.push(pcm))
+
+    session.onRelayData(packet, 'relay-valid')
+
+    assert.equal(received.length, 2)
+    assert.deepEqual(received[0], decoded.slice(0, 960))
+    assert.deepEqual(received[1], decoded.slice(960))
+    assert.deepEqual(received.map((frame) => frame.length), [960, 960])
+    assert.equal(session.srtpErrorCount, 0)
+    assert.equal(session.pcmDeliveryErrorCount, 0)
+    assert.equal(session.pcmDeliveredFrameCount, 2)
+    manager.destroy()
+})
+
+test('inbound media delivery failures are not reported as SRTP failures', async () => {
+    const { deps, stores } = createMockDeps()
+    const { logger, entries } = createCaptureLogger()
+    const manager = new WaCallManager({ deps, stores, logger })
+    const callId = await manager.startCall({ peerJid: '2222222222@lid' })
+    const session = (manager as any).calls.get(callId)
+    const peerSsrc = session.peerSsrcs[0]
+    const packet = new Uint8Array(12)
+    packet[0] = 0x80
+    packet[1] = 120
+    packet[8] = (peerSsrc >>> 24) & 0xff
+    packet[9] = (peerSsrc >>> 16) & 0xff
+    packet[10] = (peerSsrc >>> 8) & 0xff
+    packet[11] = peerSsrc & 0xff
+
+    session.sctpRelay.selectMediaConnection = () => true
+    session.audioEngine.onPlaybackData = () => undefined
+    session.opusCodec = {
+        decode: () => new Float32Array(960),
+        getStats: () => ({ success: 1, errors: 0 }),
+        destroy: () => undefined
+    }
+    session.srtpSession = {
+        unprotect: () => ({
+            header: { sequenceNumber: 1, timestamp: 960, ssrc: peerSsrc },
+            payload: new Uint8Array([0xf8, 0xff, 0xfe])
+        })
+    }
+    manager.on('call_inbound_audio', () => {
+        throw new Error('bridge unavailable')
+    })
+
+    session.onRelayData(packet, 'relay-valid')
+
+    assert.equal(session.srtpErrorCount, 0)
+    assert.equal(session.pcmDeliveryErrorCount, 1)
+    assert.equal(session.pcmDeliveredFrameCount, 0)
+    assert.ok(entries.some((entry) => entry.message === 'inbound pcm delivery error'))
+    assert.equal(entries.some((entry) => entry.message === 'srtp recv error'), false)
+    manager.destroy()
+})
+
 test('startCall blocks when maxConcurrentCalls is reached', async () => {
     const { deps, stores } = createMockDeps()
     const manager = new WaCallManager({ deps, stores, maxConcurrentCalls: 1 })

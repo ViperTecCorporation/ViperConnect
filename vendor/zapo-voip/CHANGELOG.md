@@ -1,5 +1,18 @@
 # @vipertec/zapo-voip
 
+## 1.0.0-viper.6
+
+- Normaliza o PCM decodificado por chamada antes do bridge: quadros maiores
+  são divididos, fragmentos menores são acumulados e somente blocos ordenados
+  de 960 amostras são entregues.
+- Remove o preenchimento artificial de fragmentos curtos e preserva restos até
+  o próximo decode, descartando apenas a sobra incompleta no encerramento.
+- Separa falhas de entrega PCM de falhas de autenticação SRTP e acrescenta
+  `pcmDeliveredFrames`, `pcmDeliveryErrors` e `pcmPendingSamples` ao resumo da
+  chamada.
+- Adiciona regressão para 320+640, 960, 1200+720 e 1920 amostras, além da
+  validação integrada de entrega e classificação de erros.
+
 ## 1.0.0-viper.5
 
 - Valida o contrato vendorizado de sinalização, relay, mídia, IPv4/IPv6 e

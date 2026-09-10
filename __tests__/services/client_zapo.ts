@@ -33,6 +33,7 @@ import { updatePasskeyBridgeSession } from '../../src/services/passkey_bridge'
 import { voipPlugin } from '@vipertec/zapo-voip'
 import { zapoUsernameIndex } from '../../src/services/zapo/zapo_username_index'
 import { decryptZapoPollVoteWithJidFallback } from '../../src/services/zapo/zapo_poll_addon_decrypt'
+import { registerZapoStatePreparation } from '../../src/services/zapo/zapo_persistent_state'
 
 describe('ClientZapo', () => {
   const phone = '5566999999999'
@@ -110,6 +111,99 @@ describe('ClientZapo', () => {
     jest.clearAllTimers()
     jest.useRealTimers()
     clients.clear()
+  })
+
+  test('waits for existing key persistence before loading auth or connecting', async () => {
+    let finish!: (result: [string, string[]]) => void
+    const scan = jest.fn().mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const store = (service as any).storeRegistry.get(config)
+    registerZapoStatePreparation(store, { scan } as any, 'unoapi:zapo:')
+    const connecting = service.connect(1)
+    while (!scan.mock.calls.length) await new Promise((resolve) => setImmediate(resolve))
+    expect(session.auth.load).not.toHaveBeenCalled()
+    expect(client.connect).not.toHaveBeenCalled()
+    finish(['0', []])
+    await connecting
+    expect(client.connect).toHaveBeenCalledTimes(1)
+  })
+
+  test('online starts the presence pulse and disconnect stops it', async () => {
+    jest.useFakeTimers()
+    config.markOnlineOnConnect = false
+    await service.connect(1)
+    expect(client.presence.send).not.toHaveBeenCalled()
+    await handlers.connection({ status: 'open' })
+    await jest.advanceTimersByTimeAsync(0)
+    expect(client.presence.send).toHaveBeenCalledWith('available')
+    expect(client.presence.send).toHaveBeenCalledWith('unavailable')
+    await service.disconnect()
+    client.presence.send.mockClear()
+    await jest.advanceTimersByTimeAsync(3 * 60 * 60 * 1000)
+    expect(client.presence.send).not.toHaveBeenCalled()
+  })
+
+  test.each([false, true])('connection close stops presence (isLogout=%s)', async (isLogout) => {
+    jest.useFakeTimers()
+    await service.connect(1)
+    await handlers.connection({ status: 'open' })
+    await jest.advanceTimersByTimeAsync(0)
+    await handlers.connection({ status: 'close', isLogout })
+    client.presence.send.mockClear()
+    await jest.advanceTimersByTimeAsync(3 * 60 * 60 * 1000)
+    expect(client.presence.send).not.toHaveBeenCalled()
+  })
+
+  test('disconnect cancels a pending connect so a fresh attempt can generate QR', async () => {
+    client.connect.mockReturnValueOnce(new Promise(() => undefined))
+    const first = service.connect(1)
+    const rejected = expect(first).rejects.toThrow('zapo_operation_cancelled')
+    while (!handlers.auth_qr) await new Promise((resolve) => setImmediate(resolve))
+    await service.disconnect()
+    await rejected
+    await service.connect(1)
+    expect(client.connect).toHaveBeenCalledTimes(2)
+  })
+
+  test('a close event releases the pending handshake before reconnecting', async () => {
+    client.connect.mockReturnValueOnce(new Promise(() => undefined))
+    const first = service.connect(1)
+    const rejected = expect(first).rejects.toThrow('zapo_operation_cancelled')
+    while (!handlers.connection) await new Promise((resolve) => setImmediate(resolve))
+    await handlers.connection({ status: 'close', isLogout: false })
+    await rejected
+    await service.connect(1)
+    expect(client.connect).toHaveBeenCalledTimes(2)
+  })
+
+  test('logout invalidates the old socket so manual pairing cannot reuse it', async () => {
+    await service.connect(1)
+    await handlers.connection({ status: 'close', isLogout: true })
+    await expect(service.requestPairingCode()).rejects.toThrow('zapo_client_not_connected')
+    await service.connect(1)
+    await expect(service.requestPairingCode()).resolves.toBe('1234-5678')
+    expect(client.connect).toHaveBeenCalledTimes(2)
+  })
+
+  test('times out a stuck connection and allows another attempt', async () => {
+    jest.useFakeTimers()
+    client.connect.mockReturnValueOnce(new Promise(() => undefined))
+    const first = service.connect(1)
+    const rejected = expect(first).rejects.toThrow('zapo_connection_prompt_timeout')
+    await jest.advanceTimersByTimeAsync(60_000)
+    await rejected
+    expect(client.disconnect).toHaveBeenCalled()
+    await service.connect(1)
+    expect(client.connect).toHaveBeenCalledTimes(2)
+  })
+
+  test('a timed-out pairing request does not block the next code request', async () => {
+    jest.useFakeTimers()
+    await service.connect(1)
+    client.auth.requestPairingCode.mockReturnValueOnce(new Promise(() => undefined))
+    const rejected = expect(service.requestPairingCode()).rejects.toThrow('zapo_pairing_code_timeout')
+    await jest.advanceTimersByTimeAsync(30_000)
+    await rejected
+    await expect(service.requestPairingCode()).resolves.toBe('1234-5678')
   })
 
   test('requires a full history sync when connecting a new Zapo pairing', async () => {

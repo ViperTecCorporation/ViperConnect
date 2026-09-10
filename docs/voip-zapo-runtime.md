@@ -1,6 +1,6 @@
 # Runtime VoIP Zapo: dependencias, protocolo e solucao de midia
 
-Estado consolidado em 2026-08-21. Este documento e a fonte canonica para
+Estado consolidado em 2026-08-28. Este documento e a fonte canonica para
 entender onde cada parte da telefonia executa, quais dependencias pertencem a
 cada processo e quais correcoes estabilizaram o audio 1:1.
 
@@ -43,8 +43,8 @@ O WebSocket worker Zapo -> VoIP continua na rede Docker atual. O bridge termina
 as duas pernas de midia independentemente, portanto um relay WhatsApp IPv6 pode
 alimentar um ramal SIP IPv4 sem NAT64. O caminho de relay IPv6 foi validado ao
 vivo em 2026-08-21, depois dos KATs de `te2`, STUN, bind e rejeicao de familia
-incompativel. A validacao atual pertence ao hostpatch do worker; a promocao para
-release ainda exige uma imagem unificada sem mounts sobre `dist`.
+incompativel. A validação do framing PCM variável foi feita primeiro como
+hostpatch somente no worker e promovida para a imagem unificada `v4.0.30`.
 
 ## Fontes de verdade do build
 
@@ -72,7 +72,7 @@ atual não usa `repository_dispatch` nem `UNIFIED_IMAGE_DISPATCH_TOKEN`. Se o
 repositório VoIP for privado, configure `VOIP_REPOSITORY_TOKEN` no ViperConnect
 para o checkout do SHA exato.
 
-A imagem unificada `v4.0.29` incorpora o VoIP `v0.1.65`, revisão
+A imagem unificada `v4.0.30` incorpora o VoIP `v0.1.65`, revisão
 `8fb39da48a7c98ff97f104ea46a46775ac5c3f5e`. O SHA exato é resolvido e gravado pelo
 workflow no label e em `SOURCE_REVISION`. Ela mantém SIP, RTP, media bridge,
 internal RTP proxy e Coturn em IPv4/IPv6 paralelos. O IPv4 anterior permanece
@@ -105,7 +105,7 @@ As dependencias que formam o caminho de chamada sao:
 | Pacote/componente | Versao | Papel |
 | --- | --- | --- |
 | `zapo-js` | `1.8.1` | cliente Zapo, sessão, transporte e primitivas de protocolo |
-| `@vipertec/zapo-voip` | `1.0.0-viper.5` (`file:vendor/zapo-voip`) | plugin vendorizado de sinalização e mídia VoIP |
+| `@vipertec/zapo-voip` | `1.0.0-viper.6` (`file:vendor/zapo-voip`) | plugin vendorizado de sinalização e mídia VoIP |
 | `libmlow-wasm` | `0.1.1` | encode/decode MLow e RFC Opus selecionado por chamada |
 | `ws` | `^8.21.1` | bridge autenticado com o processo de telefonia |
 | `relay-bridge` | binario Go estatico | UDP, DTLS, SCTP e DataChannel direto com o relay |
@@ -173,6 +173,19 @@ binario fixo:
 No sentido WhatsApp para SIP, o vendor decodifica o Opus remoto e publica PCM
 `uno_to_voip`. No sentido SIP para WhatsApp, a telefonia envia PCM
 `voip_to_uno`, e o vendor aplica backpressure, codec, RTP e SRTP.
+
+O decoder pode devolver durações legítimas diferentes de um quadro do bridge,
+inclusive até 1.920 amostras. Cada chamada possui um acumulador independente:
+
+- saídas maiores são divididas em blocos de 960 sem truncamento;
+- fragmentos menores aguardam o próximo decode, sem preenchimento artificial
+  com silêncio;
+- somente quadros completos atravessam o WebSocket;
+- a sobra incompleta é descartada no cleanup e nunca contamina outra chamada.
+
+O resumo `call stats` diferencia `srtpErrors` de `pcmDeliveryErrors` e publica
+`pcmDeliveredFrames` e `pcmPendingSamples`. Um erro posterior ao decode não é
+mais classificado como falha de autenticação SRTP.
 
 ## Contrato de relay implementado
 
@@ -395,6 +408,21 @@ chamadas adicionais. Os call IDs
 | `dist/call/WaCallMediaSession.js` | `87d0011588c10451ef68301a22128264a327ac2e8aab8641a5834be35d6c61d8` |
 | `dist/call/WaCallManager.js` | `f49be3653f094e78de8b8a71f9d56934060c080be09f310d6e042c0ed2f7d511` |
 | `dist/signaling/bridge.js` | `d99a6e28ab14975f15dc1fa682a45ceb868d9a5fc124fde81172c883d720f9cb` |
+
+Em 2026-08-28, uma nova falha intermitente foi isolada depois do decode MLow:
+o decoder podia devolver uma duração válida diferente de 960 amostras, mas o
+bridge rejeita corretamente qualquer frame `VPA1` fora desse tamanho. O erro
+era registrado como `srtp recv error` mesmo quando SRTP e Opus já tinham sido
+processados, dificultando o diagnóstico.
+
+O hostpatch `pcm-frame-20260828-01` foi aplicado somente ao worker Zapo sobre a
+imagem `4.0.29`; o serviço VoIP não foi reiniciado. Quatro chamadas com iPhone
+16 e Galaxy S9e passaram com áudio bidirecional. Uma quinta chamada para o
+destinatário que reproduzia a falha confirmou o caminho de divisão: 474
+decodes produziram 787 quadros completos e um resto de 320 amostras. O serviço
+VoIP recebeu exatamente os mesmos 787 quadros, 773 com áudio não nulo, sem erro
+SRTP, Opus, PCM ou bridge. Essa correção foi promovida para
+`@vipertec/zapo-voip` `1.0.0-viper.6` e para a imagem unificada `v4.0.30`.
 
 ## Regras para manutencao e release
 

@@ -15,6 +15,7 @@ import {
     prepareWasmRelayStreamSsrcs
 } from '../crypto/ssrc.js'
 import { MLowCodec, type MLowCodecOptions } from '../media/mlow-codec.js'
+import { PcmFrameAccumulator } from '../media/pcm-frame-accumulator.js'
 import { isOpusDtxPayload, isWhatsappOpusPayloadType, RtpSession } from '../media/rtp.js'
 import { WaAudioEngine } from '../media/WaAudioEngine.js'
 import { parseRelayFromAck } from '../relay/relay-ack.js'
@@ -66,6 +67,7 @@ const REMOTE_MEDIA_CONTROL_RECHECK_MS = 500
 const REMOTE_MEDIA_CONTROL_FRESH_MS = 2500
 const REMOTE_MEDIA_CONTROL_STARTUP_TIMEOUT_MS = 3000
 const REMOTE_MEDIA_ESTABLISHED_AUDIO_FRAMES = 10
+const INBOUND_PCM_FRAME_SAMPLES = 960
 
 export interface WaCallMediaSessionDelegate {
     emitState(call: CallInfo): void
@@ -144,6 +146,9 @@ export class WaCallMediaSession implements AudioSender {
     private recvRealCount = 0
     private recvDtxCount = 0
     private srtpErrorCount = 0
+    private pcmDeliveryErrorCount = 0
+    private pcmDeliveredFrameCount = 0
+    private readonly inboundPcmFrames = new PcmFrameAccumulator(INBOUND_PCM_FRAME_SAMPLES)
     private relayPacketCount = 0
     private stunResponseCount = 0
     private selfEchoCount = 0
@@ -282,6 +287,7 @@ export class WaCallMediaSession implements AudioSender {
             this.opusCodec = replacement
             priorCodec?.destroy()
             this.resetEncodeState()
+            this.inboundPcmFrames.clear()
             codecReinitialized = true
         }
 
@@ -1224,6 +1230,9 @@ export class WaCallMediaSession implements AudioSender {
             relayPackets: this.relayPacketCount,
             recvOk: this.audioRecvCount,
             srtpErrors: this.srtpErrorCount,
+            pcmDeliveredFrames: this.pcmDeliveredFrameCount,
+            pcmDeliveryErrors: this.pcmDeliveryErrorCount,
+            pcmPendingSamples: this.inboundPcmFrames.pendingSamples,
             sent: this.audioSendCount,
             dropped: this.audioDropCount,
             opusOk: opusStats?.success ?? 0,
@@ -1249,6 +1258,9 @@ export class WaCallMediaSession implements AudioSender {
         this.audioDropCount = 0
         this.audioRecvCount = 0
         this.srtpErrorCount = 0
+        this.pcmDeliveryErrorCount = 0
+        this.pcmDeliveredFrameCount = 0
+        this.inboundPcmFrames.clear()
         this.relayPacketCount = 0
         this.stunResponseCount = 0
         this.selfEchoCount = 0
@@ -1615,6 +1627,7 @@ export class WaCallMediaSession implements AudioSender {
             }
         }
 
+        let audioData: Float32Array
         try {
             const rtpPacket = this.srtpSession.unprotect(data)
             const opusPayload = rtpPacket.payload
@@ -1655,16 +1668,7 @@ export class WaCallMediaSession implements AudioSender {
                 })
             }
 
-            let audioData = this.opusCodec.decode(opusPayload)
-
-            if (audioData.length > 0 && audioData.length < 960) {
-                const padded = new Float32Array(960)
-                padded.set(audioData)
-                audioData = padded
-            }
-
-            this.audioEngine.onPlaybackData(audioData)
-            this.delegate.emitInboundAudio(this.info, audioData)
+            audioData = this.opusCodec.decode(opusPayload)
 
             if (this.audioRecvCount % 100 === 0) {
                 const stats = this.opusCodec.getStats()
@@ -1699,6 +1703,26 @@ export class WaCallMediaSession implements AudioSender {
                     relaySelfParticipantJid: this.info.relayData?.selfParticipantJid,
                     relayPeerParticipantJid: this.info.relayData?.peerParticipantJid,
                     selfMediaJid: this.selfMediaJid,
+                    message: toError(err).message
+                })
+            }
+            return
+        }
+
+        try {
+            for (const frame of this.inboundPcmFrames.push(audioData)) {
+                this.audioEngine.onPlaybackData(frame)
+                this.delegate.emitInboundAudio(this.info, frame)
+                this.pcmDeliveredFrameCount++
+            }
+        } catch (err: unknown) {
+            this.pcmDeliveryErrorCount++
+            if (this.pcmDeliveryErrorCount <= 5) {
+                this.logger.debug('inbound pcm delivery error', {
+                    callId: this.info.callId,
+                    errorCount: this.pcmDeliveryErrorCount,
+                    decodedSamples: audioData.length,
+                    pendingSamples: this.inboundPcmFrames.pendingSamples,
                     message: toError(err).message
                 })
             }

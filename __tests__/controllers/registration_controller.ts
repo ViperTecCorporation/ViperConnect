@@ -24,6 +24,21 @@ const response = () => {
 describe('RegistrationController connection type policy', () => {
   beforeEach(() => jest.clearAllMocks())
 
+  test('applies consecutive webhook changes without reconnecting an existing Zapo session', async () => {
+    const before = { ...defaultConfig, provider: 'zapo' as const }
+    const after = { ...before, webhooks: [{ ...before.webhooks[0], id: 'type', url: 'https://example.test' }] }
+    storedConfigMock.mockResolvedValue({ provider: 'zapo' })
+    const reload = mockDeep<Reload>()
+    const getConfig = jest.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after)
+      .mockResolvedValueOnce(after).mockResolvedValueOnce({ ...after, webhooks: [] })
+    const controller = new RegistrationController(getConfig, reload, mockDeep<Logout>())
+    const req = { params: { phone: '5566000000099' }, body: { webhooks: after.webhooks }, headers: {}, query: {} } as unknown as Request
+    await controller.register(req, response())
+    await controller.register(req, response())
+    expect(setConfigMock).toHaveBeenCalledTimes(2)
+    expect(reload.run).not.toHaveBeenCalled()
+  })
+
   test('an offline Zapo register cannot switch QR to pairing code without deregister', async () => {
     const config = { ...defaultConfig, provider: 'zapo' as const, connectionType: 'qrcode' as const }
     storedConfigMock.mockResolvedValue({ provider: 'zapo', connectionType: 'qrcode' })

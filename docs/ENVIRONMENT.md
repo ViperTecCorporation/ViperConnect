@@ -378,8 +378,6 @@ To keep a stable Unoapi id for the same Baileys message under retries or concurr
 | `ZAPO_REDIS_MESSAGES_TTL_MS` | `2592000000` | TTL do store oficial de mensagens Zapo |
 | `ZAPO_REDIS_THREADS_TTL_MS` | `2592000000` | TTL do store oficial de threads Zapo |
 | `ZAPO_REDIS_CONTACTS_TTL_MS` | `2592000000` | TTL do store oficial de contatos Zapo |
-| `ZAPO_REDIS_PRIVACY_TOKEN_TTL_MS` | `2592000000` | TTL do store oficial de privacy tokens Zapo |
-| `ZAPO_REDIS_SESSION_CRYPTO_TTL_MS` | `7776000000` | TTL deslizante de Signal, prekeys, sender keys e app-state; auth principal nao expira |
 | `ZAPO_REDIS_KEY_PREFIX` | `unoapi:zapo:` | Namespace exclusivo do store oficial Zapo; o valor legado `unoapi-zapo:` e convertido automaticamente |
 | `ZAPO_REDIS_MAINTENANCE_INTERVAL_MS` | `3600000` | Intervalo da remocao incremental de IDs vencidos dos indices de mensagem |
 | `ZAPO_SESSION_LEASE_TTL_MS` | `60000` | Validade da posse distribuida de uma sessao por worker |
@@ -387,7 +385,7 @@ To keep a stable Unoapi id for the same Baileys message under retries or concurr
 
 Layout das chaves:
 
-- `unoapi-zapo:*`: store oficial da Zapo. Mensagens, threads, contatos e tokens possuem TTL por dominio; credencial auth permanece persistente.
+- `unoapi:zapo:*`: store oficial da Zapo. Mensagens, threads e contatos possuem TTL por dominio; auth, estado criptografico e privacidade permanecem persistentes. A atualizacao remove TTLs antigos desses dominios antes de abrir o socket; veja [migracao de persistencia](zapo-state-persistence.md).
 - `unoapi-lease:zapo-session:<sessao>`: trava distribuida. Somente um worker abre o socket ou conduz o novo pareamento da sessao.
 - `unoapi-status-recipients:<sessao>`: um sorted set temporal por sessao, sem criar uma chave por contato.
 - `unoapi-zapo-username-lid:<sessao>` e `:seen`: hash de aliases mais sorted set de expiracao por campo.
