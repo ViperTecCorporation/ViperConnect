@@ -14,6 +14,8 @@ import type { Store } from './store'
 import { SendError } from './send_error'
 import { zapoStoreRegistry, type ZapoStoreRegistry } from './zapo/zapo_store_registry'
 import { ZapoGroups } from './zapo/zapo_groups'
+import { ZapoPresenceHeartbeat } from './zapo/zapo_presence_heartbeat'
+import { prepareZapoState } from './zapo/zapo_persistent_state'
 import { normalizeZapoPhoneJid, resolveZapoPhoneJid } from './zapo/zapo_contact_resolver'
 import { ZapoMessages } from './zapo/zapo_messages'
 import { isEncryptedZapoAddonMessage, toUnoAddonEvent, toUnoMessageEvent, toUnoReceiptUpdates } from './zapo/zapo_events'
@@ -62,6 +64,7 @@ import { ZapoVoiceCallerIdentityResolver } from './zapo/voice/zapo_voice_caller_
 import { normalizeInteractiveMediaForWebhook } from './messages/interactive_media'
 import { BoundedTtlSet } from '../utils/bounded_ttl_cache'
 import { createYouTubeLinkPreviewResolverForTransport } from './messages/youtube_link_preview'
+import { zapoOperationDeadline } from './zapo/zapo_operation_deadline'
 
 type VoipCoordinator = ReturnType<ReturnType<typeof voipPlugin>['setup']>
 type ZapoClient = WaClientType & {
@@ -87,6 +90,7 @@ export class ClientZapo implements Client {
   private profilePictures?: ZapoProfilePictures
   private catalog?: ZapoCatalog
   private connectTask?: Promise<void>
+  private socketAbort = new AbortController()
   private connected = false
   private readonly pendingIncoming = new Map<string, any>()
   private readonly decryptedAddonIds = new Set<string>()
@@ -111,6 +115,7 @@ export class ClientZapo implements Client {
   private pairingCodeIssued = false
   private connectionGeneration = 0
   private voiceBridge?: ZapoVoiceBridgeClient
+  private readonly presenceHeartbeat: ZapoPresenceHeartbeat
 
   constructor(
     private readonly phone: string,
@@ -121,7 +126,9 @@ export class ClientZapo implements Client {
     private readonly clientFactory: ClientFactory = defaultClientFactory,
     private readonly leaseFactory: LeaseFactory = (session) => new RedisLease(`zapo-session:${session}`, ZAPO_SESSION_LEASE_TTL_MS),
     private readonly maintenance: ZapoRedisMaintenance = zapoRedisMaintenance,
-  ) {}
+  ) {
+    this.presenceHeartbeat = new ZapoPresenceHeartbeat(phone)
+  }
 
   private async emitQr(value: string, isCurrent: () => boolean) {
     const imageUrl = await QRCode.toDataURL(value)
@@ -340,15 +347,20 @@ export class ClientZapo implements Client {
     if (this.pairingCodeIssued && !forceRefresh) return undefined
 
     this.pairingCodeIssued = true
-    const request = client.auth.requestPairingCode(this.phone.replace(/\D/g, ''))
+    const request = zapoOperationDeadline(
+      client.auth.requestPairingCode(this.phone.replace(/\D/g, '')),
+      30_000, this.socketAbort.signal, 'zapo_pairing_code_timeout',
+    )
     this.pairingCodeRequest = request
     void request.then(
       () => {
         if (this.pairingCodeRequest === request) this.pairingCodeRequest = undefined
       },
       () => {
-        if (this.pairingCodeRequest === request) this.pairingCodeRequest = undefined
-        this.pairingCodeIssued = false
+        if (this.pairingCodeRequest === request) {
+          this.pairingCodeRequest = undefined
+          this.pairingCodeIssued = false
+        }
       },
     )
     return request
@@ -415,6 +427,7 @@ export class ClientZapo implements Client {
       if (event.status === 'open') {
         const credentials = client.getCredentials()
         if (credentials) await this.zapoSession?.auth.save(credentials)
+        if (!isCurrent()) return
         const registered = clients.get(this.phone)
         if (registered && registered !== this) {
           logger.warn('Discarding duplicate Zapo socket for %s after reconnect race', this.phone)
@@ -424,6 +437,7 @@ export class ClientZapo implements Client {
         }
         clients.set(this.phone, this)
         this.connected = true
+        this.presenceHeartbeat.start(client, this.config.markOnlineOnConnect, () => isCurrent() && this.connected)
         this.voiceBridge?.start()
         this.reconnectAttempts = 0
         await this.unoStore?.sessionStore.setStatus(this.phone, 'online')
@@ -435,20 +449,24 @@ export class ClientZapo implements Client {
         return
       }
       this.connected = false
+      this.presenceHeartbeat.stop()
       this.voiceBridge?.stop(event.isLogout ? 'session_unlinked' : 'connection_closed')
       this.pendingPasskey?.reject(new SendError(502, event.isLogout ? 'zapo_passkey_session_unlinked' : 'zapo_passkey_connection_closed'))
       try {
         await this.unoStore?.sessionStore.setStatus(this.phone, event.isLogout ? 'disconnected' : 'offline')
       } finally {
-        if (this.socket === client && !event.isLogout && !this.intentionalDisconnect) {
+        if (this.socket === client && !this.intentionalDisconnect) {
           this.connectionGeneration += 1
           this.socket = undefined
           this.messages = undefined
           this.groups = undefined
           this.profilePictures = undefined
           this.catalog = undefined
+          this.pairingCodeRequest = undefined
+          this.pairingCodeIssued = false
+          this.socketAbort.abort()
           await this.releaseRuntimeOwnership()
-          this.scheduleReconnect()
+          if (!event.isLogout) this.scheduleReconnect()
         }
       }
     })
@@ -846,6 +864,7 @@ export class ClientZapo implements Client {
 
   private async handleRuntimeOwnershipLoss(reason: string, error?: unknown) {
     if (!this.lease) return
+    this.presenceHeartbeat.stop()
     logger.error(error as any, 'Zapo session ownership lost for %s (%s); disconnecting socket', this.phone, reason)
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
@@ -868,6 +887,7 @@ export class ClientZapo implements Client {
   }
 
   private async releaseRuntimeOwnership() {
+    this.presenceHeartbeat.stop()
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
     this.leaseRenewTimer = undefined
@@ -940,6 +960,11 @@ export class ClientZapo implements Client {
     await sessionStore.setStatus(this.phone, 'connecting')
 
     const zapoStore = this.storeRegistry.get(this.config)
+    const preparationGeneration = this.connectionGeneration
+    await prepareZapoState(zapoStore)
+    if (this.intentionalDisconnect || preparationGeneration !== this.connectionGeneration) {
+      throw new Error('zapo_operation_cancelled')
+    }
     this.zapoSession = zapoStore.session(this.phone)
     this.pairingCodeRequest = undefined
     this.pairingCodeIssued = false
@@ -994,6 +1019,7 @@ export class ClientZapo implements Client {
           })
         : undefined
     this.socket = client
+    this.socketAbort = new AbortController()
     this.messages = new ZapoMessages(client, this.unoStore.dataStore, {
       customMessageCharactersFunction: this.config.customMessageCharactersFunction,
       composingMessage: this.config.composingMessage,
@@ -1029,11 +1055,26 @@ export class ClientZapo implements Client {
       await this.handleConnectionFailure(client, error)
       if (!promptResolved) throw error
     })
-    await Promise.race([socketConnect, prompt])
+    try {
+      await zapoOperationDeadline(
+        Promise.race([socketConnect, prompt]), 60_000,
+        this.socketAbort.signal, 'zapo_connection_prompt_timeout',
+      )
+    } catch (error) {
+      if (this.socket === client && !this.intentionalDisconnect) {
+        await this.handleConnectionFailure(client, error)
+        // Invalidate callbacks before closing a timed-out library operation.
+        void Promise.resolve(client.disconnect()).catch(() => undefined)
+      }
+      throw error
+    }
   }
 
   async disconnect() {
+    this.presenceHeartbeat.stop()
     this.intentionalDisconnect = true
+    this.socketAbort.abort()
+    const pendingConnect = this.connectTask
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = undefined
     this.reconnectAttempts = 0
@@ -1054,16 +1095,24 @@ export class ClientZapo implements Client {
     this.decryptedAddonIds.clear()
     this.forwardedHistoryIds.clear()
     try {
-      if (socket) await socket.disconnect()
-      await this.unoStore?.sessionStore.setStatus(this.phone, 'offline')
+      if (socket) await zapoOperationDeadline(
+        Promise.resolve(socket.disconnect()), 10_000,
+        new AbortController().signal, 'zapo_disconnect_timeout',
+      )
     } finally {
+      await pendingConnect?.catch(() => undefined)
       clients.delete(this.phone)
       configs.delete(this.phone)
-      await this.releaseRuntimeOwnership()
+      try {
+        await this.unoStore?.sessionStore.setStatus(this.phone, 'offline')
+      } finally {
+        await this.releaseRuntimeOwnership()
+      }
     }
   }
 
   async logout() {
+    this.presenceHeartbeat.stop()
     this.intentionalDisconnect = true
     const socket = this.socket
     try {

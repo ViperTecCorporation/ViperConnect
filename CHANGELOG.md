@@ -49,6 +49,17 @@ The format is based on Keep a Changelog and follows SemVer when applicable.
 - Feat: profile pictures use canonical PN for filenames/keys (FS and S3); getters/setters consider PN and LID variants and log fallbacks.
 - Docs: update README and environment/architecture docs (PT-BR and EN) to describe LID/PN behavior, group addressing, webhook PN-first policy, and profile picture canonicalization.
 
+## [4.0.31] - 2026-09-10
+
+- Atualiza Zapo para 1.8.2, preservando o vendor VoIP 1.0.0-viper.6.
+- Aplica alteracoes exclusivas de webhook sem reconectar a sessao.
+- Corrige lifecycle de reconexao, QR e codigo de pareamento com prazos limitados.
+- Envia pulso de presenca ao conectar e a cada tres horas, restaurando unavailable
+  quando markOnlineOnConnect estiver desativado.
+- Mantem estado criptografico e privacidade persistentes no Redis, remove as
+  antigas ENVs de TTL e migra chaves existentes com SCAN/PERSIST antes do socket.
+- Incorpora motor VoIP 0.1.65, revisao 8fb39da48a7c98ff97f104ea46a46775ac5c3f5e.
+
 ## [4.0.30] - 2026-08-28
 
 ### Fixed
