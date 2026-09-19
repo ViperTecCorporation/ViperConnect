@@ -1179,6 +1179,19 @@ export const setSessionStatus = async (phone: string, status: string) => {
   await publishSessionStatusUpdate(phone)
 }
 
+// One transaction keeps PN/LID addition, TTL updates and removal consistent.
+export const setBlacklistAliases = async (from: string, webhookId: string, aliases: string[], ttl: number) => {
+  const redisClient = await getRedis()
+  const transaction = redisClient.multi()
+  for (const alias of new Set(aliases)) {
+    const key = blacklist(from, webhookId, alias)
+    if (ttl === 0) transaction.del(key)
+    else if (ttl > 0) transaction.set(key, '1', { EX: ttl })
+    else transaction.set(key, '1')
+  }
+  await transaction.exec()
+}
+
 export const delSessionStatus = async (phone: string) => {
   const key = sessionStatusKey(phone)
   await redisDel(key)

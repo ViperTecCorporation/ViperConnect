@@ -17,6 +17,17 @@ const getConfigTest: getConfig = async (_phone: string) => {
 }
 
 describe('blacklist routes', () => {
+  test.each(['50113712017501@lid', '5566996269251', '120363426717231138@g.us'])('accepts add/remove for %s and preserves explicit zero TTL', async to => {
+    const app = new App(mock<Incoming>(), mock<Outgoing>(), '', getConfigTest, sessionStore,
+      mock<OnNewLogin>(), addToBlacklist, mock<Reload>(), mock<Logout>())
+    for (const ttl of [-1, 60, 0]) {
+      const res = await request(app.server).post('/2/blacklist/type?ttl=99').send({ to, ttl })
+      expect(res.status).toBe(200)
+      expect(addToBlacklist).toHaveBeenLastCalledWith('2', 'type', to, ttl)
+    }
+    const invalid = await request(app.server).post('/2/blacklist/type').send({ to, ttl: 'invalid' })
+    expect(invalid.status).toBe(400)
+  })
   test('update', async () => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()

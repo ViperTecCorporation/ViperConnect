@@ -119,7 +119,26 @@ import {
   getConfig,
   delConfig,
   sessionPhoneIndexKey,
+  setBlacklistAliases,
+  blacklist,
 } from '../../src/services/redis'
+
+describe('redis blacklist identity transaction', () => {
+  beforeEach(() => mockClient.__reset())
+  test.each([-1, 60])('adds and removes all aliases atomically with ttl %s', async ttl => {
+    const aliases = ['551234567890', '123@lid']
+    await setBlacklistAliases('session', 'type', aliases, ttl)
+    expect(mockClient.multi).toHaveBeenCalledTimes(1)
+    for (const alias of aliases) expect(store.has(blacklist('session', 'type', alias))).toBe(true)
+    await setBlacklistAliases('session', 'type', aliases, 0)
+    for (const alias of aliases) expect(store.has(blacklist('session', 'type', alias))).toBe(false)
+  })
+  test('propagates transaction failure without applying half an update', async () => {
+    mockClient.failNextExec = true
+    await expect(setBlacklistAliases('session', 'type', ['123@lid', '551234567890'], -1)).rejects.toThrow('transaction failed')
+    expect(store.size).toBe(0)
+  })
+})
 
 describe('redis session phone index writes', () => {
   beforeEach(() => {
