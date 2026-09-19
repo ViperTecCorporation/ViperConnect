@@ -110,6 +110,18 @@ Nao existe fallback silencioso de auth. Uma sessao configurada como Zapo permane
 
 ## Politica de testes
 
+### Diagnóstico de desconexão
+
+O evento `connection` fechado registra `ZAPO_CONNECTION_CLOSED` em nível warn,
+com `phone`, `reason`, `code`, `isLogout`, `intentionalDisconnect` e
+`wasConnected`. Motivo/código ausentes são `null`, sem inventar a causa.
+São os campos do contrato `WaConnectionEvent` da versão instalada; não se
+registra o evento inteiro, credenciais, QR, tokens ou conteúdo de mensagens.
+Eventos de sockets já substituídos continuam ignorados. O log é somente
+diagnóstico: não muda status, reconexão, pareamento nem encaminhamento VoIP.
+`isLogout=true` indica desvinculação conforme o provider, não identifica quem
+a provocou. Os novos detalhes só estarão disponíveis após publicar a versão.
+
 Cada funcao nova tem pelo menos um teste dedicado. Funcoes com decisao, erro ou idempotencia exigem um caso por ramo relevante.
 
 ## Proxy Zapo

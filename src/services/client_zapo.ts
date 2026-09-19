@@ -448,6 +448,15 @@ export class ClientZapo implements Client {
         if (event.isNewLogin) await this.onNewLogin(this.phone)
         return
       }
+      // Log only the provider's diagnostic fields, never the raw connection event.
+      logger.warn({
+        phone: this.phone,
+        reason: typeof event.reason === 'string' ? event.reason : null,
+        code: typeof event.code === 'number' && Number.isFinite(event.code) ? event.code : null,
+        isLogout: event.isLogout === true,
+        intentionalDisconnect: this.intentionalDisconnect,
+        wasConnected: this.connected,
+      }, 'ZAPO_CONNECTION_CLOSED')
       this.connected = false
       this.presenceHeartbeat.stop()
       this.voiceBridge?.stop(event.isLogout ? 'session_unlinked' : 'connection_closed')
