@@ -134,8 +134,18 @@ ou purga a fila antiga. Webhooks já transformados na saída antiga permanecem
 nela: não possuem marcador confiável para reconhecer histórico retroativamente.
 
 Retries e mensagens mortas ficam nas filas `.delayed` e `.dead` da respectiva
-etapa, com a política de tentativas existente.
+etapa, com a política de tentativas existente. Publicações por `amqpPublish`
+aguardam a confirmação individual do RabbitMQ e rejeitam mensagens retornadas
+sem rota (`mandatory`). O consumidor somente confirma o original depois da
+publicação confirmada. Se nem o retry/dead-letter puder ser publicado, fecha o
+canal consumidor, preservando as mensagens sem ACK para reentrega.
 
+A espera de confirmação tem limite de 30 segundos e descarta o canal incerto.
+Isso não garante entrega exatamente uma vez: uma queda após o broker aceitar
+a publicação, mas antes da confirmação chegar ao cliente, pode gerar duplicata.
+O destino deve continuar idempotente pelo ID. RPC mantém seu fluxo próprio de
+resposta/correlationId. A validação estrita aceita `*` como binding de consumidor,
+mas continua rejeitando esse curinga como destinatário de publicação.
 Mensagens novas podem ultrapassar histórico; não há ordenação global entre filas.
 CPU, Redis, rede e destino dos webhooks continuam compartilhados.
 
