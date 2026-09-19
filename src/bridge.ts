@@ -61,6 +61,7 @@ const startBrigde = async () => {
   }
 
   logger.info('Unoapi Cloud version %s starting bridge...', version)
+  await bindJob.startHistory()
 
   logger.info('Starting bind consumer')
   await amqpConsume(

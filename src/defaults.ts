@@ -160,6 +160,9 @@ export const UNOAPI_VIDEO_TRANSCODE_TIMEOUT_MS = Math.max(
 )
 export const UNOAPI_QUEUE_NOTIFICATION = `${UNOAPI_QUEUE_NAME}.notification`
 export const UNOAPI_QUEUE_LISTENER = `${UNOAPI_QUEUE_NAME}.listener`
+export const UNOAPI_QUEUE_HISTORY = `${UNOAPI_QUEUE_NAME}.history`
+export const UNOAPI_QUEUE_HISTORY_OUTGOING = `${UNOAPI_QUEUE_NAME}.outgoing.history`
+export const UNOAPI_QUEUE_HISTORY_TRANSCRIBER = `${UNOAPI_QUEUE_NAME}.transcribe.history`
 export const UNOAPI_QUEUE_BLACKLIST_ADD = `${UNOAPI_QUEUE_NAME}.blacklist.add`
 export const UNOAPI_QUEUE_BIND = `${UNOAPI_QUEUE_NAME}.bind`
 export const UNOAPI_QUEUE_TIMER = `${UNOAPI_QUEUE_NAME}.timer`

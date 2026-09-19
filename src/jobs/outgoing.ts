@@ -6,6 +6,8 @@ import {
   UNOAPI_DELAY_AFTER_FIRST_MESSAGE_WEBHOOK_MS,
   UNOAPI_EXCHANGE_BROKER_NAME,
   UNOAPI_QUEUE_OUTGOING,
+  UNOAPI_QUEUE_HISTORY_OUTGOING,
+  UNOAPI_QUEUE_HISTORY_TRANSCRIBER,
   UNOAPI_QUEUE_TRANSCRIBER,
   UNOAPI_QUEUE_WEBHOOK_STATUS_FAILED
 } from '../defaults'
@@ -69,7 +71,7 @@ export class OutgoingJob {
   private service: Outgoing
   private getConfig: getConfig
 
-  constructor(getConfig: getConfig, service: Outgoing) {
+  constructor(getConfig: getConfig, service: Outgoing, private readonly queue = UNOAPI_QUEUE_OUTGOING) {
     this.service = service
     this.getConfig = getConfig
   }
@@ -97,7 +99,7 @@ export class OutgoingJob {
       }
       await Promise.all(
         webhooks.map(async (webhook) => {
-          return amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME,  UNOAPI_QUEUE_OUTGOING, phone, { payload, webhook })
+          return amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME, this.queue, phone, { payload, webhook })
         }),
       )
       if (isAudioMessage(payload)) {
@@ -108,7 +110,9 @@ export class OutgoingJob {
           }
         })
         if (webhooks.length > 0) {
-          await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME,  UNOAPI_QUEUE_TRANSCRIBER, phone, { payload, webhooks }, { type: 'topic' })
+          await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME,
+            this.queue === UNOAPI_QUEUE_HISTORY_OUTGOING ? UNOAPI_QUEUE_HISTORY_TRANSCRIBER : UNOAPI_QUEUE_TRANSCRIBER,
+            phone, { payload, webhooks }, { type: 'topic' })
         }
       }
     } else if (a.webhook) {

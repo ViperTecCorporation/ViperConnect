@@ -85,6 +85,7 @@ const validateRoutingKey = VALIDATE_ROUTING_KEY ? validateFormatNumber : (_) => 
 export type ExchangeType = 'direct' | 'topic'
 
 export type CreateOption = {
+  consumerId?: string
   delay: number
   priority: number
   notifyFailedMessages: boolean
@@ -490,7 +491,8 @@ export const amqpConsume = async (
   const prefetch = options.prefetch ?? 1
   const type = options.type || getExchangeType(exchange)
   const normalizedOptions = { ...options, prefetch, type }
-  const id = consumerId(exchange, queue, routingKey)
+  const baseId = consumerId(exchange, queue, routingKey)
+  const id = options.consumerId ? `${baseId}::${options.consumerId}` : baseId
   if (consumerConfigs.has(id)) {
     logger.debug('Consumer %s already registered, skipping duplicate registration', id)
     return

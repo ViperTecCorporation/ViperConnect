@@ -5,6 +5,7 @@ import {
   UNOAPI_QUEUE_INCOMING,
   UNOAPI_QUEUE_COMMANDER,
   UNOAPI_QUEUE_LISTENER,
+  UNOAPI_QUEUE_HISTORY,
   UNOAPI_SERVER_NAME,
   UNOAPI_EXCHANGE_BRIDGE_NAME,
   UNOAPI_WORKER_ENGINE,
@@ -28,6 +29,7 @@ import { providerQueueName } from '../services/providers/provider_queue'
 import { resolveWhatsAppEngine } from '../services/providers/provider_resolver'
 import { WhatsAppEngine } from '../services/providers/provider_types'
 import { shouldNotifyFailureByWhatsApp } from '../services/providers/failure_notification'
+import { startHistoryConsumers } from './history_consumers'
 
 const getConfigLocal: getConfig = getConfigRedis
 const outgoingAmqp: Outgoing = new OutgoingAmqp(getConfigLocal)
@@ -39,11 +41,20 @@ const onNewLogin = onNewLoginGenerateToken(outgoingCloudApi)
 const incomingBaileys = new IncomingProvider(listenerAmqp, getConfigLocal, getClientProvider, onNewLogin)
 const incomingJob = new IncomingJob(incomingBaileys, outgoingAmqp, getConfigLocal, UNOAPI_QUEUE_COMMANDER)
 const listenerJob = new ListenerJob(providerListener, outgoingCloudApi, getConfigLocal)
+const historyJob = new ListenerJob(providerListener, outgoingCloudApi, getConfigLocal, true)
 
 const processeds = new Map<string, boolean>()
 
 export class BindBridgeJob {
   constructor(private readonly workerEngine: WhatsAppEngine = resolveWhatsAppEngine(UNOAPI_WORKER_ENGINE)) {}
+
+  async startHistory() {
+    await startHistoryConsumers(
+      providerQueueName(UNOAPI_QUEUE_HISTORY, UNOAPI_SERVER_NAME, this.workerEngine),
+      historyJob.consume.bind(historyJob),
+      shouldNotifyFailureByWhatsApp(this.workerEngine, false),
+    )
+  }
 
   async consume(server: string, { routingKey }: { routingKey: string }) {
     const config = await getConfigLocal(routingKey)

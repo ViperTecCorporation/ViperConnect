@@ -110,6 +110,49 @@ Essas opções são independentes de histórico.
 
 ## Operação segura
 
+### Filas separadas
+
+Eventos `history` usam `unoapi.history.<server>.<engine>` no exchange topic
+`unoapi.broker`. O worker inicia dois consumidores fixos dessa fila, cada um
+com canal próprio e `prefetch=1`, independentemente do número de sessões.
+São consumidores no processo existente, não dois novos containers.
+
+As demais mensagens continuam na fila listener existente. Os mesmos handlers,
+filtros, janela de dias, deduplicação, IDs, payloads, prioridades e delays são
+reutilizados; os gatilhos de sincronização não mudam.
+
+Webhooks de histórico usam `unoapi.outgoing.history`; a transcrição opcional usa
+`unoapi.transcribe.history` e retorna à saída de histórico. O broker inicia dois
+consumidores por etapa, sem ocupar os consumidores das filas normais. Não há
+novas ENVs. Prefixos seguem `UNOAPI_QUEUE_NAME`. Cada réplica acrescenta seus
+próprios dois consumidores; não é um limite global entre réplicas.
+
+Envelopes `history` pendentes na listener antiga são encaminhados à nova fila
+quando consumidos, sem desempacotar nem processar e preservando o orçamento de
+retries. Isso também vale quando um retry antigo retorna do delay. Não se apaga
+ou purga a fila antiga. Webhooks já transformados na saída antiga permanecem
+nela: não possuem marcador confiável para reconhecer histórico retroativamente.
+
+Retries e mensagens mortas ficam nas filas `.delayed` e `.dead` da respectiva
+etapa, com a política de tentativas existente.
+
+Mensagens novas podem ultrapassar histórico; não há ordenação global entre filas.
+CPU, Redis, rede e destino dos webhooks continuam compartilhados.
+
+Na publicação, atualizar os processos worker **e** broker em todas as réplicas.
+Réplicas antigas ainda podem consumir histórico pela listener compartilhada.
+No rollback, as novas filas devem ser drenadas com consumidores compatíveis:
+uma versão antiga não consome essas filas. Não purgar mensagens pendentes.
+
+### Validação operacional
+
+Após publicar, reconectar uma sessão com histórico habilitado e enviar uma
+mensagem nova durante a sincronização. Conferir os consumidores das três filas,
+o recebimento do webhook novo antes de drenar o histórico, o atraso de entrega
+e as contagens ready/unacked/dead. Repetir com webhook lento e áudio quando a
+transcrição estiver habilitada. A validação automatizada simula o transporte
+AMQP; não substitui esta conferência com RabbitMQ real.
+
 1. Configure primeiro uma janela curta, como 3 ou 7 dias.
 2. Garanta idempotência no destino pelo ID da mensagem.
 3. Desative **Ignorar Histórico de Mensagens** apenas na sessão que será testada.

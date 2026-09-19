@@ -6,6 +6,8 @@ import {
   UNOAPI_SERVER_NAME,
   UNOAPI_QUEUE_MEDIA,
   UNOAPI_QUEUE_OUTGOING,
+  UNOAPI_QUEUE_HISTORY_OUTGOING,
+  UNOAPI_QUEUE_HISTORY_TRANSCRIBER,
   UNOAPI_QUEUE_NOTIFICATION,
   UNOAPI_QUEUE_OUTGOING_PREFETCH,
   UNOAPI_QUEUE_BLACKLIST_ADD,
@@ -41,6 +43,7 @@ import { startVideoConsumers } from './jobs/video_consumers'
 import { brokerRunsVideoConsumers, resolveVideoWorkerMode } from './services/providers/cloud_process_role'
 import { OutgoingAmqp } from './services/outgoing_amqp'
 import { runRabbitQueueCleanupMigration } from './services/rabbitmq_queue_cleanup'
+import { startHistoryConsumers } from './jobs/history_consumers'
 
 const incomingAmqp: Incoming = new IncomingAmqp(getConfigRedis)
 const outgoingCloudApi: Outgoing = new OutgoingCloudApi(getConfigRedis, isInBlacklistInRedis, addToBlacklistRedis)
@@ -50,6 +53,7 @@ const reloadJob = new ReloadJob(reload)
 const mediaJob = new MediaJob(getConfigRedis)
 const notificationJob = new NotificationJob(incomingAmqp)
 const outgingJob = new OutgoingJob(getConfigRedis, outgoingCloudApi)
+const historyOutgoingJob = new OutgoingJob(getConfigRedis, outgoingCloudApi, UNOAPI_QUEUE_HISTORY_OUTGOING)
 const timerJob = new TimerJob(incomingAmqp)
 const transcriberJob = new TranscriberJob(outgoingAmqp, getConfigRedis)
 
@@ -114,6 +118,8 @@ const startBroker = async () => {
   )
 
   logger.info('Starting transcriber consumer %s', UNOAPI_SERVER_NAME)
+  await startHistoryConsumers(UNOAPI_QUEUE_HISTORY_OUTGOING, historyOutgoingJob.consume.bind(historyOutgoingJob), notifyFailedMessages)
+  await startHistoryConsumers(UNOAPI_QUEUE_HISTORY_TRANSCRIBER, transcriberJob.consume.bind(transcriberJob), notifyFailedMessages)
   await amqpConsume(
     UNOAPI_EXCHANGE_BROKER_NAME,
     UNOAPI_QUEUE_TRANSCRIBER,
