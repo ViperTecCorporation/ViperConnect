@@ -17,6 +17,13 @@ import {
 const scan = redisScanSome as jest.MockedFunction<typeof redisScanSome>
 
 describe('Redis admin service', () => {
+  test('never exposes archived webhook URLs or credentials through generic Redis inspection', async () => {
+    const client = { type: jest.fn().mockResolvedValue('list'), ttl: jest.fn().mockResolvedValue(-1), lLen: jest.fn().mockResolvedValue(2), lRange: jest.fn() }
+    const admin = new RedisAdmin(async () => client as any)
+    expect((await admin.getKey('unoapi-webhook-history:5511999999')).value).toBe('[REDACTED]')
+    expect(await admin.query('LRANGE', ['unoapi-webhook-history:5511999999'])).toBe('[REDACTED]')
+    expect(client.lRange).not.toHaveBeenCalled()
+  })
   beforeEach(() => scan.mockReset())
 
   test('restricts administration to UnoAPI namespaces', () => {

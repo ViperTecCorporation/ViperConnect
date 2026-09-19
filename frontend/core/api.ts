@@ -17,6 +17,10 @@ import { t } from './i18n.js'
 import type { SessionDestination } from '../pages/session_webhooks.js'
 
 export class ApiError extends Error {
+  get code(): string | undefined {
+    const value = this.payload as { error_code?: string; error?: { error_code?: string } } | undefined
+    return value?.error_code || value?.error?.error_code
+  }
   constructor(
     public readonly status: number,
     message: string,
@@ -145,6 +149,14 @@ export class ApiClient {
     const query = new URLSearchParams({ cursor, limit: `${limit}` })
     if (search.trim()) query.set('search', search.trim())
     return this.request<GroupPage>(`/v15.0/${encodeURIComponent(phone)}/groups?${query}`)
+  }
+
+  webhookHistory(phone: string): Promise<{ snapshots: import('../features/webhook_history.js').WebhookHistorySnapshot[] }> {
+    return this.request(`/admin/webhooks/history/${encodeURIComponent(phone)}`)
+  }
+
+  restoreWebhookHistory(phone: string, payload: object): Promise<{ restored: string[]; enabled: false }> {
+    return this.request(`/admin/webhooks/history/${encodeURIComponent(phone)}/restore`, { method: 'POST', body: JSON.stringify(payload) })
   }
 
   saveWebhooks(phone: string, webhooks: WebhookConfig[]): Promise<SessionConfig> {

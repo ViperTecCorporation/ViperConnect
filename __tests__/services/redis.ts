@@ -117,6 +117,7 @@ jest.mock('@redis/client', () => ({
 }))
 
 process.env.REDIS_URL = 'redis://mock'
+import { webhookHistory } from '../../src/services/webhook_history'
 
 import {
   acquireWebhookCircuitProbe,
@@ -157,6 +158,21 @@ describe('redis blacklist identity transaction', () => {
 })
 
 describe('redis session phone index writes', () => {
+  test('archives edits and removal but does not archive ordinary connection/config updates', async () => {
+    mockClient.__reset()
+    const capture = jest.spyOn(webhookHistory, 'capture').mockImplementation(() => {})
+    try {
+      const phone = '5511999999'
+      await setConfig(phone, { provider: 'zapo', webhooks: [{ id: 'a', url: 'https://example.com' }] })
+      await setConfig(phone, { name: 'New label' })
+      expect(capture).not.toHaveBeenCalled()
+      await setConfig(phone, { webhooks: [{ id: 'b', url: 'https://example.org' }], overrideWebhooks: true })
+      expect(capture).toHaveBeenCalledWith(phone, expect.objectContaining({ webhooks: [expect.objectContaining({ id: 'a' })] }), 'updated')
+      await delConfig(phone)
+      expect(capture).toHaveBeenLastCalledWith(phone, expect.objectContaining({ webhooks: [expect.objectContaining({ id: 'b' })] }), 'removed')
+      expect(await getConfig(phone)).toBeUndefined()
+    } finally { capture.mockRestore() }
+  })
   beforeEach(() => {
     mockClient.__reset()
   })

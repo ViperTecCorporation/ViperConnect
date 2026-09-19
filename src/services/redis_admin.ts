@@ -171,6 +171,9 @@ export class RedisAdmin {
     const client: any = await this.clientFactory()
     const type = `${await client.type(key)}` as RedisKeyType
     const ttl = Number(await client.ttl(key))
+    if (key.startsWith('unoapi-webhook-history:')) {
+      return { key, type, ttl, size: type === 'list' ? Number(await client.lLen(key)) : 0, truncated: false, value: '[REDACTED]' }
+    }
     let value: unknown = null
     let size = 0
     let truncated = false
@@ -279,6 +282,7 @@ export class RedisAdmin {
     this.assertKey(key)
     if (name === 'TYPE') return client.type(key)
     if (name === 'TTL') return client.ttl(key)
+    if (key.startsWith('unoapi-webhook-history:')) return '[REDACTED]'
     if (name === 'GET') return parseRedisValue(await client.get(key))
     if (name === 'HGETALL') return parseRedisValue(await client.hGetAll(key))
     if (name === 'LRANGE') return parseRedisValue(await client.lRange(key, 0, 199))

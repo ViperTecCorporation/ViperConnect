@@ -15,6 +15,16 @@ const input = () => ({ name: 'Chat', url: 'https://chat.example.com/hook', serve
   session_ids: ['5511999999999'], auto_include_new_sessions: false, events: ['session.connected'], signing_secret: 'a'.repeat(32) })
 
 describe('session webhook contract', () => {
+  test.each([undefined, ''])('allows unsigned creation with secret %j and explicit removal', signing_secret => {
+    const value = validateSessionDestination({ ...input(), signing_secret })
+    expect(value.signing_secret).toBe('')
+    expect(publicSessionDestination(value).has_signing_secret).toBe(false)
+    const signed = validateSessionDestination(input())
+    const cleared = validateSessionDestination({ ...input(), signing_secret: '' }, signed)
+    expect(cleared.signing_secret).toBe('')
+    expect(cleared.revision).not.toBe(signed.revision)
+    expect(validateSessionDestination(input(), cleared).signing_secret).toBe(input().signing_secret)
+  })
   test('creates identities and redacts secrets; omission preserves and empty Bearer clears', () => {
     const value = validateSessionDestination({ ...input(), bearer_token: 'private' })
     expect(publicSessionDestination(value)).toEqual(expect.objectContaining({ has_bearer_token: true, has_signing_secret: true }))
@@ -137,6 +147,19 @@ describe('isolated lifecycle delivery job', () => {
     expect(options.headers.Authorization).toBe('Bearer bearer')
     expect(options.redirect).toBe('error')
     expect(JSON.parse(options.body)).toEqual(delivery.event)
+  })
+  test.each(['', 'bearer'])('delivers unsigned with independent Bearer %j', bearer_token => {
+    const { job, request, destination, delivery } = setup()
+    destination.signing_secret = ''
+    destination.bearer_token = bearer_token
+    return job.consume('', delivery).then(() => {
+      const options = request.mock.calls[0][1]
+      expect(options.headers).not.toHaveProperty('X-ViperConnect-Signature')
+      expect(options.headers['X-ViperConnect-Timestamp']).toMatch(/^\d+$/)
+      expect(options.headers['X-ViperConnect-Event-Id']).toBe(delivery.event.event_id)
+      expect(options.headers.Authorization).toBe(bearer_token ? 'Bearer bearer' : undefined)
+      expect(JSON.parse(options.body)).toEqual(delivery.event)
+    })
   })
   test.each(['disabled', 'deleted', 'edited'])('cancels %s destination without HTTP', async kind => {
     const { job, store, destination, request, delivery } = setup()

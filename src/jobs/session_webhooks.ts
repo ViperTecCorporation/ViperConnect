@@ -21,13 +21,16 @@ export class SessionWebhooksJob {
     if (!destination?.enabled || destination.revision !== delivery.revision) return
     const body = JSON.stringify(delivery.event)
     const timestamp = `${Math.floor(Date.now() / 1000)}`
-    const signature = createHmac('sha256', destination.signing_secret).update(`${timestamp}.${body}`).digest('hex')
+    const signature = destination.signing_secret
+      ? createHmac('sha256', destination.signing_secret).update(`${timestamp}.${body}`).digest('hex')
+      : undefined
     try {
       const response = await this.request.call(globalThis, destination.url, {
         method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(10_000),
         headers: {
           'Content-Type': 'application/json', 'X-ViperConnect-Event-Id': delivery.event.event_id,
-          'X-ViperConnect-Timestamp': timestamp, 'X-ViperConnect-Signature': `sha256=${signature}`,
+          'X-ViperConnect-Timestamp': timestamp,
+          ...(signature ? { 'X-ViperConnect-Signature': `sha256=${signature}` } : {}),
           ...(destination.bearer_token ? { Authorization: `Bearer ${destination.bearer_token}` } : {}),
         },
       })

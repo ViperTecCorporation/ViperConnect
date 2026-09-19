@@ -15,6 +15,7 @@ export const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV == 'deve
 export const UNO_LOG_LEVEL = process.env.UNO_LOG_LEVEL || LOG_LEVEL
 
 export const DEFAULT_LOCALE = process.env.DEFAULT_LOCALE || 'pt_BR'
+export const UNOAPI_API_LANGUAGE = /^en(?:[-_]us)?$/i.test(process.env.UNOAPI_API_LANGUAGE || '') ? 'en' : 'pt-BR'
 
 export const SEND_AUDIO_MESSAGE_AS_PTT = process.env.SEND_AUDIO_MESSAGE_AS_PTT == _undefined ? true : process.env.SEND_AUDIO_MESSAGE_AS_PTT == 'true'
 // Align with original behavior: gate conversion explicitly and allow ffmpeg params + waveform

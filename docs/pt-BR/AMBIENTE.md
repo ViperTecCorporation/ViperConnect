@@ -43,7 +43,17 @@ Este guia explica as principais variÃ¡veis de ambiente, quando usar e por quÃ
 - `AMQa_URL` â€” URL do RabbitMQ para broker.
   - Habilita filas (modelo web/worker, retries, dead letters).
   - Exemplo: `AMQa_URL=amqp://guest:guest@localhost:5672?frameMax=8192`
-## Filas RabbitMQ (AMQa)
+## Filas RabbitMQ (AMQP)
+
+O catálogo atualizado está em [RabbitMQ e filas](../RABBITMQ.md), também disponível
+no menu **Operação → RabbitMQ e filas** da documentação web. Consulte esse guia
+para os nomes atuais com servidor e motor, as filas de histórico e vídeo, os
+webhooks de sessão, a retenção de mídias e os cuidados com recuperação.
+
+### Referência histórica
+
+A lista abaixo descreve a organização antiga e não deve ser usada como inventário
+do runtime atual. Em particular, não inclui todas as filas novas nem os sufixos de motor.
 
 As filas usam o prefixo `UNOAaI_QUEUE_NAME` (padrao `unoapi`). As filas do exchange bridge usam sufixo `.<server>` (ex.: `unoapi.incoming.server_1`).
 
@@ -342,3 +352,10 @@ variável de ambiente e nunca são lidos pelo adapter Zapo.
 ## Mapeamento de ID (Baileys -> Unoapi)
 
 Para manter o mesmo id Unoapi para uma mesma mensagem do Baileys sob retries ou concorrencia de consumers, o servico usa um guard SET NX no Redis ao persistir idBaileys -> idUno. Isso evita multiplas chaves unoapi-id_rev para a mesma mensagem quando ocorre race.
+
+## Idioma dos erros da API
+
+`UNOAPI_API_LANGUAGE=pt-BR` é o padrão sem configuração. Para retornar erros e
+avisos em inglês, use `UNOAPI_API_LANGUAGE=en` no web e nos workers. Recrie os
+processos após alterar a variável. Códigos técnicos e regras de retry não mudam.
+Consulte [Respostas e avisos](../REPLY_WARNINGS.md) para o contrato assíncrono.

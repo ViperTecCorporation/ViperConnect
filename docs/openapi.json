@@ -16,6 +16,159 @@
     }
   ],
   "paths": {
+    "/admin/webhooks/history/{phone}": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Consultar histórico de webhooks de mensagens",
+        "description": "Exclusivo do token global UNOAPI_AUTH_TOKEN. Retorna até 20 versões por número, mesmo após remoção. URLs exibem somente a origem; tokens e cabeçalhos não são retornados. Não consulta nem reconecta o WhatsApp.",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{5,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Histórico em ordem de arquivamento mais recente primeiro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "snapshots"
+                  ],
+                  "properties": {
+                    "snapshots": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookHistorySnapshot"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Número inválido"
+          },
+          "403": {
+            "description": "Token administrativo requerido"
+          },
+          "503": {
+            "description": "Histórico indisponível"
+          }
+        }
+      }
+    },
+    "/admin/webhooks/history/{phone}/restore": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Restaurar webhooks históricos como desativados",
+        "description": "Exclusivo do token global. Exige sessão existente no mesmo servidor do snapshot. Mantém IDs e credenciais sem retorná-las. Não reconecta, não reenvia mensagens e não altera destinos centralizados de status. Conflitos exigem replace_existing=true. Alterações concorrentes retornam 409; a expiração da configuração é preservada.",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{5,20}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "snapshot_id",
+                  "webhook_ids"
+                ],
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  },
+                  "webhook_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "replace_existing": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Seleção restaurada sem ativação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "restored",
+                    "enabled"
+                  ],
+                  "properties": {
+                    "restored": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "enabled": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Seleção inválida ou ID ausente/ambíguo no snapshot"
+          },
+          "403": {
+            "description": "Token administrativo requerido"
+          },
+          "404": {
+            "description": "Sessão ou snapshot não encontrado"
+          },
+          "409": {
+            "description": "Conflito de ID",
+            "servidor diferente ou configuração alterada durante a restauração": null
+          },
+          "503": {
+            "description": "Histórico indisponível"
+          }
+        }
+      }
+    },
     "/admin/session-webhooks": {
       "get": {
         "tags": [
@@ -108,7 +261,7 @@
           "Webhooks de sessões"
         ],
         "summary": "Substituir configuração do destino",
-        "description": "Requer token global. Campos não secretos são substituídos. Segredos omitidos são\npreservados; bearer_token vazio remove o Bearer. signing_secret deve ter pelo menos 32 caracteres.\nA alteração invalida entregas pendentes da revisão anterior para não redirecionar eventos antigos.\nDesligar inclusão futura não remove membros atuais se session_ids for preservado.\n",
+        "description": "Requer token global. Campos não secretos são substituídos. Segredos omitidos são\npreservados; bearer_token vazio remove o Bearer. signing_secret é opcional; vazio remove HMAC,\nnão vazio deve ter pelo menos 32 caracteres.\nA alteração invalida entregas pendentes da revisão anterior para não redirecionar eventos antigos.\nDesligar inclusão futura não remove membros atuais se session_ids for preservado.\n",
         "requestBody": {
           "required": true,
           "content": {
@@ -3745,6 +3898,67 @@
       }
     },
     "schemas": {
+      "WebhookHistorySnapshot": {
+        "type": "object",
+        "required": [
+          "id",
+          "archived_at",
+          "reason",
+          "server",
+          "webhooks"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "updated",
+              "removed",
+              "restored"
+            ]
+          },
+          "server": {
+            "type": "string"
+          },
+          "webhooks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "destination",
+                "has_credentials",
+                "events"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "destination": {
+                  "type": "string",
+                  "description": "Somente origem da URL, sem credenciais, caminho ou parâmetros."
+                },
+                "has_credentials": {
+                  "type": "boolean"
+                },
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Flags send* que estavam habilitadas."
+                }
+              }
+            }
+          }
+        }
+      },
       "SessionWebhookDestinationInput": {
         "type": "object",
         "required": [
@@ -3811,10 +4025,10 @@
           },
           "signing_secret": {
             "type": "string",
-            "minLength": 32,
             "maxLength": 4096,
+            "pattern": "^(?:[^\\r\\n]{32,4096})?$",
             "writeOnly": true,
-            "description": "Obrigatório na criação. Omitido preserva ao editar. Nunca devolvido."
+            "description": "Opcional. Omitido na criação ou vazio desativa HMAC. Omitido ao editar preserva; vazio remove. Não vazio exige mínimo 32 caracteres. Nunca devolvido."
           }
         }
       },
@@ -3905,7 +4119,7 @@
       },
       "SessionLifecycleEvent": {
         "type": "object",
-        "description": "POST independente do envelope Meta-like. Entregas podem se repetir ou chegar fora de ordem:\ndeduplicar por destination_id + event_id e aplicar somente state.sequence superior.\nHMAC SHA-256 de timestamp Unix em segundos + ponto + bytes exatos do corpo UTF-8,\nusando signing_secret. Headers X-ViperConnect-Timestamp, X-ViperConnect-Event-Id e\nX-ViperConnect-Signature (sha256=hex). Verifique assinatura em tempo constante e janela de 5 minutos.\n",
+        "description": "POST independente do envelope Meta-like. Entregas podem se repetir ou chegar fora de ordem:\ndeduplicar por destination_id + event_id e aplicar somente state.sequence superior.\nHMAC SHA-256 de timestamp Unix em segundos + ponto + bytes exatos do corpo UTF-8,\nusando signing_secret somente quando configurado. Headers X-ViperConnect-Timestamp e\nX-ViperConnect-Event-Id sempre enviados; X-ViperConnect-Signature (sha256=hex) apenas com HMAC.\nQuando configurado, verifique assinatura em tempo constante e janela de 5 minutos.\n",
         "required": [
           "schema_version",
           "event_id",
@@ -5225,6 +5439,10 @@
           "message"
         ],
         "properties": {
+          "error_code": {
+            "type": "string",
+            "description": "Código simbólico estável, quando disponível; independente do idioma da mensagem."
+          },
           "error": {
             "type": "object",
             "required": [
@@ -5235,6 +5453,10 @@
             "properties": {
               "message": {
                 "type": "string"
+              },
+              "error_code": {
+                "type": "string",
+                "description": "Código simbólico preservado no envelope de erro; o texto usa pt-BR por padrão."
               },
               "type": {
                 "type": "string",
@@ -8150,6 +8372,25 @@
           }
         }
       },
+      "MessageWarning": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "REPLY_SENT_WITHOUT_QUOTE",
+            "description": "Código estável; um aviso não é uma falha e não exige reenvio."
+          },
+          "message": {
+            "type": "string",
+            "description": "Texto em pt-BR por padrão; UNOAPI_API_LANGUAGE=en seleciona inglês.",
+            "example": "Mensagem enviada sem citação: não foi possível localizar a referência original nesta conversa."
+          }
+        }
+      },
       "WebhookStatusFailed": {
         "description": "Payload de falha enviado ao webhook (fora da resposta HTTP)",
         "type": "object",
@@ -8626,7 +8867,7 @@
         }
       },
       "WebhookAck": {
-        "description": "Acks/Status de mensagens enviadas (delivered/read/deleted)",
+        "description": "Status de mensagens enviadas (sent/delivered/read/deleted). Avisos opcionais devem ser mesclados por ID e código, mesmo em status já processados.",
         "type": "object",
         "properties": {
           "object": {
@@ -8672,6 +8913,12 @@
                                 },
                                 "timestamp": {
                                   "type": "integer"
+                                },
+                                "warnings": {
+                                  "type": "array",
+                                  "items": {
+                                    "$ref": "#/components/schemas/MessageWarning"
+                                  }
                                 }
                               }
                             }

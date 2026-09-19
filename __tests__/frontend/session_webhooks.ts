@@ -3,6 +3,22 @@ import { ApiClient } from '../../frontend/core/api'
 import { ViperConnectApp } from '../../frontend/app'
 
 describe('session destination panel', () => {
+  test('explains each event and its payload using accessible non-submit tooltip buttons', () => {
+    const html = renderSessionWebhooks([], [])
+    for (const name of ['connected', 'disconnected', 'unlinked', 'removed', 'unavailable', 'heartbeat']) {
+      expect(html).toContain(`event=session.${name}`)
+    }
+    expect(html.match(/data-action="toggle-tooltip"/g)).toHaveLength(7)
+    expect(html.match(/aria-expanded="false"/g)).toHaveLength(7)
+    expect(html).toContain('HTTP 2xx')
+    expect(html).toContain('state.current=connected')
+    expect(html).toContain('worker_observation_expired')
+    expect(html).toContain('não last_verified_at')
+    expect(html).toContain('class="info-tooltip" type="button"')
+    for (const label of html.match(/<label\b[^>]*>[\s\S]*?<\/label>/g) || []) {
+      expect(label).not.toContain('<button')
+    }
+  })
   test('loads destinations through the application and clears prior admin data after authorization failure', async () => {
     const app = Object.create(ViperConnectApp.prototype) as any
     app.api = { sessionDestinations: jest.fn().mockResolvedValue({ destinations: [{ id: 'destination' }] }) }
@@ -25,6 +41,8 @@ describe('session destination panel', () => {
     expect(html).toContain('name="auto_include_new_sessions" checked')
     expect(html).toContain('value="5511999999999" checked')
     expect(html).toContain('type="password"')
+    expect(html).toContain('name="clear_signing_secret"')
+    expect(renderSessionWebhooks([], []).match(/<input[^>]*name="signing_secret"[^>]*>/)?.[0]).not.toContain('required')
     expect(renderSessionWebhooks([], [])).toContain('Nenhum destino')
   })
   test('serializes explicit membership and omits unchanged secrets', () => {
@@ -41,6 +59,8 @@ describe('session destination panel', () => {
     expect(sessionDestinationPayload(form)).toEqual(expect.objectContaining({ bearer_token: 'token', signing_secret: 'secret' }))
     form.set('clear_bearer_token', 'on')
     expect(sessionDestinationPayload(form).bearer_token).toBe('')
+    form.set('clear_signing_secret', 'on')
+    expect(sessionDestinationPayload(form).signing_secret).toBe('')
   })
   test('API uses existing authenticated transport for CRUD and encodes IDs', async () => {
     const fetcher = jest.fn().mockImplementation(async () => new Response('{}', { status: 200 }))

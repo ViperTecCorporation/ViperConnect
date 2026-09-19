@@ -31,6 +31,7 @@ import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documenta
 import { renderSessionPage } from './pages/session.js'
 import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js'
 import { renderSessionWebhooks, sessionDestinationPayload, type SessionDestination } from './pages/session_webhooks.js'
+import { renderWebhookHistory, type WebhookHistorySnapshot } from './features/webhook_history.js'
 import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js'
 import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js'
 import {
@@ -145,8 +146,13 @@ export class ViperConnectApp {
   private redisKeys: string[] = []
   private redisTree: Record<string, RedisTreeNode[]> = {}
   private redisExpandedPrefixes = new Set<string>()
+  private redisSearchCollapsedPrefixes = new Set<string>()
   private selectedRedisKey?: RedisKeyDetails
   private redisQuery = ''
+  private webhookHistorySnapshots: WebhookHistorySnapshot[] = []
+  private webhookHistoryLoading = false
+  private webhookHistoryError = ''
+  private webhookHistoryRequest = 0
   private redisSession = ''
   private redisQueryResult: unknown = undefined
   private redisLoading = false
@@ -230,17 +236,19 @@ export class ViperConnectApp {
     const target = event.target as HTMLElement
     const actionElement = target.closest<HTMLElement>('[data-action]')
     const closeModal = target.closest<HTMLElement>('[data-close-modal]')
-    const backdrop = target.matches('[data-modal-backdrop]')
-
-    if (closeModal || backdrop) {
+    if (closeModal) {
       this.closeModal()
       return
     }
+    // Backdrop clicks are accidental often enough that they must not discard forms.
+    if (target.matches('[data-modal-backdrop]')) return
     if (!actionElement) return
 
     const action = actionElement.dataset.action || ''
     const phone = actionElement.dataset.phone || ''
-    if (action === 'open-session-webhooks' || action === 'refresh-session-webhooks') {
+    if (action === 'load-webhook-history') {
+      await this.loadWebhookHistory()
+    } else if (action === 'open-session-webhooks' || action === 'refresh-session-webhooks') {
       this.view = 'session-webhooks'
       this.mobileOpen = false
       await this.loadSessionDestinations()
@@ -556,6 +564,8 @@ export class ViperConnectApp {
         await this.createSession(data)
       } else if (form.dataset.form === 'session-config') {
         await this.saveSessionConfig(data)
+      } else if (form.dataset.form === 'restore-webhook-history') {
+        await this.restoreWebhookHistory(data)
       } else if (form.dataset.form === 'webhook') {
         await this.saveWebhook(data, Number(form.dataset.webhookIndex))
       } else if (form.dataset.form === 'test-message') {
@@ -831,6 +841,7 @@ export class ViperConnectApp {
       this.render()
     } else if (input.dataset.filter === 'redis-query') {
       this.redisQuery = input.value
+      this.redisSearchCollapsedPrefixes.clear()
       this.renderAndRestoreFilter('redis-query')
       if (this.redisSearchTimer) window.clearTimeout(this.redisSearchTimer)
       this.redisSearchTimer = window.setTimeout(() => {
@@ -838,6 +849,7 @@ export class ViperConnectApp {
       }, 300)
     } else if (input.dataset.filter === 'redis-session') {
       this.redisSession = input.value
+      this.redisSearchCollapsedPrefixes.clear()
       void this.loadRedisKeys()
     }
   }
@@ -952,6 +964,10 @@ export class ViperConnectApp {
     const session = this.findSession(phone)
     if (!session) return
     this.selectedPhone = phone
+    this.webhookHistoryRequest = (this.webhookHistoryRequest || 0) + 1
+    this.webhookHistorySnapshots = []
+    this.webhookHistoryError = ''
+    this.webhookHistoryLoading = false
     this.view = 'dashboard'
     this.tab = 'overview'
     this.contacts = emptyContactState()
@@ -973,6 +989,10 @@ export class ViperConnectApp {
         phone,
         phone_number_id: detail.phone_number_id || detail.id || phone,
       })
+      // Detail identifiers arrive after the initial overview. Do not redraw a
+      // different session, an editing tab, or an open modal when they arrive.
+      if (this.selectedPhone === phone && this.view === 'dashboard' && this.tab === 'overview'
+        && shouldRenderBackgroundUpdate(!!this.modal)) this.render()
     } catch (error) {
       this.showToast(this.messageFor(error))
     }
@@ -984,6 +1004,43 @@ export class ViperConnectApp {
     this.render()
     if (tab === 'contacts' && !this.contacts.items.length) await this.loadContacts(true)
     if (tab === 'groups' && !this.groups.length) await this.loadGroups(true)
+    if (tab === 'webhooks') await this.loadWebhookHistory()
+  }
+
+  private async loadWebhookHistory(): Promise<void> {
+    const phone = this.selectedPhone
+    if (!phone) return
+    const request = ++this.webhookHistoryRequest
+    this.webhookHistoryLoading = true
+    this.webhookHistoryError = ''
+    this.webhookHistorySnapshots = []
+    this.render()
+    try {
+      const result = await this.api.webhookHistory(phone)
+      if (request === this.webhookHistoryRequest && phone === this.selectedPhone) this.webhookHistorySnapshots = result.snapshots
+    } catch {
+      if (request === this.webhookHistoryRequest && phone === this.selectedPhone) this.webhookHistoryError = 'Histórico indisponível ou acesso administrativo necessário.'
+    } finally {
+      if (request === this.webhookHistoryRequest && phone === this.selectedPhone) {
+        this.webhookHistoryLoading = false
+        if (this.tab === 'webhooks' && !this.modal) this.render()
+      }
+    }
+  }
+
+  private async restoreWebhookHistory(data: FormData): Promise<void> {
+    const phone = this.selectedPhone
+    const ids = data.getAll('webhook_ids').map(String)
+    if (!ids.length) { this.showToast('Selecione pelo menos um webhook.'); return }
+    if (!window.confirm('Restaurar os webhooks selecionados como desativados? IDs existentes só serão substituídos se você autorizou.')) return
+    try {
+      await this.api.restoreWebhookHistory(phone, { snapshot_id: data.get('snapshot_id'), webhook_ids: ids, replace_existing: data.has('replace_existing') })
+      const detail = await this.api.session(phone)
+      if (this.selectedPhone !== phone) return
+      this.replaceSession(phone, { ...this.findSession(phone), ...detail, phone })
+      this.showToast('Webhooks restaurados como desativados. Revise antes de ativar.', 'success')
+      await this.loadWebhookHistory()
+    } catch (error) { this.showToast(this.messageFor(error)) }
   }
 
   private async loadContacts(reset: boolean): Promise<void> {
@@ -1315,6 +1372,12 @@ export class ViperConnectApp {
 
   private async toggleRedisNode(prefix: string): Promise<void> {
     if (!prefix) return
+    if (this.redisQuery.trim() || this.redisSession) {
+      if (this.redisSearchCollapsedPrefixes.has(prefix)) this.redisSearchCollapsedPrefixes.delete(prefix)
+      else this.redisSearchCollapsedPrefixes.add(prefix)
+      this.render()
+      return
+    }
     if (this.redisExpandedPrefixes.has(prefix)) {
       for (const expanded of this.redisExpandedPrefixes) {
         if (expanded === prefix || expanded.startsWith(prefix)) {
@@ -1529,6 +1592,7 @@ export class ViperConnectApp {
                 keys: this.redisKeys,
                 tree: this.redisTree,
                 expandedPrefixes: [...this.redisExpandedPrefixes],
+                searchCollapsedPrefixes: [...this.redisSearchCollapsedPrefixes],
                 sessions: this.sessions,
                 sessionFilter: this.redisSession,
                 query: this.redisQuery,
@@ -1557,6 +1621,7 @@ export class ViperConnectApp {
                 })
               : selected
                 ? renderSessionPage({
+                    webhookHistoryHtml: renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
                     session: selected,
                     tab: this.tab,
                     contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
@@ -1757,7 +1822,7 @@ export class ViperConnectApp {
 
   private messageFor(error: unknown): string {
     if (error instanceof ApiError) {
-      if (error.message === 'contact_directory_requires_zapo_provider') {
+      if (error.code === 'contact_directory_requires_zapo_provider' || error.message === 'contact_directory_requires_zapo_provider') {
         return t('O diretório de contatos está disponível apenas para sessões Zapo.')
       }
       return error.message

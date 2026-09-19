@@ -1,6 +1,14 @@
 import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../../frontend/domain/rabbit_queue'
 
 describe('RabbitMQ queue identity', () => {
+  test.each(['unoapi.reload', 'unoapi.reload.delayed', 'unoapi.reload.dead', 'custom.reload'])('recognizes global reload %s as current', name => {
+    expect(parseRabbitQueueName(name).legacy).toBe(false)
+    expect(rabbitQueueScopeLabels(name)).not.toContain('Legada / sem motor')
+  })
+  test('keeps server-scoped reload without provider legacy and parses custom prefixes', () => {
+    expect(parseRabbitQueueName('unoapi.reload.server_1').legacy).toBe(true)
+    expect(parseRabbitQueueName('custom.outgoing.history.delayed').variant).toBe('history')
+  })
   test('parses provider, server and dead-letter lifecycle independently', () => {
     expect(parseRabbitQueueName('unoapi.incoming.server_1.zapo.dead')).toEqual({
       family: 'incoming',

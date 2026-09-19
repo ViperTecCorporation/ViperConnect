@@ -104,6 +104,7 @@ interface RedisPageOptions {
   keys: string[]
   tree: Record<string, RedisTreeNode[]>
   expandedPrefixes: string[]
+  searchCollapsedPrefixes?: string[]
   sessions: SessionConfig[]
   sessionFilter: string
   query: string
@@ -120,8 +121,9 @@ export const renderRedisPage = (options: RedisPageOptions): string => {
     && key.toLowerCase().includes(options.query.trim().toLowerCase()))
   const searching = !!(options.sessionFilter || options.query.trim())
   const tree = searching ? redisTreeFromKeys(filtered) : options.tree
+  const collapsed = new Set(options.searchCollapsedPrefixes || [])
   const expanded = new Set(searching
-    ? Object.keys(tree).filter(Boolean)
+    ? Object.keys(tree).filter(prefix => prefix && !collapsed.has(prefix))
     : options.expandedPrefixes)
   const treeHtml = renderRedisTreeNodes(
     tree,

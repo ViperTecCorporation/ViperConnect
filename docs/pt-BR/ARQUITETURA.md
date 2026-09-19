@@ -92,7 +92,7 @@ Heurísticas para grupos grandes
 ### Configuracao relevante
 
 - As protecoes de grupo da Baileys sao internas em `src/services/baileys_group_policy.ts`.
-- `JIDMAP_CACHE_ENABLED` (true) e `JIDMAP_TTL_SECONDS` (604800): cache PN�?"LID.
+- `JIDMAP_CACHE_ENABLED` (true) e `JIDMAP_TTL_SECONDS` (604800): cache de mapeamento PN/LID.
 - `STATUS_BROADCAST_ENABLED` (true): habilita/desabilita o envio para `status@broadcast`.
 
 Para ver logs de aprendizado PN→LID e asserts, ajuste `LOG_LEVEL`/`UNO_LOG_LEVEL` para `debug`.
@@ -107,12 +107,12 @@ Para ver logs de aprendizado PN→LID e asserts, ajuste `LOG_LEVEL`/`UNO_LOG_LEV
   - Ao atingir o limite, a mensagem vai para a dead‑letter da fila.
 - Timeouts e delays
   - Timeout HTTP por webhook: `webhook.timeoutMs` (AbortSignal timeout).
-  - Timeout global do consumidor: `CONSUMER_TIMEOUT_MS` (padr�o 15000ms).
+  - Timeout global do consumidor: `CONSUMER_TIMEOUT_MS` (padrão: 15000 ms).
   - Atraso de retry: 60s, via exchange delayed.
 - Notificação de falhas
   - Com `NOTIFY_FAILED_MESSAGES=true`, ao estourar as retentativas, um texto de diagnóstico é enviado para o número da sessão com detalhes do erro/stack.
 - Reenvio a partir de dead‑letter (opcional)
-  - O processo `waker` consome dead‑letters e reenfileira nas filas principais, dando nova chance às mensagens.
+  - Não há recuperação automática geral de `.dead` no fluxo atual. O utilitário legado `waker` não cobre todas as filas por servidor/motor nem as novas etapas. Consulte [RabbitMQ e filas](../RABBITMQ.md) antes de planejar reprocessamento.
 
 ## Configuração (destaques)
 

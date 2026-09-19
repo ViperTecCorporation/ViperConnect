@@ -42,6 +42,8 @@ import { ContactBookIncoming } from './services/contacts/contact_book_incoming'
 import { VoipController } from './controllers/voip_controller'
 import { ProfilePictureController } from './controllers/profile_picture_controller'
 import { SessionWebhooksController } from './controllers/session_webhooks_controller'
+import { WebhookHistoryController } from './controllers/webhook_history_controller'
+import { apiErrorLocalization } from './services/api_error_localization'
 
 export const router = (
   incoming: Incoming,
@@ -60,6 +62,7 @@ export const router = (
   contact: Contact = new ContactDummy(),
 ) => {
   const router: Router = Router()
+  router.use(apiErrorLocalization)
   const messagesController = new MessagesController(incoming, outgoing, getConfig)
   const marketingMessagesController = new MarketingMessagesController(incoming, outgoing, getConfig)
   const mediaController = new MediaController(baseUrl, getConfig, sessionStore)
@@ -82,6 +85,9 @@ export const router = (
   const voipController = new VoipController()
   const profilePictureController = new ProfilePictureController(getConfig)
   const sessionWebhooksController = new SessionWebhooksController()
+  const webhookHistoryController = new WebhookHistoryController()
+  router.get('/admin/webhooks/history/:phone', webhookHistoryController.handle.bind(webhookHistoryController))
+  router.post('/admin/webhooks/history/:phone/restore', webhookHistoryController.handle.bind(webhookHistoryController))
   router.get('/admin/session-webhooks', sessionWebhooksController.handle.bind(sessionWebhooksController))
   router.post('/admin/session-webhooks', sessionWebhooksController.handle.bind(sessionWebhooksController))
   router.put('/admin/session-webhooks/:id', sessionWebhooksController.handle.bind(sessionWebhooksController))

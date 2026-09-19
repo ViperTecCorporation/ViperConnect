@@ -47,7 +47,7 @@ const webhookSwitches = [
   ['sendUpdateMessages', 'Atualizações de mensagens', 'Inclui delivered, read, failed, edição e exclusão.', true],
   ['sendGroupMessages', 'Mensagens de grupos', 'Inclui mensagens e eventos originados em grupos.', true],
   ['sendNewsletterMessages', 'Mensagens de newsletter', 'Inclui mensagens de canais e newsletters.', false],
-  ['sendTranscribeAudio', 'Transcrição de áudio', 'Inclui a transcrição quando o recurso estiver habilitado.', false],
+  ['sendTranscribeAudio', 'Transcrição de áudio', 'Requer Groq ou OpenAI configurada na sessão. Sem provedor externo, apenas o áudio original é enviado; não há transcrição local.', false],
   ['typebot', 'Payload Typebot', 'Adapta o payload deste destino para a integração Typebot.', false],
 ] as const satisfies ReadonlyArray<readonly [string, TranslationKey, TranslationKey, boolean]>
 

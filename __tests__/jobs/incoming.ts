@@ -1,6 +1,10 @@
 jest.mock('../../src/amqp', () => ({
   amqpPublish: jest.fn().mockResolvedValue(undefined),
 }))
+jest.mock('../../src/services/reply_warning_outbox', () => ({
+  ...jest.requireActual('../../src/services/reply_warning_outbox'),
+  loadReplyWarning: jest.fn(async () => undefined), completeReplyWarning: jest.fn(async () => undefined),
+}))
 
 import { mock } from 'jest-mock-extended'
 
@@ -13,6 +17,23 @@ import { SendError } from '../../src/services/send_error'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../../src/services/messages/outgoing_media_input'
 
 describe('incoming job', () => {
+  test.each([undefined, 'delivered', 'read'])('delivers warnings in the status webhook without regressing %s', async previous => {
+    const incoming = mock<Incoming>()
+    const outgoing = mock<Outgoing>()
+    const dataStore = mock<DataStore>()
+    dataStore.loadStatus.mockResolvedValue(previous as any)
+    const warnings = [{ code: 'REPLY_SENT_WITHOUT_QUOTE', message: 'Mensagem enviada sem citação.' }]
+    incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-warning' }], warnings } })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+      webhooks: [{ ...defaultConfig.webhooks[0], sendUpdateMessages: true }],
+      getStore: async () => ({ dataStore }) as any,
+    }))
+    await job.consume('5511000000000', { id: 'uno-warning', payload: { to: '5511222222222', type: 'text', text: { body: 'Resposta' } } })
+    const status = (outgoing.sendHttp as jest.Mock).mock.calls.map(call => call[2]?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]).find(s => s?.warnings)
+    expect(status).toEqual(expect.objectContaining({ id: 'uno-warning', status: previous || 'sent', warnings }))
+    expect(incoming.send).toHaveBeenCalledTimes(1)
+  })
   test('reuses staged Base64 media and keeps internal metadata out of outgoing webhooks', async () => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()
@@ -120,8 +141,9 @@ describe('incoming job', () => {
         errors: [
           expect.objectContaining({
             code: 400,
-            title: `zapo_${type}_failed`,
+            title: 'Não foi possível enviar a mensagem pelo WhatsApp.',
             error_data: expect.objectContaining({
+              reason: `zapo_${type}_failed`,
               provider: 'zapo',
               message_type: type,
             }),
@@ -364,6 +386,46 @@ describe('incoming job', () => {
     }))
     expect(payloads.some((webhook) => webhook?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]?.status === 'sent')).toBe(true)
   })
+
+  test.each(['5511999999999', '120363123456789@g.us'])(
+    'emits complete edit contracts for Chatwoot and generic webhooks to %s', async to => {
+      const incoming = mock<Incoming>()
+      const outgoing = mock<Outgoing>()
+      const dataStore = mock<DataStore>()
+      dataStore.loadProviderId.mockResolvedValue('provider-edit')
+      dataStore.setUnoId.mockResolvedValue('uno-edit-event')
+      incoming.send = jest.fn().mockResolvedValue({
+        ok: { messaging_product: 'whatsapp', messages: [{ id: 'uno-edit-event' }] },
+      })
+      const job = new IncomingJob(incoming, outgoing, async () => ({
+        ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+        webhooks: ['https://chatwoot.example.com/webhooks/whatsapp/5511888888888', 'https://example.com/hook']
+          .map(urlAbsolute => ({ ...defaultConfig.webhooks[0], sendNewMessages: true, url: '', urlAbsolute })),
+        getStore: async () => ({ dataStore }) as any,
+      }))
+      const payload = { to, type: 'message_edit', context: { message_id: 'uno-original' },
+        text: { body: 'ou vale a pena incorporar um smtp no painel pra disparar alerta' } }
+      const before = JSON.stringify(payload)
+      await job.consume('5511888888888', { id: 'uno-edit-event', payload, options: { endpoint: 'messages' } })
+      expect(incoming.send).toHaveBeenCalledTimes(1)
+      expect(JSON.stringify(payload)).toBe(before)
+      const values = (outgoing.sendHttp as jest.Mock).mock.calls
+        .map(call => JSON.parse(JSON.stringify(call[2])).entry[0].changes[0].value)
+        .filter(value => value.messages || value.message_echoes)
+      expect(values).toHaveLength(2)
+      for (const value of values) {
+        const message = (value.message_echoes || value.messages)[0]
+        expect(message).toEqual(expect.objectContaining({
+          id: 'uno-edit-event', type: 'text', text: payload.text, message_type: 'message_edit',
+          context: { id: 'uno-original', message_id: 'uno-original' },
+          edit_timestamp: Number(message.timestamp) * 1000,
+        }))
+        expect(message).not.toHaveProperty('message_edit')
+        if (to.endsWith('@g.us') && value.messages) expect(message.group_id).toBe(to)
+        if (value.message_echoes) expect(message.to).toBe(to)
+      }
+    },
+  )
 
   test('renders a PIX key as text in the Chatwoot outgoing echo', async () => {
     const incoming = mock<Incoming>()

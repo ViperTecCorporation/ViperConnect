@@ -18,6 +18,26 @@ const setup = () => {
 }
 
 describe('central session webhook routes', () => {
+  test.each([undefined, ''])('creates unsigned destination with secret %j', signing_secret => {
+    const { app, store } = setup()
+    return request(app).post('/admin/session-webhooks').set('Authorization', 'Bearer global-token')
+      .send({ ...input(), signing_secret }).then(result => {
+        expect(result.status).toBe(201)
+        expect(result.body.has_signing_secret).toBe(false)
+        expect(result.body.signing_secret).toBeUndefined()
+        expect(store.save.mock.calls[0][0].signing_secret).toBe('')
+      })
+  })
+  test('explicit empty secret removes HMAC on PUT', async () => {
+    const { app, store } = setup()
+    const previous = validateSessionDestination(input())
+    store.destinations.mockResolvedValue([previous])
+    const result = await request(app).put(`/admin/session-webhooks/${previous.id}`)
+      .set('Authorization', 'Bearer global-token').send({ ...input(), signing_secret: '' })
+    expect(result.status).toBe(200)
+    expect(result.body.has_signing_secret).toBe(false)
+    expect(store.save.mock.calls[0][0].signing_secret).toBe('')
+  })
   test.each(['', 'session-token'])('rejects non-global token %s before storage', async token => {
     const { app, store } = setup()
     expect((await request(app).get('/admin/session-webhooks').set('Authorization', `Bearer ${token}`)).status).toBe(403)

@@ -19,10 +19,12 @@ giving the receiver your global API token.
 | GET `/admin/session-webhooks/states` | Latest observations; optional `destination_id` filter |
 
 Required configuration fields: `name`, HTTP(S) `url`, `server`, `enabled`,
-`session_ids`, `auto_include_new_sessions`, `events`. Creation also requires a
-random `signing_secret` of at least 32 characters. Optional `bearer_token` adds
-Bearer authentication. Omitted secrets are preserved on PUT; an empty Bearer
-value removes it. Responses expose `has_bearer_token` and `has_signing_secret`.
+`session_ids`, `auto_include_new_sessions`, `events`. Optional `signing_secret`
+enables HMAC and must contain at least 32 characters when non-empty. Omitting it
+on creation sends unsigned webhooks. Optional `bearer_token` independently adds
+Bearer authentication. Omitted secrets are preserved on PUT; an empty string
+removes the corresponding secret. The panel offers **Remover assinatura HMAC**.
+Responses expose `has_bearer_token` and `has_signing_secret`.
 
 Select existing sessions explicitly. Auto-enrollment affects only future Zapo
 sessions created on that server. Turning it off while preserving `session_ids`
@@ -62,7 +64,9 @@ unfiltered state queries, but no longer belong to destination membership filters
 
 ## Security and delivery
 
-Verify `X-ViperConnect-Signature: sha256=<hex>` as HMAC SHA-256 over
+UnoAPI generates the signature only when a signing secret is configured.
+Without it, no signature header is sent; timestamp and event ID remain present.
+When enabled, verify `X-ViperConnect-Signature: sha256=<hex>` as HMAC SHA-256 over
 `X-ViperConnect-Timestamp + "." + original_UTF8_body`, using the signing secret.
 Timestamp is Unix seconds, refreshed per attempt. Use a constant-time comparison
 and a five-minute acceptance window. `X-ViperConnect-Event-Id` repeats the payload ID.

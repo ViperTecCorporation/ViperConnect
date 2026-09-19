@@ -40,8 +40,10 @@ POST/PUT:
 }
 ```
 
-- `signing_secret`: obrigatório na criação, mínimo 32 caracteres. Use segredo
-  aleatório gerado com segurança. Omitir ao editar preserva o valor.
+- `signing_secret`: opcional. Omitir na criação ou enviar `""` desativa HMAC.
+  Quando informado, exige mínimo 32 caracteres; use segredo aleatório seguro.
+  Omitir ao editar preserva o valor; `""` remove a assinatura existente.
+  No painel, use **Remover assinatura HMAC** para remover ao editar.
 - `bearer_token`: opcional; omitir preserva, string vazia remove.
 - Respostas incluem `id`, `revision`, `has_bearer_token`, `has_signing_secret`,
   nunca os valores secretos. Segredos ficam no Redis: proteja ACL, backups e TLS.
@@ -108,10 +110,15 @@ Headers:
 
 - `X-ViperConnect-Event-Id`: mesmo `event_id` do corpo;
 - `X-ViperConnect-Timestamp`: Unix em segundos, renovado a cada tentativa;
-- `X-ViperConnect-Signature`: `sha256=<hex>`;
+- `X-ViperConnect-Signature`: `sha256=<hex>`, somente com segredo HMAC configurado;
 - `Authorization: Bearer ...`: somente quando configurado.
 
-Assinatura: HMAC SHA-256 com `signing_secret` sobre
+Sem segredo HMAC, a UnoAPI envia normalmente sem o header de assinatura.
+Bearer é independente e opcional. Para receptores sem validação HMAC (por exemplo,
+um fluxo n8n sem essa validação), deixe o segredo vazio na criação. Prefira HTTPS
+e autenticação Bearer quando suportada; sem ambos não há autenticação do remetente.
+
+Quando habilitada, a assinatura é gerada pela UnoAPI: HMAC SHA-256 com `signing_secret` sobre
 `timestamp + "." + corpo_original_UTF8`. Verifique os bytes originais antes de
 parsear JSON, compare em tempo constante e rejeite timestamps fora de uma janela
 de cinco minutos. Relógios devem estar sincronizados.

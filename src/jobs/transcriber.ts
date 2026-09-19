@@ -6,10 +6,7 @@ import { BASE_URL } from '../defaults'
 import mediaToBuffer from '../utils/media_to_buffer'
 import { extractDestinyPhone, jidToPhoneNumber } from '../services/transformer'
 import { jidNormalizedUser, isPnUser } from '../services/whatsapp_jid'
-import { v1 as uuid } from 'uuid'
-import Audio2TextJS from 'audio2textjs'
-import { writeFileSync, rmSync, existsSync, mkdirSync } from 'fs'
-import { SESSION_DIR } from '../services/session_store_file'
+import { saveTranscriptionReference } from '../services/transcription_reference'
 import mime from 'mime'
 
 const firstNonEmptyString = (...values: unknown[]) => {
@@ -59,6 +56,10 @@ export class TranscriberJob {
       const destinyPhone = extractTranscriptionDestiny(payload, audioMessage)
 
       const config = await this.getConfig(phone)
+      if (!config.groqApiKey && !config.openaiApiKey) {
+        logger.debug({ phone }, 'TRANSCRIPTION_SKIPPED_NO_PROVIDER: local transcription is disabled')
+        return
+      }
       const mediaKey = audioMessage.audio.id
       let token = config.authToken
       let mediaUrl = `${BASE_URL}/v13.0/${mediaKey}`
@@ -133,7 +134,7 @@ export class TranscriberJob {
           const json = await res.json() as { text?: string }
           transcriptionText = json.text || ''
         } catch (ge) {
-          logger.warn(ge as any, 'Groq transcription failed; trying fallback')
+          logger.warn(ge as any, 'Groq transcription failed; OpenAI fallback requires a configured key')
           if (config.openaiApiKey) {
             // fallback para OpenAI
             const openai = new OpenAI({ apiKey: config.openaiApiKey })
@@ -145,23 +146,7 @@ export class TranscriberJob {
             })
             transcriptionText = transcription.text
           } else {
-            // fallback local
-            const converter = new Audio2TextJS({
-              threads: 4,
-              processors: 1,
-              outputJson: true,
-            })
-            if (!existsSync(SESSION_DIR)) {
-              mkdirSync(SESSION_DIR)
-            }
-            if (!existsSync(`${SESSION_DIR}/${mediaKey.split('/')[0]}`)) {
-              mkdirSync(`${SESSION_DIR}/${mediaKey.split('/')[0]}`)
-            }
-            const tempFile = `${SESSION_DIR}/${mediaKey}`
-            writeFileSync(tempFile, buffer)
-            const result = await converter.runWhisper(tempFile, 'tiny', 'auto')
-            transcriptionText = result.output
-            rmSync(tempFile)
+            throw ge
           }
         }
       } else if (config.openaiApiKey) {
@@ -169,52 +154,19 @@ export class TranscriberJob {
         const openai = new OpenAI({ apiKey: config.openaiApiKey })
         const splitedLink = link.split('/')
         const fileName = `${splitedLink[splitedLink.length - 1]}${extension}`
-        try {
-          const transcription = await openai.audio.transcriptions.create({
-            file: await toFile(buffer, fileName),
-            model: config.openaiApiTranscribeModel || 'gpt-4o-mini-transcribe',
-          })
-          transcriptionText = transcription.text
-        } catch (oe) {
-          logger.warn(oe as any, 'OpenAI transcription failed; trying local fallback')
-          const converter = new Audio2TextJS({
-            threads: 4,
-            processors: 1,
-            outputJson: true,
-          })
-          if (!existsSync(SESSION_DIR)) {
-            mkdirSync(SESSION_DIR)
-          }
-          if (!existsSync(`${SESSION_DIR}/${mediaKey.split('/')[0]}`)) {
-            mkdirSync(`${SESSION_DIR}/${mediaKey.split('/')[0]}`)
-          }
-          const tempFile = `${SESSION_DIR}/${mediaKey}`
-          writeFileSync(tempFile, buffer)
-          const result = await converter.runWhisper(tempFile, 'tiny', 'auto')
-          transcriptionText = result.output
-          rmSync(tempFile)
-        }
-      } else {
-        logger.debug('Transcriber audio with Audio2TextJS for session %s to %s', phone, destinyPhone)
-        const converter = new Audio2TextJS({
-            threads: 4,
-            processors: 1,
-            outputJson: true,
+        const transcription = await openai.audio.transcriptions.create({
+          file: await toFile(buffer, fileName),
+          model: config.openaiApiTranscribeModel || 'gpt-4o-mini-transcribe',
         })
-        if (!existsSync(SESSION_DIR)) {
-          mkdirSync(SESSION_DIR)
-        }
-        if (!existsSync(`${SESSION_DIR}/${mediaKey.split('/')[0]}`)) {
-          mkdirSync(`${SESSION_DIR}/${mediaKey.split('/')[0]}`)
-        }
-        const tempFile = `${SESSION_DIR}/${mediaKey}`
-        writeFileSync(tempFile, buffer)
-        const result = await converter.runWhisper(tempFile, 'tiny', 'auto')
-        transcriptionText = result.output
-        rmSync(tempFile)
+        transcriptionText = transcription.text
+      }
+      if (typeof transcriptionText !== 'string' || !transcriptionText.trim()) {
+        logger.warn({ phone }, 'TRANSCRIPTION_EMPTY_RESULT')
+        return
       }
       logger.debug('Transcriber audio content for session %s and to %s is %s', phone, destinyPhone, transcriptionText)
-      const output = { ...payload }
+      const id = await saveTranscriptionReference(phone, destinyPhone, audioMessage.id)
+      const output = structuredClone(payload)
       const transcriptionFrom = firstNonEmptyString(
         audioMessage.from,
         audioMessage.from_user_id,
@@ -229,7 +181,7 @@ export class TranscriberJob {
         from: transcriptionFrom,
         ...(audioMessage.from_user_id && audioMessage.from_user_id !== transcriptionFrom ? { from_user_id: audioMessage.from_user_id } : {}),
         ...(audioMessage.group_id ? { group_id: audioMessage.group_id } : {}),
-        id: uuid(),
+        id,
         text: { body: transcriptionText },
         type: 'text',
         timestamp: `${parseInt(audioMessage.timestamp) + 1}`,

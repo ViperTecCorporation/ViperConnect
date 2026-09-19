@@ -200,6 +200,23 @@ for (const page of englishPages) {
   if (!content.trim()) throw new Error(`Página inglesa vazia: en/${page}`)
 }
 const vitePressConfig = await readFile(path.join(docs, '.vitepress', 'config.mts'), 'utf8')
+const queueGuide = await readFile(path.join(root, 'docs', 'RABBITMQ.md'), 'utf8')
+const queuePage = await readFile(path.join(docs, 'guide', 'rabbitmq.md'), 'utf8')
+if (!queuePage.includes('<!--@include: ../../docs/RABBITMQ.md-->')) {
+  throw new Error('O guia RabbitMQ deve reutilizar o Markdown canônico do repositório')
+}
+const englishQueueGuide = await readFile(path.join(docs, 'en', 'guide', 'rabbitmq.md'), 'utf8')
+for (const content of [queueGuide, englishQueueGuide]) {
+  for (const term of ['unoapi.media.delayed', 'DATA_TTL', 'DATA_URL_TTL', 'unoapi.session.events',
+    'unoapi.history.<server>.zapo', 'unoapi.outgoing.history', 'unoapi.transcribe.history',
+    'unoapi.video.stage', 'unoapi.video.transcode', 'messages_unacknowledged', 'mandatory',
+    'ack_requeue_true', 'waker', '.dead', '.delayed']) {
+    if (!content.includes(term)) throw new Error(`Guia RabbitMQ sem tópico obrigatório: ${term}`)
+  }
+}
+for (const route of ['/guide/rabbitmq', '/en/guide/rabbitmq']) {
+  if (!vitePressConfig.includes(`link: '${route}'`)) throw new Error(`Guia RabbitMQ ausente do menu: ${route}`)
+}
 if (!/root:\s*\{[\s\S]*lang:\s*'pt-BR'/.test(vitePressConfig) || !/en:\s*\{[\s\S]*lang:\s*'en-US'/.test(vitePressConfig)) {
   throw new Error('VitePress precisa publicar os locales pt-BR e en-US')
 }

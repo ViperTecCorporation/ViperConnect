@@ -1,9 +1,27 @@
 # Webhooks
 
+Para recuperar configurações anteriores após recriar uma sessão, consulte
+[Histórico e restauração de webhooks](/guide/webhook-history). A restauração é manual
+e não interfere na conexão ou reconexão.
+
 O ViperConnect envia payloads no formato `object → entry → changes → value`.
 Responda HTTP `2xx` rapidamente e processe o evento de forma idempotente.
 
 Eventos de conexão usam um contrato separado: [Webhooks de sessões](./session-webhooks).
+
+## Eco de edição enviada
+
+Ao editar pela API (`type: "message_edit"`), o eco enviado após sucesso usa
+`type: "text"`, `text.body` com o texto corrigido e
+`message_type: "message_edit"`. `context.message_id` e `context.id` apontam
+para o ID UnoAPI original; `id` continua sendo o ID do evento de edição.
+`edit_timestamp` informa o horário de processamento em milissegundos.
+
+O ViperChat recebe esse objeto em `value.message_echoes`, no campo
+`smb_message_echoes`; destinos comuns o recebem em `value.messages`.
+Isso permite atualizar e marcar o original como editado, sem criar outra
+mensagem. A configuração `sendNewMessages` continua controlando esses ecos.
+Eventos antigos já enfileirados no consumidor não são reparados automaticamente.
 
 ## Blacklist e isolamento de histórico
 
@@ -134,3 +152,7 @@ mensagem de texto explícita:
 - Deduplicate por `messages[].id` ou `statuses[].id`.
 - Com `WEBHOOK_ASYNC_MODE=amqp`, falhas transitórias permanecem na fila.
 - Configure circuit breaker e timeout abaixo do timeout global do consumidor.
+
+<!--@include: ../../docs/AUDIO_TRANSCRIPTION.md-->
+
+<!--@include: ../../docs/REPLY_WARNINGS.md-->

@@ -1,5 +1,6 @@
 import type { WhatsAppEngine } from './provider_types'
 import { SendError } from '../send_error'
+import { apiMessage } from '../api_messages'
 
 type RetryContext = {
   countRetries: number
@@ -78,12 +79,13 @@ export const normalizeProviderSendError = (
     ...(sourceErrorData && typeof sourceErrorData === 'object' ? sourceErrorData : {}),
     provider,
     message_type: messageType || 'unknown',
+    ...(/^[a-z][a-z0-9_-]+(?:\s*:|$)/.test(title) && !sourceErrorData?.reason ? { reason: title.split(':')[0].trim() } : {}),
   }
 
   return {
     code,
-    title: title || 'provider_send_failed',
-    message,
+    title: apiMessage(title || 'provider_send_failed', undefined, 'provider_send_failed'),
+    message: apiMessage(message, undefined, 'provider_send_failed'),
     error_data: errorData,
   }
 }

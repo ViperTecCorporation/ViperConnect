@@ -220,6 +220,215 @@
   ],
   "item": [
     {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Consultar histórico de webhooks de mensagens",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/webhooks/history/{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "webhooks",
+                "history",
+                "{{phone}}"
+              ],
+              "query": []
+            },
+            "description": "Exclusivo do token global UNOAPI_AUTH_TOKEN. Retorna até 20 versões por número, mesmo após remoção. URLs exibem somente a origem; tokens e cabeçalhos não são retornados. Não consulta nem reconecta o WhatsApp."
+          },
+          "response": []
+        },
+        {
+          "name": "Restaurar webhooks históricos como desativados",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/webhooks/history/{{phone}}/restore",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "webhooks",
+                "history",
+                "{{phone}}",
+                "restore"
+              ],
+              "query": []
+            },
+            "description": "Exclusivo do token global. Exige sessão existente no mesmo servidor do snapshot. Mantém IDs e credenciais sem retorná-las. Não reconecta, não reenvia mensagens e não altera destinos centralizados de status. Conflitos exigem replace_existing=true. Alterações concorrentes retornam 409; a expiração da configuração é preservada.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"snapshot_id\": \"string\",\n  \"webhook_ids\": [\n    \"string\"\n  ],\n  \"replace_existing\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Adicionar ou remover telefone, LID ou grupo da blacklist de um webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/blacklist/{{webhook_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "blacklist",
+                "{{webhook_id}}"
+              ],
+              "query": []
+            },
+            "description": "Bloqueia somente o encaminhamento ao webhook. Telefone e LID são equivalentes quando\nseu vínculo está no store da própria sessão; adicionar/remover qualquer variante afeta ambas.\nSem vínculo conhecido, somente a identidade informada é tratada. Grupos @g.us são\nindependentes dos participantes. Chaves antigas continuam consultadas nos próximos eventos.\nA resposta confirma enfileiramento, não aplicação imediata, em instalações com AMQP.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"{{to}}\",\n  \"ttl\": 86400\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verificar assinatura do webhook",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/webhooks/whatsapp/{{phone}}?hub.mode={{hub.mode}}&hub.verify_token={{hub.verify_token}}&hub.challenge={{hub.challenge}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "whatsapp",
+                "{{phone}}"
+              ],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "{{hub.mode}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{hub.verify_token}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "{{hub.challenge}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Receber eventos do WhatsApp (Forward mode)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/webhooks/whatsapp/{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "whatsapp",
+                "{{phone}}"
+              ],
+              "query": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [\n    {\n      \"id\": \"5511999999999\",\n      \"changes\": [\n        {\n          \"field\": \"messages\",\n          \"value\": {\n            \"messaging_product\": \"whatsapp\",\n            \"messages\": [\n              {\n                \"from\": \"5566999999999\",\n                \"id\": \"MESSAGE_ID\",\n                \"timestamp\": {{unix_timestamp}},\n                \"type\": \"interactive\",\n                \"interactive\": {\n                  \"type\": \"list_reply\",\n                  \"list_reply\": {\n                    \"id\": \"plan_basic\",\n                    \"title\": \"Básico\",\n                    \"description\": \"R$ 10\"\n                  }\n                }\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook de teste (Fake)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/webhooks/fake/{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "fake",
+                "{{phone}}"
+              ],
+              "query": []
+            },
+            "description": "Recebe qualquer payload e responde `{ \"success\": true }`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"object\": \"whatsapp_business_account\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Webhooks de sessões",
       "item": [
         {
@@ -298,7 +507,7 @@
               ],
               "query": []
             },
-            "description": "Requer token global. Campos não secretos são substituídos. Segredos omitidos são\npreservados; bearer_token vazio remove o Bearer. signing_secret deve ter pelo menos 32 caracteres.\nA alteração invalida entregas pendentes da revisão anterior para não redirecionar eventos antigos.\nDesligar inclusão futura não remove membros atuais se session_ids for preservado.\n",
+            "description": "Requer token global. Campos não secretos são substituídos. Segredos omitidos são\npreservados; bearer_token vazio remove o Bearer. signing_secret é opcional; vazio remove HMAC,\nnão vazio deve ter pelo menos 32 caracteres.\nA alteração invalida entregas pendentes da revisão anterior para não redirecionar eventos antigos.\nDesligar inclusão futura não remove membros atuais se session_ids for preservado.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"string\",\n  \"url\": \"https://example.com/resource\",\n  \"server\": \"server_1\",\n  \"enabled\": false,\n  \"session_ids\": [\n    \"string\"\n  ],\n  \"auto_include_new_sessions\": false,\n  \"events\": [\n    \"session.connected\"\n  ],\n  \"heartbeat_interval_seconds\": 300\n}",
@@ -2486,156 +2695,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"phone_number\": \"5500000000002\",\n  \"user_id\": \"000000000000002@lid\",\n  \"full_name\": \"Contato Exemplo\",\n  \"first_name\": \"Contato\",\n  \"username\": \"contato_exemplo\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Webhooks",
-      "item": [
-        {
-          "name": "Adicionar ou remover telefone, LID ou grupo da blacklist de um webhook",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/{{phone}}/blacklist/{{webhook_id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "{{phone}}",
-                "blacklist",
-                "{{webhook_id}}"
-              ],
-              "query": []
-            },
-            "description": "Bloqueia somente o encaminhamento ao webhook. Telefone e LID são equivalentes quando\nseu vínculo está no store da própria sessão; adicionar/remover qualquer variante afeta ambas.\nSem vínculo conhecido, somente a identidade informada é tratada. Grupos @g.us são\nindependentes dos participantes. Chaves antigas continuam consultadas nos próximos eventos.\nA resposta confirma enfileiramento, não aplicação imediata, em instalações com AMQP.\n",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"to\": \"{{to}}\",\n  \"ttl\": 86400\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Verificar assinatura do webhook",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/webhooks/whatsapp/{{phone}}?hub.mode={{hub.mode}}&hub.verify_token={{hub.verify_token}}&hub.challenge={{hub.challenge}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "webhooks",
-                "whatsapp",
-                "{{phone}}"
-              ],
-              "query": [
-                {
-                  "key": "hub.mode",
-                  "value": "{{hub.mode}}",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "hub.verify_token",
-                  "value": "{{hub.verify_token}}",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "hub.challenge",
-                  "value": "{{hub.challenge}}",
-                  "description": "",
-                  "disabled": true
-                }
-              ]
-            },
-            "description": ""
-          },
-          "response": []
-        },
-        {
-          "name": "Receber eventos do WhatsApp (Forward mode)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/webhooks/whatsapp/{{phone}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "webhooks",
-                "whatsapp",
-                "{{phone}}"
-              ],
-              "query": []
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"object\": \"whatsapp_business_account\",\n  \"entry\": [\n    {\n      \"id\": \"5511999999999\",\n      \"changes\": [\n        {\n          \"field\": \"messages\",\n          \"value\": {\n            \"messaging_product\": \"whatsapp\",\n            \"messages\": [\n              {\n                \"from\": \"5566999999999\",\n                \"id\": \"MESSAGE_ID\",\n                \"timestamp\": {{unix_timestamp}},\n                \"type\": \"interactive\",\n                \"interactive\": {\n                  \"type\": \"list_reply\",\n                  \"list_reply\": {\n                    \"id\": \"plan_basic\",\n                    \"title\": \"Básico\",\n                    \"description\": \"R$ 10\"\n                  }\n                }\n              }\n            ]\n          }\n        }\n      ]\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Webhook de teste (Fake)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/webhooks/fake/{{phone}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "webhooks",
-                "fake",
-                "{{phone}}"
-              ],
-              "query": []
-            },
-            "description": "Recebe qualquer payload e responde `{ \"success\": true }`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"object\": \"whatsapp_business_account\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

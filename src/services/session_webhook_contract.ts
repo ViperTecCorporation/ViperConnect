@@ -30,7 +30,7 @@ export function validateSessionDestination(input: Record<string, unknown>, previ
   const secret = (field: 'bearer_token' | 'signing_secret'): string => {
     const value = input[field] === undefined ? previous?.[field] || '' : input[field]
     if (typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) return fail(field)
-    if (field === 'signing_secret' && value.length < 32) return fail(field)
+    if (field === 'signing_secret' && value.length > 0 && value.length < 32) return fail(field)
     return value
   }
   return {

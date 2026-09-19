@@ -34,9 +34,6 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <span class="brand__copy"><strong>ViperConnect</strong><small>WhatsApp Hub</small></span>
       </div>
       <nav class="sidebar__nav">
-        <button class="nav-item ${activeView === 'session-webhooks' ? 'nav-item--active' : ''}" type="button" data-action="open-session-webhooks" title="Webhooks de sessões">
-          ${icon('globe')}<span>Webhooks de sessões</span>
-        </button>
         <button class="nav-item ${activeView === 'dashboard' ? 'nav-item--active' : ''}" type="button" data-action="go-dashboard" title="Dashboard">
           ${icon('dashboard')}<span>Dashboard</span>
         </button>
@@ -48,6 +45,9 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         </button>
         <button class="nav-item ${activeView === 'voip' ? 'nav-item--active' : ''}" type="button" data-action="open-voip" title="${t('Telefonia')}">
           ${icon('phone')}<span>${t('Telefonia')}</span>
+        </button>
+        <button class="nav-item ${activeView === 'session-webhooks' ? 'nav-item--active' : ''}" type="button" data-action="open-session-webhooks" title="Webhooks de sessões">
+          ${icon('globe')}<span>Webhooks de sessões</span>
         </button>
         <button class="nav-item ${activeView === 'documentation' ? 'nav-item--active' : ''}" type="button" data-action="open-documentation" title="${t('Documentação')}">
           ${icon('docs')}<span>${t('Documentação')}</span>

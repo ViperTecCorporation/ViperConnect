@@ -63,8 +63,8 @@ describe('provider send failure', () => {
 
     expect(normalizeProviderSendError('zapo', 'text', error)).toEqual({
       code: 463,
-      title: 'Account restricted',
-      message: '463: account restricted',
+      title: 'O WhatsApp informou uma restrição na conta.',
+      message: 'O WhatsApp informou uma restrição na conta.',
       error_data: {
         reason: 'message_account_restriction',
         provider: 'zapo',
@@ -86,8 +86,8 @@ describe('provider send failure', () => {
 
     expect(normalizeProviderSendError('zapo', 'interactive', error)).toEqual({
       code: 429,
-      title: 'Too Many Requests',
-      message: 'rate-overlimit',
+      title: 'Limite de solicitações atingido. Aguarde antes de tentar novamente.',
+      message: 'Limite de solicitações atingido. Aguarde antes de tentar novamente.',
       error_data: {
         provider: 'zapo',
         message_type: 'interactive',
@@ -114,9 +114,10 @@ describe('provider send failure', () => {
       timestamp: 1783000000,
       errors: [{
         code: 11,
-        title: 'document_download_failed',
-        message: '11: document_download_failed',
+        title: 'Não foi possível baixar o documento para envio.',
+        message: 'Não foi possível baixar o documento para envio.',
         error_data: {
+          reason: 'document_download_failed',
           provider: 'zapo',
           message_type: 'document',
         },

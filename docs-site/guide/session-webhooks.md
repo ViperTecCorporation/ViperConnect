@@ -30,8 +30,12 @@ Use o token administrativo global em `Authorization: Bearer ...`:
 }
 ```
 
-`bearer_token` é opcional. Omitir segredos no PUT preserva os valores; Bearer vazio
-remove a autenticação Bearer. HMAC exige pelo menos 32 caracteres. A resposta
+`bearer_token` e `signing_secret` são opcionais e independentes. Sem segredo na
+criação, o webhook é enviado sem assinatura HMAC. Omitir segredos no PUT preserva
+os valores; string vazia remove o respectivo segredo. HMAC, quando informado,
+exige pelo menos 32 caracteres. No painel, use **Remover assinatura HMAC** ao editar.
+Para um fluxo n8n sem validação HMAC, deixe o segredo vazio na criação.
+Prefira HTTPS e Bearer quando suportado. A resposta
 informa `has_bearer_token` e `has_signing_secret`, nunca os segredos.
 
 Selecione sessões atuais explicitamente. **Vincular automaticamente novas sessões**
@@ -89,7 +93,9 @@ consulta sem filtro, mas não nos membros atuais do destino.
 
 ## Validar assinatura e receber
 
-Verifique `X-ViperConnect-Signature: sha256=<hex>` calculando HMAC SHA-256 com o
+Somente com segredo configurado a UnoAPI gera e envia o header de assinatura.
+Sem HMAC, os headers de timestamp e ID do evento continuam presentes.
+Quando habilitado, verifique `X-ViperConnect-Signature: sha256=<hex>` calculando HMAC SHA-256 com o
 segredo sobre `X-ViperConnect-Timestamp + "." + corpo_original_UTF8`.
 Timestamp é Unix em segundos, renovado por tentativa. Use comparação em tempo
 constante e janela de cinco minutos. `X-ViperConnect-Event-Id` repete o ID do corpo.

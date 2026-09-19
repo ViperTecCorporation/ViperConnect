@@ -1,4 +1,5 @@
 import { createClient } from '@redis/client'
+import { webhookHistory } from './webhook_history'
 import {
   REDIS_URL,
   DATA_TTL,
@@ -1311,6 +1312,9 @@ export const setConfig = async (phone: string, value: any) => {
   })
   value.webhooks = updatedWebooks
   const config = { ...currentConfig, ...value }
+  if (currentConfig && JSON.stringify(currentWebhooks) !== JSON.stringify(updatedWebooks)) {
+    webhookHistory.capture(phone, currentConfig, 'updated')
+  }
   delete (config as any).oneToOneAddressingMode
   // Enforce per-session storage flags to avoid false overrides via templates/UI
   // Since this setter persists to Redis, sessions using Redis must have useRedis/useS3 true
@@ -1349,6 +1353,7 @@ export const setConfig = async (phone: string, value: any) => {
 export const delConfig = async (phone: string) => {
   try {
     const current = await getConfig(phone)
+    webhookHistory.capture(phone, current, 'removed')
     const token = (current as any)?.authToken
     if (token) {
       await client.sRem(configAuthTokenIndexKey(), token)
