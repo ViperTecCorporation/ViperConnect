@@ -20,6 +20,7 @@ import { version as appVersion } from '../../package.json'
 import { mergeGroupMetadataForCache } from './groups/group_metadata_cache'
 import { normalizeLidJid } from './transformer/jid'
 import { SessionPhoneIndex } from './session_phone_index'
+import { sessionEvent, sessionWebhookStore } from './session_webhook_store'
 
 const {
   signalPurgeDeviceListEnabled: SIGNAL_PURGE_DEVICE_LIST_ENABLED,
@@ -1295,7 +1296,6 @@ export const addAuthTokensToIndex = async (tokens: string[]) => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const setConfig = async (phone: string, value: any) => {
   const currentConfig = await getConfig(phone)
-  const key = configKey(phone)
   const currentWebhooks: Webhook[] = currentConfig && currentConfig.webhooks || []
   const newWebhooks: Webhook[] = value && value.webhooks || []
   const updatedWebooks: Webhook[] = []
@@ -1317,12 +1317,7 @@ export const setConfig = async (phone: string, value: any) => {
   try { (config as any).useRedis = true } catch {}
   try { (config as any).useS3 = true } catch {}
   delete config.overrideWebhooks
-  const redis = await getRedis()
-  const transaction = redis.multi()
-  if (SESSION_TTL < 0) transaction.set(key, JSON.stringify(config))
-  else transaction.set(key, JSON.stringify(config), { EX: SESSION_TTL })
-  transaction.sAdd(sessionPhoneIndexKey(), phone)
-  await transaction.exec()
+  await sessionWebhookStore.saveConfig(phone, config, SESSION_TTL)
   try {
     const oldToken = (currentConfig as any)?.authToken
     const newToken = (config as any)?.authToken
@@ -1352,7 +1347,6 @@ export const setConfig = async (phone: string, value: any) => {
 }
 
 export const delConfig = async (phone: string) => {
-  const key = configKey(phone)
   try {
     const current = await getConfig(phone)
     const token = (current as any)?.authToken
@@ -1360,11 +1354,9 @@ export const delConfig = async (phone: string) => {
       await client.sRem(configAuthTokenIndexKey(), token)
     }
   } catch {}
-  const redis = await getRedis()
-  await redis.multi()
-    .del(key)
-    .sRem(sessionPhoneIndexKey(), phone)
-    .exec()
+  await sessionWebhookStore.record('remove', sessionEvent(phone, 'removed', {
+    reason: 'session_deregistered', intentional: true, reconnect_expected: false, requires_pairing: true,
+  }))
   await delHistorySyncMarker(phone)
   await delPrivacyBootstrapSync(phone)
   await publishConfigUpdate(phone)

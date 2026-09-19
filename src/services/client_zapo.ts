@@ -15,6 +15,7 @@ import { SendError } from './send_error'
 import { zapoStoreRegistry, type ZapoStoreRegistry } from './zapo/zapo_store_registry'
 import { ZapoGroups } from './zapo/zapo_groups'
 import { ZapoPresenceHeartbeat } from './zapo/zapo_presence_heartbeat'
+import { SessionLifecycleObserver } from './session_lifecycle_observer'
 import { prepareZapoState } from './zapo/zapo_persistent_state'
 import { normalizeZapoPhoneJid, resolveZapoPhoneJid } from './zapo/zapo_contact_resolver'
 import { ZapoMessages } from './zapo/zapo_messages'
@@ -116,6 +117,7 @@ export class ClientZapo implements Client {
   private connectionGeneration = 0
   private voiceBridge?: ZapoVoiceBridgeClient
   private readonly presenceHeartbeat: ZapoPresenceHeartbeat
+  private readonly lifecycleObserver = new SessionLifecycleObserver()
 
   constructor(
     private readonly phone: string,
@@ -232,6 +234,9 @@ export class ClientZapo implements Client {
   private async handleConnectionFailure(client: ZapoClient, error: unknown) {
     logger.error(error as any, 'Zapo connection failed for %s', this.phone)
     if (this.socket !== client) return
+    if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, {
+      reason: 'connection_failed', intentional: this.intentionalDisconnect, reconnect_expected: !this.intentionalDisconnect,
+    })
     this.connectionGeneration += 1
     this.connected = false
     this.voiceBridge?.stop('connection_failed')
@@ -437,6 +442,7 @@ export class ClientZapo implements Client {
         }
         clients.set(this.phone, this)
         this.connected = true
+        if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, true, { is_logout: false, requires_pairing: false })
         this.presenceHeartbeat.start(client, this.config.markOnlineOnConnect, () => isCurrent() && this.connected)
         this.voiceBridge?.start()
         this.reconnectAttempts = 0
@@ -458,6 +464,13 @@ export class ClientZapo implements Client {
         wasConnected: this.connected,
       }, 'ZAPO_CONNECTION_CLOSED')
       this.connected = false
+      if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, {
+        reason: typeof event.reason === 'string' ? event.reason : null,
+        code: typeof event.code === 'number' && Number.isFinite(event.code) ? event.code : null,
+        is_logout: event.isLogout === true, intentional: this.intentionalDisconnect,
+        requires_pairing: event.isLogout === true,
+        reconnect_expected: !event.isLogout && !this.intentionalDisconnect,
+      })
       this.presenceHeartbeat.stop()
       this.voiceBridge?.stop(event.isLogout ? 'session_unlinked' : 'connection_closed')
       this.pendingPasskey?.reject(new SendError(502, event.isLogout ? 'zapo_passkey_session_unlinked' : 'zapo_passkey_connection_closed'))
@@ -896,6 +909,7 @@ export class ClientZapo implements Client {
   }
 
   private async releaseRuntimeOwnership() {
+    this.lifecycleObserver.stop()
     this.presenceHeartbeat.stop()
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
     if (this.maintenanceTimer) clearInterval(this.maintenanceTimer)
@@ -1080,6 +1094,7 @@ export class ClientZapo implements Client {
   }
 
   async disconnect() {
+    if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, { intentional: true, reconnect_expected: false }, false)
     this.presenceHeartbeat.stop()
     this.intentionalDisconnect = true
     this.socketAbort.abort()

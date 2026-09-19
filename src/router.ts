@@ -41,6 +41,7 @@ import { RedisAdminController } from './controllers/redis_admin_controller'
 import { ContactBookIncoming } from './services/contacts/contact_book_incoming'
 import { VoipController } from './controllers/voip_controller'
 import { ProfilePictureController } from './controllers/profile_picture_controller'
+import { SessionWebhooksController } from './controllers/session_webhooks_controller'
 
 export const router = (
   incoming: Incoming,
@@ -80,6 +81,12 @@ export const router = (
   const redisAdminController = new RedisAdminController()
   const voipController = new VoipController()
   const profilePictureController = new ProfilePictureController(getConfig)
+  const sessionWebhooksController = new SessionWebhooksController()
+  router.get('/admin/session-webhooks', sessionWebhooksController.handle.bind(sessionWebhooksController))
+  router.post('/admin/session-webhooks', sessionWebhooksController.handle.bind(sessionWebhooksController))
+  router.put('/admin/session-webhooks/:id', sessionWebhooksController.handle.bind(sessionWebhooksController))
+  router.delete('/admin/session-webhooks/:id', sessionWebhooksController.handle.bind(sessionWebhooksController))
+  router.get('/admin/session-webhooks/states', sessionWebhooksController.handle.bind(sessionWebhooksController))
 
   // Webhook (Cloud API) roteado por phone_number_id
   router.post('/webhooks/whatsapp', webhookController.whatsappNoParam.bind(webhookController))

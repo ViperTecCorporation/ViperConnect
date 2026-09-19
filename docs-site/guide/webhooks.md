@@ -3,6 +3,25 @@
 O ViperConnect envia payloads no formato `object → entry → changes → value`.
 Responda HTTP `2xx` rapidamente e processe o evento de forma idempotente.
 
+Eventos de conexão usam um contrato separado: [Webhooks de sessões](./session-webhooks).
+
+## Blacklist e isolamento de histórico
+
+`POST /{phone}/blacklist/{webhook_id}` aceita telefone, `@s.whatsapp.net`, `@lid`
+e grupo `@g.us`. `ttl` é em **segundos**: positivo expira, negativo persiste,
+zero ou omitido remove. Telefone e LID equivalem quando vinculados no store da
+mesma sessão; grupos não se confundem com seus participantes. Sem vínculo conhecido,
+só a identidade informada pode ser tratada. Chaves antigas continuam válidas,
+consultadas nos eventos novos, sem recadastro. A resposta confirma enfileiramento
+em instalações AMQP; mensagens já entregues não podem ser desfeitas.
+
+Histórico usa filas próprias de processamento, webhook e transcrição, com dois
+consumidores por processo/etapa. Filtros e payloads não mudam; mensagens novas
+podem ultrapassar histórico. Recursos como CPU, rede e Redis continuam compartilhados.
+Publicações AMQP aguardam confirmação antes do ACK de consumo; isso não significa
+entrega exatamente uma vez, nem confirmação do destinatário WhatsApp. Uma confirmação
+perdida pode causar repetição. Áudio e comandos VoIP não usam esse caminho de publicação.
+
 ## Mensagem de texto recebida
 
 ```json

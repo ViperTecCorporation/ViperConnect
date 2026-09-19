@@ -120,7 +120,7 @@ const renderPanel = (options: SessionPageOptions): string => {
   if (options.tab === 'contacts') {
     return renderContacts(options.session, options.contacts, options.contactsHasMore, options.loadingSection, options.sectionError, options.contactsQuery)
   }
-  if (options.tab === 'webhooks') return `<section class="section">${renderWebhooks(options.session.webhooks || [])}</section>`
+  if (options.tab === 'webhooks') return `<section class="section"><p>Para eventos de conexão, desconexão e remoção, configure os destinos centralizados.</p><button class="btn" data-action="open-session-webhooks">Webhooks de sessões</button>${renderWebhooks(options.session.webhooks || [])}</section>`
   if (options.tab === 'groups') {
     return renderGroups(options.session, options.groups, options.groupsHasMore, options.loadingSection, options.sectionError, options.groupsQuery)
   }

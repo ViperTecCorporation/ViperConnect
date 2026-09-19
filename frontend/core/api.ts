@@ -14,6 +14,7 @@ import type {
   WebhookConfig,
 } from '../domain/types.js'
 import { t } from './i18n.js'
+import type { SessionDestination } from '../pages/session_webhooks.js'
 
 export class ApiError extends Error {
   constructor(
@@ -51,6 +52,18 @@ export class ApiClient {
 
   getToken(): string {
     return this.token
+  }
+
+  sessionDestinations(): Promise<{ destinations: SessionDestination[] }> {
+    return this.request('/admin/session-webhooks')
+  }
+
+  saveSessionDestination(payload: Record<string, unknown>, id = ''): Promise<SessionDestination> {
+    return this.request(`/admin/session-webhooks${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) })
+  }
+
+  deleteSessionDestination(id: string): Promise<void> {
+    return this.request(`/admin/session-webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {

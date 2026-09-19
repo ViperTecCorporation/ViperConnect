@@ -44,6 +44,7 @@ import { brokerRunsVideoConsumers, resolveVideoWorkerMode } from './services/pro
 import { OutgoingAmqp } from './services/outgoing_amqp'
 import { runRabbitQueueCleanupMigration } from './services/rabbitmq_queue_cleanup'
 import { startHistoryConsumers } from './jobs/history_consumers'
+import { startSessionWebhooks } from './jobs/session_webhooks'
 
 const incomingAmqp: Incoming = new IncomingAmqp(getConfigRedis)
 const outgoingCloudApi: Outgoing = new OutgoingCloudApi(getConfigRedis, isInBlacklistInRedis, addToBlacklistRedis)
@@ -68,6 +69,7 @@ if (process.env.SENTRY_DSN) {
 
 const startBroker = async () => {
   await ensureRequiredRedis()
+  await startSessionWebhooks()
   try {
     await runRabbitQueueCleanupMigration()
   } catch (error) {

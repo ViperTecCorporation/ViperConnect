@@ -3,6 +3,25 @@
 Portal oficial separado, construído com VitePress e Scalar. O container expõe
 HTTP na porta `8080`; TLS, domínio e cache externo ficam no proxy de borda.
 
+## Atualização de rotas e contratos
+
+Mudanças em rotas, payloads ou comportamento de integração devem acompanhar:
+
+1. `docs/openapi.yaml`, incluindo erros, autenticação, exemplos e semântica dos campos;
+2. guias web correspondentes em `guide/` e `en/guide/`;
+3. um Markdown de domínio em `docs/`, junto aos documentos existentes;
+4. JSON e Postman regenerados pelos scripts, com testes do contrato e validação do portal.
+
+O contrato de eventos de sessão está em `docs/SESSION_WEBHOOKS.md` e nas páginas
+`guide/session-webhooks.md` e `en/guide/session-webhooks.md`. Ele não substitui o
+contrato dos webhooks de mensagens.
+
+Na raiz do repositório, regenere com `node scripts/openapi-to-json.mjs`,
+`node docs-site/scripts/sync-openapi.mjs` e `node scripts/openapi-to-postman.mjs`.
+Depois valide com `node docs-site/scripts/validate-docs.mjs` e o build do portal.
+
+## Executar o portal
+
 ```bash
 npm install
 npm test

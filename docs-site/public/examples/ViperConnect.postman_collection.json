@@ -63,6 +63,11 @@
       "type": "string"
     },
     {
+      "key": "destination_id",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "endDate",
       "value": "",
       "type": "string"
@@ -214,6 +219,149 @@
     }
   ],
   "item": [
+    {
+      "name": "Webhooks de sessões",
+      "item": [
+        {
+          "name": "Listar destinos centralizados de eventos de sessão",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/session-webhooks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "session-webhooks"
+              ],
+              "query": []
+            },
+            "description": "Requer UNOAPI_AUTH_TOKEN global. Tokens de sessão não são aceitos. Segredos nunca são retornados."
+          },
+          "response": []
+        },
+        {
+          "name": "Criar destino de eventos de sessão",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/session-webhooks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "session-webhooks"
+              ],
+              "query": []
+            },
+            "description": "Requer UNOAPI_AUTH_TOKEN global. Não altera os webhooks de mensagens.\nSessões atuais devem ser selecionadas explicitamente; a inclusão automática\nvale somente para sessões Zapo criadas posteriormente no servidor informado.\nLimite de 100 destinos e 1000 sessões por destino. Não há escopo de conta ViperChat implícito.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"url\": \"https://example.com/resource\",\n  \"server\": \"server_1\",\n  \"enabled\": false,\n  \"session_ids\": [\n    \"string\"\n  ],\n  \"auto_include_new_sessions\": false,\n  \"events\": [\n    \"session.connected\"\n  ],\n  \"heartbeat_interval_seconds\": 300\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Substituir configuração do destino",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/session-webhooks/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "session-webhooks",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Requer token global. Campos não secretos são substituídos. Segredos omitidos são\npreservados; bearer_token vazio remove o Bearer. signing_secret deve ter pelo menos 32 caracteres.\nA alteração invalida entregas pendentes da revisão anterior para não redirecionar eventos antigos.\nDesligar inclusão futura não remove membros atuais se session_ids for preservado.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"string\",\n  \"url\": \"https://example.com/resource\",\n  \"server\": \"server_1\",\n  \"enabled\": false,\n  \"session_ids\": [\n    \"string\"\n  ],\n  \"auto_include_new_sessions\": false,\n  \"events\": [\n    \"session.connected\"\n  ],\n  \"heartbeat_interval_seconds\": 300\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Excluir destino e cancelar suas entregas pendentes",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/session-webhooks/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "session-webhooks",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Requer token global. Não remove sessões nem altera seus webhooks de mensagens. Requisição HTTP já em andamento pode concluir."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar últimas observações de estado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/session-webhooks/states?destination_id={{destination_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "session-webhooks",
+                "states"
+              ],
+              "query": [
+                {
+                  "key": "destination_id",
+                  "value": "{{destination_id}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Requer token global. Retorna somente sessões já observadas pela versão com monitoramento,\nincluindo tombstones de remoção. Ausência não significa desconectada.\ndestination_id filtra pelos vínculos atuais; remoções já desvinculadas só aparecem na consulta sem filtro.\n"
+          },
+          "response": []
+        }
+      ]
+    },
     {
       "name": "Sistema",
       "item": [
@@ -2353,7 +2501,7 @@
       "name": "Webhooks",
       "item": [
         {
-          "name": "Adicionar número ao blacklist de um webhook",
+          "name": "Adicionar ou remover telefone, LID ou grupo da blacklist de um webhook",
           "request": {
             "method": "POST",
             "header": [
@@ -2374,10 +2522,10 @@
               ],
               "query": []
             },
-            "description": "",
+            "description": "Bloqueia somente o encaminhamento ao webhook. Telefone e LID são equivalentes quando\nseu vínculo está no store da própria sessão; adicionar/remover qualquer variante afeta ambas.\nSem vínculo conhecido, somente a identidade informada é tratada. Grupos @g.us são\nindependentes dos participantes. Chaves antigas continuam consultadas nos próximos eventos.\nA resposta confirma enfileiramento, não aplicação imediata, em instalações com AMQP.\n",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"to\": \"{{to}}\",\n  \"ttl\": 86400000\n}",
+              "raw": "{\n  \"to\": \"{{to}}\",\n  \"ttl\": 86400\n}",
               "options": {
                 "raw": {
                   "language": "json"

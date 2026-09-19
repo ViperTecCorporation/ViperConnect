@@ -112,6 +112,12 @@ Nao existe fallback silencioso de auth. Uma sessao configurada como Zapo permane
 
 ### Diagnóstico de desconexão
 
+O contrato novo de integração de estados está em
+[SESSION_WEBHOOKS.md](SESSION_WEBHOOKS.md): destinos centralizados no painel,
+rotas administrativas, seleção de sessões, outbox Redis e fila de entrega
+independente. `SessionLifecycleObserver` observa conexão Zapo sem aguardar HTTP
+ou confirmação AMQP no callback e sem substituir o webhook legado de mensagens.
+
 O evento `connection` fechado registra `ZAPO_CONNECTION_CLOSED` em nível warn,
 com `phone`, `reason`, `code`, `isLogout`, `intentionalDisconnect` e
 `wasConnected`. Motivo/código ausentes são `null`, sem inventar a causa.

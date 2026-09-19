@@ -190,6 +190,7 @@ const englishPages = [
   'guide/messages.md',
   'guide/contacts.md',
   'guide/webhooks.md',
+  'guide/session-webhooks.md',
   'guide/quickstart.md',
   'guide/concepts.md',
   'guide/troubleshooting.md',

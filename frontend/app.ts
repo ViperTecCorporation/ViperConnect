@@ -30,6 +30,7 @@ import { renderDashboard } from './pages/dashboard.js'
 import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js'
 import { renderSessionPage } from './pages/session.js'
 import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js'
+import { renderSessionWebhooks, sessionDestinationPayload, type SessionDestination } from './pages/session_webhooks.js'
 import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js'
 import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js'
 import {
@@ -53,6 +54,7 @@ const QUEUE_MESSAGE_PAGE_SIZE = 20
 const QUEUE_MESSAGE_MAX = 200
 const VOIP_REFRESH_SECONDS = 15
 const SAVE_FORM_NAMES = new Set([
+  'session-destination',
   'session-config',
   'webhook',
   'redis-save',
@@ -113,7 +115,10 @@ export class ViperConnectApp {
   private groupsHasMore = false
   private groupsQuery = ''
   private sessionVisibleLimit = PAGE_SIZE
-  private view: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' = 'dashboard'
+  private view: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' = 'dashboard'
+  private sessionDestinations: SessionDestination[] = []
+  private editingSessionDestination = ''
+  private sessionDestinationError = ''
   private voip: VoipBootstrap = { bridges: [], calls: [] }
   private voipLoading = false
   private voipError = ''
@@ -235,7 +240,26 @@ export class ViperConnectApp {
 
     const action = actionElement.dataset.action || ''
     const phone = actionElement.dataset.phone || ''
-    if (action === 'toggle-sidebar') {
+    if (action === 'open-session-webhooks' || action === 'refresh-session-webhooks') {
+      this.view = 'session-webhooks'
+      this.mobileOpen = false
+      await this.loadSessionDestinations()
+    } else if (action === 'edit-session-webhook') {
+      this.editingSessionDestination = actionElement.dataset.id || ''
+      this.render()
+    } else if (action === 'delete-session-webhook') {
+      if (window.confirm('Excluir este destino e cancelar suas entregas pendentes? As sessões não serão removidas.')) {
+        try {
+          await this.api.deleteSessionDestination(actionElement.dataset.id || '')
+          this.editingSessionDestination = ''
+          await this.loadSessionDestinations()
+        } catch (error) { this.showToast(this.messageFor(error), 'error') }
+      }
+    } else if (action === 'select-current-session-webhooks') {
+      const form = actionElement.closest('form')
+      const server = form?.querySelector<HTMLInputElement>('[name="server"]')?.value.trim()
+      form?.querySelectorAll<HTMLInputElement>('[name="session_ids"]').forEach(input => { input.checked = input.dataset.server === server })
+    } else if (action === 'toggle-sidebar') {
       this.collapsed = !this.collapsed
       localStorage.setItem(SIDEBAR_KEY, `${this.collapsed}`)
       this.render()
@@ -519,7 +543,14 @@ export class ViperConnectApp {
     const finishSubmitFeedback = SAVE_FORM_NAMES.has(form.dataset.form) ? this.beginSubmitFeedback(form) : undefined
 
     try {
-      if (form.dataset.form === 'login') {
+      if (form.dataset.form === 'session-destination') {
+        try {
+          await this.api.saveSessionDestination(sessionDestinationPayload(data), `${data.get('id') || ''}`)
+          this.editingSessionDestination = ''
+          await this.loadSessionDestinations()
+          this.showToast('Destino salvo.', 'success')
+        } catch (error) { this.showToast(this.messageFor(error), 'error') }
+      } else if (form.dataset.form === 'login') {
         await this.login(`${data.get('token') || ''}`)
       } else if (form.dataset.form === 'new-session') {
         await this.createSession(data)
@@ -830,6 +861,9 @@ export class ViperConnectApp {
     localStorage.removeItem(TOKEN_KEY)
     this.api.setToken('')
     this.sessions = []
+    this.sessionDestinations = []
+    this.editingSessionDestination = ''
+    this.sessionDestinationError = ''
     this.selectedPhone = ''
     this.view = 'dashboard'
     this.modal = undefined
@@ -871,7 +905,7 @@ export class ViperConnectApp {
   private tickRefresh(): void {
     if (!this.api.getToken() || this.modal) return
     // Preserve the iframe navigation and scroll position while reading docs.
-    if (this.view === 'documentation') return
+    if (this.view === 'documentation' || this.view === 'session-webhooks') return
     if (this.view === 'queues') {
       if (this.queuesLoading || this.queueMessagesLoading) return
       this.queueRefreshIn -= 1
@@ -1459,6 +1493,17 @@ export class ViperConnectApp {
     this.render()
   }
 
+  private async loadSessionDestinations(): Promise<void> {
+    try {
+      this.sessionDestinations = (await this.api.sessionDestinations()).destinations
+      this.sessionDestinationError = ''
+    } catch (error) {
+      this.sessionDestinations = []
+      this.sessionDestinationError = this.messageFor(error)
+    }
+    this.render()
+  }
+
   private render(): void {
     if (!this.api.getToken()) {
       this.root.innerHTML = renderLogin(escapeHtml(this.loginError))
@@ -1466,7 +1511,9 @@ export class ViperConnectApp {
     }
     const selected = this.findSession(this.selectedPhone)
     const content =
-      this.view === 'documentation'
+      this.view === 'session-webhooks'
+        ? renderSessionWebhooks(this.sessionDestinations, this.sessions, this.editingSessionDestination, this.sessionDestinationError, this.selectedPhone)
+        : this.view === 'documentation'
         ? renderDocumentationPage()
         : this.view === 'voip'
           ? renderVoipPage(this.voip, this.voipLoading, this.voipError, {

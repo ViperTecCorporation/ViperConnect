@@ -167,6 +167,7 @@ export const UNOAPI_QUEUE_BLACKLIST_ADD = `${UNOAPI_QUEUE_NAME}.blacklist.add`
 export const UNOAPI_QUEUE_BIND = `${UNOAPI_QUEUE_NAME}.bind`
 export const UNOAPI_QUEUE_TIMER = `${UNOAPI_QUEUE_NAME}.timer`
 export const UNOAPI_QUEUE_OUTGOING = `${UNOAPI_QUEUE_NAME}.outgoing`
+export const UNOAPI_QUEUE_SESSION_EVENTS = `${UNOAPI_QUEUE_NAME}.session.events`
 export const UNOAPI_QUEUE_BULK_PARSER = `${UNOAPI_QUEUE_NAME}.bulk.parser`
 export const UNOAPI_QUEUE_RELOAD = `${UNOAPI_QUEUE_NAME}.reload`
 export const UNOAPI_QUEUE_BROADCAST = `${UNOAPI_QUEUE_NAME}.broadcast`

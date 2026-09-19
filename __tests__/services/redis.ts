@@ -29,6 +29,22 @@ const mockClient: any = {
     return 'OK'
   }),
   eval: jest.fn(async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+    if (options.arguments[0] === 'save_config' || options.arguments[0] === 'remove') {
+      if (mockClient.failNextExec) {
+        mockClient.failNextExec = false
+        throw new Error('transaction failed')
+      }
+      const [operation, phone] = options.arguments
+      const key = options.keys[4]
+      if (operation === 'save_config') {
+        store.set(key, options.arguments[5])
+        addSetMembers(options.keys[5], phone)
+      } else {
+        store.delete(key)
+        removeSetMembers(options.keys[5], phone)
+      }
+      return 1
+    }
     const [key] = options.keys
     const [selfId, replacement] = options.arguments
     const current = store.get(key)
@@ -152,7 +168,10 @@ describe('redis session phone index writes', () => {
 
     expect(await getConfig(phone)).toEqual(expect.objectContaining({ authToken: 'token' }))
     expect(await mockClient.sMembers(sessionPhoneIndexKey())).toContain(phone)
-    expect(mockClient.multi).toHaveBeenCalledTimes(1)
+    expect(mockClient.eval).toHaveBeenCalledWith(expect.stringContaining("operation == 'save_config'"), expect.objectContaining({
+      keys: expect.arrayContaining([`unoapi-config:${phone}`, sessionPhoneIndexKey()]),
+      arguments: expect.arrayContaining(['save_config', phone]),
+    }))
   })
 
   it('keeps repeated pairing/config writes idempotent in the session index', async () => {
@@ -174,7 +193,9 @@ describe('redis session phone index writes', () => {
 
     expect(await getConfig(phone)).toBeUndefined()
     expect(await mockClient.sMembers(sessionPhoneIndexKey())).not.toContain(phone)
-    expect(mockClient.multi).toHaveBeenCalledTimes(1)
+    expect(mockClient.eval).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      arguments: expect.arrayContaining(['remove', phone]),
+    }))
   })
 
   it('does not leave a partial config or index entry when the transaction fails', async () => {

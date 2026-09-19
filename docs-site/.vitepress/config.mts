@@ -43,6 +43,7 @@ const portugueseTheme = {
       items: [
         { text: 'Enviar mensagens', link: '/guide/messages' },
         { text: 'Receber webhooks', link: '/guide/webhooks' },
+        { text: 'Status das sessões', link: '/guide/session-webhooks' },
         { text: 'Identidades e contatos', link: '/guide/contacts' },
       ],
     },
@@ -120,6 +121,7 @@ const englishTheme = {
       items: [
         { text: 'Send messages', link: '/en/guide/messages' },
         { text: 'Receive webhooks', link: '/en/guide/webhooks' },
+        { text: 'Session status', link: '/en/guide/session-webhooks' },
         { text: 'Identities and contacts', link: '/en/guide/contacts' },
       ],
     },

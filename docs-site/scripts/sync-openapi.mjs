@@ -36,7 +36,7 @@ const tagFor = (route) => {
   if (route.includes('/debug/')) return 'Diagnóstico'
   if (route.includes('/groups')) return 'Grupos'
   if (route.includes('/contacts')) return 'Contatos'
-  if (route.includes('/webhooks') || route.includes('/blacklist/')) return 'Webhooks'
+  if (route.includes('/webhooks') || route.includes('/session-webhooks') || route.includes('/blacklist/')) return 'Webhooks'
   if (route.includes('/templates')) return 'Modelos de mensagem'
   if (route.includes('/messages') || route.includes('/marketing_messages') || route.includes('/preflight/') || route.startsWith('/timer/'))
     return 'Mensagens'
