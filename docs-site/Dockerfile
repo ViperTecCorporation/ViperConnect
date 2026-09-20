@@ -3,9 +3,8 @@ WORKDIR /workspace
 RUN apk add --no-cache git
 COPY docs-site/package*.json ./docs-site/
 RUN cd docs-site && npm ci
-COPY docs/openapi.json ./docs/openapi.json
-COPY docs/openapi.yaml ./docs/openapi.yaml
-COPY docs/examples ./docs/examples
+# VitePress includes canonical Markdown from docs/ as well as the API/examples.
+COPY docs ./docs
 COPY scripts/openapi-to-postman.mjs ./scripts/openapi-to-postman.mjs
 COPY src/router.ts ./src/router.ts
 COPY logos/viperconnect_icon.svg ./docs-site/public/viperconnect_icon.svg

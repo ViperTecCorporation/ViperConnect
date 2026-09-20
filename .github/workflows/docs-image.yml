@@ -9,9 +9,8 @@ on:
     paths:
       - '.github/workflows/docs-image.yml'
       - 'docs-site/**'
-      - 'docs/openapi.json'
-      - 'docs/openapi.yaml'
-      - 'docs/examples/**'
+      - 'docs/**'
+      - 'scripts/openapi-to-postman.mjs'
       - 'src/router.ts'
       - 'logos/viperconnect_icon.svg'
   pull_request:
@@ -19,9 +18,8 @@ on:
     paths:
       - '.github/workflows/docs-image.yml'
       - 'docs-site/**'
-      - 'docs/openapi.json'
-      - 'docs/openapi.yaml'
-      - 'docs/examples/**'
+      - 'docs/**'
+      - 'scripts/openapi-to-postman.mjs'
       - 'src/router.ts'
       - 'logos/viperconnect_icon.svg'
 

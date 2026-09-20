@@ -5,8 +5,13 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const source = path.join(root, 'docs', 'openapi.json')
 const routerFile = path.join(root, 'src', 'router.ts')
-const outputDir = path.join(root, 'docs-site', 'public')
-const output = path.join(outputDir, 'openapi.json')
+// Tests generate into an isolated directory instead of relying on ignored build artifacts.
+const outputArgument = process.argv.indexOf('--output')
+if (outputArgument >= 0 && !process.argv[outputArgument + 1]) throw new Error('--output requires a file path')
+const output = outputArgument >= 0
+  ? path.resolve(process.argv[outputArgument + 1])
+  : path.join(root, 'docs-site', 'public', 'openapi.json')
+const outputDir = path.dirname(output)
 const spec = JSON.parse(await readFile(source, 'utf8'))
 const router = await readFile(routerFile, 'utf8')
 

@@ -1,8 +1,22 @@
 import fs from 'node:fs'
 import YAML from 'yaml'
+import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 const spec = YAML.parse(fs.readFileSync('docs/openapi.yaml', 'utf8'))
-const publicSpec = JSON.parse(fs.readFileSync('docs-site/public/openapi.json', 'utf8'))
+let publicSpec: any
+let generatedDir: string
+beforeAll(() => {
+  generatedDir = fs.mkdtempSync(path.join(tmpdir(), 'viperconnect-openapi-test-'))
+  const output = path.join(generatedDir, 'openapi.json')
+  execFileSync(process.execPath, ['docs-site/scripts/sync-openapi.mjs', '--output', output], { stdio: 'pipe' })
+  publicSpec = JSON.parse(fs.readFileSync(output, 'utf8'))
+})
+afterAll(() => {
+  // Only the exact directory created by this test; never a shared build directory.
+  if (generatedDir) fs.rmSync(generatedDir, { recursive: true, force: true })
+})
 const collection = JSON.parse(fs.readFileSync('docs/postman/ViperConnect.postman_collection.json', 'utf8'))
 const requests = collection.item.flatMap((folder: any) => folder.item)
 const normalize = (route: string) => route.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '{$1}')
