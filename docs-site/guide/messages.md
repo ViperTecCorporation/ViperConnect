@@ -578,7 +578,8 @@ retornar diretamente um arquivo de imagem.
 `value` usa a menor unidade da moeda: `50000` com `offset: 100` representa
 R$ 500,00. O campo `code` deve receber o PIX copia e cola dinâmico completo,
 gerado pelo banco ou PSP. Para o formato simplificado, remova apenas o objeto
-`order` e também o `header`: pedidos simplificados não aceitam imagem.
+`order` e também o `header`: pedidos simplificados não aceitam mídia no cabeçalho
+(imagem ou PDF).
 
 ### Link de pagamento
 
@@ -741,9 +742,104 @@ pois ela será usada para confirmar o pagamento.
 ```
 
 Substitua o destinatário, a imagem, a linha digitável e o código PIX pelos
-dados gerados pelo seu banco ou PSP. O pedido não possui campo de anexo PDF.
-Envie o boleto em PDF logo depois, usando a mesma `reference_id` no nome do
-arquivo ou na legenda:
+dados gerados pelo seu banco ou PSP. Para apresentar o boleto em PDF no próprio
+pedido, substitua o cabeçalho de imagem pelo cabeçalho de documento abaixo.
+
+### Pedido com boleto, PIX e PDF no header
+
+Envie este payload para `POST /v15.0/{session}/messages`, com o token Bearer da
+sessão. O PDF ocupa o lugar da imagem no cabeçalho; não são dois anexos simultâneos.
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "5511999999999",
+  "type": "interactive",
+  "interactive": {
+    "type": "order_details",
+    "header": {
+      "type": "document",
+      "document": {
+        "link": "https://cdn.minhaempresa.com.br/boletos/boleto-1033239253.pdf",
+        "filename": "boleto-1033239253.pdf",
+        "mime_type": "application/pdf"
+      }
+    },
+    "body": {
+      "text": "Boleto nº 1033239253 referente à assinatura de Câmera Comodato Mensal — 1 unidade. Valor: R$ 60,00."
+    },
+    "action": {
+      "name": "review_and_pay",
+      "parameters": {
+        "reference_id": "boleto-1033239253",
+        "type": "digital-goods",
+        "payment_type": "br",
+        "payment_settings": [
+          {
+            "type": "boleto",
+            "boleto": {
+              "digitable_line": "SUA_LINHA_DIGITAVEL_GERADA_PELO_BANCO"
+            }
+          },
+          {
+            "type": "pix_dynamic_code",
+            "pix_dynamic_code": {
+              "code": "SEU_CODIGO_PIX_COPIA_E_COLA_COMPLETO",
+              "merchant_name": "Sua Empresa",
+              "key": "SUA_CHAVE_PIX_EVP",
+              "key_type": "EVP"
+            }
+          }
+        ],
+        "currency": "BRL",
+        "total_amount": { "value": 6000, "offset": 100 },
+        "order": {
+          "status": "pending",
+          "tax": {
+            "value": 0,
+            "offset": 100,
+            "description": "Sem impostos adicionais"
+          },
+          "items": [
+            {
+              "retailer_id": "camera-comodato-mensal",
+              "name": "Câmera Comodato Mensal",
+              "amount": { "value": 6000, "offset": 100 },
+              "quantity": 1
+            }
+          ],
+          "subtotal": { "value": 6000, "offset": 100 }
+        }
+      }
+    }
+  }
+}
+```
+
+Substitua o destinatário, a URL do PDF, os dados de pagamento e a referência
+pelos dados da sua cobrança. Os textos em maiúsculas são placeholders e não
+devem ser enviados literalmente. Use uma `reference_id` única por cobrança.
+O envio da mensagem não gera um boleto nem um código PIX no banco.
+
+O `link` deve retornar diretamente os bytes do PDF e estar acessível pelo
+worker. Uma URL assinada deve permanecer válida até o download. Um caminho
+local ou uma página de visualização não substitui essa URL; `filename` define
+somente o nome exibido do arquivo.
+
+::: info Escopo validado
+O envio e a exibição no aparelho foram confirmados em 19/09/2026 pelo provedor
+Zapo, no fluxo `order_details/review_and_pay` com boleto, PIX e PDF no cabeçalho.
+O objeto `order` é obrigatório quando há mídia no cabeçalho; não use esse
+cabeçalho no pedido simplificado sem `order`. Essa validação não significa que
+todos os tipos de mensagem interativa aceitem documentos, nem comprova suporte
+equivalente em outros provedores.
+:::
+
+### PDF como mensagem separada (opcional)
+
+Se preferir manter a imagem no pedido, envie o PDF em outra mensagem, usando
+a referência da cobrança no nome do arquivo ou na legenda. Esse envio separado
+é uma alternativa, não uma exigência:
 
 ```json
 {

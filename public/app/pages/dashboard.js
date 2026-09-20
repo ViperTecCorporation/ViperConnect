@@ -1,9 +1,9 @@
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
-import { icon } from '../components/icons.js?v=4.0.30-038921da';
-import { renderStatus } from '../components/status.js?v=4.0.30-038921da';
-import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.30-038921da';
-import { t } from '../core/i18n.js?v=4.0.30-038921da';
-export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit }) => {
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
+import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
+import { renderStatus } from '../components/status.js?v=4.0.32-1ab9d8f1';
+import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.32-1ab9d8f1';
+import { t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
+export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true }) => {
     const filtered = filterSessions(sessions, query, status);
     const visible = filtered.slice(0, visibleLimit);
     const online = sessions.filter((session) => isOnlineStatus(session.status)).length;
@@ -14,14 +14,13 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
       <div><span class="eyebrow">${t('Operação')}</span><h1>${t('Visão geral')}</h1><p class="muted">${t('Sessões e serviços em tempo real.')}</p></div>
       <div class="actions">
         <a class="btn btn--icon btn--ghost" href="https://github.com/ViperTecCorporation/ViperConnect" target="_blank" rel="noopener" aria-label="GitHub">${icon('github')}</a>
-        <button class="btn" type="button" data-action="new-session">${icon('plus')}${t('Nova sessão')}</button>
+        ${canCreate ? `<button class="btn" type="button" data-action="new-session">${icon('plus')}${t('Nova sessão')}</button>` : ''}
       </div>
     </header>
 
     <div class="health-bar" aria-label="${t('Saúde dos serviços')}">
       <span>${renderStatus('online')} API</span>
-      <span>${renderStatus('online')} Redis</span>
-      <span>${renderStatus('online')} RabbitMQ</span>
+      ${canCreate ? `<span>${renderStatus('online')} Redis</span><span>${renderStatus('online')} RabbitMQ</span>` : ''}
     </div>
 
     <section class="stats" aria-label="${t('Resumo das sessões')}">

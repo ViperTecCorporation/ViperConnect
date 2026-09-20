@@ -26,6 +26,13 @@ describe('Redis admin controller', () => {
 
   beforeEach(() => jest.clearAllMocks())
 
+  test.each(['list', 'tree', 'get', 'query', 'save', 'remove', 'removeTree'] as const)('denies non-admin access to %s, including protected records', async operation => {
+    const response = res()
+    await new RedisAdminController(manager as any, 'admin')[operation](req({ headers: { authorization: 'Bearer mgr_key_user' }, params: { key: 'manager-identity:{v1}:users' } }), response)
+    expect(response.status).toHaveBeenCalledWith(403)
+    Object.values(manager).forEach(method => expect(method).not.toHaveBeenCalled())
+  })
+
   test('rejects non-admin tokens', async () => {
     const response = res()
     await new RedisAdminController(manager as any, 'admin').list(req({ headers: { authorization: 'Bearer session' } }), response)

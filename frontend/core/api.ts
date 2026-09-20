@@ -44,6 +44,7 @@ const errorMessage = (payload: unknown, status: number): string => {
 
 export class ApiClient {
   private token = ''
+  private authRevision = 0
 
   constructor(
     private readonly baseUrl: string,
@@ -51,6 +52,7 @@ export class ApiClient {
   ) {}
 
   setToken(token: string): void {
+    this.authRevision++
     this.token = token.trim()
   }
 
@@ -70,7 +72,9 @@ export class ApiClient {
     return this.request(`/admin/session-webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' })
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const requestToken = this.token
+    const revision = this.authRevision
     const headers = new Headers(init.headers)
     if (this.token) headers.set('Authorization', `Bearer ${this.token}`)
     if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -79,9 +83,12 @@ export class ApiClient {
     // `this.fetcher()` binds ApiClient as `this` and Chrome rejects the request
     // with "Illegal invocation".
     const response = await this.fetcher.call(globalThis, `${this.baseUrl}${path}`, { ...init, headers })
+    // Responses from a previous login must never populate the next account.
+    if (requestToken !== this.token || revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
     if (response.status === 204) return undefined as T
 
     const text = await response.text()
+    if (requestToken !== this.token || revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
     let payload: unknown = undefined
     if (text) {
       try {
@@ -313,6 +320,7 @@ export class ApiClient {
   }
 
   async voipRecording(recordId: string): Promise<Blob> {
+    const revision = this.authRevision
     const headers = new Headers()
     if (this.token) headers.set('Authorization', `Bearer ${this.token}`)
     const response = await this.fetcher.call(globalThis, `${this.baseUrl}/admin/voip/recordings/${encodeURIComponent(recordId)}`, { headers })
@@ -322,6 +330,8 @@ export class ApiClient {
       try { payload = text ? JSON.parse(text) : undefined } catch {}
       throw new ApiError(response.status, errorMessage(payload, response.status), payload)
     }
-    return response.blob()
+    const blob = await response.blob()
+    if (revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
+    return blob
   }
 }

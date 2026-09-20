@@ -4,6 +4,7 @@ import logger from '../services/logger'
 import { resolveSessionPhoneByMetaId } from '../services/meta_alias'
 import { SessionStore } from '../services/session_store'
 import { sendGraphError } from '../services/graph_error'
+import { managerPrincipal } from '../services/manager_access'
 
 export class MediaController {
   private baseUrl: string
@@ -20,6 +21,8 @@ export class MediaController {
     logger.debug('media index (no phone) method %s', req.method)
     logger.debug('media index (no phone) params %s', JSON.stringify(req.params))
     const mediaId = `${req.params.media_id || ''}`.trim()
+    // Numeric phone routes must fall through; personal keys cannot scan every session.
+    if (managerPrincipal(req)?.role === 'user') return next()
     if (!mediaId) return next()
     if (/^\d{10,15}$/.test(mediaId)) return next()
     try {

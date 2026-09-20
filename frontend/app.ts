@@ -3,7 +3,7 @@ import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js'
 import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js'
 import { SocketBridge } from './core/socket.js'
 import { renderLayout, renderLogin } from './components/layout.js'
-import { isLegacySession, sessionPhone } from './domain/session.js'
+import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js'
 import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js'
 import { shouldRenderBackgroundUpdate } from './domain/render_policy.js'
 import { ContactPictureLoader } from './domain/contact_picture_loader.js'
@@ -42,6 +42,10 @@ import {
   type VoipResourceName,
 } from './pages/voip.js'
 import { icon } from './components/icons.js'
+import { ManagerPage, managerIdentity } from './features/manager.js'
+import type { ManagerIdentity } from './domain/manager_types.js'
+import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js'
+import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js'
 
 const TOKEN_KEY = 'whatsappApiToken'
 const THEME_KEY = 'viperconnect_theme'
@@ -100,6 +104,8 @@ const emptyVersionStatus = (): VersionStatus => ({
 })
 
 export class ViperConnectApp {
+  public identity: ManagerIdentity | null = null
+  private readonly manager: ManagerPage
   private readonly api: ApiClient
   private readonly socket: SocketBridge
   private readonly contactPictures: ContactPictureLoader
@@ -116,7 +122,7 @@ export class ViperConnectApp {
   private groupsHasMore = false
   private groupsQuery = ''
   private sessionVisibleLimit = PAGE_SIZE
-  private view: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' = 'dashboard'
+  private view: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' = 'dashboard'
   private sessionDestinations: SessionDestination[] = []
   private editingSessionDestination = ''
   private sessionDestinationError = ''
@@ -183,6 +189,7 @@ export class ViperConnectApp {
     socket = new SocketBridge(baseUrl),
   ) {
     this.api = api
+    this.manager = new ManagerPage(api, () => this.render())
     this.socket = socket
     this.contactPictures = new ContactPictureLoader((phone, pictureId) => this.api.profilePicture(phone, pictureId))
     setLocale(normalizeLocale(localStorage.getItem(LOCALE_KEY) || navigator.language))
@@ -192,17 +199,24 @@ export class ViperConnectApp {
 
   async start(): Promise<void> {
     this.applySavedTheme()
-    const token = localStorage.getItem(TOKEN_KEY) || ''
+    const token = sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || ''
     if (!token) {
       this.render()
       return
     }
     this.api.setToken(token)
     try {
+      this.identity = await managerIdentity(this.api)
       await this.loadSessions(true)
+      sessionStorage.setItem(TOKEN_KEY, token)
+      localStorage.removeItem(TOKEN_KEY)
       this.startRefreshTimer()
       this.startVersionTimer()
-    } catch {}
+    } catch (error) {
+      this.logout(false)
+      this.loginError = this.messageFor(error)
+      this.render()
+    }
   }
 
   private bindEvents(): void {
@@ -228,6 +242,11 @@ export class ViperConnectApp {
     this.root.addEventListener('input', (event) => this.handleFilter(event))
     this.root.addEventListener('change', (event) => this.handleFilter(event))
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && this.manager.pending && !this.manager.busy) {
+        this.manager.pending = undefined
+        this.render()
+        return
+      }
       if (event.key === 'Escape' && this.modal) this.closeModal()
     })
   }
@@ -237,6 +256,11 @@ export class ViperConnectApp {
     const actionElement = target.closest<HTMLElement>('[data-action]')
     const closeModal = target.closest<HTMLElement>('[data-close-modal]')
     if (closeModal) {
+      if (this.manager?.pending) {
+        if (!this.manager.busy) this.manager.pending = undefined
+        this.render()
+        return
+      }
       this.closeModal()
       return
     }
@@ -246,6 +270,51 @@ export class ViperConnectApp {
 
     const action = actionElement.dataset.action || ''
     const phone = actionElement.dataset.phone || ''
+    if (this.identity?.role === 'user' && (/(redis|queue|session-webhook)/.test(action) || action === 'new-session' || action === 'open-users')) return
+    if (this.identity?.role === 'user' && action.includes('voip') && !['open-voip', 'refresh-voip', 'scoped-voip-command', 'show-voip-credentials', 'drop-voip-registration', 'voip-history-page', 'reset-voip-history', 'play-voip-recording', 'download-voip-recording'].includes(action)) return
+    if (this.identity?.role === 'user' && ['voip-history-page', 'reset-voip-history'].includes(action) && this.voip?.capabilities?.history !== true) return
+    if (this.identity?.role === 'user' && ['play-voip-recording', 'download-voip-recording'].includes(action) && !this.canAccessScopedRecording(actionElement.dataset.recordId || '')) return
+    if (this.identity?.role === 'user' && action === 'show-voip-credentials'
+      && (!this.voip.capabilities?.extensionCredentials || !scopedExtensions(this.voip).some(extension => extension.id === actionElement.dataset.id))) return
+    if (this.identity?.role === 'user' && action === 'drop-voip-registration'
+      && (!canDisconnectScopedRegistration(this.voip) || !scopedRegistrations(this.voip).some(row => row.id === actionElement.dataset.extensionId
+        && row.registrationId === actionElement.dataset.registrationId && row.transport === actionElement.dataset.registrationType))) return
+    if (action === 'scoped-voip-command') {
+      const command = actionElement.dataset.command || ''
+      const session = actionElement.dataset.session || ''
+      const callId = actionElement.dataset.callId || ''
+      if (!this.voip.capabilities?.callCommands || !this.voip.calls.some(call => call.session === session && call.callId === callId)) return
+      if (!['accept', 'reject', 'end', 'mute', 'unmute'].includes(command)) return
+      actionElement.setAttribute('disabled', '')
+      try {
+        await this.api.voipCommand(session, callId, (command === 'unmute' ? 'mute' : command) as 'accept' | 'reject' | 'end' | 'mute',
+          command === 'mute' || command === 'unmute' ? { muted: command === 'mute' } : {})
+        await this.loadVoip()
+      } catch (error) { this.showToast(this.messageFor(error), 'error') }
+      finally { actionElement.removeAttribute('disabled') }
+      return
+    }
+    if (this.identity?.role === 'user' && action === 'load-webhook-history') return
+    if (phone && this.identity?.role === 'user' && !this.findSession(phone)) return
+    if (action.startsWith('manager-')) {
+      if (!this.identity) return
+      if (this.api.getToken().startsWith('mgr_key_')) return
+      await this.manager.action(action, actionElement.dataset.id || '', this.identity.role === 'admin')
+      return
+    }
+    if (action === 'open-users' || action === 'open-account') {
+      if (this.api.getToken().startsWith('mgr_key_')) return
+      if (!this.identity || (action === 'open-users') !== (this.identity.role === 'admin')) return
+      this.manager.reset()
+      this.manager.knownPhones = this.sessions.map(session => ({ phone: sessionPhone(session), label: sessionLabel(session) }))
+      this.view = action === 'open-users' ? 'users' : 'account'
+      this.selectedPhone = ''
+      this.mobileOpen = false
+      await this.manager.load(this.identity.role === 'admin')
+      if (phone && this.view === 'users' && this.identity?.role === 'admin') this.manager.focusAssignment(phone)
+      return
+    }
+    if (['go-dashboard', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session'].includes(action)) this.manager?.reset()
     if (action === 'load-webhook-history') {
       await this.loadWebhookHistory()
     } else if (action === 'open-session-webhooks' || action === 'refresh-session-webhooks') {
@@ -367,6 +436,7 @@ export class ViperConnectApp {
       const recordId = actionElement.dataset.recordId || ''
       try {
         const blob = await this.api.voipRecording(recordId)
+        if (this.identity?.role === 'user' && !this.canAccessScopedRecording(recordId)) return
         if (this.voipRecordingUrls[recordId]) URL.revokeObjectURL(this.voipRecordingUrls[recordId])
         this.voipRecordingUrls[recordId] = URL.createObjectURL(blob)
         this.render()
@@ -395,6 +465,7 @@ export class ViperConnectApp {
       const recordId = actionElement.dataset.recordId || ''
       try {
         const blob = await this.api.voipRecording(recordId)
+        if (this.identity?.role === 'user' && !this.canAccessScopedRecording(recordId)) return
         const url = URL.createObjectURL(blob)
         const anchor = document.createElement('a')
         anchor.href = url
@@ -548,6 +619,24 @@ export class ViperConnectApp {
     if (!(form instanceof HTMLFormElement) || !form.dataset.form) return
     event.preventDefault()
     const data = new FormData(form)
+    if (form.dataset.form.startsWith('manager-')) {
+      if (this.api.getToken().startsWith('mgr_key_')) return
+      if (this.identity) await this.manager.form(form.dataset.form, data, this.identity.role === 'admin')
+      if (this.manager.passwordChanged) {
+        this.logout(false)
+        this.loginError = 'Senha alterada. Entre novamente com a nova senha.'
+        this.render()
+      }
+      return
+    }
+    if (this.identity?.role === 'user') {
+      if (form.dataset.form === 'voip-sip-mode') {
+        if (!this.canEditScopedSipMode(`${data.get('extensionId') || ''}`)) return
+        if (!['extension', 'trunk'].includes(`${data.get('sipEndpointMode') || ''}`)) return
+      } else if (form.dataset.form === 'voip-history-filter') {
+        if (this.voip.capabilities?.history !== true) return
+      } else if (/(redis|queue|voip)/.test(form.dataset.form) || ['new-session', 'session-destination'].includes(form.dataset.form)) return
+    }
     const finishSubmitFeedback = SAVE_FORM_NAMES.has(form.dataset.form) ? this.beginSubmitFeedback(form) : undefined
 
     try {
@@ -559,6 +648,8 @@ export class ViperConnectApp {
           this.showToast('Destino salvo.', 'success')
         } catch (error) { this.showToast(this.messageFor(error), 'error') }
       } else if (form.dataset.form === 'login') {
+        await this.loginWithPassword(`${data.get('username') || ''}`, `${data.get('password') || ''}`)
+      } else if (form.dataset.form === 'legacy-login') {
         await this.login(`${data.get('token') || ''}`)
       } else if (form.dataset.form === 'new-session') {
         await this.createSession(data)
@@ -650,8 +741,9 @@ export class ViperConnectApp {
       } else if (form.dataset.form === 'voip-sip-mode') {
         try {
           const extensionId = `${data.get('extensionId') || ''}`.trim()
-          const sipEndpointMode = data.get('sipEndpointMode') === 'trunk' ? 'trunk' : 'extension'
+          const sipEndpointMode = `${data.get('sipEndpointMode') || ''}`
           if (!extensionId) throw new Error('extension_id_required')
+          if (!['extension', 'trunk'].includes(sipEndpointMode)) throw new Error('Modo SIP inválido.')
           await this.api.voipConsole(`extensions/${encodeURIComponent(extensionId)}/sip-mode`, 'PUT', { sipEndpointMode })
           this.modal = undefined
           this.showToast(t('Configuração salva.'), 'success')
@@ -854,24 +946,89 @@ export class ViperConnectApp {
     }
   }
 
-  private async login(token: string): Promise<void> {
-    this.api.setToken(token)
+  private async loginWithPassword(username: string, password: string): Promise<void> {
     this.loginError = ''
     try {
-      await this.loadSessions(true)
-      localStorage.setItem(TOKEN_KEY, token.trim())
-      this.startRefreshTimer()
-      this.startVersionTimer()
+      const result = await this.api.request<{ token: string; user: ManagerIdentity }>('/manager/login', {
+        method: 'POST', body: JSON.stringify({ username: username.trim(), password }),
+      })
+      await this.login(result.token)
     } catch (error) {
-      this.api.setToken('')
       this.loginError = this.messageFor(error)
       this.render()
     }
   }
 
-  private logout(): void {
+  private async login(token: string): Promise<void> {
+    this.api.setToken(token)
+    this.loginError = ''
+    try {
+      this.identity = await managerIdentity(this.api)
+      await this.loadSessions(true)
+      sessionStorage.setItem(TOKEN_KEY, token.trim())
+      localStorage.removeItem(TOKEN_KEY)
+      this.startRefreshTimer()
+      this.startVersionTimer()
+    } catch (error) {
+      this.logout(false)
+      this.loginError = this.messageFor(error)
+      this.render()
+    }
+  }
+
+  private logout(notifyServer = true): void {
+    if (notifyServer && this.identity) void this.api.request('/manager/logout', { method: 'POST' }).catch(() => undefined)
     localStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(TOKEN_KEY)
     this.api.setToken('')
+    this.identity = null
+    this.manager.reset()
+    this.contacts = emptyContactState()
+    this.groups = []
+    this.query = ''
+    this.statusFilter = 'all'
+    this.contactsQuery = ''
+    this.groupsQuery = ''
+    this.groupsCursor = '0'
+    this.groupsHasMore = false
+    this.tab = 'overview'
+    this.loading = false
+    this.loadingSection = false
+    this.sectionError = ''
+    this.toast = undefined
+    this.loginError = ''
+    this.connectionEvent = undefined
+    this.connectionLoading = false
+    this.webhookHistoryRequest++
+    this.webhookHistorySnapshots = []
+    this.webhookHistoryError = ''
+    this.webhookHistoryLoading = false
+    this.queues = []
+    this.queueMessages = []
+    this.selectedQueue = ''
+    this.queueError = ''
+    this.queueQuery = ''
+    this.queueSession = ''
+    this.redisKeys = []
+    this.redisTree = {}
+    this.redisExpandedPrefixes.clear()
+    this.redisSearchCollapsedPrefixes.clear()
+    this.selectedRedisKey = undefined
+    this.redisQueryResult = undefined
+    this.redisError = ''
+    this.redisQuery = ''
+    this.redisSession = ''
+    this.voip = { bridges: [], calls: [] }
+    this.voipRouterResult = undefined
+    this.voipError = ''
+    this.voipQueries = {}
+    Object.values(this.voipRecordingUrls).forEach(url => URL.revokeObjectURL(url))
+    Object.values(this.voipTransferAudioUrls).forEach(url => URL.revokeObjectURL(url))
+    this.voipRecordingUrls = {}
+    this.voipTransferAudioUrls = {}
+    for (const timer of [this.redisSearchTimer, this.groupSearchTimer, this.contactSearchTimer]) if (timer) window.clearTimeout(timer)
+    if (this.refreshTimer) window.clearInterval(this.refreshTimer)
+    this.refreshTimer = undefined
     this.sessions = []
     this.sessionDestinations = []
     this.editingSessionDestination = ''
@@ -891,8 +1048,11 @@ export class ViperConnectApp {
     if (this.loading) return
     this.loading = true
     if (!initial) this.render()
+    const token = this.api.getToken()
     try {
-      this.sessions = await this.api.sessions()
+      const sessions = await this.api.sessions()
+      if (token !== this.api.getToken()) return
+      this.sessions = sessions
       this.refreshIn = REFRESH_SECONDS
       this.loginError = ''
       if (this.selectedPhone) {
@@ -900,9 +1060,9 @@ export class ViperConnectApp {
         if (!selected) this.selectedPhone = ''
       }
     } catch (error) {
+      if (token !== this.api.getToken()) return
       if (error instanceof ApiError && [401, 403].includes(error.status)) {
-        localStorage.removeItem(TOKEN_KEY)
-        this.api.setToken('')
+        this.logout(false)
         this.loginError = t('Token inválido ou sem permissão.')
       } else {
         this.showToast(this.messageFor(error))
@@ -915,9 +1075,9 @@ export class ViperConnectApp {
   }
 
   private tickRefresh(): void {
-    if (!this.api.getToken() || this.modal) return
+    if (!this.api.getToken() || this.modal || this.manager?.pending) return
     // Preserve the iframe navigation and scroll position while reading docs.
-    if (this.view === 'documentation' || this.view === 'session-webhooks') return
+    if (this.view === 'documentation' || this.view === 'session-webhooks' || this.view === 'users' || this.view === 'account') return
     if (this.view === 'queues') {
       if (this.queuesLoading || this.queueMessagesLoading) return
       this.queueRefreshIn -= 1
@@ -1008,6 +1168,7 @@ export class ViperConnectApp {
   }
 
   private async loadWebhookHistory(): Promise<void> {
+    if (this.identity?.role === 'user') return
     const phone = this.selectedPhone
     if (!phone) return
     const request = ++this.webhookHistoryRequest
@@ -1146,7 +1307,7 @@ export class ViperConnectApp {
   private async saveSessionConfig(data: FormData): Promise<void> {
     if (!this.selectedPhone) return
     try {
-      const updated = await this.api.register(this.selectedPhone, sessionConfigPayload(data))
+      const updated = await this.api.register(this.selectedPhone, sessionConfigPayload(data, this.identity?.role === 'user'))
       this.replaceSession(this.selectedPhone, { ...this.findSession(this.selectedPhone), ...updated })
       this.showToast(t('Configuração salva.'), 'success')
     } catch (error) {
@@ -1248,6 +1409,7 @@ export class ViperConnectApp {
   }
 
   private async loadVoipHistory(page?: number, overrides: { search?: string; startDate?: string; endDate?: string } = {}): Promise<void> {
+    if (this.identity?.role === 'user' && this.voip.capabilities?.history !== true) return
     if (this.voipLoading) return
     this.voipLoading = true
     this.voipError = ''
@@ -1255,6 +1417,7 @@ export class ViperConnectApp {
     try {
       const history = await this.api.voipHistory(this.currentVoipHistoryQuery(page, overrides))
       this.voip = { ...this.voip, history }
+      this.cleanScopedHistory()
       this.voipRefreshIn = VOIP_REFRESH_SECONDS
     } catch (error) {
       this.voipError = this.messageFor(error)
@@ -1284,8 +1447,15 @@ export class ViperConnectApp {
       const historyQuery = this.currentVoipHistoryQuery()
       const preserveHistory = historyQuery.page > 1 || !!historyQuery.search || !!historyQuery.startDate || !!historyQuery.endDate
       const next = await this.api.voipBootstrap()
-      if (preserveHistory) next.history = await this.api.voipHistory(historyQuery)
       this.voip = next
+      if (this.identity?.role === 'user') {
+        next.history = undefined
+        this.cleanScopedHistory()
+        // Capabilities must come from the completed bootstrap, never stale state.
+        if (next.capabilities?.history === true) next.history = await this.api.voipHistory(historyQuery)
+        else next.history = undefined
+        this.cleanScopedHistory()
+      } else if (preserveHistory) next.history = await this.api.voipHistory(historyQuery)
       this.voipRefreshIn = VOIP_REFRESH_SECONDS
     } catch (error) {
       this.voipError = this.messageFor(error)
@@ -1509,6 +1679,10 @@ export class ViperConnectApp {
     this.watchConnection(phone)
     this.render()
     try {
+      if (session.status === 'disconnected') {
+        await this.api.register(phone)
+        return
+      }
       const latest = await this.api.session(phone)
       this.replaceSession(phone, { ...session, ...latest, phone })
       if (['offline', 'disconnected'].includes(`${latest.status || ''}`.toLowerCase())) {
@@ -1572,14 +1746,17 @@ export class ViperConnectApp {
       this.root.innerHTML = renderLogin(escapeHtml(this.loginError))
       return
     }
+    if (this.identity?.role === 'user' && ['queues', 'redis', 'session-webhooks', 'users'].includes(this.view)) this.view = 'dashboard'
     const selected = this.findSession(this.selectedPhone)
     const content =
-      this.view === 'session-webhooks'
+      this.view === 'users' || this.view === 'account'
+        ? this.manager.renderPage(this.identity?.role === 'admin')
+        : this.view === 'session-webhooks'
         ? renderSessionWebhooks(this.sessionDestinations, this.sessions, this.editingSessionDestination, this.sessionDestinationError, this.selectedPhone)
         : this.view === 'documentation'
         ? renderDocumentationPage()
         : this.view === 'voip'
-          ? renderVoipPage(this.voip, this.voipLoading, this.voipError, {
+          ? this.identity?.role === 'user' ? renderScopedVoip(this.voip, this.voipLoading, this.voipError, this.voipRecordingUrls, this.sessions.map(sessionPhone)) : renderVoipPage(this.voip, this.voipLoading, this.voipError, {
               tab: this.voipTab,
               query: this.voipQueries[this.voipTab] || '',
               showOfflineAutomaticExtensions: this.showOfflineAutomaticExtensions,
@@ -1621,7 +1798,9 @@ export class ViperConnectApp {
                 })
               : selected
                 ? renderSessionPage({
-                    webhookHistoryHtml: renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
+                    canManageUsers: this.identity?.role === 'admin',
+                    restricted: this.identity?.role === 'user',
+                    webhookHistoryHtml: this.identity?.role === 'user' ? '' : renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
                     session: selected,
                     tab: this.tab,
                     contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
@@ -1636,6 +1815,7 @@ export class ViperConnectApp {
                     sectionError: this.sectionError,
                   })
                 : renderDashboard({
+                    canCreate: this.identity?.role !== 'user',
                     sessions: this.sessions,
                     query: this.query,
                     status: this.statusFilter,
@@ -1646,6 +1826,8 @@ export class ViperConnectApp {
 
     this.root.innerHTML =
       renderLayout({
+        identity: this.identity,
+        canManageAccount: !this.api.getToken().startsWith('mgr_key_'),
         content,
         collapsed: this.collapsed,
         mobileOpen: this.mobileOpen,
@@ -1653,7 +1835,30 @@ export class ViperConnectApp {
         activeView: this.view,
       }) +
       this.renderModal() +
+      (this.manager?.renderConfirmation() || '') +
       this.renderToastHtml()
+  }
+
+  private canAccessScopedRecording(id: string): boolean {
+    return this.voip?.capabilities?.recordings === true && !!scopedRecording(this.voip, this.sessions.map(sessionPhone), id)
+  }
+
+  private cleanScopedHistory(): void {
+    if (this.identity?.role !== 'user') return
+    if (this.voip.history) this.voip.history.items = scopedHistoryItems(this.voip, this.sessions.map(sessionPhone))
+    for (const [id, url] of Object.entries(this.voipRecordingUrls)) {
+      if (!this.canAccessScopedRecording(id)) {
+        URL.revokeObjectURL(url)
+        delete this.voipRecordingUrls[id]
+      }
+    }
+  }
+
+  private canEditScopedSipMode(extensionId: string): boolean {
+    return this.voip.capabilities?.extensionSipMode === true
+      && this.modal?.type === 'voip-credentials'
+      && this.modal.value.extensionId === extensionId
+      && scopedExtensions(this.voip).some(extension => extension.id === extensionId)
   }
 
   private renderModal(): string {
@@ -1665,7 +1870,7 @@ export class ViperConnectApp {
     if (this.modal.type === 'redis-delete-prefix') return renderRedisDeleteModal(this.modal.prefix, true)
     if (this.modal.type === 'voip-resource') return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id)
     if (this.modal.type === 'voip-recording-settings') return renderVoipRecordingSettingsModal(this.voip)
-    if (this.modal.type === 'voip-credentials') return renderVoipCredentialsModal(this.modal.value)
+    if (this.modal.type === 'voip-credentials') return renderVoipCredentialsModal(this.modal.value, this.identity?.role === 'user', this.canEditScopedSipMode(`${this.modal.value.extensionId || ''}`))
     const session = this.findSession(this.modal.phone)
     if (!session) return ''
     if (this.modal.type === 'connection') {
@@ -1799,6 +2004,7 @@ export class ViperConnectApp {
   }
 
   private startVersionTimer(): void {
+    if (this.identity?.role === 'user') return
     void this.loadVersionStatus()
     if (this.versionTimer) return
     this.versionTimer = window.setInterval(() => {

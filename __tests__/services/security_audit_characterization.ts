@@ -45,10 +45,14 @@ describe('unresolved security findings (isolated characterization)', () => {
     expect(config).toHaveBeenCalledWith('22222222222')
     expect(res.status).toHaveBeenCalledWith(200)
   })
-  test('object token throws instead of returning 401/400', async () => {
+  test('malformed token is rejected instead of throwing (Manager parser regression)', async () => {
     const request = req()
     request.query.access_token = { unexpected: 'value' }
-    await expect(new Security({} as any).run(request, response(), jest.fn())).rejects.toThrow(TypeError)
+    const res = response()
+    const next = jest.fn()
+    await new Security({} as any).run(request, res, next)
+    expect(res.status).toHaveBeenCalledWith(401)
+    expect(next).not.toHaveBeenCalled()
   })
   test('inbound webhook forwards an unsigned body', async () => {
     const outgoing: any = { send: jest.fn().mockResolvedValue(undefined) }

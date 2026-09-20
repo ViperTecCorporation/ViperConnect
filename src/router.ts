@@ -44,6 +44,8 @@ import { ProfilePictureController } from './controllers/profile_picture_controll
 import { SessionWebhooksController } from './controllers/session_webhooks_controller'
 import { WebhookHistoryController } from './controllers/webhook_history_controller'
 import { apiErrorLocalization } from './services/api_error_localization'
+import { managerRouter } from './controllers/manager_controller'
+import { managerAccess } from './services/manager_access'
 
 export const router = (
   incoming: Incoming,
@@ -63,6 +65,8 @@ export const router = (
 ) => {
   const router: Router = Router()
   router.use(apiErrorLocalization)
+  router.use('/manager', managerRouter())
+  router.use(managerAccess())
   const messagesController = new MessagesController(incoming, outgoing, getConfig)
   const marketingMessagesController = new MarketingMessagesController(incoming, outgoing, getConfig)
   const mediaController = new MediaController(baseUrl, getConfig, sessionStore)

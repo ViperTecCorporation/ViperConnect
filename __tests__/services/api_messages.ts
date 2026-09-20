@@ -6,6 +6,10 @@ import { SendError } from '../../src/services/send_error'
 import { normalizeProviderSendError, shouldReturnProviderSendFailure } from '../../src/services/providers/send_failure'
 
 describe('public error language', () => {
+  it('explains invalid SIP mode input in both supported languages', () => {
+    expect(apiMessage('invalid_sip_endpoint_mode', 'pt-BR')).toBe('Informe somente o campo sipEndpointMode com o valor extension ou trunk.')
+    expect(apiMessage('invalid_sip_endpoint_mode', 'en')).toBe('Provide only sipEndpointMode with the value extension or trunk.')
+  })
   it('defaults to Brazilian Portuguese and preserves the internal error', () => {
     const error = new SendError(404, 'zapo_phone_lid_not_found: 5511000000000')
     const result = normalizeProviderSendError('zapo', 'text', error)

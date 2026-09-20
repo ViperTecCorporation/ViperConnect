@@ -1,8 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.30-038921da';
-import { renderModal } from '../components/modal.js?v=4.0.30-038921da';
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
-import { formatNumber, t } from '../core/i18n.js?v=4.0.30-038921da';
-import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.30-038921da';
+import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
+import { renderModal } from '../components/modal.js?v=4.0.32-1ab9d8f1';
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
+import { formatNumber, t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
+import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.32-1ab9d8f1';
+export const redisKeyIsReadOnly = (key) => ['manager-identity:', 'unoapi-webhook-history:'].some(prefix => key.startsWith(prefix) || prefix.startsWith(key));
 export const redisTreeFromKeys = (keys) => {
     const tree = { '': [] };
     keys.forEach((key) => {
@@ -48,7 +49,7 @@ const renderRedisTreeNodes = (tree, prefix, expanded, selectedKey = '', loading 
       <button class="redis-tree__toggle" type="button" data-action="toggle-redis-node" data-prefix="${escapeHtml(node.path)}" aria-expanded="${open}">
         <span class="redis-tree__arrow" aria-hidden="true">›</span>${icon('database')}<strong>${escapeHtml(node.label)}</strong><span class="redis-tree__count" title="${t('Total de chaves abaixo deste item')}">${formatNumber(node.descendantCount || 0)}</span>
       </button>
-      <button class="btn btn--icon btn--ghost redis-tree__delete" type="button" data-action="delete-redis-prefix" data-prefix="${escapeHtml(node.path)}" aria-label="${escapeHtml(t('Excluir todos os subitens de {prefix}', { prefix: node.path }))}" title="${t('Excluir todos os subitens')}">${icon('trash')}</button>
+      ${redisKeyIsReadOnly(node.path) ? '' : `<button class="btn btn--icon btn--ghost redis-tree__delete" type="button" data-action="delete-redis-prefix" data-prefix="${escapeHtml(node.path)}" aria-label="${escapeHtml(t('Excluir todos os subitens de {prefix}', { prefix: node.path }))}" title="${t('Excluir todos os subitens')}">${icon('trash')}</button>`}
     </div>
     ${open ? `<div class="redis-tree__children">${children
         ? renderRedisTreeNodes(tree, node.path, expanded, selectedKey, loading)
@@ -90,8 +91,9 @@ export const renderRedisPage = (options) => {
         && key.toLowerCase().includes(options.query.trim().toLowerCase()));
     const searching = !!(options.sessionFilter || options.query.trim());
     const tree = searching ? redisTreeFromKeys(filtered) : options.tree;
+    const collapsed = new Set(options.searchCollapsedPrefixes || []);
     const expanded = new Set(searching
-        ? Object.keys(tree).filter(Boolean)
+        ? Object.keys(tree).filter(prefix => prefix && !collapsed.has(prefix))
         : options.expandedPrefixes);
     const treeHtml = renderRedisTreeNodes(tree, '', expanded, options.selected?.key, options.loading);
     return `
@@ -109,7 +111,8 @@ export const renderRedisPage = (options) => {
       <div class="redis-browser">
         <div class="redis-tree">${treeHtml || `<div class="empty-state">${options.loading ? t('Atualizando…') : t('Nenhuma chave encontrada.')}</div>`}</div>
         <div class="redis-detail">${options.selected ? `
-          <div class="section__heading"><div><h2>${escapeHtml(options.selected.key)}</h2><p class="muted">${options.selected.type} · TTL ${options.selected.ttl} · ${formatNumber(options.selected.size)} ${t('itens')}</p></div><div class="actions">${redisValueIsRedacted(options.selected.value) ? '' : `<button class="btn btn--ghost" type="button" data-action="edit-redis-key">${icon('edit')}${t('Editar')}</button>`}<button class="btn btn--danger btn--ghost" type="button" data-action="delete-redis-key">${icon('trash')}${t('Excluir')}</button></div></div>
+          <div class="section__heading"><div><h2>${escapeHtml(options.selected.key)}</h2><p class="muted">${options.selected.type} · TTL ${options.selected.ttl} · ${formatNumber(options.selected.size)} ${t('itens')}</p></div><div class="actions">${options.selected.readOnly || redisKeyIsReadOnly(options.selected.key) ? '' : `${redisValueIsRedacted(options.selected.value) ? '' : `<button class="btn btn--ghost" type="button" data-action="edit-redis-key">${icon('edit')}${t('Editar')}</button>`}<button class="btn btn--danger btn--ghost" type="button" data-action="delete-redis-key">${icon('trash')}${t('Excluir')}</button>`}</div></div>
+          ${options.selected.readOnly || redisKeyIsReadOnly(options.selected.key) ? '<p class="hint">Somente leitura. Credenciais e campos sensíveis não são exibidos. Use as telas de Usuários ou Webhooks para gerenciar esses registros.</p>' : ''}
           ${redisValueIsRedacted(options.selected.value) ? `<p class="hint">${t('A edição foi bloqueada porque o conteúdo possui campos sensíveis mascarados.')}</p>` : ''}
           ${options.selected.truncated ? `<p class="hint">${t('Conteúdo limitado aos primeiros itens para proteger o navegador.')}</p>` : ''}
           <pre>${escapeHtml(formattedValue(options.selected.value))}</pre>` : `<div class="empty-state">${t('Selecione uma chave na árvore para visualizar o conteúdo.')}</div>`}</div>

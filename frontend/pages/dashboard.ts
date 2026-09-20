@@ -12,9 +12,10 @@ interface DashboardOptions {
   loading: boolean
   refreshIn: number
   visibleLimit: number
+  canCreate?: boolean
 }
 
-export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit }: DashboardOptions): string => {
+export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true }: DashboardOptions): string => {
   const filtered = filterSessions(sessions, query, status)
   const visible = filtered.slice(0, visibleLimit)
   const online = sessions.filter((session) => isOnlineStatus(session.status)).length
@@ -26,14 +27,13 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
       <div><span class="eyebrow">${t('Operação')}</span><h1>${t('Visão geral')}</h1><p class="muted">${t('Sessões e serviços em tempo real.')}</p></div>
       <div class="actions">
         <a class="btn btn--icon btn--ghost" href="https://github.com/ViperTecCorporation/ViperConnect" target="_blank" rel="noopener" aria-label="GitHub">${icon('github')}</a>
-        <button class="btn" type="button" data-action="new-session">${icon('plus')}${t('Nova sessão')}</button>
+        ${canCreate ? `<button class="btn" type="button" data-action="new-session">${icon('plus')}${t('Nova sessão')}</button>` : ''}
       </div>
     </header>
 
     <div class="health-bar" aria-label="${t('Saúde dos serviços')}">
       <span>${renderStatus('online')} API</span>
-      <span>${renderStatus('online')} Redis</span>
-      <span>${renderStatus('online')} RabbitMQ</span>
+      ${canCreate ? `<span>${renderStatus('online')} Redis</span><span>${renderStatus('online')} RabbitMQ</span>` : ''}
     </div>
 
     <section class="stats" aria-label="${t('Resumo das sessões')}">

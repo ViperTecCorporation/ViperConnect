@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { UNOAPI_AUTH_TOKEN } from '../defaults'
 import { getAuthHeaderToken } from '../services/security'
+import { managerAdmin } from '../services/manager_access'
 import { getConfig } from '../services/redis'
 import { sessionWebhookStore, SessionWebhookStore } from '../services/session_webhook_store'
 import { publicSessionDestination, SessionWebhookValidationError, validateSessionDestination } from '../services/session_webhook_contract'
@@ -14,7 +15,7 @@ export class SessionWebhooksController {
 
   async handle(req: Request, res: Response) {
     // Do not pass these routes through session-token authentication/logging.
-    if (!this.adminToken || getAuthHeaderToken(req).trim() !== this.adminToken) return res.status(403).json({ error: 'admin_token_required' })
+    if (!managerAdmin(req) && (!this.adminToken || getAuthHeaderToken(req).trim() !== this.adminToken)) return res.status(403).json({ error: 'admin_token_required' })
     try {
       if (req.path.endsWith('/states') && req.method === 'GET') {
         const destination = req.query.destination_id

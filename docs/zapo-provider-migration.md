@@ -252,8 +252,12 @@ O adapter segue a referência oficial de tipos da Zapo:
 - `pix_static_code` continua aceitando a forma curta `payment_request`, enquanto
   `pix_dynamic_code`, `payment_link`, `boleto` e `offsite_card_pay` usam uma
   ordem `order_details/review_and_pay`, com o objeto `order` opcional;
-- pedidos detalhados aceitam cabeçalho de imagem; pedidos simplificados, sem o
-  objeto `order`, rejeitam esse cabeçalho;
+- pedidos detalhados aceitam cabeçalho de imagem ou documento PDF; pedidos
+  simplificados, sem o objeto `order`, rejeitam cabeçalhos com mídia. O envio e
+  a exibição de boleto com PIX e PDF no fluxo `order_details/review_and_pay`
+  foram confirmados em 19/09/2026. Consulte o
+  [payload completo com PDF](../docs-site/guide/messages.md#pedido-com-boleto-pix-e-pdf-no-header).
+  Essa validação não se estende automaticamente a outros tipos de interativo;
 - cabeçalhos de imagem são identificados por conteúdo antes da geração da
   miniatura. `file-type` é uma dependência direta do runtime e o estágio
   `production-dependencies` valida sua presença para não depender de hoisting

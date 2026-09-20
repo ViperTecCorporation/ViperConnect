@@ -4,6 +4,7 @@ import logger from './logger'
 import { SessionStore } from './session_store'
 import { isEmbeddedAccessToken } from './embedded_tokens'
 import { resolveSessionPhoneByMetaId } from './meta_alias'
+import { managerPrincipal } from './manager_access'
 
 
 export default class Security {
@@ -14,6 +15,8 @@ export default class Security {
   }
 
   public async run(req: Request, res: Response, next: NextFunction) {
+    // Set only by the authenticated Manager gate, after scope verification.
+    if (managerPrincipal(req)) return next()
     // Allow embedded signup endpoints without auth (public)
     try {
       const path = req.path || ''
@@ -76,14 +79,15 @@ export default class Security {
 
 export const getAuthHeaderToken = (req: Request) => {
   const headerName = UNOAPI_HEADER_NAME
-  return (
+  const value = (
     req.headers[headerName] ||
     req.headers['authorization'] ||
     req.query['access_token'] ||
     req.query['hub.verify_token'] ||
     req.headers['Authorization'] ||
-    req.body['auth_token'] ||
-    req.body['authToken'] ||
+    req.body?.['auth_token'] ||
+    req.body?.['authToken'] ||
     ''
-  ).replace('Bearer ', '')
+  )
+  return typeof value === 'string' ? value.replace(/^Bearer\s+/i, '') : ''
 }

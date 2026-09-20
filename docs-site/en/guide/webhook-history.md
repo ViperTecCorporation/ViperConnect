@@ -1,5 +1,14 @@
 # Message webhook history and restoration
 
+## Read-only Redis preview
+
+Administrators can inspect snapshot IDs, dates, reasons, servers, enabled events
+and destination origins in the Redis browser. URL paths, queries, fragments,
+credentials and headers are never returned. Invalid records are not exposed as
+raw text. These responses include `readOnly: true`; edits and deletions, including
+subtree deletion, return HTTP 403 (`redis_key_read_only`). Restore snapshots through
+the session Webhooks screen instead. This preview does not change stored records.
+
 Redis-backed sessions retain up to **20 previous webhook configurations per phone**
 under `unoapi-webhook-history:<phone>`, without expiration. This is separate from
 WhatsApp authentication and centralized session lifecycle destinations.

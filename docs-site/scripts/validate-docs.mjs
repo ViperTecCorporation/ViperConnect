@@ -119,7 +119,7 @@ const router = await readFile(path.join(root, 'src', 'router.ts'), 'utf8')
 const ignoredRoute =
   /^(\/$|\/index\.html|\/socket\.io|min\.js|\/favicon|\/docs(?:\/|$)|\/app\/|\/logos\/|\/embedded|\/config\.js|\/embedded-callback)/
 const unsupportedRoute =
-  /oauth\/access_token|whatsapp_business_accounts|sessions\/meta\/mappings|subscribed_apps|message_templates|\/config\.js|debug_token|business_account_id|phone_number_id|\/invite_link$|^\/admin\/(?:redis|rabbitmq)\/|\/debug\/(?:auth_cache|privacy_)|\/jidmap(?:\/|$)/
+  /oauth\/access_token|whatsapp_business_accounts|sessions\/meta\/mappings|subscribed_apps|message_templates|\/config\.js|debug_token|business_account_id|phone_number_id|\/invite_link$|\/debug\/(?:auth_cache|privacy_)|\/jidmap(?:\/|$)/
 const normalizeRoute = (value) => value.replace(/:([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\))?/g, '{$1}').replace(/\*$/, '{path}')
 const missing = []
 for (const line of router.split(/\r?\n/)) {

@@ -1,5 +1,17 @@
 # Histórico e restauração de webhooks de mensagens
 
+## Visualização no explorador Redis
+
+O administrador pode inspecionar `unoapi-webhook-history:<phone>` em modo somente
+leitura. A prévia mostra ID, data, motivo, servidor, eventos e origem do destino
+(protocolo, domínio e porta). Caminho, parâmetros, fragmento, credenciais da URL,
+tokens e cabeçalhos não são exibidos. Registros inválidos não são devolvidos como texto bruto.
+
+A consulta retorna `readOnly: true`; edição e exclusão pelo explorador ou pela API
+Redis administrativa são bloqueadas com HTTP 403 (`redis_key_read_only`), inclusive
+por subárvore. A restauração continua disponível na aba Webhooks da sessão para o
+administrador. A visualização não altera o arquivo histórico nem as conexões.
+
 O histórico preserva configurações anteriores dos webhooks de mensagens de uma
 sessão Redis. Ele é separado das credenciais do WhatsApp e dos destinos centralizados
 de eventos de sessão. Não há restauração automática.
@@ -83,7 +95,7 @@ Somente um administrador global deve avaliar se a restauração é apropriada.
 
 Tokens e URLs completos permanecem no Redis para permitir restauração. Proteja ACLs,
 backups e acesso ao servidor; não se trata de um cofre com criptografia adicional.
-O painel Redis mascara o conteúdo dessa chave nas consultas genéricas. O endpoint
+O painel Redis mostra somente a projeção segura descrita acima nas consultas genéricas. O endpoint
 de histórico retorna somente a prévia segura. Não copie segredos para logs ou documentação.
 O limite é de versões por número, não de quantidade total de números arquivados.
 

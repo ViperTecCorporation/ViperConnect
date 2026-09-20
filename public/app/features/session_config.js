@@ -1,7 +1,7 @@
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
-import { icon } from '../components/icons.js?v=4.0.30-038921da';
-import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.30-038921da';
-import { t } from '../core/i18n.js?v=4.0.30-038921da';
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
+import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
+import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.32-1ab9d8f1';
+import { t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
 export const booleanSessionFields = [
     ['autoConnect', 'Conectar automaticamente', 'Reconecta esta sessão quando o worker for iniciado.'],
     ['ignoreGroupMessages', 'Ignorar mensagens de grupos', 'Não encaminha mensagens recebidas em grupos aos webhooks.'],
@@ -20,7 +20,7 @@ export const booleanSessionFields = [
     ['ignoreBroadcastStatuses', 'Ignorar Status', 'Não encaminha publicações de Status do WhatsApp.'],
     ['ignoreBroadcastMessages', 'Ignorar listas de transmissão', 'Não encaminha mensagens de listas de transmissão.'],
 ];
-export const renderSessionConfig = (session) => `
+export const renderSessionConfig = (session, restricted = false) => `
   <form class="stack" data-form="session-config">
     <section class="section">
       <div class="section__heading">
@@ -49,11 +49,11 @@ export const renderSessionConfig = (session) => `
           <input name="server" value="${escapeHtml(session.server || 'server_1')}">
           <small aria-hidden="true">&nbsp;</small>
         </label>
-        <label class="field field--wide">
+        ${restricted ? '' : `<label class="field field--wide">
           <span>Proxy</span>
           <input name="proxyUrl" value="${escapeHtml(session.proxyUrl || '')}" placeholder="${t('socks5://usuario:senha@host:porta')}">
         </label>
-        ${renderSecretField('authToken', t('Token da sessão'), session.authToken || '')}
+        ${renderSecretField('authToken', t('Token da sessão'), session.authToken || '')}`}
       </div>
     </section>
 
@@ -134,7 +134,7 @@ const numberValue = (data, key, fallback) => {
     const value = Number(data.get(key));
     return Number.isFinite(value) ? value : fallback;
 };
-export const sessionConfigPayload = (data) => {
+export const sessionConfigPayload = (data, restricted = false) => {
     const payload = {
         label: `${data.get('label') || ''}`.trim(),
         connectionType: `${data.get('connectionType') || 'qrcode'}`,
@@ -156,5 +156,8 @@ export const sessionConfigPayload = (data) => {
     booleanSessionFields.forEach(([name]) => {
         payload[name] = data.has(name);
     });
+    if (restricted)
+        for (const key of ['authToken', 'storage', 'baseStore', 'getStore', 'proxyUrl'])
+            delete payload[key];
     return payload;
 };

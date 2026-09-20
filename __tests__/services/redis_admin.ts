@@ -17,14 +17,62 @@ import {
 const scan = redisScanSome as jest.MockedFunction<typeof redisScanSome>
 
 describe('Redis admin service', () => {
-  test('never exposes archived webhook URLs or credentials through generic Redis inspection', async () => {
-    const client = { type: jest.fn().mockResolvedValue('list'), ttl: jest.fn().mockResolvedValue(-1), lLen: jest.fn().mockResolvedValue(2), lRange: jest.fn() }
+  test.each(['users', 'keys', 'history'])('projects %s records without secrets', async name => {
+    const raw = JSON.stringify({ id: 'id', name: 'Operador', username: 'user', active: true, phone: '5511', from: null, to: 'id', prefix: 'mgr_key_123', password: 'secret', digest: 'secret', generation: 'secret', nested: { token: 'secret' } })
+    const client = { type: jest.fn().mockResolvedValue(name === 'history' ? 'list' : 'hash'), ttl: jest.fn().mockResolvedValue(-1), hGetAll: jest.fn().mockResolvedValue({ id: raw }), hLen: jest.fn().mockResolvedValue(1), lLen: jest.fn().mockResolvedValue(1), lRange: jest.fn().mockResolvedValue([raw]) }
     const admin = new RedisAdmin(async () => client as any)
-    expect((await admin.getKey('unoapi-webhook-history:5511999999')).value).toBe('[REDACTED]')
-    expect(await admin.query('LRANGE', ['unoapi-webhook-history:5511999999'])).toBe('[REDACTED]')
-    expect(client.lRange).not.toHaveBeenCalled()
+    const key = `manager-identity:{v1}:${name}`
+    const result = await admin.getKey(key)
+    expect(result.readOnly).toBe(true)
+    expect(JSON.stringify(result)).not.toMatch(/secret|password|digest|generation|nested/)
+    expect(await admin.query(name === 'history' ? 'LRANGE' : 'HGETALL', [key])).toEqual(result.value)
   })
-  beforeEach(() => scan.mockReset())
+
+  test.each(['digests', 'login:secret', 'rate:ip:secret', 'unknown'])('never exposes hidden manager key %s', async name => {
+    const factory = jest.fn()
+    const admin = new RedisAdmin(factory as any)
+    await expect(admin.getKey(`manager-identity:{v1}:${name}`)).rejects.toThrow('redis_key_not_allowed')
+    expect(factory).not.toHaveBeenCalled()
+  })
+
+  test.each(['manager-identity:{v1}:users', 'manager-identity:', 'manager-identity:{v1}:', 'unoapi-webhook-history:', 'unoapi-webhook-history:5511'])('rejects direct and subtree writes to %s', async key => {
+    const factory = jest.fn()
+    const admin = new RedisAdmin(factory as any)
+    await expect(admin.saveKey(key, 'string', 'overwrite')).rejects.toThrow('redis_key_read_only')
+    await expect(admin.deleteKey(key)).rejects.toThrow('redis_key_read_only')
+    await expect(admin.deletePrefix(key)).rejects.toThrow('redis_key_read_only')
+    expect(factory).not.toHaveBeenCalled()
+  })
+
+  test('does not allow wildcard deletion to bypass protected prefixes', async () => {
+    const factory = jest.fn()
+    await expect(new RedisAdmin(factory as any).deletePrefix('unoapi-*:')).rejects.toThrow('redis_key_not_allowed')
+    expect(factory).not.toHaveBeenCalled()
+  })
+
+  test('filters hidden manager names from search and tree', async () => {
+    const keys = ['manager-identity:{v1}:users', 'manager-identity:{v1}:digests', 'manager-identity:{v1}:login:secret']
+    scan.mockResolvedValue(keys)
+    const admin = new RedisAdmin(async () => ({ scan: jest.fn().mockResolvedValue({ cursor: '0', keys }) }) as any)
+    expect(await admin.listKeys('manager-identity')).toEqual([keys[0]])
+    expect(await admin.listTree('manager-identity:{v1}:')).toEqual([{ label: 'users', path: keys[0], kind: 'key' }])
+  })
+
+  test('invalid history JSON and URL never expose raw credentials', async () => {
+    const client = { type: jest.fn().mockResolvedValue('list'), ttl: jest.fn().mockResolvedValue(-1), lLen: jest.fn().mockResolvedValue(2), lRange: jest.fn().mockResolvedValue(['secret-malformed-json', JSON.stringify({ webhooks: [{ url: 'secret-invalid-url', token: 'secret' }] })]) }
+    const result = await new RedisAdmin(async () => client as any).getKey('unoapi-webhook-history:5511')
+    expect(JSON.stringify(result)).not.toContain('secret')
+  })
+  test('shows only safe webhook history metadata, including through query', async () => {
+    const client = { type: jest.fn().mockResolvedValue('list'), ttl: jest.fn().mockResolvedValue(-1), lLen: jest.fn().mockResolvedValue(1), lRange: jest.fn().mockResolvedValue([JSON.stringify({ id: 'snapshot', reason: 'removed', webhooks: [{ id: 'hook', url: 'https://user:secret@example.com/private-token?key=secret#secret', token: 'secret', header: { Authorization: 'secret' }, sendNewMessages: true }] })]) }
+    const admin = new RedisAdmin(async () => client as any)
+    const details = await admin.getKey('unoapi-webhook-history:5511999999')
+    expect(details.readOnly).toBe(true)
+    expect(details.value).toEqual([{ id: 'snapshot', reason: 'removed', webhooks: [{ id: 'hook', destination: 'https://example.com', has_credentials: true, events: ['sendNewMessages'] }] }])
+    expect(await admin.query('LRANGE', ['unoapi-webhook-history:5511999999'])).toEqual(details.value)
+    expect(JSON.stringify(details)).not.toMatch(/secret|private-token|Authorization/)
+  })
+  beforeEach(() => { scan.mockReset(); scan.mockResolvedValue([]) })
 
   test('restricts administration to UnoAPI namespaces', () => {
     expect(isAllowedRedisKey('unoapi-config:5566')).toBe(true)

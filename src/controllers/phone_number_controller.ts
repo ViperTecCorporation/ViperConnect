@@ -15,6 +15,7 @@ import { preparePrivacyBootstrapSync } from '../services/privacy_bootstrap_sync'
 import { getMissingTcTokenQuotaStatus } from '../services/privacy_token_quota'
 import type { Incoming } from '../services/incoming'
 import { providerRuntimeStatus } from '../services/providers/provider_runtime_policy'
+import { managerPrincipal } from '../services/manager_access'
 
 export class PhoneNumberController {
   private getConfig: getConfig
@@ -101,19 +102,26 @@ export class PhoneNumberController {
       if (wabaId) {
         const sessionPhone = await resolveSessionPhoneByMetaId(wabaId)
         const config = await this.getConfig(sessionPhone)
-        const authorized = this.isAuthorizedToken(token, config)
+        const principal = managerPrincipal(req)
+        const authorized = principal ? principal.role === 'admin' || principal.phones.includes(sessionPhone) : this.isAuthorizedToken(token, config)
         if (!authorized) return res.status(200).json({ data: [] })
         const graphPhone = this.buildGraphPhone(sessionPhone, config)
         return res.status(200).json({ data: [graphPhone] })
       }
-      const phones = await this.sessionStore.getPhones()
+      const principal = managerPrincipal(req)
+      const activePhones = await this.sessionStore.getPhones()
+      // Assignments live outside session configuration and survive deregistration.
+      const assigned = principal?.phones || []
+      const phones = principal?.role === 'user' ? assigned : [...new Set([...activePhones, ...assigned])]
       const items = await Promise.all(phones.map(async (phone) => {
+        if (principal && !activePhones.includes(phone)) return { id: phone, phone, display_phone_number: phone, label: phone,
+          status: 'disconnected', provider: 'zapo', server: 'server_1', webhooks: [], manager_pending: true }
         const config = await this.getConfig(phone)
         const storedStatus = config.provider == 'forwarder'
           ? 'forwarder'
           : await this.sessionStore.getStatus(phone)
         const status = providerRuntimeStatus(config.provider, storedStatus)
-        if (this.isAuthorizedToken(token, config)) {
+        if (principal || this.isAuthorizedToken(token, config)) {
           let missingTcTokenQuota
           try { missingTcTokenQuota = await getMissingTcTokenQuotaStatus(phone) } catch {}
           return { ...config, id: phone, phone, display_phone_number: phone, status, missing_tc_token_quota: missingTcTokenQuota }
@@ -141,7 +149,8 @@ export class PhoneNumberController {
       const accounts: Map<string, string> = new Map()
       for (const phone of phones) {
         const config = await this.getConfig(phone)
-        if (!this.isAuthorizedToken(token, config)) continue
+        const principal = managerPrincipal(req)
+        if (principal ? principal.role !== 'admin' && !principal.phones.includes(phone) : !this.isAuthorizedToken(token, config)) continue
         const wabaId = `${(config as any)?.webhookForward?.businessAccountId || generateBusinessAccountId(phone, `${(config as any)?.webhookForward?.phoneNumberId || phone}`)}`.trim()
         if (wabaId) accounts.set(wabaId, `${(config as any)?.label || phone}`)
       }
@@ -162,7 +171,8 @@ export class PhoneNumberController {
       const data: any[] = []
       for (const phone of phones) {
         const config = await this.getConfig(phone)
-        if (!this.isAuthorizedToken(token, config)) continue
+        const principal = managerPrincipal(req)
+        if (principal ? principal.role !== 'admin' && !principal.phones.includes(phone) : !this.isAuthorizedToken(token, config)) continue
         const sessionPhone = `${phone}`.replace('+', '')
         const phoneNumberId = `${(config as any)?.webhookForward?.phoneNumberId || sessionPhone}`
         const businessAccountId = `${(config as any)?.webhookForward?.businessAccountId || generateBusinessAccountId(sessionPhone, phoneNumberId)}`
@@ -351,7 +361,8 @@ export class PhoneNumberController {
       const id = `${req.params.business_account_id || ''}`.trim()
       const sessionPhone = await resolveSessionPhoneByMetaId(id)
       const config = await this.getConfig(sessionPhone)
-      if (!this.isAuthorizedToken(token, config)) return sendGraphError(res, 403, 'Unsupported get request.', { code: 10, type: 'OAuthException' })
+      const principal = managerPrincipal(req)
+      if (principal ? principal.role !== 'admin' && !principal.phones.includes(sessionPhone) : !this.isAuthorizedToken(token, config)) return sendGraphError(res, 403, 'Unsupported get request.', { code: 10, type: 'OAuthException' })
       if (req.method === 'DELETE') return res.status(200).json({ success: true })
       if (req.method === 'GET') return res.status(200).json({ data: [{ whitelisted: true }] })
       return res.status(200).json({ success: true })

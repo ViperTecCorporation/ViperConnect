@@ -1,12 +1,15 @@
 import { Request, Response } from 'express'
 import { UNOAPI_AUTH_TOKEN } from '../defaults'
 import { getAuthHeaderToken } from '../services/security'
+import { managerPrincipal } from '../services/manager_access'
 import { webhookHistory, WebhookHistory, WebhookHistoryError, publicWebhookHistory } from '../services/webhook_history'
 
 export class WebhookHistoryController {
   constructor(private readonly history: WebhookHistory = webhookHistory, private readonly token = UNOAPI_AUTH_TOKEN) {}
   async handle(req: Request, res: Response) {
-    if (!this.token || getAuthHeaderToken(req).trim() !== this.token) return res.status(403).json({ error: 'admin_token_required' })
+    const principal = managerPrincipal(req)
+    const allowed = principal?.role === 'admin' || principal?.phones.includes(req.params.phone)
+    if (!allowed && (!this.token || getAuthHeaderToken(req).trim() !== this.token)) return res.status(403).json({ error: 'admin_token_required' })
     const phone = req.params.phone
     if (!/^\d{5,20}$/.test(phone)) return res.status(400).json({ error: 'invalid_phone' })
     try {

@@ -3,6 +3,7 @@ import { UNOAPI_AUTH_TOKEN } from '../defaults'
 import { getConfig } from '../services/config'
 import { clients } from '../services/client'
 import { getAuthHeaderToken } from '../services/security'
+import { managerAdmin } from '../services/manager_access'
 import { sendGraphError } from '../services/graph_error'
 import {
   deletePasskeyBridgeSession,
@@ -21,7 +22,7 @@ export class PasskeyBridgeController {
     const token = `${getAuthHeaderToken(req) || ''}`.trim()
     if (!token) return false
     const config = await this.getConfig(phone)
-    return [UNOAPI_AUTH_TOKEN, config?.authToken].includes(token) || isEmbeddedAccessToken(token)
+    return managerAdmin(req) || [UNOAPI_AUTH_TOKEN, config?.authToken].includes(token) || isEmbeddedAccessToken(token)
   }
 
   public async pending(req: Request, res: Response) {

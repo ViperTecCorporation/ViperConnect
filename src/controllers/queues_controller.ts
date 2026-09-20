@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { UNOAPI_AUTH_TOKEN } from '../defaults'
 import { getAuthHeaderToken } from '../services/security'
+import { managerAdmin } from '../services/manager_access'
 import { RabbitManagement, RabbitManagementError } from '../services/rabbitmq_management'
 
 type QueueManager = Pick<RabbitManagement, 'listQueues' | 'previewMessages' | 'removeMessages' | 'purgeQueue'>
@@ -12,7 +13,7 @@ export class QueuesController {
   ) {}
 
   private isAdmin(req: Request): boolean {
-    return !!this.adminToken && getAuthHeaderToken(req).trim() === this.adminToken
+    return managerAdmin(req) || (!!this.adminToken && getAuthHeaderToken(req).trim() === this.adminToken)
   }
 
   private sendError(res: Response, error: unknown) {

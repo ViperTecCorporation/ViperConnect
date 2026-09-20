@@ -22,7 +22,6 @@ const unsupported = [
   /\{business_account_id\}/,
   /\{phone_number_id\}/,
   /\/invite_link$/,
-  /^\/admin\/(?:redis|rabbitmq)\//,
   /\/debug\/(?:auth_cache|privacy_)/,
   /\/jidmap(?:\/|$)/,
 ]
@@ -30,6 +29,8 @@ const normalize = (value) => value.replace(/:([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\
 const publicRoute = (route) => route.replace(/^\/v\d+(?:\.\d+)?(?=\/|$)/, '/{version}')
 
 const tagFor = (route) => {
+  if (route.startsWith('/manager/')) return 'Manager'
+  if (/^\/admin\/(?:redis|rabbitmq)\//.test(route)) return 'Administração'
   if (/^\/(?:ping|version)$/.test(route)) return 'Sistema'
   if (route.startsWith('/admin/voip/')) return 'Telefonia'
   if (route.startsWith('/passkey-bridge/') || route.startsWith('/connect/') || route.endsWith('/request_code')) return 'Pareamento'
@@ -125,6 +126,8 @@ const operationIdFor = (method, route) => {
 }
 
 spec.tags = [
+  ['Administração', 'Infraestrutura global: acesso administrativo obrigatório. Escritas e exclusões alteram dados reais; executar somente após revisão.'],
+  ['Manager', 'Usuários, atribuições persistentes e chaves pessoais; recurso local, não implantado.'],
   ['Sistema', 'Disponibilidade e versão da API.'],
   ['Sessões', 'Cadastro, estado e gerenciamento das sessões.'],
   ['Pareamento', 'QR code, código numérico e desafios de pareamento.'],

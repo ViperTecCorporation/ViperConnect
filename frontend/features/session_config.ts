@@ -23,7 +23,7 @@ export const booleanSessionFields = [
   ['ignoreBroadcastMessages', 'Ignorar listas de transmissão', 'Não encaminha mensagens de listas de transmissão.'],
 ] as const satisfies ReadonlyArray<readonly [string, TranslationKey, TranslationKey]>
 
-export const renderSessionConfig = (session: SessionConfig): string => `
+export const renderSessionConfig = (session: SessionConfig, restricted = false): string => `
   <form class="stack" data-form="session-config">
     <section class="section">
       <div class="section__heading">
@@ -52,11 +52,11 @@ export const renderSessionConfig = (session: SessionConfig): string => `
           <input name="server" value="${escapeHtml(session.server || 'server_1')}">
           <small aria-hidden="true">&nbsp;</small>
         </label>
-        <label class="field field--wide">
+        ${restricted ? '' : `<label class="field field--wide">
           <span>Proxy</span>
           <input name="proxyUrl" value="${escapeHtml(session.proxyUrl || '')}" placeholder="${t('socks5://usuario:senha@host:porta')}">
         </label>
-        ${renderSecretField('authToken', t('Token da sessão'), session.authToken || '')}
+        ${renderSecretField('authToken', t('Token da sessão'), session.authToken || '')}`}
       </div>
     </section>
 
@@ -139,7 +139,7 @@ const numberValue = (data: FormData, key: string, fallback: number): number => {
   return Number.isFinite(value) ? value : fallback
 }
 
-export const sessionConfigPayload = (data: FormData): Record<string, unknown> => {
+export const sessionConfigPayload = (data: FormData, restricted = false): Record<string, unknown> => {
   const payload: Record<string, unknown> = {
     label: `${data.get('label') || ''}`.trim(),
     connectionType: `${data.get('connectionType') || 'qrcode'}`,
@@ -161,5 +161,6 @@ export const sessionConfigPayload = (data: FormData): Record<string, unknown> =>
   booleanSessionFields.forEach(([name]) => {
     payload[name] = data.has(name)
   })
+  if (restricted) for (const key of ['authToken', 'storage', 'baseStore', 'getStore', 'proxyUrl']) delete payload[key]
   return payload
 }

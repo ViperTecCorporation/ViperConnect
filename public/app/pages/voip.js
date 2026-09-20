@@ -1,7 +1,7 @@
-import { icon } from '../components/icons.js?v=4.0.30-038921da';
-import { renderModal } from '../components/modal.js?v=4.0.30-038921da';
-import { renderStatus } from '../components/status.js?v=4.0.30-038921da';
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
+import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
+import { renderModal } from '../components/modal.js?v=4.0.32-1ab9d8f1';
+import { renderStatus } from '../components/status.js?v=4.0.32-1ab9d8f1';
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
 const labels = {
     companies: 'Empresas',
     accounts: 'Linhas Zapo',
@@ -288,16 +288,16 @@ const contactLabel = (nameValue, numberValue, fallback = '—') => {
         return `${name} · ${number}`;
     return name || number || fallback;
 };
-const historyTable = (state, urls) => {
+export const historyTable = (state, urls, restricted = false) => {
     const items = state.history?.items || [];
     return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Contato</th><th>Linha</th><th>Ramal</th><th>Direção</th><th>Status</th><th>Duração</th><th>Gravação</th></tr></thead><tbody>
     ${items.length ? items.map(item => {
         const contact = contactLabel(item.remoteName, item.remoteNumber);
-        return `<tr><td>${escapeHtml(`${item.startedAt || '—'}`)}</td><td>${escapeHtml(contact)}</td><td>${escapeHtml(`${item.accountLabel || item.accountId || item.phoneNumber || '—'}`)}</td><td>${escapeHtml(`${item.extensionLabel || item.extensionUsername || '—'}`)}</td><td>${escapeHtml(`${item.direction || '—'}`)}</td><td>${escapeHtml(`${item.status || '—'}`)}</td><td>${item.durationSeconds ?? item.recordingDurationSeconds ?? '—'}s</td><td>${recordingCell(item, urls)}</td></tr>`;
+        return `<tr><td>${escapeHtml(`${item.startedAt || '—'}`)}</td><td>${escapeHtml(contact)}</td><td>${escapeHtml(`${restricted ? item.phoneNumber || '—' : item.accountLabel || item.accountId || item.phoneNumber || '—'}`)}</td><td>${escapeHtml(`${restricted ? '—' : item.extensionLabel || item.extensionUsername || '—'}`)}</td><td>${escapeHtml(`${item.direction || '—'}`)}</td><td>${escapeHtml(`${item.status || '—'}`)}</td><td>${escapeHtml(`${item.durationSeconds ?? item.recordingDurationSeconds ?? '—'}`)}s</td><td>${restricted && !state.capabilities?.recordings ? 'Indisponível' : recordingCell(item, urls)}</td></tr>`;
     }).join('') : emptyRow(8, 'Nenhuma chamada no período.')}
   </tbody></table></div>`;
 };
-const historyControls = (state) => {
+export const historyControls = (state) => {
     const history = state.history || {};
     const page = Math.max(1, Number(history.page || 1));
     const totalPages = Math.max(1, Number(history.totalPages || 1));
@@ -409,15 +409,18 @@ export const renderVoipRecordingSettingsModal = (state) => {
     const value = state.recording || {};
     return renderModal('voip-recording-settings', 'Configurar gravações', `<form class="form-grid" data-form="voip-recording-settings">${switchField('enabled', 'Gravar chamadas', value.enabled)}<label class="field"><span>Destino</span><select name="provider"><option value="local" ${selected(value.provider, 'local')}>Disco local</option><option value="s3" ${selected(value.provider, 's3')}>S3 compatível</option></select></label><label class="field"><span>Formato</span><select name="format"><option value="mp3" ${selected(value.format, 'mp3')}>MP3</option><option value="wav" ${selected(value.format, 'wav')}>WAV</option><option value="gsm" ${selected(value.format, 'gsm')}>GSM</option></select></label>${field('localDir', 'Diretório local', value.localDir || '/home/u/app/data/recordings')}${field('retentionDays', 'Retenção em dias (0 não remove)', value.retentionDays || 0, 'number', false, false, 'min="0"')}${switchField('stereo', 'Gravar em estéreo', value.stereo)}${switchField('deleteLocalAfterUpload', 'Remover arquivo local após enviar ao S3', value.deleteLocalAfterUpload !== false)}${field('s3Endpoint', 'Endpoint S3', value.s3Endpoint)}${field('s3Region', 'Região S3', value.s3Region || 'auto')}${field('s3Bucket', 'Bucket', value.s3Bucket)}${field('s3AccessKeyId', 'Access key', value.s3AccessKeyId)}${field('s3SecretAccessKey', 'Secret key (deixe vazio para manter)', '', 'password')}${configuredSecret(value.hasS3SecretAccessKey)}${switchField('s3ForcePathStyle', 'Forçar path style no S3', value.s3ForcePathStyle !== false)}${field('s3PublicBaseUrl', 'URL pública opcional', value.s3PublicBaseUrl)}${field('s3PresignTtlSeconds', 'Validade da URL assinada (segundos)', value.s3PresignTtlSeconds || 3600, 'number', true, false, 'min="60"')}<div class="form-actions wide"><button class="btn" type="submit">${icon('save')}Salvar</button></div></form>`, { subtitle: 'Telefonia', wide: true });
 };
-export const renderVoipCredentialsModal = (value) => {
+export const renderVoipCredentialsModal = (value, restricted = false, allowScopedSipMode = false) => {
     const rows = [
         ['Usuário', value.username],
         ['Senha', value.password],
         ['URI SIP', value.sipUri],
-        ['WebSocket público', value.webrtc?.ws_url],
-        ['WebSocket local', value.webrtc?.lan_ws_url],
-        ['Domínio SIP', value.webrtc?.sip_domain],
+        ['WebSocket público', value.sip?.publicWsUrl || value.webrtc?.ws_url],
+        ['WebSocket local', value.sip?.lanWsUrl || value.webrtc?.lan_ws_url],
+        ['Domínio SIP', value.sip?.domain || value.webrtc?.sip_domain],
+        ['Domínio SIP local', value.sip?.lanDomain],
+        ['Transporte SIP', value.sip?.transport],
     ].filter(([, item]) => item);
-    return renderModal('voip-credentials', 'Credenciais do ramal', `<div class="stack"><p class="muted">Use os mesmos dados em um telefone SIP ou cliente WebRTC. Somente administradores podem revelar a senha.</p><dl class="details-list">${rows.map(([label, item]) => `<div><dt>${escapeHtml(`${label}`)}</dt><dd><code>${escapeHtml(`${item}`)}</code> <button class="btn btn--icon btn--ghost" type="button" data-action="copy-value" data-value="${escapeHtml(`${item}`)}" aria-label="Copiar ${escapeHtml(`${label}`)}">${icon('copy')}</button></dd></div>`).join('')}</dl><form class="form-grid" data-form="voip-sip-mode"><input type="hidden" name="extensionId" value="${escapeHtml(`${value.extensionId || ''}`)}">${sipEndpointModeField(value.sipEndpointMode)}<div class="form-actions wide"><button class="btn" type="submit">${icon('save')}Salvar modo SIP</button></div></form></div>`, { subtitle: value.displayName || value.username || 'Telefonia', wide: true });
+    const modeForm = restricted && !allowScopedSipMode ? '' : `<form class="form-grid" data-form="voip-sip-mode"><input type="hidden" name="extensionId" value="${escapeHtml(`${value.extensionId || ''}`)}">${sipEndpointModeField(value.sipEndpointMode)}<div class="form-actions wide"><button class="btn" type="submit">${icon('save')}Salvar modo SIP</button></div></form>`;
+    return renderModal('voip-credentials', 'Credenciais do ramal', `<div class="stack"><p class="muted">${restricted ? 'Credenciais do ramal automático da sua sessão. Use em um telefone SIP ou cliente WebRTC. Não compartilhe a senha.' : 'Use os mesmos dados em um telefone SIP ou cliente WebRTC. Somente administradores podem revelar a senha.'}</p><dl class="details-list">${rows.map(([label, item]) => `<div><dt>${escapeHtml(`${label}`)}</dt><dd><code>${escapeHtml(`${item}`)}</code> <button class="btn btn--icon btn--ghost" type="button" data-action="copy-value" data-value="${escapeHtml(`${item}`)}" aria-label="Copiar ${escapeHtml(`${label}`)}">${icon('copy')}</button></dd></div>`).join('')}</dl>${modeForm}</div>`, { subtitle: value.displayName || value.username || 'Telefonia', wide: true });
 };
 export const voipResourceItem = (state, resource, id) => asItems(state[resource]).find(item => `${item.id}` === id);
