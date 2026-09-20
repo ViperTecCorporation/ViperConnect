@@ -43,6 +43,8 @@ const portugueseTheme = {
       items: [
         { text: 'Enviar mensagens', link: '/guide/messages' },
         { text: 'Receber webhooks', link: '/guide/webhooks' },
+        { text: 'Restaurar webhooks anteriores', link: '/guide/webhook-history' },
+        { text: 'Status das sessões', link: '/guide/session-webhooks' },
         { text: 'Identidades e contatos', link: '/guide/contacts' },
       ],
     },
@@ -50,6 +52,8 @@ const portugueseTheme = {
       text: 'Operação',
       collapsed: true,
       items: [
+        { text: 'RabbitMQ e filas', link: '/guide/rabbitmq' },
+        { text: 'Usuários do Manager', link: '/guide/manager-users' },
         { text: 'Erros e solução de problemas', link: '/guide/troubleshooting' },
         { text: 'Arquitetura e cobertura', link: '/guide/architecture' },
       ],
@@ -120,6 +124,8 @@ const englishTheme = {
       items: [
         { text: 'Send messages', link: '/en/guide/messages' },
         { text: 'Receive webhooks', link: '/en/guide/webhooks' },
+        { text: 'Restore previous webhooks', link: '/en/guide/webhook-history' },
+        { text: 'Session status', link: '/en/guide/session-webhooks' },
         { text: 'Identities and contacts', link: '/en/guide/contacts' },
       ],
     },
@@ -127,6 +133,8 @@ const englishTheme = {
       text: 'Operations',
       collapsed: true,
       items: [
+        { text: 'RabbitMQ and queues', link: '/en/guide/rabbitmq' },
+        { text: 'Manager users', link: '/en/guide/manager-users' },
         { text: 'Errors and troubleshooting', link: '/en/guide/troubleshooting' },
         { text: 'Architecture and coverage', link: '/en/guide/architecture' },
       ],

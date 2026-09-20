@@ -1,7 +1,8 @@
 import { Webhook, getConfig, isWebhookEnabled } from './config'
 import { Outgoing } from './outgoing'
 import { PublishOption, amqpPublish } from '../amqp'
-import { UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_OUTGOING } from '../defaults'
+import { UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_OUTGOING, UNOAPI_QUEUE_HISTORY_OUTGOING } from '../defaults'
+import { isHistoryQueue } from './history_queue_context'
 import { completeCloudApiWebHook } from './transformer'
 
 export class OutgoingAmqp implements Outgoing {
@@ -21,7 +22,7 @@ export class OutgoingAmqp implements Outgoing {
     const webhooks = config.webhooks.filter(isWebhookEnabled)
     await amqpPublish(
       UNOAPI_EXCHANGE_BROKER_NAME,
-      UNOAPI_QUEUE_OUTGOING, phone,
+      isHistoryQueue() ? UNOAPI_QUEUE_HISTORY_OUTGOING : UNOAPI_QUEUE_OUTGOING, phone,
       { webhooks, payload, split: true },
       { type: 'topic' }
     )
@@ -30,6 +31,6 @@ export class OutgoingAmqp implements Outgoing {
   public async sendHttp(phone: string, webhook: Webhook, payload: object, options: Partial<PublishOption> = {}) {
     if (!isWebhookEnabled(webhook)) return
     options.type = 'topic'
-    await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_OUTGOING, phone, { webhook, payload, split: false }, options)
+    await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME, isHistoryQueue() ? UNOAPI_QUEUE_HISTORY_OUTGOING : UNOAPI_QUEUE_OUTGOING, phone, { webhook, payload, split: false }, options)
   }
 }

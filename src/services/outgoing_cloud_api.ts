@@ -3,10 +3,11 @@ import fetch, { Response, RequestInit } from 'node-fetch'
 import { Webhook, getConfig, isWebhookEnabled } from './config'
 import { isChatwootWebhook, resolveWebhookUrl } from './webhook_config'
 import logger from './logger'
-import { completeCloudApiWebHook, isGroupMessage, isOutgoingMessage, isNewsletterMessage, isUpdateMessage, extractDestinyPhone, normalizeWebhookValueIds, jidToPhoneNumber, jidToRawPhoneNumber, formatJid, isValidPhoneNumber, normalizeLidJid } from './transformer'
+import { completeCloudApiWebHook, isGroupMessage, isOutgoingMessage, isNewsletterMessage, isUpdateMessage, normalizeWebhookValueIds, jidToPhoneNumber, jidToRawPhoneNumber, formatJid, isValidPhoneNumber, normalizeLidJid } from './transformer'
 import { WEBHOOK_ASYNC, WEBHOOK_PREFER_PN_OVER_LID, WEBHOOK_CB_ENABLED, WEBHOOK_CB_FAILURE_THRESHOLD, WEBHOOK_CB_OPEN_MS, WEBHOOK_CB_FAILURE_TTL_MS, WEBHOOK_CB_REQUEUE_DELAY_MS, WEBHOOK_CB_HALF_OPEN_PROBE_MS } from '../defaults'
 import { jidNormalizedUser, isPnUser } from './whatsapp_jid'
 import { addToBlacklist, isInBlacklist } from './blacklist'
+import { blacklistTargets } from './blacklist_identity'
 import type { PublishOption } from '../amqp'
 import { acquireWebhookCircuitProbe, isWebhookCircuitOpen, isWebhookCircuitRecovering, openWebhookCircuit, closeWebhookCircuit, bumpWebhookCircuitFailure } from './redis'
 import { WebhookCircuitOpenError } from './webhook_circuit_breaker'
@@ -283,8 +284,8 @@ export class OutgoingCloudApi implements Outgoing {
     if (isOutgoingMessage(message)) {
       if (webhook.addToBlackListOnOutgoingMessageWithTtl) {
         logger.info(`Session phone %s webhook %s configured to add to blacklist when outgoing message for this webhook`, phone, webhook.id)
-        const to = extractDestinyPhone(message, false)
-        await this.addToBlacklist(phone, webhook.id, to, webhook.addToBlackListOnOutgoingMessageWithTtl!)
+        const to = blacklistTargets(message)[0]
+        if (to) await this.addToBlacklist(phone, webhook.id, to, webhook.addToBlackListOnOutgoingMessageWithTtl!)
       }
       if (!webhook.sendOutgoingMessages) {
         logger.info(`Session phone %s webhook %s configured to not send outgoing message for this webhook`, phone, webhook.id)

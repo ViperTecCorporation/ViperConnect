@@ -5,8 +5,13 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const source = path.join(root, 'docs', 'openapi.json')
 const routerFile = path.join(root, 'src', 'router.ts')
-const outputDir = path.join(root, 'docs-site', 'public')
-const output = path.join(outputDir, 'openapi.json')
+// Tests generate into an isolated directory instead of relying on ignored build artifacts.
+const outputArgument = process.argv.indexOf('--output')
+if (outputArgument >= 0 && !process.argv[outputArgument + 1]) throw new Error('--output requires a file path')
+const output = outputArgument >= 0
+  ? path.resolve(process.argv[outputArgument + 1])
+  : path.join(root, 'docs-site', 'public', 'openapi.json')
+const outputDir = path.dirname(output)
 const spec = JSON.parse(await readFile(source, 'utf8'))
 const router = await readFile(routerFile, 'utf8')
 
@@ -22,7 +27,6 @@ const unsupported = [
   /\{business_account_id\}/,
   /\{phone_number_id\}/,
   /\/invite_link$/,
-  /^\/admin\/(?:redis|rabbitmq)\//,
   /\/debug\/(?:auth_cache|privacy_)/,
   /\/jidmap(?:\/|$)/,
 ]
@@ -30,13 +34,15 @@ const normalize = (value) => value.replace(/:([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\
 const publicRoute = (route) => route.replace(/^\/v\d+(?:\.\d+)?(?=\/|$)/, '/{version}')
 
 const tagFor = (route) => {
+  if (route.startsWith('/manager/')) return 'Manager'
+  if (/^\/admin\/(?:redis|rabbitmq)\//.test(route)) return 'Administração'
   if (/^\/(?:ping|version)$/.test(route)) return 'Sistema'
   if (route.startsWith('/admin/voip/')) return 'Telefonia'
   if (route.startsWith('/passkey-bridge/') || route.startsWith('/connect/') || route.endsWith('/request_code')) return 'Pareamento'
   if (route.includes('/debug/')) return 'Diagnóstico'
   if (route.includes('/groups')) return 'Grupos'
   if (route.includes('/contacts')) return 'Contatos'
-  if (route.includes('/webhooks') || route.includes('/blacklist/')) return 'Webhooks'
+  if (route.includes('/webhooks') || route.includes('/session-webhooks') || route.includes('/blacklist/')) return 'Webhooks'
   if (route.includes('/templates')) return 'Modelos de mensagem'
   if (route.includes('/messages') || route.includes('/marketing_messages') || route.includes('/preflight/') || route.startsWith('/timer/'))
     return 'Mensagens'
@@ -125,6 +131,8 @@ const operationIdFor = (method, route) => {
 }
 
 spec.tags = [
+  ['Administração', 'Infraestrutura global: acesso administrativo obrigatório. Escritas e exclusões alteram dados reais; executar somente após revisão.'],
+  ['Manager', 'Usuários, atribuições persistentes e chaves pessoais; recurso local, não implantado.'],
   ['Sistema', 'Disponibilidade e versão da API.'],
   ['Sessões', 'Cadastro, estado e gerenciamento das sessões.'],
   ['Pareamento', 'QR code, código numérico e desafios de pareamento.'],

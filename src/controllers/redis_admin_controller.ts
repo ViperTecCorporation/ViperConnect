@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { UNOAPI_AUTH_TOKEN } from '../defaults'
 import { RedisAdmin, RedisAdminError, RedisKeyType } from '../services/redis_admin'
 import { getAuthHeaderToken } from '../services/security'
+import { managerAdmin } from '../services/manager_access'
 
 type RedisManager = Pick<RedisAdmin, 'listKeys' | 'listTree' | 'getKey' | 'saveKey' | 'deleteKey' | 'deletePrefix' | 'query'>
 
@@ -12,7 +13,7 @@ export class RedisAdminController {
   ) {}
 
   private authorized(req: Request): boolean {
-    return !!this.adminToken && getAuthHeaderToken(req).trim() === this.adminToken
+    return managerAdmin(req) || (!!this.adminToken && getAuthHeaderToken(req).trim() === this.adminToken)
   }
 
   private error(res: Response, value: unknown) {

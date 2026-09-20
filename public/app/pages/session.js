@@ -1,11 +1,11 @@
-import { icon } from '../components/icons.js?v=4.0.30-038921da';
-import { renderStatus } from '../components/status.js?v=4.0.30-038921da';
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
-import { isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.30-038921da';
-import { CONTACT_SEARCH_MIN_LENGTH, renderContactCards, renderGroupCards } from '../features/entities.js?v=4.0.30-038921da';
-import { renderSessionConfig } from '../features/session_config.js?v=4.0.30-038921da';
-import { renderWebhooks } from '../features/webhooks.js?v=4.0.30-038921da';
-import { formatNumber, t } from '../core/i18n.js?v=4.0.30-038921da';
+import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
+import { renderStatus } from '../components/status.js?v=4.0.32-1ab9d8f1';
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
+import { isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.32-1ab9d8f1';
+import { CONTACT_SEARCH_MIN_LENGTH, renderContactCards, renderGroupCards } from '../features/entities.js?v=4.0.32-1ab9d8f1';
+import { renderSessionConfig } from '../features/session_config.js?v=4.0.32-1ab9d8f1';
+import { renderWebhooks } from '../features/webhooks.js?v=4.0.32-1ab9d8f1';
+import { formatNumber, t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
 const tabs = [
     ['overview', 'Visão geral'],
     ['config', 'Configuração'],
@@ -91,12 +91,12 @@ const renderGroups = (session, groups, hasMore, loading, error, query) => `
 `;
 const renderPanel = (options) => {
     if (options.tab === 'config')
-        return renderSessionConfig(options.session);
+        return renderSessionConfig(options.session, options.restricted);
     if (options.tab === 'contacts') {
         return renderContacts(options.session, options.contacts, options.contactsHasMore, options.loadingSection, options.sectionError, options.contactsQuery);
     }
     if (options.tab === 'webhooks')
-        return `<section class="section">${renderWebhooks(options.session.webhooks || [])}</section>`;
+        return `<section class="section"><p>Para eventos de conexão, desconexão e remoção, configure os destinos centralizados.</p><button class="btn" data-action="open-session-webhooks">Webhooks de sessões</button>${renderWebhooks(options.session.webhooks || [])}</section>${options.webhookHistoryHtml || ''}`;
     if (options.tab === 'groups') {
         return renderGroups(options.session, options.groups, options.groupsHasMore, options.loadingSection, options.sectionError, options.groupsQuery);
     }
@@ -112,6 +112,7 @@ export const renderSessionPage = (options) => {
         <div><span class="eyebrow">${t('Sessão')} · ${escapeHtml(sessionPhone(session))}</span><h1>${escapeHtml(sessionLabel(session))}</h1><p class="muted">${renderStatus(session.status)} <span>${escapeHtml(session.server || 'server_1')}</span></p></div>
       </div>
       <div class="actions">
+        ${options.canManageUsers ? `<button class="btn btn--ghost" type="button" data-action="open-users" data-phone="${escapeHtml(sessionPhone(session))}">Responsável / atribuir sessão</button>` : ''}
         ${legacySession
         ? ''
         : `<button class="btn" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone(session))}">${icon('send')}${t('Testar mensagem')}</button>`}

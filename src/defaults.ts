@@ -15,6 +15,7 @@ export const LOG_LEVEL = process.env.LOG_LEVEL || (process.env.NODE_ENV == 'deve
 export const UNO_LOG_LEVEL = process.env.UNO_LOG_LEVEL || LOG_LEVEL
 
 export const DEFAULT_LOCALE = process.env.DEFAULT_LOCALE || 'pt_BR'
+export const UNOAPI_API_LANGUAGE = /^en(?:[-_]us)?$/i.test(process.env.UNOAPI_API_LANGUAGE || '') ? 'en' : 'pt-BR'
 
 export const SEND_AUDIO_MESSAGE_AS_PTT = process.env.SEND_AUDIO_MESSAGE_AS_PTT == _undefined ? true : process.env.SEND_AUDIO_MESSAGE_AS_PTT == 'true'
 // Align with original behavior: gate conversion explicitly and allow ffmpeg params + waveform
@@ -160,10 +161,14 @@ export const UNOAPI_VIDEO_TRANSCODE_TIMEOUT_MS = Math.max(
 )
 export const UNOAPI_QUEUE_NOTIFICATION = `${UNOAPI_QUEUE_NAME}.notification`
 export const UNOAPI_QUEUE_LISTENER = `${UNOAPI_QUEUE_NAME}.listener`
+export const UNOAPI_QUEUE_HISTORY = `${UNOAPI_QUEUE_NAME}.history`
+export const UNOAPI_QUEUE_HISTORY_OUTGOING = `${UNOAPI_QUEUE_NAME}.outgoing.history`
+export const UNOAPI_QUEUE_HISTORY_TRANSCRIBER = `${UNOAPI_QUEUE_NAME}.transcribe.history`
 export const UNOAPI_QUEUE_BLACKLIST_ADD = `${UNOAPI_QUEUE_NAME}.blacklist.add`
 export const UNOAPI_QUEUE_BIND = `${UNOAPI_QUEUE_NAME}.bind`
 export const UNOAPI_QUEUE_TIMER = `${UNOAPI_QUEUE_NAME}.timer`
 export const UNOAPI_QUEUE_OUTGOING = `${UNOAPI_QUEUE_NAME}.outgoing`
+export const UNOAPI_QUEUE_SESSION_EVENTS = `${UNOAPI_QUEUE_NAME}.session.events`
 export const UNOAPI_QUEUE_BULK_PARSER = `${UNOAPI_QUEUE_NAME}.bulk.parser`
 export const UNOAPI_QUEUE_RELOAD = `${UNOAPI_QUEUE_NAME}.reload`
 export const UNOAPI_QUEUE_BROADCAST = `${UNOAPI_QUEUE_NAME}.broadcast`

@@ -219,3 +219,17 @@ describe('credential defaults', () => {
     expect(defaults.STORAGE_SECRET_ACCESS_KEY).toBe('')
   })
 })
+describe('API error language', () => {
+  const previous = process.env.UNOAPI_API_LANGUAGE
+  afterEach(() => {
+    if (previous === undefined) delete process.env.UNOAPI_API_LANGUAGE
+    else process.env.UNOAPI_API_LANGUAGE = previous
+    jest.resetModules()
+  })
+  test.each([[undefined, 'pt-BR'], ['pt-BR', 'pt-BR'], ['en', 'en'], ['en-US', 'en'], ['invalid', 'pt-BR']])('loads %s as %s', (input, expected) => {
+    if (input === undefined) delete process.env.UNOAPI_API_LANGUAGE
+    else process.env.UNOAPI_API_LANGUAGE = input
+    jest.resetModules()
+    expect(require('../../src/defaults').UNOAPI_API_LANGUAGE).toBe(expected)
+  })
+})

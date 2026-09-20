@@ -12,6 +12,8 @@ const canonicalOutput = path.join(root, 'docs', 'postman', 'ViperConnect.postman
 const publicOutput = path.join(root, 'docs-site', 'public', 'examples', 'ViperConnect.postman_collection.json')
 const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
 const variableDefaults = {
+  admin_token: '',
+  manager_login_token: '',
   base_url: 'http://localhost:9876',
   version: 'v15.0',
   token: '',
@@ -120,7 +122,7 @@ const requestBodies = (operation) => {
 }
 
 const folders = new Map()
-const variables = new Set(['base_url', 'version', 'token', 'phone', 'session', 'to', 'payment_reference_id'])
+const variables = new Set(['base_url', 'version', 'token', 'admin_token', 'manager_login_token', 'phone', 'session', 'to', 'payment_reference_id'])
 
 for (const [route, pathItem] of Object.entries(spec.paths || {})) {
   for (const [method, operation] of Object.entries(pathItem)) {
@@ -165,6 +167,16 @@ for (const [route, pathItem] of Object.entries(spec.paths || {})) {
         url,
         description,
       }
+      const security = operation.security ?? spec.security ?? []
+      const administrative = route.startsWith('/admin/') || route.startsWith('/manager/')
+      if (administrative && !security.length) request.auth = { type: 'noauth' }
+      else if (administrative) {
+        const schemes = security.flatMap((requirement) => Object.keys(requirement))
+        const variable = schemes.includes('ManagerToken') ? 'token'
+          : schemes.includes('AdminToken') ? 'admin_token'
+          : schemes.includes('ManagerLoginToken') ? 'manager_login_token' : 'token'
+        request.auth = { type: 'bearer', bearer: [{ key: 'token', value: `{{${variable}}}`, type: 'string' }] }
+      }
       if (body.value !== undefined) {
         request.body = {
           mode: 'raw',
@@ -172,7 +184,19 @@ for (const [route, pathItem] of Object.entries(spec.paths || {})) {
           options: { raw: { language: body.contentType === 'application/json' ? 'json' : 'text' } },
         }
       }
-      folders.get(tag).push({ name: itemName, request, response: [] })
+      if (operation.requestBody?.content?.[body.contentType]?.schema?.format === 'binary') {
+        request.body = { mode: 'file', file: { src: '' } }
+      }
+      const response = Object.entries(administrative ? operation.responses || {} : {}).flatMap(([code, result]) => {
+        if (!/^\d{3}$/.test(code)) return []
+        const content = result.content?.['application/json']
+        if (!content) return []
+        const value = content.example ?? Object.values(content.examples || {})[0]?.value ?? sampleForSchema(content.schema)
+        return [{ name: result.description, originalRequest: request, status: result.description,
+          code: Number(code), header: [{ key: 'Content-Type', value: 'application/json' }],
+          body: JSON.stringify(value, null, 2) }]
+      })
+      folders.get(tag).push({ name: itemName, request, response })
     }
   }
 }
@@ -184,6 +208,8 @@ const collection = {
     description: [
       'Coleção gerada automaticamente a partir de docs/openapi.yaml.',
       'Edite as variáveis da coleção antes do primeiro uso. Não grave tokens reais no arquivo versionado.',
+      'admin_token: token global ou login administrativo; manager_login_token: login para gerenciar próprias chaves/senha; token: credencial das operações de sessão e VoIP com escopo.',
+      'Exemplos administrativos incluem exclusões reais. Não execute a coleção inteira automaticamente; revise e envie uma requisição por vez. Nenhuma requisição é disparada ao importar.',
       'Nos pagamentos, reutilize payment_reference_id para confirmar e concluir a mesma cobrança.',
     ].join('\n\n'),
     schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',

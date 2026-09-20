@@ -1,7 +1,44 @@
 # Webhooks
 
+Para recuperar configurações anteriores após recriar uma sessão, consulte
+[Histórico e restauração de webhooks](/guide/webhook-history). A restauração é manual
+e não interfere na conexão ou reconexão.
+
 O ViperConnect envia payloads no formato `object → entry → changes → value`.
 Responda HTTP `2xx` rapidamente e processe o evento de forma idempotente.
+
+Eventos de conexão usam um contrato separado: [Webhooks de sessões](./session-webhooks).
+
+## Eco de edição enviada
+
+Ao editar pela API (`type: "message_edit"`), o eco enviado após sucesso usa
+`type: "text"`, `text.body` com o texto corrigido e
+`message_type: "message_edit"`. `context.message_id` e `context.id` apontam
+para o ID UnoAPI original; `id` continua sendo o ID do evento de edição.
+`edit_timestamp` informa o horário de processamento em milissegundos.
+
+O ViperChat recebe esse objeto em `value.message_echoes`, no campo
+`smb_message_echoes`; destinos comuns o recebem em `value.messages`.
+Isso permite atualizar e marcar o original como editado, sem criar outra
+mensagem. A configuração `sendNewMessages` continua controlando esses ecos.
+Eventos antigos já enfileirados no consumidor não são reparados automaticamente.
+
+## Blacklist e isolamento de histórico
+
+`POST /{phone}/blacklist/{webhook_id}` aceita telefone, `@s.whatsapp.net`, `@lid`
+e grupo `@g.us`. `ttl` é em **segundos**: positivo expira, negativo persiste,
+zero ou omitido remove. Telefone e LID equivalem quando vinculados no store da
+mesma sessão; grupos não se confundem com seus participantes. Sem vínculo conhecido,
+só a identidade informada pode ser tratada. Chaves antigas continuam válidas,
+consultadas nos eventos novos, sem recadastro. A resposta confirma enfileiramento
+em instalações AMQP; mensagens já entregues não podem ser desfeitas.
+
+Histórico usa filas próprias de processamento, webhook e transcrição, com dois
+consumidores por processo/etapa. Filtros e payloads não mudam; mensagens novas
+podem ultrapassar histórico. Recursos como CPU, rede e Redis continuam compartilhados.
+Publicações AMQP aguardam confirmação antes do ACK de consumo; isso não significa
+entrega exatamente uma vez, nem confirmação do destinatário WhatsApp. Uma confirmação
+perdida pode causar repetição. Áudio e comandos VoIP não usam esse caminho de publicação.
 
 ## Mensagem de texto recebida
 
@@ -115,3 +152,7 @@ mensagem de texto explícita:
 - Deduplicate por `messages[].id` ou `statuses[].id`.
 - Com `WEBHOOK_ASYNC_MODE=amqp`, falhas transitórias permanecem na fila.
 - Configure circuit breaker e timeout abaixo do timeout global do consumidor.
+
+<!--@include: ../../docs/AUDIO_TRANSCRIPTION.md-->
+
+<!--@include: ../../docs/REPLY_WARNINGS.md-->

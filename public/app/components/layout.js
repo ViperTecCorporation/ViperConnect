@@ -1,6 +1,6 @@
-import { icon } from './icons.js?v=4.0.30-038921da';
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
-import { getLocale, t } from '../core/i18n.js?v=4.0.30-038921da';
+import { icon } from './icons.js?v=4.0.32-1ab9d8f1';
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
+import { getLocale, t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
 const renderVersionStatus = (status) => {
     const installed = status.installed_version ? `v${status.installed_version.replace(/^v/i, '')}` : t('Versão');
     if (status.status === 'update_available') {
@@ -15,7 +15,7 @@ const renderVersionStatus = (status) => {
     }
     return `<span class="workspace__icon workspace__icon--unknown" title="${t('Verificação indisponível')}">${icon('refresh')}</span><span class="workspace__copy"><strong>${escapeHtml(installed)}</strong><small>${status.installed_version ? t('Não foi possível verificar') : t('Verificando atualização…')}</small></span>`;
 };
-export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, activeView = 'dashboard' }) => `
+export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, activeView = 'dashboard', identity, canManageAccount = true }) => `
   <div class="app-shell ${collapsed ? 'app-shell--collapsed' : ''} ${mobileOpen ? 'app-shell--mobile-open' : ''}">
     <aside class="sidebar" aria-label="${t('Navegação principal')}">
       <div class="brand">
@@ -26,7 +26,7 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <button class="nav-item ${activeView === 'dashboard' ? 'nav-item--active' : ''}" type="button" data-action="go-dashboard" title="Dashboard">
           ${icon('dashboard')}<span>Dashboard</span>
         </button>
-        <button class="nav-item ${activeView === 'queues' ? 'nav-item--active' : ''}" type="button" data-action="open-queues" title="${t('Filas')}">
+        ${identity?.role !== 'user' ? `<button class="nav-item ${activeView === 'queues' ? 'nav-item--active' : ''}" type="button" data-action="open-queues" title="${t('Filas')}">
           ${icon('queue')}<span>${t('Filas')}</span>
         </button>
         <button class="nav-item ${activeView === 'redis' ? 'nav-item--active' : ''}" type="button" data-action="open-redis" title="Redis">
@@ -35,11 +35,18 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <button class="nav-item ${activeView === 'voip' ? 'nav-item--active' : ''}" type="button" data-action="open-voip" title="${t('Telefonia')}">
           ${icon('phone')}<span>${t('Telefonia')}</span>
         </button>
+        <button class="nav-item ${activeView === 'session-webhooks' ? 'nav-item--active' : ''}" type="button" data-action="open-session-webhooks" title="Webhook">
+          ${icon('globe')}<span>Webhook</span>
+        </button>` : ''}
+        ${identity?.role === 'admin' ? `<button class="nav-item ${activeView === 'users' ? 'nav-item--active' : ''}" type="button" data-action="open-users">${icon('users')}<span>Usuários</span></button>` : ''}
+        ${identity?.role === 'user' ? `<button class="nav-item ${activeView === 'voip' ? 'nav-item--active' : ''}" type="button" data-action="open-voip">${icon('phone')}<span>Telefonia</span></button>` : ''}
+        ${identity?.role === 'user' && canManageAccount ? `<button class="nav-item ${activeView === 'account' ? 'nav-item--active' : ''}" type="button" data-action="open-account">${icon('settings')}<span>Minha conta / Chaves API</span></button>` : ''}
         <button class="nav-item ${activeView === 'documentation' ? 'nav-item--active' : ''}" type="button" data-action="open-documentation" title="${t('Documentação')}">
           ${icon('docs')}<span>${t('Documentação')}</span>
         </button>
       </nav>
       <div class="sidebar__footer">
+        ${identity ? `<p class="muted">${escapeHtml(identity.name)} (${escapeHtml(identity.username)})</p>` : ''}
         <button class="nav-item" type="button" data-action="toggle-theme" title="${t('Alternar tema')}">
           ${icon('theme')}<span>${t('Tema')}</span>
         </button>
@@ -88,16 +95,25 @@ export const renderLogin = (error = '') => `
       <div>
         <span class="eyebrow">${t('Painel de gerenciamento')}</span>
         <h1>${t('Acesse suas sessões')}</h1>
-        <p class="muted">${t('Informe o token configurado no ViperConnect.')}</p>
+        <p class="muted">Entre com usuário e senha. Administrador: usuário admin e token da stack como senha.</p>
       </div>
       <form class="stack" data-form="login">
+        <label class="field"><span>Usuário</span><input name="username" autocomplete="username" required autofocus></label>
+        <label class="field"><span>Senha / token da stack</span><input name="password" type="password" autocomplete="current-password" required></label>
+        ${error ? `<p class="form-error" role="alert">${error}</p>` : ''}
+        <button class="btn btn--block" type="submit">${t('Entrar')}</button>
+      </form>
+      <details><summary>Acesso legado por token (opcional)</summary>
+      <p class="muted">${t('Informe o token configurado no ViperConnect.')}</p>
+      <form class="stack" data-form="legacy-login">
         <label class="field">
           <span>${t('Token de acesso')}</span>
-          <input name="token" type="password" autocomplete="current-password" required autofocus>
+          <input name="token" type="password" autocomplete="off" required>
         </label>
         ${error ? `<p class="form-error" role="alert">${error}</p>` : ''}
         <button class="btn btn--block" type="submit">${t('Entrar')}</button>
       </form>
+      </details>
     </section>
   </main>
 `;

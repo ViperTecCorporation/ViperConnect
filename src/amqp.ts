@@ -1,4 +1,4 @@
-import { connect, Channel, Replies, ChannelModel, Options, ConsumeMessage } from 'amqplib'
+import { connect, Channel, ConfirmChannel, Replies, ChannelModel, Options, ConsumeMessage } from 'amqplib'
 import {
   AMQP_URL,
   UNOAPI_X_COUNT_RETRIES,
@@ -25,6 +25,7 @@ import { v1 as uuid } from 'uuid'
 import { providerFromQueueName, providerQueueName } from './services/providers/provider_queue'
 import { isWebhookCircuitOpenError, webhookRetryCount } from './services/webhook_circuit_breaker'
 import { payloadLogSummary } from './services/payload_log_summary'
+import { publishConfirmed } from './services/amqp_confirmed_publish'
 
 const withTimeout = (millis, error, promise) => {
   let timeoutPid
@@ -46,7 +47,8 @@ export const queueDeadName = (queue: string) => `${queue}.dead`
 export const queueDelayedName = (queue: string) => `${queue}.delayed`
 
 let amqpChannelModel: ChannelModel | undefined
-let amqpChannel: Channel | undefined
+let amqpChannel: ConfirmChannel | undefined
+let amqpChannelPromise: Promise<ConfirmChannel> | undefined
 let amqpConnectionPromise: Promise<ChannelModel> | undefined
 const handledAmqpConnections = new WeakSet<ChannelModel>()
 const AMQP_CONNECT_MAX_RETRIES = parseInt(process.env.AMQP_CONNECT_MAX_RETRIES || '30')
@@ -85,6 +87,7 @@ const validateRoutingKey = VALIDATE_ROUTING_KEY ? validateFormatNumber : (_) => 
 export type ExchangeType = 'direct' | 'topic'
 
 export type CreateOption = {
+  consumerId?: string
   delay: number
   priority: number
   notifyFailedMessages: boolean
@@ -192,17 +195,28 @@ export const amqpDisconnect = async (amqpChannelModel: ChannelModel) => {
 }
 
 export const amqpGetChannel = async () => {
-  if (!amqpChannel) {
-    logger.info('Creating channel...')
-    await amqpConnect()
-    amqpChannel = await amqpChannelModel?.createChannel()
-    if (amqpChannel) {
-      amqpChannel.on('error', (err) => logger.error(err, 'Channel Error'))
-      amqpChannel.on('close', (err) => logger.error(err, 'Channel Closed'))
-    }
-    logger.info('Created channel!')
+  if (amqpChannel) return amqpChannel
+  if (!amqpChannelPromise) {
+    amqpChannelPromise = (async () => {
+      const connection = await amqpConnect()
+      const channel = await connection.createConfirmChannel()
+      channel.on('error', (err) => logger.error(err, 'Publisher channel error'))
+      channel.on('close', () => {
+        if (amqpChannel === channel) {
+          amqpChannel = undefined
+          exchanges.clear()
+          queues.clear()
+        }
+      })
+      amqpChannel = channel
+      return channel
+    })()
   }
-  return amqpChannel
+  try {
+    return await amqpChannelPromise
+  } finally {
+    amqpChannelPromise = undefined
+  }
 }
 
 export const amqpGetExchange = async (exchange: string, type: ExchangeType, prefetch: number) => {
@@ -291,7 +305,7 @@ export const amqpGetQueue = async (
   }
 
 
-  validateRoutingKey(routingKey)
+  if (routingKey !== '*') validateRoutingKey(routingKey)
   const bindQueueName = sessionBindQueueName(queue)
   const routeId = `${routingKey}:${bindQueueName}`
   if (bindQueueName && /^\d+$/.test(routingKey) && !routes.get(routeId)) {
@@ -365,7 +379,7 @@ export const amqpPublish = async (
   // the worker has not registered its consumer for this session yet.
   const destiny = await bindPublishRoute(channel, exchangeUsed, queueUsed.queue, routingKey)
   const serializedPayload = JSON.stringify(payload)
-  await channel.publish(exchangeUsed, destiny, Buffer.from(serializedPayload), properties)
+  await publishConfirmed(channel, exchangeUsed, destiny, Buffer.from(serializedPayload), properties)
   logger.debug(
     'Published at exchange %s, with binding key: %s, summary: %s, properties: %s',
     exchangeUsed,
@@ -486,11 +500,12 @@ export const amqpConsume = async (
   },
 ) => {
   logger.debug('Configurate to consume exchange: %s, queue: %s, routing key: %s and type: %s', exchange, queue, routingKey, options.type)
-  validateRoutingKey(routingKey)
+  if (routingKey !== '*') validateRoutingKey(routingKey)
   const prefetch = options.prefetch ?? 1
   const type = options.type || getExchangeType(exchange)
   const normalizedOptions = { ...options, prefetch, type }
-  const id = consumerId(exchange, queue, routingKey)
+  const baseId = consumerId(exchange, queue, routingKey)
+  const id = options.consumerId ? `${baseId}::${options.consumerId}` : baseId
   if (consumerConfigs.has(id)) {
     logger.debug('Consumer %s already registered, skipping duplicate registration', id)
     return
@@ -615,7 +630,16 @@ export const amqpConsume = async (
         logger.error(err, 'Channel error for queue %s', queue)
       })
 
-      await channel?.consume(queue, fn)
+      await channel.consume(queue, async (payload) => {
+        try {
+          await fn(payload)
+        } catch (error) {
+          // A failed retry/dead-letter publication must never ACK the source.
+          // Closing requeues unacked deliveries; the close handler restarts after 1s.
+          logger.error(error, 'Consumer transport failed for queue %s; retaining unacked delivery', queue)
+          try { await channel.close() } catch {}
+        }
+      })
       logger.info('Waiting for message in queue %s with binding key %s', queue, bindingKeyValue)
     } catch (err) {
       logger.error(err, 'Failed to start consumer %s, will retry', id)

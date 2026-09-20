@@ -41,6 +41,10 @@ describe('frontend components', () => {
       },
     })
     expect(layout).toContain('app-shell--collapsed')
+    const navigation = layout.match(/<nav class="sidebar__nav">([\s\S]*?)<\/nav>/)?.[1] || ''
+    expect([...navigation.matchAll(/data-action="([^"]+)"/g)].map(match => match[1])).toEqual([
+      'go-dashboard', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'open-documentation',
+    ])
     expect(layout).toContain('v4.0.0-beta8 disponível')
     expect(layout).toContain('workspace__icon--update')
     expect(layout).toContain('<span>Português</span>')

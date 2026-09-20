@@ -1,6 +1,11 @@
-import { ApiClient } from '../../frontend/core/api'
+import { ApiClient, ApiError } from '../../frontend/core/api'
 
 describe('frontend API client', () => {
+  test('reads symbolic codes separately from localized display text', () => {
+    expect(new ApiError(409, 'Texto traduzido', { error_code: 'contact_directory_requires_zapo_provider' }).code).toBe('contact_directory_requires_zapo_provider')
+    expect(new ApiError(404, 'Texto traduzido', { error: { error_code: 'message_not_found' } }).code).toBe('message_not_found')
+    expect(new ApiError(500, 'Erro').code).toBeUndefined()
+  })
   test('calls the browser fetch implementation with the global receiver', async () => {
     const fetcher = jest.fn(function (this: unknown) {
       if (this !== globalThis) throw new TypeError('Illegal invocation')

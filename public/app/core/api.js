@@ -1,5 +1,9 @@
-import { t } from './i18n.js?v=4.0.30-038921da';
+import { t } from './i18n.js?v=4.0.32-1ab9d8f1';
 export class ApiError extends Error {
+    get code() {
+        const value = this.payload;
+        return value?.error_code || value?.error?.error_code;
+    }
     constructor(status, message, payload) {
         super(message);
         this.status = status;
@@ -21,23 +25,40 @@ export class ApiClient {
         this.baseUrl = baseUrl;
         this.fetcher = fetcher;
         this.token = '';
+        this.authRevision = 0;
     }
     setToken(token) {
+        this.authRevision++;
         this.token = token.trim();
     }
     getToken() {
         return this.token;
     }
+    sessionDestinations() {
+        return this.request('/admin/session-webhooks');
+    }
+    saveSessionDestination(payload, id = '') {
+        return this.request(`/admin/session-webhooks${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    }
+    deleteSessionDestination(id) {
+        return this.request(`/admin/session-webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    }
     async request(path, init = {}) {
+        const requestToken = this.token;
+        const revision = this.authRevision;
         const headers = new Headers(init.headers);
         if (this.token)
             headers.set('Authorization', `Bearer ${this.token}`);
         if (init.body && !headers.has('Content-Type'))
             headers.set('Content-Type', 'application/json');
         const response = await this.fetcher.call(globalThis, `${this.baseUrl}${path}`, { ...init, headers });
+        if (requestToken !== this.token || revision !== this.authRevision)
+            throw new ApiError(0, 'Sessão alterada. Requisição descartada.');
         if (response.status === 204)
             return undefined;
         const text = await response.text();
+        if (requestToken !== this.token || revision !== this.authRevision)
+            throw new ApiError(0, 'Sessão alterada. Requisição descartada.');
         let payload = undefined;
         if (text) {
             try {
@@ -102,6 +123,12 @@ export class ApiClient {
         if (search.trim())
             query.set('search', search.trim());
         return this.request(`/v15.0/${encodeURIComponent(phone)}/groups?${query}`);
+    }
+    webhookHistory(phone) {
+        return this.request(`/admin/webhooks/history/${encodeURIComponent(phone)}`);
+    }
+    restoreWebhookHistory(phone, payload) {
+        return this.request(`/admin/webhooks/history/${encodeURIComponent(phone)}/restore`, { method: 'POST', body: JSON.stringify(payload) });
     }
     saveWebhooks(phone, webhooks) {
         return this.register(phone, {
@@ -244,6 +271,7 @@ export class ApiClient {
         return this.voipConsole(`calls/${encodeURIComponent(callId)}/transfer`, 'POST', { targetExtensionId });
     }
     async voipRecording(recordId) {
+        const revision = this.authRevision;
         const headers = new Headers();
         if (this.token)
             headers.set('Authorization', `Bearer ${this.token}`);
@@ -257,6 +285,9 @@ export class ApiClient {
             catch { }
             throw new ApiError(response.status, errorMessage(payload, response.status), payload);
         }
-        return response.blob();
+        const blob = await response.blob();
+        if (revision !== this.authRevision)
+            throw new ApiError(0, 'Sessão alterada. Requisição descartada.');
+        return blob;
     }
 }

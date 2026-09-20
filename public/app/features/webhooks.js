@@ -1,9 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.30-038921da';
-import { renderModal } from '../components/modal.js?v=4.0.30-038921da';
-import { renderStatus } from '../components/status.js?v=4.0.30-038921da';
-import { escapeHtml } from '../core/html.js?v=4.0.30-038921da';
-import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.30-038921da';
-import { t } from '../core/i18n.js?v=4.0.30-038921da';
+import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
+import { renderModal } from '../components/modal.js?v=4.0.32-1ab9d8f1';
+import { renderStatus } from '../components/status.js?v=4.0.32-1ab9d8f1';
+import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
+import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.32-1ab9d8f1';
+import { t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
 const webhookDestination = (webhook) => `${webhook.urlAbsolute || webhook.url || ''}`.trim();
 const isEnabled = (webhook) => webhook.enabled !== false && webhook.disabled !== true && !!webhookDestination(webhook);
 export const renderWebhooks = (webhooks) => `
@@ -38,7 +38,7 @@ const webhookSwitches = [
     ['sendUpdateMessages', 'Atualizações de mensagens', 'Inclui delivered, read, failed, edição e exclusão.', true],
     ['sendGroupMessages', 'Mensagens de grupos', 'Inclui mensagens e eventos originados em grupos.', true],
     ['sendNewsletterMessages', 'Mensagens de newsletter', 'Inclui mensagens de canais e newsletters.', false],
-    ['sendTranscribeAudio', 'Transcrição de áudio', 'Inclui a transcrição quando o recurso estiver habilitado.', false],
+    ['sendTranscribeAudio', 'Transcrição de áudio', 'Requer Groq ou OpenAI configurada na sessão. Sem provedor externo, apenas o áudio original é enviado; não há transcrição local.', false],
     ['typebot', 'Payload Typebot', 'Adapta o payload deste destino para a integração Typebot.', false],
 ];
 export const renderWebhookModal = (webhook, index) => renderModal('webhook-editor', index >= 0 ? t('Editar webhook') : t('Novo webhook'), `

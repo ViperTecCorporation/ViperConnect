@@ -1,4 +1,5 @@
 import { createClient } from '@redis/client'
+import { webhookHistory } from './webhook_history'
 import {
   REDIS_URL,
   DATA_TTL,
@@ -20,6 +21,7 @@ import { version as appVersion } from '../../package.json'
 import { mergeGroupMetadataForCache } from './groups/group_metadata_cache'
 import { normalizeLidJid } from './transformer/jid'
 import { SessionPhoneIndex } from './session_phone_index'
+import { sessionEvent, sessionWebhookStore } from './session_webhook_store'
 
 const {
   signalPurgeDeviceListEnabled: SIGNAL_PURGE_DEVICE_LIST_ENABLED,
@@ -1179,6 +1181,19 @@ export const setSessionStatus = async (phone: string, status: string) => {
   await publishSessionStatusUpdate(phone)
 }
 
+// One transaction keeps PN/LID addition, TTL updates and removal consistent.
+export const setBlacklistAliases = async (from: string, webhookId: string, aliases: string[], ttl: number) => {
+  const redisClient = await getRedis()
+  const transaction = redisClient.multi()
+  for (const alias of new Set(aliases)) {
+    const key = blacklist(from, webhookId, alias)
+    if (ttl === 0) transaction.del(key)
+    else if (ttl > 0) transaction.set(key, '1', { EX: ttl })
+    else transaction.set(key, '1')
+  }
+  await transaction.exec()
+}
+
 export const delSessionStatus = async (phone: string) => {
   const key = sessionStatusKey(phone)
   await redisDel(key)
@@ -1282,7 +1297,6 @@ export const addAuthTokensToIndex = async (tokens: string[]) => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const setConfig = async (phone: string, value: any) => {
   const currentConfig = await getConfig(phone)
-  const key = configKey(phone)
   const currentWebhooks: Webhook[] = currentConfig && currentConfig.webhooks || []
   const newWebhooks: Webhook[] = value && value.webhooks || []
   const updatedWebooks: Webhook[] = []
@@ -1298,18 +1312,16 @@ export const setConfig = async (phone: string, value: any) => {
   })
   value.webhooks = updatedWebooks
   const config = { ...currentConfig, ...value }
+  if (currentConfig && JSON.stringify(currentWebhooks) !== JSON.stringify(updatedWebooks)) {
+    webhookHistory.capture(phone, currentConfig, 'updated')
+  }
   delete (config as any).oneToOneAddressingMode
   // Enforce per-session storage flags to avoid false overrides via templates/UI
   // Since this setter persists to Redis, sessions using Redis must have useRedis/useS3 true
   try { (config as any).useRedis = true } catch {}
   try { (config as any).useS3 = true } catch {}
   delete config.overrideWebhooks
-  const redis = await getRedis()
-  const transaction = redis.multi()
-  if (SESSION_TTL < 0) transaction.set(key, JSON.stringify(config))
-  else transaction.set(key, JSON.stringify(config), { EX: SESSION_TTL })
-  transaction.sAdd(sessionPhoneIndexKey(), phone)
-  await transaction.exec()
+  await sessionWebhookStore.saveConfig(phone, config, SESSION_TTL)
   try {
     const oldToken = (currentConfig as any)?.authToken
     const newToken = (config as any)?.authToken
@@ -1339,19 +1351,17 @@ export const setConfig = async (phone: string, value: any) => {
 }
 
 export const delConfig = async (phone: string) => {
-  const key = configKey(phone)
   try {
     const current = await getConfig(phone)
+    webhookHistory.capture(phone, current, 'removed')
     const token = (current as any)?.authToken
     if (token) {
       await client.sRem(configAuthTokenIndexKey(), token)
     }
   } catch {}
-  const redis = await getRedis()
-  await redis.multi()
-    .del(key)
-    .sRem(sessionPhoneIndexKey(), phone)
-    .exec()
+  await sessionWebhookStore.record('remove', sessionEvent(phone, 'removed', {
+    reason: 'session_deregistered', intentional: true, reconnect_expected: false, requires_pairing: true,
+  }))
   await delHistorySyncMarker(phone)
   await delPrivacyBootstrapSync(phone)
   await publishConfigUpdate(phone)

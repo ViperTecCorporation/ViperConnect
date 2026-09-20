@@ -172,7 +172,7 @@ describe('groups routes', () => {
     const res = await request(app.server).get('/v15.0/556600000000/groups/120363040468224422@g.us')
 
     expect(res.status).toEqual(404)
-    expect(res.body).toEqual({ error: 'meta group routes disabled' })
+    expect(res.body).toEqual({ error: 'As rotas de grupos estão desativadas nesta instalação.' })
   })
 
   test('list returns Meta-like group shape when flag is enabled', async () => {
@@ -589,7 +589,7 @@ describe('groups routes', () => {
 
     expect(res.status).toEqual(404)
     expect(res.body).toEqual({
-      error: 'group not found in cache',
+      error: 'O grupo não foi localizado no cache da sessão.',
       group_id: groupJid,
     })
   })
@@ -1046,7 +1046,7 @@ describe('groups routes', () => {
       .send({ action: 'owner', participants: ['123456789012345@lid'] })
 
     expect(res.status).toEqual(400)
-    expect(res.body).toEqual({ error: 'action must be promote or demote' })
+    expect(res.body).toEqual({ error: 'A ação deve ser promover (promote) ou rebaixar (demote) o participante.' })
     expect(incoming.groupParticipantsUpdate).not.toHaveBeenCalled()
   })
 

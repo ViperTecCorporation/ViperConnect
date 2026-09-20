@@ -131,6 +131,34 @@ network lookup. Polls, reactions, interactive buttons, lists, carousels,
 payments, order details and order status updates are available in the
 [interactive API reference](/en/api-reference).
 
+## Payment orders with a PDF header
+
+Detailed `order_details/review_and_pay` orders can use a PDF document instead
+of an image in the header:
+
+```json
+{
+  "type": "document",
+  "document": {
+    "link": "https://cdn.example.com/boleto-1033239253.pdf",
+    "filename": "boleto-1033239253.pdf",
+    "mime_type": "application/pdf"
+  }
+}
+```
+
+This is the `interactive.header` object, not a complete request. See the
+[complete boleto + PIX + PDF payload](/guide/messages#pedido-com-boleto-pix-e-pdf-no-header).
+Replace the example destination, URL, payment placeholders and charge reference
+before sending. The worker must be able to download the PDF bytes directly;
+signed URLs must remain valid until download. Local file paths are not URLs.
+
+The `order` object is required when the header contains media. Do not add this
+header to a simplified order without `order`. Delivery and display on a phone
+were confirmed through Zapo on September 19, 2026 for this payment flow. This
+does not establish document support for every interactive type or equivalent
+support in other providers. Sending the PDF separately remains optional.
+
 ## Payments and payment confirmation
 
 Use the official simplified `order_details/review_and_pay` flow for a standalone

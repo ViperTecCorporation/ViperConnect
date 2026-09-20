@@ -9,6 +9,14 @@ import {
 } from '../../frontend/pages/redis'
 
 describe('Redis admin page', () => {
+  test.each(['manager-identity:{v1}:users', 'unoapi-webhook-history:5511'])('renders %s as read-only without delete controls', key => {
+    const html = renderRedisPage({ keys: [key], tree: {}, expandedPrefixes: [], sessions: [], sessionFilter: '', query: '', selected: { key, type: 'hash', ttl: -1, size: 1, truncated: false, value: { name: 'Operador' }, readOnly: true }, loading: false, refreshIn: 30, error: '' })
+    expect(html).toContain('Somente leitura')
+    expect(html).toContain('Operador')
+    expect(html).not.toContain('data-action="edit-redis-key"')
+    expect(html).not.toContain('data-action="delete-redis-key"')
+    expect(html).not.toContain('data-action="delete-redis-prefix"')
+  })
   afterEach(() => setLocale('pt-BR'))
 
   test('detects sensitive masked values before enabling edit', () => {

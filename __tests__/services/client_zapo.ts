@@ -34,6 +34,7 @@ import { voipPlugin } from '@vipertec/zapo-voip'
 import { zapoUsernameIndex } from '../../src/services/zapo/zapo_username_index'
 import { decryptZapoPollVoteWithJidFallback } from '../../src/services/zapo/zapo_poll_addon_decrypt'
 import { registerZapoStatePreparation } from '../../src/services/zapo/zapo_persistent_state'
+import logger from '../../src/services/logger'
 
 describe('ClientZapo', () => {
   const phone = '5566999999999'
@@ -151,6 +152,30 @@ describe('ClientZapo', () => {
     client.presence.send.mockClear()
     await jest.advanceTimersByTimeAsync(3 * 60 * 60 * 1000)
     expect(client.presence.send).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    { reason: 'stream_error_device_removed', code: null, isLogout: true },
+    { reason: 'stream_error_force_logout', code: 516, isLogout: true },
+    { reason: 'stream_error_replaced', code: null, isLogout: false },
+    { reason: undefined, code: undefined, isLogout: false },
+  ])('logs safe disconnect diagnostics without changing status handling: %j', async event => {
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      await service.connect(1)
+      await handlers.connection({ status: 'open' })
+      warn.mockClear()
+      await handlers.connection({ status: 'close', ...event, credentials: { secret: 'DO_NOT_LOG' }, token: 'DO_NOT_LOG' })
+      expect(warn).toHaveBeenCalledWith({
+        phone, reason: event.reason ?? null, code: event.code ?? null,
+        isLogout: event.isLogout, intentionalDisconnect: false, wasConnected: true,
+      }, 'ZAPO_CONNECTION_CLOSED')
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('DO_NOT_LOG')
+      expect(sessionStore.setStatus).toHaveBeenLastCalledWith(phone, event.isLogout ? 'disconnected' : 'offline')
+      warn.mockClear()
+      await handlers.connection({ status: 'close', ...event })
+      expect(warn).not.toHaveBeenCalled() // Superseded socket must not report a new close.
+    } finally { warn.mockRestore() }
   })
 
   test('disconnect cancels a pending connect so a fresh attempt can generate QR', async () => {

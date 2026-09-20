@@ -1,0 +1,18 @@
+# Dedicated allowlist for the documentation image; overrides the root ignore file.
+**
+!docs/
+!docs/**
+!docs-site/
+!docs-site/**
+!scripts/
+!scripts/openapi-to-postman.mjs
+!src/
+!src/router.ts
+!logos/
+!logos/viperconnect_icon.svg
+**/node_modules
+docs-site/.vitepress/dist
+docs-site/.vitepress/cache
+**/.env
+**/.env.*
+**/*.log

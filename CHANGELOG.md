@@ -6,6 +6,26 @@ The format is based on Keep a Changelog and follows SemVer when applicable.
 
 ## [Unreleased]
 
+- Adiciona destinos centralizados de eventos de sessão no core e painel, seleção
+  por servidor/sessões, inclusão futura opcional, HMAC e fila exclusiva de entrega.
+- Documenta o contrato v1 de lifecycle, suas rotas e limitações em OpenAPI,
+  documentação web PT/EN e `docs/SESSION_WEBHOOKS.md`; corrige unidade de TTL da
+  blacklist para segundos e documenta aliases/isolamento de histórico na web.
+
+- Registra motivo, codigo e classificacao de logout nas desconexoes Zapo,
+  sem incluir o evento completo ou credenciais e sem alterar a reconexao.
+- Aguarda confirmacao do RabbitMQ antes de concluir publicacoes AMQP; preserva
+  mensagens sem ACK quando a publicacao de retry falha e corrige validacao de
+  bindings curinga dos consumidores com `VALIDATE_ROUTING_KEY=true`.
+- Separa o processamento e a entrega de webhooks/transcricoes de historico
+  das filas de mensagens novas, com dois consumidores por processo e etapa,
+  preservando filtros, payloads e regras de sincronizacao existentes.
+- Corrige a blacklist por webhook para reconhecer telefone e LID da mesma sessao
+  na inclusao, consulta e remocao, preservando os bloqueios ja persistidos.
+- Corrige o bloqueio de grupos por `group_id` e remove o snapshot local de
+  blacklist para refletir alteracoes entre replicas sem reinicio.
+- Preserva `ttl: 0` explicito no payload e valida TTL em segundos inteiros.
+
 - Feat(JIDMAP API): adicionar endpoints para inspecionar mapeamentos PN↔LID por sessão
   - GET `/:version/:phone/jidmap` — lista pares `pn_for_lid` e `lid_for_pn` (inclui chaves antigas `pn:`/`lid:`)
     - Suporta filtros/paginação: `side=pn_for_lid|lid_for_pn|all`, `q=<substring>`, `limit`, `offset`

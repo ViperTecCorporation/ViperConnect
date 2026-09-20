@@ -1,5 +1,22 @@
 # Webhooks
 
+Connection events use a separate [session lifecycle contract](./session-webhooks).
+
+## Blacklist and history isolation
+
+`POST /{phone}/blacklist/{webhook_id}` accepts phone numbers, `@s.whatsapp.net`,
+`@lid` and `@g.us`. TTL is in **seconds**: positive expires, negative persists,
+zero or omitted removes. Phone/LID aliases are matched only within the same session's
+known contact mapping. Groups are independent from their participants. Legacy keys
+remain effective as new events arrive; no re-registration is needed. HTTP success
+acknowledges enqueueing when using AMQP, not immediate blacklist application.
+
+History processing, delivery and transcription have dedicated queues with two
+consumers per process/stage. Existing payloads and filters stay unchanged; live
+messages may overtake history. CPU, network and Redis remain shared. AMQP publisher
+confirms gate consumer ACKs, not WhatsApp delivery; duplicates remain possible.
+VoIP audio/control do not go through this publication path.
+
 Each session may have multiple independent destinations. Configure the URL,
 authorization header, token, timeout and event switches in the Manager.
 

@@ -20,8 +20,9 @@ export const parseRabbitQueueName = (name: string): RabbitQueueIdentity => {
   const lifecycle: RabbitQueueLifecycle = last === 'dead' || last === 'delayed' ? last : 'active'
   const provider = parts.find((part): part is RabbitQueueProvider => part === 'zapo' || part === 'baileys')
   const serverToken = parts.find((part) => /^server_/i.test(part) || part === 'undefined')
-  const ignored = new Set(['unoapi', family, lifecycle, provider || '', serverToken || ''])
+  const ignored = new Set([parts[0], family, lifecycle, provider || '', serverToken || ''])
   const variant = parts.find((part) => !ignored.has(part))
+  const globalReload = family === 'reload' && !serverToken && !provider && !variant
 
   return {
     family,
@@ -29,7 +30,7 @@ export const parseRabbitQueueName = (name: string): RabbitQueueIdentity => {
     provider,
     server: serverToken,
     variant,
-    legacy: providerFamilies.has(family) && !provider,
+    legacy: providerFamilies.has(family) && !provider && !globalReload,
     invalidServer: serverToken === 'undefined',
   }
 }

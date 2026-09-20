@@ -155,6 +155,7 @@ export interface RabbitQueueMessage {
 export type RedisKeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'none'
 
 export interface RedisKeyDetails {
+  readOnly?: boolean
   key: string
   type: RedisKeyType
   ttl: number
@@ -260,6 +261,21 @@ export interface VoipHistoryPage {
 }
 
 export interface VoipBootstrap {
+  capabilities?: {
+    automaticLines?: boolean
+    lines?: boolean
+    disconnectRegistration?: boolean
+    automaticExtensions?: boolean
+    extensionCredentials?: boolean
+    extensionSipMode?: boolean
+    extensionRegistrations?: boolean
+    activeCalls: boolean
+    callCommands: boolean
+    createCalls: boolean
+    history: boolean
+    recordings: boolean
+    configuration: boolean
+  }
   bridges: VoipBridgeStatus[]
   calls: VoipCallStatus[]
   extensions?: Array<{

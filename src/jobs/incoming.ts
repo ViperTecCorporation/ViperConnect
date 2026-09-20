@@ -12,9 +12,12 @@ import { buildRestrictionNoticeWebhooks } from '../services/restriction_notice'
 import { isChatwootWebhook } from '../services/webhook_config'
 import { buildProviderSendFailureResponse, shouldReturnProviderSendFailure } from '../services/providers/send_failure'
 import { resolveWhatsAppEngine } from '../services/providers/provider_resolver'
+import { loadReplyWarning, completeReplyWarning, replyWarningStatus } from '../services/reply_warning_outbox'
 import { interactiveForChatwootWebhook, withOrderDetailsPixCopyButton } from '../services/transformer/interactive'
 import { resolveProfilePictureId } from '../services/profile_picture_identity'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../services/messages/outgoing_media_input'
+
+import { outgoingEditWebhook } from '../services/messages/outgoing_edit_webhook'
 
 type RetryContext = {
   countRetries: number
@@ -107,6 +110,7 @@ export class IncomingJob {
       timestamp,
       [payload.type]: messagePayload,
       type: payload.type,
+      ...outgoingEditWebhook(payload, timestamp),
     }
     if (groupId) message.group_id = groupId
     const userId =
@@ -212,6 +216,7 @@ export class IncomingJob {
                     timestamp,
                     [type]: content,
                     type,
+                    ...outgoingEditWebhook(payload, timestamp),
                   },
                 ],
               },
@@ -277,6 +282,9 @@ export class IncomingJob {
     // idempotency is handled by the provider adapter using the requested state.
     const isStatusOperation = !!payload?.status
     // Idempotency guard: skip a new send if this UNO id looks already processed.
+    let alreadyProcessed = false
+    let successfulSend = false
+    let previousStatus: string | undefined
     try {
       if (config.outgoingIdempotency && !isStatusOperation) {
         const store = await config.getStore(phone, config)
@@ -284,11 +292,32 @@ export class IncomingJob {
         const existingStatus = await store.dataStore.loadStatus(idUno)
         if (existingKey || existingStatus) {
           logger.info('Skip send (idempotent) for %s — already processed (key/status present)', idUno)
-          return { ok: { success: true, idempotent: true } }
+          alreadyProcessed = true
+          previousStatus = existingStatus
+          successfulSend = existingStatus !== 'failed' && (!!existingKey || ['sent', 'delivered', 'read', 'deleted'].includes(existingStatus || ''))
         }
       }
     } catch (e) {
+      // For replies, inability to verify a previous send must not cause a resend
+      // while its warning publication may still be pending.
+      if (payload?.context && !isStatusOperation) throw e
       logger.warn(e as any, 'Ignore error checking outgoing idempotency')
+    }
+    if (alreadyProcessed) {
+      // Outside the guard catch: failure to replay a warning must never resend to WhatsApp.
+      if (successfulSend && payload?.context) {
+        const pending = await loadReplyWarning(phone, idUno)
+        if (pending) {
+          const statusPayload = replyWarningStatus(phone, idUno, {
+            ...pending, recipientId: normalizeUserOrGroupIdForWebhook(pending.recipientId),
+          }, previousStatus)
+          await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_BULK_STATUS, phone,
+            { payload: statusPayload, type: 'whatsapp' }, { type: 'topic' })
+          await Promise.all(config.webhooks.map(w => this.outgoing.sendHttp(phone, w, statusPayload, { delay: 0 })))
+          await completeReplyWarning(phone, idUno)
+        }
+      }
+      return { ok: { success: true, idempotent: true } }
     }
     let response
     try {
@@ -491,6 +520,7 @@ export class IncomingJob {
                       recipient_id: waId,
                       status: 'sent',
                       timestamp,
+                      ...(ok?.warnings?.length ? { warnings: ok.warnings } : {}),
                     },
                   ],
                 },
@@ -504,9 +534,12 @@ export class IncomingJob {
       try {
         const { dataStore } = await config.getStore(phone, config)
         const prev = await dataStore.loadStatus(idUno)
-        if (rankStatus(prev || '') >= 3) {
+        if (rankStatus(prev || '') >= 3 && !ok?.warnings?.length) {
           logger.info("Skip 'sent' webhook for %s (prev status %s)", idUno, prev)
           outgingPayload = null as any
+        }
+        if (rankStatus(prev || '') >= 3 && ok?.warnings?.length) {
+          outgingPayload.entry[0].changes[0].value.statuses[0].status = prev
         }
       } catch {}
     }
@@ -519,6 +552,7 @@ export class IncomingJob {
         { type: 'topic' },
       )
       await Promise.all(config.webhooks.map((w) => this.outgoing.sendHttp(phone, w, outgingPayload, optionsOutgoing)))
+      if (ok?.warnings?.length || (provider === 'zapo' && error && payload?.context)) await completeReplyWarning(phone, idUno)
       if (error) {
         try {
           const notices = buildRestrictionNoticeWebhooks({

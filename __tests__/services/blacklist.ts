@@ -23,7 +23,7 @@ describe('service blacklist webhook', () => {
     await cleanBlackList()
     redisKeysMock.mockReturnValue(Promise.resolve(['unoapi-webhook-blacklist:x:y:w']))
     redisGetMock.mockReturnValue(Promise.resolve('1'))
-    blacklistMock.mockReturnValue('unoapi-webhook-blacklist:::')
+    blacklistMock.mockReturnValue('unoapi-webhook-blacklist:x:y:w')
     expect(await isInBlacklistInRedis('x', 'y', { to: 'w' })).toBe('w')
   })
 })

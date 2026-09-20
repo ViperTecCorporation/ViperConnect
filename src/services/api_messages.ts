@@ -1,0 +1,79 @@
+import { UNOAPI_API_LANGUAGE } from '../defaults'
+
+const catalog: Record<string, [string, string]> = {
+  manager_invalid_credentials: ['Usuário, senha ou chave inválidos ou expirados.', 'Invalid or expired username, password or key.'],
+  manager_voip_forbidden: ['Esta operação de telefonia não está disponível para sua conta ou sessão.', 'This telephony operation is not available for your account or session.'],
+  invalid_sip_endpoint_mode: ['Informe somente o campo sipEndpointMode com o valor extension ou trunk.', 'Provide only sipEndpointMode with the value extension or trunk.'],
+  'invalid input': ['Envie um objeto válido com os campos solicitados.', 'Invalid input'],
+  manager_session_forbidden: ['Você não tem permissão para acessar esta sessão ou recurso.', 'You do not have permission to access this session or resource.'],
+  manager_admin_required: ['Esta operação é exclusiva do administrador.', 'This operation requires an administrator.'],
+  manager_login_required: ['Entre com usuário e senha para gerenciar sua conta.', 'Sign in with username and password to manage your account.'],
+  manager_admin_setting: ['Esta configuração é exclusiva do administrador. Use sua chave pessoal para integrar.', 'This setting requires an administrator. Use your personal key for integrations.'],
+  manager_admin_uses_stack_token: ['O administrador usa o token configurado na stack.', 'The administrator uses the token configured in the stack.'],
+  manager_assignment_confirmation_required: ['Confirme o responsável atual antes de alterar a atribuição.', 'Confirm the current owner before changing the assignment.'],
+  manager_unavailable: ['O gerenciamento de usuários está temporariamente indisponível. Tente novamente.', 'User management is temporarily unavailable. Try again.'],
+  'invalid credentials': ['Usuário ou senha inválidos.', 'Invalid credentials'],
+  'reserved username': ['Este nome de usuário é reservado ao administrador.', 'Reserved username'],
+  'username already exists': ['Este login já está cadastrado.', 'Username already exists'],
+  'user not found': ['Usuário não encontrado.', 'User not found'],
+  'user changed concurrently': ['O usuário foi alterado por outra operação. Atualize e tente novamente.', 'User changed concurrently'],
+  'assignment changed concurrently': ['A atribuição mudou. Confira o responsável atual e confirme novamente.', 'Assignment changed concurrently'],
+  'assignment requires an active user': ['Selecione um usuário ativo para atribuir a sessão.', 'Assignment requires an active user'],
+  'key requires an active user': ['Ative o usuário antes de gerar uma chave.', 'Key requires an active user'],
+  'too many login attempts': ['Muitas tentativas de login. Aguarde 15 minutos e tente novamente.', 'Too many login attempts'],
+  'manager identity storage unavailable': ['O armazenamento de usuários está indisponível. Tente novamente.', 'Manager identity storage unavailable'],
+  'password must contain 8 to 256 characters': ['A senha deve conter de 8 a 256 caracteres.', 'Password must contain 8 to 256 characters'],
+  'invalid active flag': ['Informe uma situação válida para o usuário.', 'Invalid active flag'],
+  'invalid key validity': ['A validade da chave deve ser de 1 a 365 dias.', 'Invalid key validity'],
+  'invalid current password': ['A senha atual é inválida.', 'Invalid current password'],
+  'invalid username': ['Informe um login válido, com até 64 caracteres.', 'Invalid username'],
+  'invalid name': ['Informe um nome válido, com até 128 caracteres.', 'Invalid name'],
+  'invalid phone': ['Informe o telefone com DDI, usando de 8 a 15 dígitos.', 'Invalid phone'],
+  'invalid password': ['Informe uma senha válida.', 'Invalid password'],
+  'invalid user id': ['O identificador do usuário é inválido.', 'Invalid user id'],
+  'invalid expected owner': ['O responsável esperado é inválido. Atualize a página.', 'Invalid expected owner'],
+  'invalid actor': ['O identificador do administrador é inválido.', 'Invalid actor'],
+  'invalid key name': ['Informe um nome para a chave, com até 128 caracteres.', 'Invalid key name'],
+  'invalid key id': ['O identificador da chave é inválido.', 'Invalid key id'],
+  'invalid ip address': ['Não foi possível identificar a origem do login.', 'Invalid IP address'],
+  REPLY_SENT_WITHOUT_QUOTE: ['Mensagem enviada sem citação: não foi possível localizar a referência original nesta conversa.', 'Message sent without a quote: the original reference could not be found in this conversation.'],
+  zapo_phone_lid_not_found: ['Não foi possível localizar o identificador WhatsApp do destinatário. Verifique o número e tente novamente.', 'Could not find the recipient WhatsApp identifier. Check the number and try again.'],
+  zapo_lid_phone_not_found: ['Não foi possível localizar o telefone associado ao identificador WhatsApp.', 'Could not find the phone associated with the WhatsApp identifier.'],
+  zapo_client_not_connected: ['A sessão do WhatsApp não está conectada. Reconecte a sessão e tente novamente.', 'The WhatsApp session is not connected. Reconnect and try again.'],
+  zapo_contact_lookup_unavailable: ['A consulta de contatos está temporariamente indisponível. Tente novamente mais tarde.', 'Contact lookup is temporarily unavailable. Try again later.'],
+  message_not_found: ['A mensagem original não foi localizada.', 'The original message was not found.'],
+  contact_directory_requires_zapo_provider: ['O diretório de contatos está disponível apenas para sessões Zapo.', 'The contact directory is available only for Zapo sessions.'],
+  message_recipient_required: ['Informe o destinatário da mensagem.', 'A message recipient is required.'],
+  message_edit_original_not_from_me: ['Não é possível editar uma mensagem recebida de outra pessoa.', 'A message received from another person cannot be edited.'],
+  message_edit_message_id_required: ['Informe o identificador da mensagem que deseja editar.', 'Provide the identifier of the message to edit.'],
+  provider_send_failed: ['Não foi possível enviar a mensagem pelo WhatsApp.', 'Could not send the message through WhatsApp.'],
+  internal_error: ['Não foi possível concluir a solicitação. Tente novamente ou entre em contato com o suporte.', 'Could not complete the request. Try again or contact support.'],
+  unauthorized: ['Não autorizado. Verifique as credenciais de acesso.', 'Unauthorized. Check the access credentials.'],
+  forbidden: ['Você não tem permissão para executar esta operação.', 'You do not have permission to perform this operation.'],
+  'account restricted': ['O WhatsApp informou uma restrição na conta.', 'WhatsApp reported an account restriction.'],
+  'too many requests': ['Limite de solicitações atingido. Aguarde antes de tentar novamente.', 'Request limit reached. Wait before trying again.'],
+  'rate-overlimit': ['Limite de solicitações atingido. Aguarde antes de tentar novamente.', 'Request limit reached. Wait before trying again.'],
+  document_download_failed: ['Não foi possível baixar o documento para envio.', 'Could not download the document to send.'],
+  'meta group routes disabled': ['As rotas de grupos estão desativadas nesta instalação.', 'Group routes are disabled in this installation.'],
+  'group not found in cache': ['O grupo não foi localizado no cache da sessão.', 'The group was not found in the session cache.'],
+  'action must be promote or demote': ['A ação deve ser promover (promote) ou rebaixar (demote) o participante.', 'The action must promote or demote the participant.'],
+  'media upload failed with status 413': ['A mídia excede o tamanho aceito pelo serviço de upload.', 'The media exceeds the upload service size limit.'],
+}
+
+// Translate at the public boundary only: internal error titles remain machine-readable.
+export const apiMessage = (original: string, language = UNOAPI_API_LANGUAGE, fallback?: string): string => {
+  if (/negative publish ack:.*\berror=\d+/.test(original)) {
+    const code = original.match(/\berror=(\d+)/)?.[1]
+    return language === 'en' ? `WhatsApp rejected the message (code ${code}).` : `O WhatsApp recusou a mensagem (código ${code}).`
+  }
+  const key = original.trim().replace(/^\d+\s*:\s*/, '').split(':')[0]
+  const translation = catalog[key] || catalog[key.toLowerCase()]
+    || Object.values(catalog).find(pair => pair.includes(original))
+  return translation ? translation[language === 'en' ? 1 : 0]
+    : fallback ? apiMessage(fallback, language) : original
+}
+
+export const replyWithoutQuoteWarning = () => ({
+  code: 'REPLY_SENT_WITHOUT_QUOTE',
+  message: apiMessage('REPLY_SENT_WITHOUT_QUOTE'),
+})

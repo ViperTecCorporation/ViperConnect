@@ -110,6 +110,24 @@ Nao existe fallback silencioso de auth. Uma sessao configurada como Zapo permane
 
 ## Politica de testes
 
+### Diagnóstico de desconexão
+
+O contrato novo de integração de estados está em
+[SESSION_WEBHOOKS.md](SESSION_WEBHOOKS.md): destinos centralizados no painel,
+rotas administrativas, seleção de sessões, outbox Redis e fila de entrega
+independente. `SessionLifecycleObserver` observa conexão Zapo sem aguardar HTTP
+ou confirmação AMQP no callback e sem substituir o webhook legado de mensagens.
+
+O evento `connection` fechado registra `ZAPO_CONNECTION_CLOSED` em nível warn,
+com `phone`, `reason`, `code`, `isLogout`, `intentionalDisconnect` e
+`wasConnected`. Motivo/código ausentes são `null`, sem inventar a causa.
+São os campos do contrato `WaConnectionEvent` da versão instalada; não se
+registra o evento inteiro, credenciais, QR, tokens ou conteúdo de mensagens.
+Eventos de sockets já substituídos continuam ignorados. O log é somente
+diagnóstico: não muda status, reconexão, pareamento nem encaminhamento VoIP.
+`isLogout=true` indica desvinculação conforme o provider, não identifica quem
+a provocou. Os novos detalhes só estarão disponíveis após publicar a versão.
+
 Cada funcao nova tem pelo menos um teste dedicado. Funcoes com decisao, erro ou idempotencia exigem um caso por ramo relevante.
 
 ## Proxy Zapo
@@ -234,8 +252,12 @@ O adapter segue a referência oficial de tipos da Zapo:
 - `pix_static_code` continua aceitando a forma curta `payment_request`, enquanto
   `pix_dynamic_code`, `payment_link`, `boleto` e `offsite_card_pay` usam uma
   ordem `order_details/review_and_pay`, com o objeto `order` opcional;
-- pedidos detalhados aceitam cabeçalho de imagem; pedidos simplificados, sem o
-  objeto `order`, rejeitam esse cabeçalho;
+- pedidos detalhados aceitam cabeçalho de imagem ou documento PDF; pedidos
+  simplificados, sem o objeto `order`, rejeitam cabeçalhos com mídia. O envio e
+  a exibição de boleto com PIX e PDF no fluxo `order_details/review_and_pay`
+  foram confirmados em 19/09/2026. Consulte o
+  [payload completo com PDF](../docs-site/guide/messages.md#pedido-com-boleto-pix-e-pdf-no-header).
+  Essa validação não se estende automaticamente a outros tipos de interativo;
 - cabeçalhos de imagem são identificados por conteúdo antes da geração da
   miniatura. `file-type` é uma dependência direta do runtime e o estágio
   `production-dependencies` valida sua presença para não depender de hoisting

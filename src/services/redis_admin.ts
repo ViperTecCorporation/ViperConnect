@@ -1,5 +1,6 @@
 import { getRedis, redisScanSome } from './redis'
 import { redactLogValue } from './log_redaction'
+import { isProtectedRedisKey, managerPreviewKeys, protectedRedisPrefixes, safeRedisPreview } from './redis_admin_preview'
 
 export type RedisKeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'none'
 
@@ -10,6 +11,7 @@ export type RedisKeyDetails = {
   size: number
   truncated: boolean
   value: unknown
+  readOnly?: boolean
 }
 
 export type RedisTreeNode = {
@@ -40,10 +42,11 @@ const knownRedisRootNodes: RedisTreeNode[] = [
 }))
 
 export const isAllowedRedisKey = (key: string): boolean =>
-  allowedPrefixes.some((prefix) => `${key || ''}`.startsWith(prefix))
+  allowedPrefixes.some((prefix) => `${key || ''}`.startsWith(prefix)) || managerPreviewKeys.includes(key)
 
 const redisTreePatterns = (prefix: string): string[] => {
-  if (!prefix) return allowedPrefixes.map((allowed) => `${allowed}*`)
+  if (!prefix) return [...allowedPrefixes.map((allowed) => `${allowed}*`), ...managerPreviewKeys]
+  if (prefix === 'manager-identity:' || prefix === 'manager-identity:{v1}:') return managerPreviewKeys
   if (/[*?[\]]/.test(prefix) || !isAllowedRedisKey(prefix)) {
     throw new RedisAdminError(403, 'redis_key_not_allowed')
   }
@@ -109,6 +112,14 @@ export class RedisAdmin {
     if (!isAllowedRedisKey(key)) throw new RedisAdminError(403, 'redis_key_not_allowed')
   }
 
+  private assertWritable(key: string): void {
+    if (/[*?[\]]/.test(key)) throw new RedisAdminError(403, 'redis_key_not_allowed')
+    if (protectedRedisPrefixes.some(prefix => key.startsWith(prefix) || prefix.startsWith(key))) {
+      throw new RedisAdminError(403, 'redis_key_read_only')
+    }
+    this.assertKey(key)
+  }
+
   private assertPrefix(prefix: string): void {
     this.assertKey(prefix)
     if (!prefix.endsWith(':')) throw new RedisAdminError(400, 'redis_prefix_required')
@@ -123,7 +134,7 @@ export class RedisAdmin {
         const result: any = await client.scan(cursor, { MATCH: pattern, COUNT: 1000 })
         cursor = typeof result.cursor !== 'undefined' ? `${result.cursor}` : `${result[0]}`
         const page: string[] = Array.isArray(result.keys) ? result.keys : (result[1] || [])
-        page.forEach((key) => keys.add(key))
+        page.filter(isAllowedRedisKey).forEach((key) => keys.add(key))
       } while (cursor !== '0')
     }
     return [...keys]
@@ -134,13 +145,13 @@ export class RedisAdmin {
     const term = `${search || ''}`.trim().replace(/[*?[\]]/g, '')
     const patterns = isAllowedRedisKey(term)
       ? [`${term}*`]
-      : allowedPrefixes.map((prefix) => `${prefix}*${term}*`)
+      : [...allowedPrefixes.map((prefix) => `${prefix}*${term}*`), ...managerPreviewKeys.filter(key => key.includes(term))]
     const groups = await Promise.all(
       patterns.map((pattern) => redisScanSome(pattern, safeLimit)),
     )
     const keys: string[] = []
     const seen = new Set<string>()
-    const sortedGroups = groups.map((group) => [...group].sort())
+    const sortedGroups = groups.map((group) => [...group].filter(isAllowedRedisKey).sort())
     for (let index = 0; keys.length < safeLimit; index += 1) {
       let found = false
       for (const group of sortedGroups) {
@@ -171,6 +182,19 @@ export class RedisAdmin {
     const client: any = await this.clientFactory()
     const type = `${await client.type(key)}` as RedisKeyType
     const ttl = Number(await client.ttl(key))
+    if (isProtectedRedisKey(key)) {
+      let size = 0
+      let value: unknown = null
+      if (type === 'list') {
+        size = Number(await client.lLen(key))
+        value = (await client.lRange(key, 0, 199)).map((raw: unknown) => safeRedisPreview(key, raw))
+      } else if (type === 'hash') {
+        const data = await client.hGetAll(key)
+        size = Number(await client.hLen(key))
+        value = Object.fromEntries(Object.entries(data).slice(0, 200).map(([field, raw]) => [field, safeRedisPreview(key, raw)]))
+      }
+      return { key, type, ttl, size, truncated: size > 200, value, readOnly: true }
+    }
     let value: unknown = null
     let size = 0
     let truncated = false
@@ -204,7 +228,7 @@ export class RedisAdmin {
   }
 
   async saveKey(key: string, type: RedisKeyType, value: unknown, ttlSeconds = -1): Promise<void> {
-    this.assertKey(key)
+    this.assertWritable(key)
     if (!['string', 'hash', 'list', 'set', 'zset'].includes(type)) {
       throw new RedisAdminError(400, 'redis_type_not_editable')
     }
@@ -242,12 +266,13 @@ export class RedisAdmin {
   }
 
   async deleteKey(key: string): Promise<number> {
-    this.assertKey(key)
+    this.assertWritable(key)
     const client: any = await this.clientFactory()
     return Number(await client.del(key)) || 0
   }
 
   async deletePrefix(prefix: string): Promise<number> {
+    this.assertWritable(prefix)
     this.assertPrefix(prefix)
     const client: any = await this.clientFactory()
     let cursor = '0'
@@ -279,6 +304,10 @@ export class RedisAdmin {
     this.assertKey(key)
     if (name === 'TYPE') return client.type(key)
     if (name === 'TTL') return client.ttl(key)
+    if (isProtectedRedisKey(key)) {
+      if (!['GET', 'HGETALL', 'LRANGE', 'SMEMBERS', 'ZRANGE'].includes(name)) throw new RedisAdminError(400, 'redis_command_not_allowed')
+      return (await this.getKey(key)).value
+    }
     if (name === 'GET') return parseRedisValue(await client.get(key))
     if (name === 'HGETALL') return parseRedisValue(await client.hGetAll(key))
     if (name === 'LRANGE') return parseRedisValue(await client.lRange(key, 0, 199))

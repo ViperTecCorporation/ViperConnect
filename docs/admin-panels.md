@@ -1,5 +1,9 @@
 # Painéis administrativos
 
+O histórico de configurações pode ser consultado na aba **Webhooks** da sessão.
+A restauração exige o token administrativo global e mantém os destinos desativados.
+Consulte [Histórico e restauração de webhooks](WEBHOOK_HISTORY.md).
+
 O front do ViperConnect oferece painéis para inspeção operacional do RabbitMQ e
 do Redis. Ambos usam o token administrativo global da UnoAPI. Tokens de sessão
 não têm acesso.
@@ -14,8 +18,15 @@ As credenciais nunca são pedidas pelo navegador:
 ## RabbitMQ
 
 O painel **Filas** atualiza a cada 30 segundos, permite busca, filtro por sessão,
-explica a responsabilidade de cada fila e destaca em vermelho filas paradas ou
-com mensagens prontas sem consumidor.
+explica a responsabilidade de cada fila e destaca em vermelho filas paradas,
+filas ativas com mensagens prontas sem consumidor e filas `.dead` com itens.
+Filas `.delayed` em execução não exigem consumidor direto: aguardam expiração.
+Seu volume, isoladamente, não indica falha. A fila global `unoapi.reload` não é legada.
+
+Veja o catálogo e o roteiro operacional em [RabbitMQ e filas](RABBITMQ.md),
+também disponível no menu **Operação → RabbitMQ e filas** da documentação web.
+A fila `unoapi.media.delayed` agenda exclusões de mídias; não representa envios
+pendentes ao WhatsApp. Purgá-la descarta as tarefas de limpeza, não os arquivos.
 
 A inspeção lê em blocos de 20, até o máximo de 200 mensagens, com
 `ack_requeue_true`: os itens são

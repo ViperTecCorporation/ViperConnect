@@ -5,6 +5,7 @@ import fs from 'fs'
 import path from 'path'
 import YAML from 'yaml'
 import { versionStatusService } from '../services/version_status'
+import { resolvePublicFile } from '../utils/public_file'
 
 const PUBLIC_APP_ROOT = path.resolve('./public/app')
 
@@ -65,23 +66,13 @@ class IndexController {
     return res.sendFile(path.resolve('./public/docs/swagger.html'))
   }
 
-  public docsFile(req: Request, res: Response) {
+  public async docsFile(req: Request, res: Response) {
     // Serve files from /docs, allowing dotfiles (e.g., .env.example)
     const file = (req.params as any)[0] || ''
-    const safe = path.normalize(file).replace(/^\.\.(?:[\/\\]|$)/, '')
-    const target = path.resolve('./docs', safe)
+    const target = await resolvePublicFile('./docs', file)
+    if (!target) return res.status(404).send('Not found')
     return res.sendFile(target, { dotfiles: 'allow' }, (err) => {
-      if (err) {
-        // Fallback: explicitly set plain text for unknown extensions
-        try {
-          if (!fs.existsSync(target)) return res.status(404).send('Not found')
-          const data = fs.readFileSync(target)
-          res.set('Content-Type', 'text/plain')
-          return res.status(200).send(data)
-        } catch {
-          return res.status(404).send('Not found')
-        }
-      }
+      if (err && !res.headersSent) return res.status(404).send('Not found')
     })
   }
 
@@ -97,10 +88,10 @@ class IndexController {
     }
   }
 
-  public logos(req: Request, res: Response) {
+  public async logos(req: Request, res: Response) {
     const file = (req.params as any)[0] || ''
-    const safe = path.normalize(file).replace(/^\.\.(?:[\/\\]|$)/, '')
-    const target = path.resolve('./logos', safe)
+    const target = await resolvePublicFile('./logos', file)
+    if (!target) return res.status(404).send('Not found')
     return res.sendFile(target)
   }
 

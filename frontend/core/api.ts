@@ -14,8 +14,13 @@ import type {
   WebhookConfig,
 } from '../domain/types.js'
 import { t } from './i18n.js'
+import type { SessionDestination } from '../pages/session_webhooks.js'
 
 export class ApiError extends Error {
+  get code(): string | undefined {
+    const value = this.payload as { error_code?: string; error?: { error_code?: string } } | undefined
+    return value?.error_code || value?.error?.error_code
+  }
   constructor(
     public readonly status: number,
     message: string,
@@ -39,6 +44,7 @@ const errorMessage = (payload: unknown, status: number): string => {
 
 export class ApiClient {
   private token = ''
+  private authRevision = 0
 
   constructor(
     private readonly baseUrl: string,
@@ -46,6 +52,7 @@ export class ApiClient {
   ) {}
 
   setToken(token: string): void {
+    this.authRevision++
     this.token = token.trim()
   }
 
@@ -53,7 +60,21 @@ export class ApiClient {
     return this.token
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  sessionDestinations(): Promise<{ destinations: SessionDestination[] }> {
+    return this.request('/admin/session-webhooks')
+  }
+
+  saveSessionDestination(payload: Record<string, unknown>, id = ''): Promise<SessionDestination> {
+    return this.request(`/admin/session-webhooks${id ? `/${encodeURIComponent(id)}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) })
+  }
+
+  deleteSessionDestination(id: string): Promise<void> {
+    return this.request(`/admin/session-webhooks/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  }
+
+  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const requestToken = this.token
+    const revision = this.authRevision
     const headers = new Headers(init.headers)
     if (this.token) headers.set('Authorization', `Bearer ${this.token}`)
     if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -62,9 +83,12 @@ export class ApiClient {
     // `this.fetcher()` binds ApiClient as `this` and Chrome rejects the request
     // with "Illegal invocation".
     const response = await this.fetcher.call(globalThis, `${this.baseUrl}${path}`, { ...init, headers })
+    // Responses from a previous login must never populate the next account.
+    if (requestToken !== this.token || revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
     if (response.status === 204) return undefined as T
 
     const text = await response.text()
+    if (requestToken !== this.token || revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
     let payload: unknown = undefined
     if (text) {
       try {
@@ -132,6 +156,14 @@ export class ApiClient {
     const query = new URLSearchParams({ cursor, limit: `${limit}` })
     if (search.trim()) query.set('search', search.trim())
     return this.request<GroupPage>(`/v15.0/${encodeURIComponent(phone)}/groups?${query}`)
+  }
+
+  webhookHistory(phone: string): Promise<{ snapshots: import('../features/webhook_history.js').WebhookHistorySnapshot[] }> {
+    return this.request(`/admin/webhooks/history/${encodeURIComponent(phone)}`)
+  }
+
+  restoreWebhookHistory(phone: string, payload: object): Promise<{ restored: string[]; enabled: false }> {
+    return this.request(`/admin/webhooks/history/${encodeURIComponent(phone)}/restore`, { method: 'POST', body: JSON.stringify(payload) })
   }
 
   saveWebhooks(phone: string, webhooks: WebhookConfig[]): Promise<SessionConfig> {
@@ -288,6 +320,7 @@ export class ApiClient {
   }
 
   async voipRecording(recordId: string): Promise<Blob> {
+    const revision = this.authRevision
     const headers = new Headers()
     if (this.token) headers.set('Authorization', `Bearer ${this.token}`)
     const response = await this.fetcher.call(globalThis, `${this.baseUrl}/admin/voip/recordings/${encodeURIComponent(recordId)}`, { headers })
@@ -297,6 +330,8 @@ export class ApiClient {
       try { payload = text ? JSON.parse(text) : undefined } catch {}
       throw new ApiError(response.status, errorMessage(payload, response.status), payload)
     }
-    return response.blob()
+    const blob = await response.blob()
+    if (revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
+    return blob
   }
 }

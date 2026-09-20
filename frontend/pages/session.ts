@@ -9,6 +9,8 @@ import { renderWebhooks } from '../features/webhooks.js'
 import { formatNumber, t, type TranslationKey } from '../core/i18n.js'
 
 interface SessionPageOptions {
+  restricted?: boolean
+  canManageUsers?: boolean
   session: SessionConfig
   tab: SessionTab
   contacts: ContactDirectoryItem[]
@@ -20,6 +22,7 @@ interface SessionPageOptions {
   groupsQuery: string
   loadingSection: boolean
   sectionError: string
+  webhookHistoryHtml?: string
 }
 
 const tabs: Array<[SessionTab, TranslationKey]> = [
@@ -116,11 +119,11 @@ const renderGroups = (session: SessionConfig, groups: GroupSummary[], hasMore: b
 `
 
 const renderPanel = (options: SessionPageOptions): string => {
-  if (options.tab === 'config') return renderSessionConfig(options.session)
+  if (options.tab === 'config') return renderSessionConfig(options.session, options.restricted)
   if (options.tab === 'contacts') {
     return renderContacts(options.session, options.contacts, options.contactsHasMore, options.loadingSection, options.sectionError, options.contactsQuery)
   }
-  if (options.tab === 'webhooks') return `<section class="section">${renderWebhooks(options.session.webhooks || [])}</section>`
+  if (options.tab === 'webhooks') return `<section class="section"><p>Para eventos de conexão, desconexão e remoção, configure os destinos centralizados.</p><button class="btn" data-action="open-session-webhooks">Webhooks de sessões</button>${renderWebhooks(options.session.webhooks || [])}</section>${options.webhookHistoryHtml || ''}`
   if (options.tab === 'groups') {
     return renderGroups(options.session, options.groups, options.groupsHasMore, options.loadingSection, options.sectionError, options.groupsQuery)
   }
@@ -137,6 +140,7 @@ export const renderSessionPage = (options: SessionPageOptions): string => {
         <div><span class="eyebrow">${t('Sessão')} · ${escapeHtml(sessionPhone(session))}</span><h1>${escapeHtml(sessionLabel(session))}</h1><p class="muted">${renderStatus(session.status)} <span>${escapeHtml(session.server || 'server_1')}</span></p></div>
       </div>
       <div class="actions">
+        ${options.canManageUsers ? `<button class="btn btn--ghost" type="button" data-action="open-users" data-phone="${escapeHtml(sessionPhone(session))}">Responsável / atribuir sessão</button>` : ''}
         ${
           legacySession
             ? ''

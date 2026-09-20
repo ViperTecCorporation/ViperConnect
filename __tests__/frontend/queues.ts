@@ -24,6 +24,18 @@ describe('RabbitMQ queues page', () => {
     expect(queueTooltip('unoapi.outgoing.dead')).toContain('esgotou')
     expect(queueDescriptionKey('unoapi.media')).toContain('mídias')
   })
+  test('explains scheduled media cleanup without treating retention as a sending backlog', () => {
+    const description = queueTooltip('unoapi.media.delayed')
+    expect(description).toContain('DATA_TTL')
+    expect(description).toContain('30 dias')
+    expect(description).toContain('não é uma fila de envio')
+    expect(description).toContain('Purgar descarta')
+    expect(queueTooltip('unoapi.media.dead')).toContain('esgotou as tentativas')
+    expect(queueTooltip('unoapi.incoming.server_1.zapo.delayed')).not.toContain('DATA_TTL')
+    setLocale('en')
+    expect(queueTooltip('unoapi.media.delayed')).toContain('scheduled media deletion')
+    expect(queueTooltip('unoapi.media.delayed')).toContain('30 days')
+  })
 
   test('distinguishes failed API sends from failed inbound WhatsApp events', () => {
     expect(queueFlowLabelKey('unoapi.incoming.server_1.zapo.dead')).toBe('API → WhatsApp')
@@ -36,6 +48,39 @@ describe('RabbitMQ queues page', () => {
   test('marks stopped queues or unattended backlogs in red', () => {
     expect(queueNeedsAttention(queues[0])).toBe(false)
     expect(queueNeedsAttention(queues[1])).toBe(true)
+  })
+  test.each(['unoapi.media.delayed', 'unoapi.incoming.server_1.zapo.delayed', 'unoapi.history.server_1.zapo.delayed'])('does not flag normal waiting backlog %s', name => {
+    const queue = { ...queues[1], name, messages_ready: 16000 }
+    expect(queueNeedsAttention(queue)).toBe(false)
+    expect(queueNeedsAttention({ ...queue, state: 'down' })).toBe(true)
+  })
+  test('keeps active orphaned queues and dead letters actionable', () => {
+    expect(queueNeedsAttention(queues[1])).toBe(true)
+    expect(queueNeedsAttention({ ...queues[1], consumers: 1 })).toBe(false)
+    expect(queueNeedsAttention({ ...queues[2], consumers: 1 })).toBe(true)
+    expect(queueNeedsAttention({ ...queues[2], messages_ready: 0 })).toBe(false)
+  })
+  test.each([
+    ['unoapi.history.server_1.zapo', 'sincronização'],
+    ['unoapi.outgoing.history', 'webhooks do histórico'],
+    ['unoapi.transcribe.history', 'áudios do histórico'],
+    ['unoapi.session.events', 'heartbeat'],
+    ['unoapi.video.stage', 'armazena temporariamente'],
+    ['unoapi.video.transcode', 'converte vídeos'],
+    ['unoapi.webhook.status.failed', 'webhook de falhas'],
+    ['unoapi.incoming.server_1.zapo', 'gerenciamento de grupos'],
+    ['unoapi.commander', 'configuração de webhooks'],
+    ['unoapi.timer', 'envios de texto'],
+    ['unoapi.blacklist.add', 'persistentes'],
+  ])('describes %s in both languages, including retry/dead variants', (name, description) => {
+    setLocale('pt-BR')
+    const pt = queueDescriptionKey(name)
+    expect(pt).toContain(description)
+    expect(queueDescriptionKey(`${name}.delayed`)).toBe(pt)
+    expect(queueDescriptionKey(`${name}.dead`)).toBe(pt)
+    setLocale('en')
+    expect(queueTooltip(name)).not.toContain(pt)
+    expect(queueTooltip(`${name}.dead`)).toContain('exhausted')
   })
 
   test('filters queues from each summary card', () => {

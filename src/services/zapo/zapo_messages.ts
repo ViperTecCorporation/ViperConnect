@@ -9,6 +9,9 @@ import { ZapoIdentity } from './zapo_identity'
 import { toZapoMessageContent } from './zapo_message_mapper'
 import { resolveProviderMessageId } from '../message_id_map'
 import logger from '../logger'
+import { loadTranscriptionReference } from '../transcription_reference'
+import { replyWithoutQuoteWarning } from '../api_messages'
+import { saveReplyWarning, completeReplyWarning } from '../reply_warning_outbox'
 import { getZapoRecipientIdentity, getZapoStoredPhone } from './zapo_recipient'
 import type { YouTubeLinkPreviewResolver } from '../messages/youtube_link_preview'
 
@@ -301,6 +304,7 @@ export class ZapoMessages {
     let content
     const requestedUnoId = `${baseOptions.unoMessageId || ''}`.trim()
     const options: Record<string, unknown> = { ...baseOptions }
+    const warnings: ReturnType<typeof replyWithoutQuoteWarning>[] = []
     delete options.unoMessageId
     delete options.endpoint
     delete options.requestId
@@ -332,9 +336,22 @@ export class ZapoMessages {
       }
       const contextId = `${payload?.context?.message_id || payload?.context?.id || ''}`
       if (contextId) {
-        const key = await this.resolveKey(contextId)
-        target = key.remoteJid
-        options.quote = key
+        const originalId = await loadTranscriptionReference(this.phone, contextId)
+        let key: WaMessageKey | undefined
+        try {
+          key = await this.resolveKey(originalId || contextId)
+        } catch (error) {
+          // Only a confirmed missing reference permits an unquoted send. Store/transport
+          // failures, edits, reactions and order references retain their error handling.
+          if (!(error instanceof SendError) || error.code !== 404 || !error.title.startsWith('message_not_found:')) throw error
+        }
+        if (key && (key.remoteJid === target || await this.canonicalJid(key.remoteJid) === target)) {
+          options.quote = { ...key, remoteJid: target }
+        } else {
+          delete options.quote
+          warnings.push(replyWithoutQuoteWarning())
+          logger.warn({ phone: this.phone, messageId: requestedUnoId, code: 'REPLY_SENT_WITHOUT_QUOTE' }, 'Reply reference unavailable in target conversation')
+        }
       }
       if (type === 'interactive' && payload?.interactive?.type === 'order_status') {
         const referenceId = `${payload?.interactive?.action?.parameters?.reference_id || ''}`.trim()
@@ -344,6 +361,17 @@ export class ZapoMessages {
       if (payload?.ttl !== undefined) options.expirationSeconds = Number(payload.ttl)
     }
 
+    if (warnings.length && requestedUnoId) {
+      await saveReplyWarning(this.phone, requestedUnoId, {
+        recipientId: `${payload?.to || target}`,
+        timestamp: `${Math.floor(Date.now() / 1000)}`,
+        warnings,
+      })
+    } else if (requestedUnoId && options.quote && payload?.context) {
+      // A retried send may now resolve a quote that was missing on the previous attempt.
+      // Remove that obsolete intent before sending a genuinely quoted message.
+      await completeReplyWarning(this.phone, requestedUnoId)
+    }
     let result
     if (target === 'status@broadcast') {
       result = await this.sendStatus(content, options)
@@ -389,6 +417,7 @@ export class ZapoMessages {
         messaging_product: 'whatsapp',
         contacts: [contact],
         messages: [{ id: unoId }],
+        ...(warnings.length ? { warnings } : {}),
       },
     }
   }

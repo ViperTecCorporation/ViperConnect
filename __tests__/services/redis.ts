@@ -29,6 +29,22 @@ const mockClient: any = {
     return 'OK'
   }),
   eval: jest.fn(async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+    if (options.arguments[0] === 'save_config' || options.arguments[0] === 'remove') {
+      if (mockClient.failNextExec) {
+        mockClient.failNextExec = false
+        throw new Error('transaction failed')
+      }
+      const [operation, phone] = options.arguments
+      const key = options.keys[4]
+      if (operation === 'save_config') {
+        store.set(key, options.arguments[5])
+        addSetMembers(options.keys[5], phone)
+      } else {
+        store.delete(key)
+        removeSetMembers(options.keys[5], phone)
+      }
+      return 1
+    }
     const [key] = options.keys
     const [selfId, replacement] = options.arguments
     const current = store.get(key)
@@ -101,6 +117,7 @@ jest.mock('@redis/client', () => ({
 }))
 
 process.env.REDIS_URL = 'redis://mock'
+import { webhookHistory } from '../../src/services/webhook_history'
 
 import {
   acquireWebhookCircuitProbe,
@@ -119,9 +136,43 @@ import {
   getConfig,
   delConfig,
   sessionPhoneIndexKey,
+  setBlacklistAliases,
+  blacklist,
 } from '../../src/services/redis'
 
+describe('redis blacklist identity transaction', () => {
+  beforeEach(() => mockClient.__reset())
+  test.each([-1, 60])('adds and removes all aliases atomically with ttl %s', async ttl => {
+    const aliases = ['551234567890', '123@lid']
+    await setBlacklistAliases('session', 'type', aliases, ttl)
+    expect(mockClient.multi).toHaveBeenCalledTimes(1)
+    for (const alias of aliases) expect(store.has(blacklist('session', 'type', alias))).toBe(true)
+    await setBlacklistAliases('session', 'type', aliases, 0)
+    for (const alias of aliases) expect(store.has(blacklist('session', 'type', alias))).toBe(false)
+  })
+  test('propagates transaction failure without applying half an update', async () => {
+    mockClient.failNextExec = true
+    await expect(setBlacklistAliases('session', 'type', ['123@lid', '551234567890'], -1)).rejects.toThrow('transaction failed')
+    expect(store.size).toBe(0)
+  })
+})
+
 describe('redis session phone index writes', () => {
+  test('archives edits and removal but does not archive ordinary connection/config updates', async () => {
+    mockClient.__reset()
+    const capture = jest.spyOn(webhookHistory, 'capture').mockImplementation(() => {})
+    try {
+      const phone = '5511999999'
+      await setConfig(phone, { provider: 'zapo', webhooks: [{ id: 'a', url: 'https://example.com' }] })
+      await setConfig(phone, { name: 'New label' })
+      expect(capture).not.toHaveBeenCalled()
+      await setConfig(phone, { webhooks: [{ id: 'b', url: 'https://example.org' }], overrideWebhooks: true })
+      expect(capture).toHaveBeenCalledWith(phone, expect.objectContaining({ webhooks: [expect.objectContaining({ id: 'a' })] }), 'updated')
+      await delConfig(phone)
+      expect(capture).toHaveBeenLastCalledWith(phone, expect.objectContaining({ webhooks: [expect.objectContaining({ id: 'b' })] }), 'removed')
+      expect(await getConfig(phone)).toBeUndefined()
+    } finally { capture.mockRestore() }
+  })
   beforeEach(() => {
     mockClient.__reset()
   })
@@ -133,7 +184,10 @@ describe('redis session phone index writes', () => {
 
     expect(await getConfig(phone)).toEqual(expect.objectContaining({ authToken: 'token' }))
     expect(await mockClient.sMembers(sessionPhoneIndexKey())).toContain(phone)
-    expect(mockClient.multi).toHaveBeenCalledTimes(1)
+    expect(mockClient.eval).toHaveBeenCalledWith(expect.stringContaining("operation == 'save_config'"), expect.objectContaining({
+      keys: expect.arrayContaining([`unoapi-config:${phone}`, sessionPhoneIndexKey()]),
+      arguments: expect.arrayContaining(['save_config', phone]),
+    }))
   })
 
   it('keeps repeated pairing/config writes idempotent in the session index', async () => {
@@ -155,7 +209,9 @@ describe('redis session phone index writes', () => {
 
     expect(await getConfig(phone)).toBeUndefined()
     expect(await mockClient.sMembers(sessionPhoneIndexKey())).not.toContain(phone)
-    expect(mockClient.multi).toHaveBeenCalledTimes(1)
+    expect(mockClient.eval).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      arguments: expect.arrayContaining(['remove', phone]),
+    }))
   })
 
   it('does not leave a partial config or index entry when the transaction fails', async () => {

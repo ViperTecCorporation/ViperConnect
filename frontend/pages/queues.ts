@@ -8,23 +8,35 @@ import type { RabbitQueueInfo, RabbitQueueMessage, SessionConfig } from '../doma
 import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js'
 
 export const queueDescriptionKey = (name: string): TranslationKey => {
+  const queue = parseRabbitQueueName(name)
+  const variants: Record<string, TranslationKey> = {
+    'outgoing.history': 'Entrega às aplicações os webhooks do histórico, separados dos eventos em tempo real.',
+    'transcribe.history': 'Transcreve áudios do histórico em uma fila separada das mensagens em tempo real.',
+    'session.events': 'Entrega webhooks de conexão, desconexão, desvinculação, remoção, indisponibilidade e heartbeat das sessões.',
+    'video.stage': 'Obtém e armazena temporariamente o vídeo para preparação, sem bloquear a fila da sessão.',
+    'video.transcode': 'Prepara e converte vídeos quando necessário antes de encaminhar o envio à sessão.',
+    'webhook.status': 'Encaminha avisos de status de mensagem com falha ao webhook de falhas configurado.',
+  }
+  const variantDescription = variants[`${queue.family}.${queue.variant}`]
+  if (variantDescription) return variantDescription
   const descriptions: Record<string, TranslationKey> = {
     outgoing: 'Entrega eventos e webhooks do ViperConnect às aplicações cadastradas.',
-    incoming: 'Recebe comandos de envio destinados aos workers e sessões do WhatsApp.',
+    incoming: 'Recebe comandos de envio, atualização de status, gerenciamento de grupos e operações do provider nas sessões do WhatsApp.',
+    history: 'Processa eventos de sincronização do histórico em fila separada dos eventos em tempo real.',
     listener: 'Transporta eventos recebidos do WhatsApp para o processamento da UnoAPI.',
-    media: 'Processa download, armazenamento e preparação de mídias.',
+    media: 'Executa a exclusão programada de mídias no armazenamento S3; não é uma fila de envio ao WhatsApp.',
     transcribe: 'Processa transcrição de mensagens de áudio.',
     bind: 'Vincula sessões às filas do servidor e motor responsáveis.',
     reload: 'Transporta solicitações de conexão e recarga das sessões.',
     logout: 'Transporta solicitações de desconexão e logout das sessões.',
     bulk: 'Processa etapas de envios em lote e seus relatórios.',
-    timer: 'Agenda ações que precisam executar após um intervalo.',
+    timer: 'Executa envios de texto agendados, verificando se o temporizador ainda é válido.',
     broadcast: 'Distribui eventos internos entre processos do ViperConnect.',
     notification: 'Processa notificações auxiliares e avisos de falha.',
-    blacklist: 'Atualiza a blacklist temporária usada pelos webhooks.',
-    commander: 'Recebe comandos de orquestração dos envios em lote.',
+    blacklist: 'Atualiza a blacklist dos webhooks, com bloqueios temporários ou persistentes conforme o TTL.',
+    commander: 'Processa comandos por templates para lotes, relatórios e configuração de webhooks.',
   }
-  return descriptions[parseRabbitQueueName(name).family] || 'Fila interna do ViperConnect gerenciada pelo RabbitMQ.'
+  return descriptions[queue.family] || 'Fila interna do ViperConnect gerenciada pelo RabbitMQ.'
 }
 
 export const queueFlowLabelKey = (name: string): TranslationKey | '' => {
@@ -43,14 +55,23 @@ export const queueTooltip = (name: string): string => {
   const queue = parseRabbitQueueName(name)
   const details = [t(queueDescriptionKey(name))]
   if (queue.lifecycle === 'dead') details.push(t('Esta variação esgotou as tentativas e aguarda análise ou remoção.'))
-  if (queue.lifecycle === 'delayed') details.push(t('Esta variação aguarda o tempo configurado para nova tentativa ou execução.'))
+  if (queue.lifecycle === 'delayed') {
+    details.push(t(queue.family === 'media'
+      ? 'Aguarda DATA_TTL para encaminhar a tarefa de exclusão à fila media. O padrão do código é 30 dias; o ambiente pode usar outro prazo. Muitos itens e zero consumidores nesta fila de espera não comprovam falha de envio. Também pode conter retentativas de limpeza. Purgar descarta os agendamentos e pode deixar arquivos sem limpeza.'
+      : 'Esta variação aguarda o tempo configurado para nova tentativa ou execução.'))
+  }
   if (queue.legacy) details.push(t('Fila legada sem motor explícito; não recebe novas sessões no padrão atual.'))
   if (queue.invalidServer) details.push(t('Fila com servidor indefinido; indica publicação antiga ou configuração incompleta.'))
   return details.join(' ')
 }
 
-export const queueNeedsAttention = (queue: RabbitQueueInfo): boolean =>
-  `${queue.state || 'running'}` !== 'running' || (queue.messages_ready > 0 && queue.consumers === 0)
+export const queueNeedsAttention = (queue: RabbitQueueInfo): boolean => {
+  if (`${queue.state || 'running'}` !== 'running') return true
+  const lifecycle = parseRabbitQueueName(queue.name).lifecycle
+  if (lifecycle === 'delayed') return false // Waiting queues expire into the active queue without consumers.
+  if (lifecycle === 'dead') return queue.messages_ready > 0 || queue.messages_unacknowledged > 0
+  return queue.messages_ready > 0 && queue.consumers === 0
+}
 
 export const filterQueuesBySession = (
   queues: RabbitQueueInfo[],
