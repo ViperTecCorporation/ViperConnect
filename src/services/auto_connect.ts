@@ -59,6 +59,10 @@ export const autoConnect = async (
           continue;
         }
         await sessionStore.syncConnection(phone)
+        if (config.mobilePrimaryDraftId && (!config.autoConnect || config.mobilePrimaryDeleting)) {
+          logger.info('Mobile primary remains suspended phone=%s', phone)
+          continue
+        }
         if (await sessionStore.isStatusStandBy(phone)) {
           logger.info(`Session standby ${phone}...`)
           continue;

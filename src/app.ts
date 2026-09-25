@@ -47,7 +47,9 @@ export class App {
       /^\/[^/]+\/[^/]+\/(?:messages|marketing_messages)(?:\/[^/]+\/recover_delivery|\/recover_delivery)?\/?$/,
       express.json({ limit: UNOAPI_MESSAGES_JSON_LIMIT }),
     )
-    this.app.use(express.json())
+    const defaultJson = express.json()
+    // Large backups are parsed only after manager authentication, inside the mobile router.
+    this.app.use((req, res, next) => /^\/manager\/mobile-devices\/restore\/?$/.test(req.path) ? next() : defaultJson(req, res, next))
     this.app.use(express.urlencoded({ extended: true }))
     this.server = createServer(this.app)
     this.socket = new Server(this.server, {

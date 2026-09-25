@@ -23,6 +23,7 @@ export interface WebhookConfig {
 }
 
 export interface SessionConfig {
+  mobilePrimaryDraftId?: string
   id?: string
   phone_number_id?: string
   business_account_id?: string
@@ -302,4 +303,4 @@ export interface VoipBootstrap {
   [key: string]: unknown
 }
 
-export type SessionTab = 'overview' | 'config' | 'contacts' | 'webhooks' | 'groups'
+export type SessionTab = 'overview' | 'devices' | 'config' | 'contacts' | 'webhooks' | 'groups'

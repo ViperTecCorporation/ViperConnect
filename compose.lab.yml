@@ -1,0 +1,175 @@
+name: viperconnect-mobile-lab
+
+x-environment: &environment
+  NODE_ENV: development
+  NODE_OPTIONS: --max-old-space-size=1536
+  PORT: "9876"
+  BASE_URL: http://localhost:19876
+  REDIS_URL: redis://redis:6379
+  AMQP_URL: amqp://lab:${LAB_RABBIT_PASSWORD:?Configure o ambiente do laboratório}@rabbitmq:5672
+  UNOAPI_AUTH_TOKEN: ${LAB_AUTH_TOKEN:?Configure o ambiente do laboratório}
+  UNOAPI_SERVER_NAME: mobile_lab
+  UNOAPI_QUEUE_NAME: unoapi.lab
+  WHATSAPP_ENGINE: zapo
+  UNOAPI_WORKER_ENGINE: zapo
+  UNOAPI_VIDEO_WORKER_MODE: dedicated
+  UNOAPI_BASE_STORE: /app/data
+  AUTO_CONNECT: "false"
+  UNOAPI_MOBILE_PRIMARY_LAB: "true"
+  WEBHOOK_URL: ""
+  WEBHOOK_TOKEN: ""
+  WEBHOOK_SEND_TRANSCRIBE_AUDIO: "false"
+  OPENAI_API_KEY: ""
+  GROQ_API_KEY: ""
+  VOIP_SERVICE_URL: ""
+  VOIP_BRIDGE_URL: ""
+  LOG_LEVEL: info
+  UNO_LOG_LEVEL: info
+  STORAGE_BUCKET_NAME: viperconnect-lab
+  STORAGE_ENDPOINT: ${LAB_STORAGE_ENDPOINT:?Configure o endpoint do bucket de laboratório}
+  STORAGE_REGION: ${LAB_STORAGE_REGION:-us-east-1}
+  STORAGE_FORCE_PATH_STYLE: ${LAB_STORAGE_FORCE_PATH_STYLE:-true}
+  STORAGE_ACCESS_KEY_ID: ${LAB_STORAGE_ACCESS_KEY_ID:?Configure a chave S3}
+  STORAGE_SECRET_ACCESS_KEY: ${LAB_STORAGE_SECRET_ACCESS_KEY:?Configure o segredo S3}
+
+x-app: &app
+  image: viperconnect-mobile-lab:dev
+  build:
+    context: .
+    dockerfile: lab/Dockerfile
+    target: app
+  init: true
+  restart: "no"
+  networks: [lab]
+  volumes:
+    - compiled:/app/dist:ro
+    - public:/app/public:ro
+    - data:/app/data
+    - ./lab/registration:/app/lab/registration:ro
+  depends_on:
+    compiler:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+services:
+  compiler:
+    image: viperconnect-mobile-lab:dev
+    build:
+      context: .
+      dockerfile: lab/Dockerfile
+      target: app
+    init: true
+    networks: [lab]
+    environment:
+      NODE_OPTIONS: --max-old-space-size=4096
+    command: [node, node_modules/nodemon/bin/nodemon.js, --legacy-watch, --watch, src, --watch, frontend, --watch, /source-public, --watch, scripts, --ext, "ts,json,css,html,svg,cjs,mjs", --delay, "1", --exec, "node lab/compile.mjs"]
+    volumes:
+      - ./src:/app/src:ro
+      - ./frontend:/app/frontend:ro
+      - ./scripts:/app/scripts:ro
+      - ./public:/source-public:ro
+      - ./lab:/app/lab:ro
+      - compiled:/app/dist
+      - public:/app/public
+    healthcheck:
+      test: [CMD, node, -e, "process.exit(require('fs').existsSync('/app/dist/.lab-ready')?0:1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  web:
+    <<: *app
+    environment:
+      <<: *environment
+      UNOAPI_PROCESS_ROLE: web
+      MOBILE_REGISTRATION_ENABLED: "true"
+      MOBILE_REGISTRATION_KEY: ${LAB_AUTH_TOKEN}
+      MOBILE_REGISTRATION_MODULE: /opt/mobile-registration/node_modules/whalibmob
+    ports: ["127.0.0.1:19876:9876", "192.168.0.112:19876:9876"]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:9876/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  broker:
+    <<: *app
+    environment:
+      <<: *environment
+      UNOAPI_PROCESS_ROLE: broker
+
+  worker-zapo:
+    <<: *app
+    environment:
+      <<: *environment
+      UNOAPI_PROCESS_ROLE: worker
+      MOBILE_REGISTRATION_KEY: ${LAB_AUTH_TOKEN}
+
+  video-worker:
+    <<: *app
+    environment:
+      <<: *environment
+      UNOAPI_PROCESS_ROLE: video
+
+  redis:
+    image: valkey/valkey:9-alpine3.23
+    networks: [lab]
+    command: [valkey-server, --appendonly, "yes"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.2.2-management-alpine
+    hostname: rabbitmq
+    networks: [lab]
+    environment:
+      RABBITMQ_DEFAULT_USER: lab
+      RABBITMQ_DEFAULT_PASS: ${LAB_RABBIT_PASSWORD:?Configure o ambiente do laboratório}
+    ports: ["127.0.0.1:15682:15672"]
+    volumes: ["rabbitmq:/var/lib/rabbitmq"]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  docs:
+    image: viperconnect-mobile-lab-docs:dev
+    build:
+      context: .
+      dockerfile: lab/Dockerfile
+      target: docs
+    init: true
+    networks: [lab]
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    ports: ["127.0.0.1:18080:8080"]
+    volumes:
+      - ./docs-site:/app/docs-site
+      - ./docs:/app/docs
+      - ./src/router.ts:/app/src/router.ts:ro
+      - docs-deps:/app/docs-site/node_modules
+      - docs-public:/app/docs-site/public
+      - docs-cache:/app/docs-site/.vitepress/cache
+      - docs-dist:/app/docs-site/.vitepress/dist
+
+networks:
+  lab: {}
+
+volumes:
+  redis: {}
+  rabbitmq: {}
+  data: {}
+  compiled: {}
+  public: {}
+  docs-deps: {}
+  docs-public: {}
+  docs-cache: {}
+  docs-dist: {}

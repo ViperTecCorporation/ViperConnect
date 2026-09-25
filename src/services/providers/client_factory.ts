@@ -33,7 +33,7 @@ export const getClientProvider: getClient = async (args) => {
     )
     clients.set(args.phone, client)
     try {
-      if (config.autoConnect) await client.connect(1)
+      if (config.autoConnect && !config.mobilePrimaryDeleting) await client.connect(1)
     } catch (error) {
       if (isZapoOwnershipConflict(error)) throw error
       await client.disconnect().catch(() => undefined)

@@ -143,6 +143,11 @@
       "type": "string"
     },
     {
+      "key": "operation",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "page",
       "value": "",
       "type": "string"
@@ -234,6 +239,2125 @@
     }
   ],
   "item": [
+    {
+      "name": "Manager",
+      "item": [
+        {
+          "name": "Consultar, vincular ou revogar dispositivo secundário no worker",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "companions"
+              ],
+              "query": []
+            },
+            "description": "Experimental, administrador no mobile_lab. Enfileira um comando cifrado no Redis por até 10 minutos, processado pelo worker que já possui a conexão do principal, fora da fila de mensagens. Listagem usa o epoch persistido, não presença nem inventário remoto completo. QR é o conteúdo decodificado da imagem; code é o código de 8 caracteres solicitado pelo secundário (não SMS). Mutações exigem confirm=true. Sem repetição automática em resultado incerto. Consultar o identificador retornado até estado terminal.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"list\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Comando aceito, não significa vínculo concluído",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companions",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "companions"
+                  ],
+                  "query": []
+                },
+                "description": "Experimental, administrador no mobile_lab. Enfileira um comando cifrado no Redis por até 10 minutos, processado pelo worker que já possui a conexão do principal, fora da fila de mensagens. Listagem usa o epoch persistido, não presença nem inventário remoto completo. QR é o conteúdo decodificado da imagem; code é o código de 8 caracteres solicitado pelo secundário (não SMS). Mutações exigem confirm=true. Sem repetição automática em resultado incerto. Consultar o identificador retornado até estado terminal.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"list\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Comando aceito, não significa vínculo concluído",
+              "code": 202,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar resultado de comando de dispositivos vinculados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companions/{{operation}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "companions",
+                "{{operation}}"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. Não envia comandos ao WhatsApp. QR, código e chaves nunca são retornados. queued/running são estados pendentes; done confirma a chamada SDK; unknown indica resultado remoto incerto, sem retry automático; expired indica que o comando não foi executado no prazo. Lista retorna companions com deviceJid, keyIndex e addedAtSeconds e source=persisted_epoch. Não garante que o bootstrap de histórico do secundário terminou.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Resultado sem material de autenticação",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companions/{{operation}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "companions",
+                    "{{operation}}"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. Não envia comandos ao WhatsApp. QR, código e chaves nunca são retornados. queued/running são estados pendentes; done confirma a chamada SDK; unknown indica resultado remoto incerto, sem retry automático; expired indica que o comando não foi executado no prazo. Lista retorna companions com deviceJid, keyIndex e addedAtSeconds e source=persisted_epoch. Não garante que o bootstrap de histórico do secundário terminou.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Resultado sem material de autenticação",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Suspender e exportar backup criptografado do dispositivo principal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/backup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "backup"
+              ],
+              "query": []
+            },
+            "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens e registro em um arquivo .viperdevice cifrado por senha (AES-256-GCM e scrypt). Não inclui mensagens, mídias, webhooks, usuários ou tokens da stack. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Conteúdo criptografado para download; resposta com Cache-Control no-store",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/backup",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "backup"
+                  ],
+                  "query": []
+                },
+                "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens e registro em um arquivo .viperdevice cifrado por senha (AES-256-GCM e scrypt). Não inclui mensagens, mídias, webhooks, usuários ou tokens da stack. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conteúdo criptografado para download; resposta com Cache-Control no-store",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Restaurar dispositivo principal a partir de backup criptografado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/restore",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "restore"
+              ],
+              "query": []
+            },
+            "description": "Experimental, somente administrador no mobile_lab. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura desconectado, autoConnect=false e sem webhooks. Não solicita SMS, não abre socket e não garante validade remota de credenciais revogadas. Confirme que a origem está desligada antes de conectar manualmente no destino.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"archive\": \"string\",\n  \"password\": \"string\",\n  \"confirmOriginOffline\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Dispositivo restaurado, sem conexão automática",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/restore",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "restore"
+                  ],
+                  "query": []
+                },
+                "description": "Experimental, somente administrador no mobile_lab. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura desconectado, autoConnect=false e sem webhooks. Não solicita SMS, não abre socket e não garante validade remota de credenciais revogadas. Confirme que a origem está desligada antes de conectar manualmente no destino.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"archive\": \"string\",\n  \"password\": \"string\",\n  \"confirmOriginOffline\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Dispositivo restaurado, sem conexão automática",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar conexão do dispositivo principal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "connection"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador no laboratório mobile_lab. Consulta a sessão Uno pelo número canônico registrado; não abre socket nem retorna credenciais.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Estado persistido da conexão, não confirmação de entrega de mensagens",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/connection",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "connection"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador no laboratório mobile_lab. Consulta a sessão Uno pelo número canônico registrado; não abre socket nem retorna credenciais.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Estado persistido da conexão, não confirmação de entrega de mensagens",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Importar registro e conectar dispositivo principal à Zapo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/connection",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "connection"
+              ],
+              "query": []
+            },
+            "description": "Somente laboratório mobile_lab. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar estado do registro mobile experimental",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/registration",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "registration"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador com Bearer, UNOAPI_MOBILE_PRIMARY_LAB=true e MOBILE_REGISTRATION_ENABLED=true. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Estado público do registro",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/registration",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "registration"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador com Bearer, UNOAPI_MOBILE_PRIMARY_LAB=true e MOBILE_REGISTRATION_ENABLED=true. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Estado público do registro",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"idle\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Solicitar SMS para registro mobile experimental",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/registration/request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "registration",
+                "request"
+              ],
+              "query": []
+            },
+            "description": "Teste real com consentimento explícito, administrador e as duas flags ativas. Faz uma tentativa de SMS, sem trocar método. Gera e persiste as chaves cifradas antes da rede. Repetição retorna 409, exceto com confirmResend=true e canResendSms=true. Preserva as chaves. A recusa exata too_recent permite tentativa manual após o prazo remoto, sem teto local de solicitações. Sem prazo informado, não calcula liberação. Desafios e outras recusas por limite continuam bloqueados. Não há repetição automática. Em timeout consultar estado antes de qualquer ação. Não conecta pela Zapo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Consulte status; bloqueio não equivale a SMS enviado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/registration/request",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "registration",
+                    "request"
+                  ],
+                  "query": []
+                },
+                "description": "Teste real com consentimento explícito, administrador e as duas flags ativas. Faz uma tentativa de SMS, sem trocar método. Gera e persiste as chaves cifradas antes da rede. Repetição retorna 409, exceto com confirmResend=true e canResendSms=true. Preserva as chaves. A recusa exata too_recent permite tentativa manual após o prazo remoto, sem teto local de solicitações. Sem prazo informado, não calcula liberação. Desafios e outras recusas por limite continuam bloqueados. Não há repetição automática. Em timeout consultar estado antes de qualquer ação. Não conecta pela Zapo.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"confirm\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Consulte status; bloqueio não equivale a SMS enviado",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"idle\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Confirmar código SMS do registro mobile experimental",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/registration/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "registration",
+                "verify"
+              ],
+              "query": []
+            },
+            "description": "Código de seis dígitos como string. Aceito após code_required ou recuperação explícita com confirmRecovery=true quando canRetryVerification=true. Recuperação preserva chaves, não solicita SMS, exige intervalo de 60 segundos e limita a três confirmações totais. Falhas legadas sem diagnóstico permitem uma recuperação; erros conhecidos só permitem corrigir código inválido. Autorizações no aparelho devem ser concluídas manualmente; ainda não há detecção automática. PIN, CAPTCHA e outros desafios não são contornados. Nunca inicia socket Zapo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Estado atualizado; registrado não equivale a conectado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/registration/verify",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "registration",
+                    "verify"
+                  ],
+                  "query": []
+                },
+                "description": "Código de seis dígitos como string. Aceito após code_required ou recuperação explícita com confirmRecovery=true quando canRetryVerification=true. Recuperação preserva chaves, não solicita SMS, exige intervalo de 60 segundos e limita a três confirmações totais. Falhas legadas sem diagnóstico permitem uma recuperação; erros conhecidos só permitem corrigir código inválido. Autorizações no aparelho devem ser concluídas manualmente; ainda não há detecção automática. PIN, CAPTCHA e outros desafios não são contornados. Nunca inicia socket Zapo.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"string\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Estado atualizado; registrado não equivale a conectado",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"idle\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar capacidades do laboratório mobile-primary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/capabilities",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "capabilities"
+              ],
+              "query": []
+            },
+            "description": "Exige UNOAPI_MOBILE_PRIMARY_LAB=true e Authorization: Bearer com token administrativo. Informa capacidades disponíveis no laboratório: SMS depende do componente habilitado; conexão/importação e companions dependem do servidor mobile_lab. VoIP mobile permanece indisponível. A consulta não abre sockets nem envia SMS. Desativado por padrão.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Capacidades reais da implementação experimental",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/capabilities",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "capabilities"
+                  ],
+                  "query": []
+                },
+                "description": "Exige UNOAPI_MOBILE_PRIMARY_LAB=true e Authorization: Bearer com token administrativo. Informa capacidades disponíveis no laboratório: SMS depende do componente habilitado; conexão/importação e companions dependem do servidor mobile_lab. VoIP mobile permanece indisponível. A consulta não abre sockets nem envia SMS. Desativado por padrão.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Capacidades reais da implementação experimental",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Listar rascunhos de dispositivos principais",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador e flag experimental ativa. Retorna até 100 rascunhos, ordenados por telefone. Esses registros não são sessões conectadas nem reservam o número. Authorization exige Bearer; tokens na URL não são aceitos. Cache-Control: no-store.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Rascunhos experimentais",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador e flag experimental ativa. Retorna até 100 rascunhos, ordenados por telefone. Esses registros não são sessões conectadas nem reservam o número. Authorization exige Bearer; tokens na URL não são aceitos. Cache-Control: no-store.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Rascunhos experimentais",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar rascunho de dispositivo principal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices"
+              ],
+              "query": []
+            },
+            "description": "Salva somente metadados no Redis; não solicita SMS, não cria credenciais, não conecta e não muda sessões existentes. Requer administrador, Bearer e UNOAPI_MOBILE_PRIMARY_LAB=true. Consentimento obrigatório; telefone único entre rascunhos. Repetição retorna 409, sem criar duplicata. Nome máximo de 80 caracteres sem caracteres de controle. Não aceita proxy, OTP, tokens, credenciais, estado ou atribuição de responsável.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"5511999999999\",\n  \"name\": \"Laboratório\",\n  \"platform\": \"android\",\n  \"accountType\": \"personal\",\n  \"labConsent\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Rascunho criado, não registrado no WhatsApp",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices"
+                  ],
+                  "query": []
+                },
+                "description": "Salva somente metadados no Redis; não solicita SMS, não cria credenciais, não conecta e não muda sessões existentes. Requer administrador, Bearer e UNOAPI_MOBILE_PRIMARY_LAB=true. Consentimento obrigatório; telefone único entre rascunhos. Repetição retorna 409, sem criar duplicata. Nome máximo de 80 caracteres sem caracteres de controle. Não aceita proxy, OTP, tokens, credenciais, estado ou atribuição de responsável.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"5511999999999\",\n  \"name\": \"Laboratório\",\n  \"platform\": \"android\",\n  \"accountType\": \"personal\",\n  \"labConsent\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Rascunho criado, não registrado no WhatsApp",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"phone\": \"string\",\n  \"name\": \"string\",\n  \"platform\": \"android\",\n  \"accountType\": \"personal\",\n  \"connectionMode\": \"mobile_primary\",\n  \"state\": \"draft\",\n  \"createdAt\": \"string\",\n  \"createdBy\": \"string\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar rascunho de dispositivo principal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Consulta administrativa, com Bearer e flag experimental. Não consulta o WhatsApp. O ID identifica somente o cadastro local.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Metadados do cadastro experimental",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}"
+                  ],
+                  "query": []
+                },
+                "description": "Consulta administrativa, com Bearer e flag experimental. Não consulta o WhatsApp. O ID identifica somente o cadastro local.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Metadados do cadastro experimental",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"phone\": \"string\",\n  \"name\": \"string\",\n  \"platform\": \"android\",\n  \"accountType\": \"personal\",\n  \"connectionMode\": \"mobile_primary\",\n  \"state\": \"draft\",\n  \"createdAt\": \"string\",\n  \"createdBy\": \"string\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Remover somente um rascunho experimental",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Requer administrador, Bearer e flag experimental. Exige confirm=true. Compare-and-delete impede apagar um registro substituído concorrentemente. Não desconecta nem exclui contas WhatsApp, credenciais, mídias, webhooks ou sessões vinculadas. Somente estado draft pode ser removido por esta operação.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Excluir definitivamente dispositivo principal e credenciais locais",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/full",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "full"
+              ],
+              "query": []
+            },
+            "description": "Exclusivo de administrador. Exige confirmação, aceite de novo SMS e número exato do cadastro. Marca exclusão em andamento, bloqueia registro/importação, suspende a conexão e aguarda a liberação da lease do worker antes de limpar o store Zapo, configuração, registro SMS cifrado e cadastro. Não exclui a conta no WhatsApp. Novo uso exige novo registro por SMS, sujeito às validações e esperas do provider. Mídias, histórico de webhooks e atribuições históricas são preservados. Em caso de falha parcial, repita a exclusão; o cadastro fica marcado como deleting.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true,\n  \"acknowledgeNewSms\": true,\n  \"phone\": \"5511999999999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Entrar no Manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "login"
+              ],
+              "query": []
+            },
+            "description": "Local, não implantado. admin usa o token da stack como senha; usuários usam suas senhas. Retorna token e user; login expira em 12 horas.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"SUBSTITUA_PELO_TOKEN_DA_STACK\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/login",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "login"
+                  ],
+                  "query": []
+                },
+                "description": "Local, não implantado. admin usa o token da stack como senha; usuários usam suas senhas. Retorna token e user; login expira em 12 horas.",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"SUBSTITUA_PELO_TOKEN_DA_STACK\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"token\": \"string\",\n  \"user\": {\n    \"id\": \"string\",\n    \"username\": \"string\",\n    \"name\": \"string\",\n    \"role\": \"admin\",\n    \"active\": false\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar identidade do Manager",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "me"
+              ],
+              "query": []
+            },
+            "description": "Papel resolvido pelo servidor a partir do token, sem aceitar claims do cliente.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/me",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "me"
+                  ],
+                  "query": []
+                },
+                "description": "Papel resolvido pelo servidor a partir do token, sem aceitar claims do cliente.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"user\": {\n    \"id\": \"string\",\n    \"username\": \"string\",\n    \"name\": \"string\",\n    \"role\": \"admin\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Sair do Manager",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "logout"
+              ],
+              "query": []
+            },
+            "description": "Revoga somente o token de login atual; não revoga chave de API nem token global.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar usuários do Manager",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "users"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/users",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "users"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"users\": [\n    {\n      \"id\": \"string\",\n      \"username\": \"string\",\n      \"name\": \"string\",\n      \"role\": \"admin\",\n      \"active\": false,\n      \"phones\": [\n        \"string\"\n      ]\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar usuário do Manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "users"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. Cria usuário ativo com role user; admin é reservado e username é normalizado para minúsculas.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"operador.exemplo\",\n  \"name\": \"Operador de exemplo\",\n  \"password\": \"SUBSTITUA_POR_SENHA_FORTE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/users",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "users"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. Cria usuário ativo com role user; admin é reservado e username é normalizado para minúsculas.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"operador.exemplo\",\n  \"name\": \"Operador de exemplo\",\n  \"password\": \"SUBSTITUA_POR_SENHA_FORTE\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Operação concluída",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"username\": \"string\",\n  \"name\": \"string\",\n  \"role\": \"admin\",\n  \"active\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Atualizar usuário do Manager",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/users/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "users",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. Desativar invalida a geração de login; logins anteriores não retornam após reativação. Chaves de API ficam suspensas enquanto desativado e retomam após reativação se não expiradas nem revogadas. Senhas usam hashes scrypt.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Operador de exemplo\",\n  \"active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/users/{{id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "users",
+                    "{{id}}"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. Desativar invalida a geração de login; logins anteriores não retornam após reativação. Chaves de API ficam suspensas enquanto desativado e retomam após reativação se não expiradas nem revogadas. Senhas usam hashes scrypt.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Operador de exemplo\",\n  \"active\": false\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"username\": \"string\",\n  \"name\": \"string\",\n  \"role\": \"admin\",\n  \"active\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Revogar chaves de usuário",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/users/{{id}}/revoke-keys",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "users",
+                "{{id}}",
+                "revoke-keys"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar atribuições e histórico",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/assignments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "assignments"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. Retorna assignments (mapa por PN canônico) e history. Atribuição persistente existe antes da conexão e sobrevive à remoção; webhooks exigem restauração manual.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/assignments",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "assignments"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. Retorna assignments (mapa por PN canônico) e history. Atribuição persistente existe antes da conexão e sobrevive à remoção; webhooks exigem restauração manual.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"assignments\": {},\n  \"history\": [\n    {\n      \"phone\": \"string\",\n      \"from\": \"string\",\n      \"to\": \"string\",\n      \"at\": \"string\",\n      \"actor\": \"string\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Atribuir, transferir ou liberar conta",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/assignments/{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "assignments",
+                "{{phone}}"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. CAS compara expected_owner com o proprietário atual; null representa ausência de proprietário. user_id null libera a atribuição. Em conflito, revisar proprietário atualizado no diálogo e confirmar novamente, sem repetição automática.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"ID_DO_NOVO_PROPRIETARIO\",\n  \"expected_owner\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/assignments/{{phone}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "assignments",
+                    "{{phone}}"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. CAS compara expected_owner com o proprietário atual; null representa ausência de proprietário. user_id null libera a atribuição. Em conflito, revisar proprietário atualizado no diálogo e confirmar novamente, sem repetição automática.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"ID_DO_NOVO_PROPRIETARIO\",\n  \"expected_owner\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true\n}"
+            },
+            {
+              "name": "Proprietário alterado; revisar antes de tentar novamente",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/assignments/{{phone}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "assignments",
+                    "{{phone}}"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. CAS compara expected_owner com o proprietário atual; null representa ausência de proprietário. user_id null libera a atribuição. Em conflito, revisar proprietário atualizado no diálogo e confirmar novamente, sem repetição automática.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"user_id\": \"ID_DO_NOVO_PROPRIETARIO\",\n  \"expected_owner\": null\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Proprietário alterado; revisar antes de tentar novamente",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": \"string\",\n  \"current_owner\": \"string\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Listar próprias chaves",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/keys",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "keys"
+              ],
+              "query": []
+            },
+            "description": "Somente chaves da conta autenticada; não aceita identidade escolhida pelo cliente. Exige token de login, não chave de API.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/keys",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "keys"
+                  ],
+                  "query": []
+                },
+                "description": "Somente chaves da conta autenticada; não aceita identidade escolhida pelo cliente. Exige token de login, não chave de API.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Operação concluída",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"keys\": [\n    {\n      \"id\": \"string\",\n      \"userId\": \"string\",\n      \"name\": \"string\",\n      \"createdAt\": \"string\",\n      \"expiresAt\": \"string\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Criar chave pessoal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/keys",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "keys"
+              ],
+              "query": []
+            },
+            "description": "Chave opaca aleatória, separada da senha. Pertence à conta autenticada. Validade padrão de 90 dias, máxima de 365 dias. Exige token de login, não chave de API.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Integração de exemplo\",\n  \"days\": 90\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Operação concluída",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/keys",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "keys"
+                  ],
+                  "query": []
+                },
+                "description": "Chave opaca aleatória, separada da senha. Pertence à conta autenticada. Validade padrão de 90 dias, máxima de 365 dias. Exige token de login, não chave de API.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Integração de exemplo\",\n  \"days\": 90\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Operação concluída",
+              "code": 201,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"token\": \"string\",\n  \"key\": {\n    \"id\": \"string\",\n    \"userId\": \"string\",\n    \"name\": \"string\",\n    \"createdAt\": \"string\",\n    \"expiresAt\": \"string\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Revogar própria chave",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/keys/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "keys",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "Somente chave pertencente à conta autenticada. Exige token de login, não chave de API.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar própria senha",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "password"
+              ],
+              "query": []
+            },
+            "description": "Verifica a senha atual e grava hash scrypt da nova senha. A chave pessoal não é a senha. Exige token de login, não chave de API.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"SENHA_ATUAL\",\n  \"password\": \"NOVA_SENHA_FORTE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
     {
       "name": "Administração",
       "item": [
@@ -16885,952 +19009,6 @@
       ]
     },
     {
-      "name": "Manager",
-      "item": [
-        {
-          "name": "Entrar no Manager",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/manager/login",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "login"
-              ],
-              "query": []
-            },
-            "description": "Local, não implantado. admin usa o token da stack como senha; usuários usam suas senhas. Retorna token e user; login expira em 12 horas.",
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"SUBSTITUA_PELO_TOKEN_DA_STACK\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/manager/login",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "login"
-                  ],
-                  "query": []
-                },
-                "description": "Local, não implantado. admin usa o token da stack como senha; usuários usam suas senhas. Retorna token e user; login expira em 12 horas.",
-                "auth": {
-                  "type": "noauth"
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"SUBSTITUA_PELO_TOKEN_DA_STACK\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"token\": \"string\",\n  \"user\": {\n    \"id\": \"string\",\n    \"username\": \"string\",\n    \"name\": \"string\",\n    \"role\": \"admin\",\n    \"active\": false\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Consultar identidade do Manager",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/me",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "me"
-              ],
-              "query": []
-            },
-            "description": "Papel resolvido pelo servidor a partir do token, sem aceitar claims do cliente.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/manager/me",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "me"
-                  ],
-                  "query": []
-                },
-                "description": "Papel resolvido pelo servidor a partir do token, sem aceitar claims do cliente.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{token}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"user\": {\n    \"id\": \"string\",\n    \"username\": \"string\",\n    \"name\": \"string\",\n    \"role\": \"admin\"\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Sair do Manager",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/logout",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "logout"
-              ],
-              "query": []
-            },
-            "description": "Revoga somente o token de login atual; não revoga chave de API nem token global.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{manager_login_token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Listar usuários do Manager",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/users",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "users"
-              ],
-              "query": []
-            },
-            "description": "Somente administrador.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{admin_token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/manager/users",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "users"
-                  ],
-                  "query": []
-                },
-                "description": "Somente administrador.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{admin_token}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"users\": [\n    {\n      \"id\": \"string\",\n      \"username\": \"string\",\n      \"name\": \"string\",\n      \"role\": \"admin\",\n      \"active\": false,\n      \"phones\": [\n        \"string\"\n      ]\n    }\n  ]\n}"
-            }
-          ]
-        },
-        {
-          "name": "Criar usuário do Manager",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/manager/users",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "users"
-              ],
-              "query": []
-            },
-            "description": "Somente administrador. Cria usuário ativo com role user; admin é reservado e username é normalizado para minúsculas.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{admin_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"operador.exemplo\",\n  \"name\": \"Operador de exemplo\",\n  \"password\": \"SUBSTITUA_POR_SENHA_FORTE\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/manager/users",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "users"
-                  ],
-                  "query": []
-                },
-                "description": "Somente administrador. Cria usuário ativo com role user; admin é reservado e username é normalizado para minúsculas.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{admin_token}}",
-                      "type": "string"
-                    }
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"username\": \"operador.exemplo\",\n  \"name\": \"Operador de exemplo\",\n  \"password\": \"SUBSTITUA_POR_SENHA_FORTE\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Operação concluída",
-              "code": 201,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"id\": \"string\",\n  \"username\": \"string\",\n  \"name\": \"string\",\n  \"role\": \"admin\",\n  \"active\": false\n}"
-            }
-          ]
-        },
-        {
-          "name": "Atualizar usuário do Manager",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/manager/users/{{id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "users",
-                "{{id}}"
-              ],
-              "query": []
-            },
-            "description": "Somente administrador. Desativar invalida a geração de login; logins anteriores não retornam após reativação. Chaves de API ficam suspensas enquanto desativado e retomam após reativação se não expiradas nem revogadas. Senhas usam hashes scrypt.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{admin_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Operador de exemplo\",\n  \"active\": false\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "PATCH",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/manager/users/{{id}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "users",
-                    "{{id}}"
-                  ],
-                  "query": []
-                },
-                "description": "Somente administrador. Desativar invalida a geração de login; logins anteriores não retornam após reativação. Chaves de API ficam suspensas enquanto desativado e retomam após reativação se não expiradas nem revogadas. Senhas usam hashes scrypt.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{admin_token}}",
-                      "type": "string"
-                    }
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"name\": \"Operador de exemplo\",\n  \"active\": false\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"id\": \"string\",\n  \"username\": \"string\",\n  \"name\": \"string\",\n  \"role\": \"admin\",\n  \"active\": false\n}"
-            }
-          ]
-        },
-        {
-          "name": "Revogar chaves de usuário",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/users/{{id}}/revoke-keys",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "users",
-                "{{id}}",
-                "revoke-keys"
-              ],
-              "query": []
-            },
-            "description": "Somente administrador.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{admin_token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Consultar atribuições e histórico",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/assignments",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "assignments"
-              ],
-              "query": []
-            },
-            "description": "Somente administrador. Retorna assignments (mapa por PN canônico) e history. Atribuição persistente existe antes da conexão e sobrevive à remoção; webhooks exigem restauração manual.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{admin_token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/manager/assignments",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "assignments"
-                  ],
-                  "query": []
-                },
-                "description": "Somente administrador. Retorna assignments (mapa por PN canônico) e history. Atribuição persistente existe antes da conexão e sobrevive à remoção; webhooks exigem restauração manual.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{admin_token}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"assignments\": {},\n  \"history\": [\n    {\n      \"phone\": \"string\",\n      \"from\": \"string\",\n      \"to\": \"string\",\n      \"at\": \"string\",\n      \"actor\": \"string\"\n    }\n  ]\n}"
-            }
-          ]
-        },
-        {
-          "name": "Atribuir, transferir ou liberar conta",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/manager/assignments/{{phone}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "assignments",
-                "{{phone}}"
-              ],
-              "query": []
-            },
-            "description": "Somente administrador. CAS compara expected_owner com o proprietário atual; null representa ausência de proprietário. user_id null libera a atribuição. Em conflito, revisar proprietário atualizado no diálogo e confirmar novamente, sem repetição automática.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{admin_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"user_id\": \"ID_DO_NOVO_PROPRIETARIO\",\n  \"expected_owner\": null\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/manager/assignments/{{phone}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "assignments",
-                    "{{phone}}"
-                  ],
-                  "query": []
-                },
-                "description": "Somente administrador. CAS compara expected_owner com o proprietário atual; null representa ausência de proprietário. user_id null libera a atribuição. Em conflito, revisar proprietário atualizado no diálogo e confirmar novamente, sem repetição automática.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{admin_token}}",
-                      "type": "string"
-                    }
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"user_id\": \"ID_DO_NOVO_PROPRIETARIO\",\n  \"expected_owner\": null\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"success\": true\n}"
-            },
-            {
-              "name": "Proprietário alterado; revisar antes de tentar novamente",
-              "originalRequest": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/manager/assignments/{{phone}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "assignments",
-                    "{{phone}}"
-                  ],
-                  "query": []
-                },
-                "description": "Somente administrador. CAS compara expected_owner com o proprietário atual; null representa ausência de proprietário. user_id null libera a atribuição. Em conflito, revisar proprietário atualizado no diálogo e confirmar novamente, sem repetição automática.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{admin_token}}",
-                      "type": "string"
-                    }
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"user_id\": \"ID_DO_NOVO_PROPRIETARIO\",\n  \"expected_owner\": null\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Proprietário alterado; revisar antes de tentar novamente",
-              "code": 409,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"error\": \"string\",\n  \"current_owner\": \"string\"\n}"
-            }
-          ]
-        },
-        {
-          "name": "Listar próprias chaves",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/keys",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "keys"
-              ],
-              "query": []
-            },
-            "description": "Somente chaves da conta autenticada; não aceita identidade escolhida pelo cliente. Exige token de login, não chave de API.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{manager_login_token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/manager/keys",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "keys"
-                  ],
-                  "query": []
-                },
-                "description": "Somente chaves da conta autenticada; não aceita identidade escolhida pelo cliente. Exige token de login, não chave de API.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{manager_login_token}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              },
-              "status": "Operação concluída",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"keys\": [\n    {\n      \"id\": \"string\",\n      \"userId\": \"string\",\n      \"name\": \"string\",\n      \"createdAt\": \"string\",\n      \"expiresAt\": \"string\"\n    }\n  ]\n}"
-            }
-          ]
-        },
-        {
-          "name": "Criar chave pessoal",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/manager/keys",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "keys"
-              ],
-              "query": []
-            },
-            "description": "Chave opaca aleatória, separada da senha. Pertence à conta autenticada. Validade padrão de 90 dias, máxima de 365 dias. Exige token de login, não chave de API.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{manager_login_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Integração de exemplo\",\n  \"days\": 90\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [
-            {
-              "name": "Operação concluída",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{base_url}}/manager/keys",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "manager",
-                    "keys"
-                  ],
-                  "query": []
-                },
-                "description": "Chave opaca aleatória, separada da senha. Pertence à conta autenticada. Validade padrão de 90 dias, máxima de 365 dias. Exige token de login, não chave de API.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{manager_login_token}}",
-                      "type": "string"
-                    }
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"name\": \"Integração de exemplo\",\n  \"days\": 90\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Operação concluída",
-              "code": 201,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"token\": \"string\",\n  \"key\": {\n    \"id\": \"string\",\n    \"userId\": \"string\",\n    \"name\": \"string\",\n    \"createdAt\": \"string\",\n    \"expiresAt\": \"string\"\n  }\n}"
-            }
-          ]
-        },
-        {
-          "name": "Revogar própria chave",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/manager/keys/{{id}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "keys",
-                "{{id}}"
-              ],
-              "query": []
-            },
-            "description": "Somente chave pertencente à conta autenticada. Exige token de login, não chave de API.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{manager_login_token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Alterar própria senha",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/manager/password",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "manager",
-                "password"
-              ],
-              "query": []
-            },
-            "description": "Verifica a senha atual e grava hash scrypt da nova senha. A chave pessoal não é a senha. Exige token de login, não chave de API.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{manager_login_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"current_password\": \"SENHA_ATUAL\",\n  \"password\": \"NOVA_SENHA_FORTE\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
       "name": "Webhooks",
       "item": [
         {
@@ -19062,10 +20240,15 @@
           "response": []
         },
         {
-          "name": "Encerrar sessão (logout) e remover registro",
+          "name": "Encerrar sessão comum ou suspender integração mobile primary",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/{{version}}/{{phone}}/deregister",
               "host": [
@@ -19078,7 +20261,16 @@
               ],
               "query": []
             },
-            "description": ""
+            "description": "Sessões comuns mantêm logout e remoção. Em mobile primary aceita corpo vazio, remove todos os webhooks ativos, encaminha a configuração anterior ao histórico, desativa autoConnect e desconecta sem logout nem limpeza de credenciais ou filas. Falhas de arquivamento são registradas em log sem bloquear a operação. Reconectar não restaura destinos automaticamente. HTTP 204 confirma publicação, não conclusão da desconexão. Register ou Conectar no painel retoma a sessão. Mensagens durante o período offline dependem da recuperação disponibilizada pelo WhatsApp.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -19168,7 +20360,7 @@
               ],
               "query": []
             },
-            "description": "",
+            "description": "Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS enquanto o registro for válido. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"provider\": \"zapo\"\n}",

@@ -1,5 +1,17 @@
 # @vipertec/zapo-voip
 
+## Não publicado
+
+- Adiciona `preferWebRelayPort`, desativado por padrão: altera somente a porta
+  de transporte para 3480, preservando credenciais e seleção. A Uno habilita
+  exclusivamente em dispositivos mobile-primary do laboratório `mobile_lab`.
+
+- Trata erros assíncronos no stdin do relay nativo, incluindo `EPIPE`, sem
+  derrubar o worker. Falhas durante operação geram um único `transport_error`;
+  falhas tardias após encerramento não disparam nova recuperação.
+- Não envia o frame de encerramento para um helper já falho ou terminado.
+- Adiciona regressões para envio, encerramento e erro nativo seguido de fechamento.
+
 ## 1.0.0-viper.6
 
 - Normaliza o PCM decodificado por chamada antes do bridge: quadros maiores

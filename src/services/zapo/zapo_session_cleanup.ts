@@ -2,7 +2,6 @@ import type { WaStoreSession } from 'zapo-js'
 
 const persistedSessionDomains = [
   'auth',
-  'signal',
   'preKey',
   'session',
   'identity',
@@ -22,7 +21,7 @@ const expiringCacheDomains = [
   'messageSecret',
 ] as const
 
-type SessionDomain = typeof persistedSessionDomains[number] | typeof expiringCacheDomains[number]
+type SessionDomain = typeof persistedSessionDomains[number] | typeof expiringCacheDomains[number] | 'signal'
 
 export type ZapoSessionCleanupResult = {
   cacheFailures: Array<{ domain: SessionDomain; error: unknown }>
@@ -43,6 +42,9 @@ const clearDomains = async (session: WaStoreSession, domains: readonly SessionDo
 
 export async function clearZapoSession(session: WaStoreSession) {
   const persistedFailures = await clearDomains(session, persistedSessionDomains)
+  // Redis preKey.clear() recreates signal:meta with empty counters. Clear signal
+  // after all prekey work, otherwise a full deletion leaves crypto metadata behind.
+  persistedFailures.push(...await clearDomains(session, ['signal']))
   const cacheFailures = await clearDomains(session, expiringCacheDomains)
 
   await session.destroyCaches()

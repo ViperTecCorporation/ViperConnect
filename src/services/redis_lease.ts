@@ -30,6 +30,12 @@ export class RedisLease {
 
   private readonly key: string
 
+  /** Internal fencing only; never expose this token through an API or a log. */
+  ownership(): { key: string; token: string } {
+    if (!this.acquired) throw new Error('lease_not_owned')
+    return { key: this.key, token: this.token }
+  }
+
   async acquire() {
     if (this.acquired) return true
     const redis = await this.redisFactory()

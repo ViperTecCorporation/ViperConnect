@@ -7,6 +7,8 @@ import { routeCallAck, routeCallReceipt, routeCallStanza } from './signaling/bri
 import type { CallManagerEvents, CallOfferOptions, EndCallReason } from './types.js'
 
 export interface WaVoipCoordinatorOptions {
+    /** Opt-in laboratory transport policy; default preserves advertised ports. */
+    readonly preferWebRelayPort?: boolean
     /**
      * Maximum simultaneous non-ended calls (ringing, connecting, or active).
      * Default is `1`. Increase to enable parallel multi-call.
@@ -39,7 +41,8 @@ export class WaVoipCoordinator {
             deps: ctx.deps,
             stores: ctx.stores,
             logger: this.logger,
-            maxConcurrentCalls: options.maxConcurrentCalls
+            maxConcurrentCalls: options.maxConcurrentCalls,
+            preferWebRelayPort: options.preferWebRelayPort
         })
         this.registerIncomingHandlers(ctx)
         this.wireClientEvents(ctx)

@@ -36,6 +36,7 @@ const portugueseTheme = {
         { text: 'Docker Swarm', link: '/guide/docker-swarm' },
         { text: 'Linux nativo', link: '/guide/install-native-linux' },
         { text: 'Rede IPv4 e IPv6', link: '/guide/network-ipv6' },
+        { text: 'Laboratório mobile-primary', link: '/guide/mobile-primary-local-lab' },
       ],
     },
     {

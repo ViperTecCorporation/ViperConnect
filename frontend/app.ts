@@ -1,4 +1,5 @@
 import { ApiClient, ApiError } from './core/api.js'
+import { MobileCompanionsPanel } from './features/mobile_companions_panel.js'
 import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js'
 import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js'
 import { SocketBridge } from './core/socket.js'
@@ -43,6 +44,7 @@ import {
 } from './pages/voip.js'
 import { icon } from './components/icons.js'
 import { ManagerPage, managerIdentity } from './features/manager.js'
+import { MobileDevicesPanel } from './features/mobile_devices.js'
 import type { ManagerIdentity } from './domain/manager_types.js'
 import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js'
 import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js'
@@ -106,6 +108,8 @@ const emptyVersionStatus = (): VersionStatus => ({
 export class ViperConnectApp {
   public identity: ManagerIdentity | null = null
   private readonly manager: ManagerPage
+  private readonly mobileDevices: MobileDevicesPanel
+  private readonly mobileCompanions: MobileCompanionsPanel
   private readonly api: ApiClient
   private readonly socket: SocketBridge
   private readonly contactPictures: ContactPictureLoader
@@ -115,6 +119,8 @@ export class ViperConnectApp {
   private query = ''
   private statusFilter = 'all'
   private contacts = emptyContactState()
+  private overviewContactCount: number | undefined
+  private contactCountRevision = 0
   private contactsQuery = ''
   private contactsVisibleLimit = PAGE_SIZE
   private groups: GroupSummary[] = []
@@ -190,6 +196,8 @@ export class ViperConnectApp {
   ) {
     this.api = api
     this.manager = new ManagerPage(api, () => this.render())
+    this.mobileDevices = new MobileDevicesPanel(api, () => this.render())
+    this.mobileCompanions = new MobileCompanionsPanel(api, () => this.render(), this.root)
     this.socket = socket
     this.contactPictures = new ContactPictureLoader((phone, pictureId) => this.api.profilePicture(phone, pictureId))
     setLocale(normalizeLocale(localStorage.getItem(LOCALE_KEY) || navigator.language))
@@ -242,6 +250,7 @@ export class ViperConnectApp {
     this.root.addEventListener('input', (event) => this.handleFilter(event))
     this.root.addEventListener('change', (event) => this.handleFilter(event))
     document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && this.mobileDevices.modal) { this.mobileDevices.action('mobile-close'); return }
       if (event.key === 'Escape' && this.manager.pending && !this.manager.busy) {
         this.manager.pending = undefined
         this.render()
@@ -269,6 +278,10 @@ export class ViperConnectApp {
     if (!actionElement) return
 
     const action = actionElement.dataset.action || ''
+    if (action.startsWith('companion-')) {
+      if (this.identity?.role === 'admin') await this.mobileCompanions.action(action, actionElement.dataset.id || '')
+      return
+    }
     const phone = actionElement.dataset.phone || ''
     if (this.identity?.role === 'user' && (/(redis|queue|session-webhook)/.test(action) || action === 'new-session' || action === 'open-users')) return
     if (this.identity?.role === 'user' && action.includes('voip') && !['open-voip', 'refresh-voip', 'scoped-voip-command', 'show-voip-credentials', 'drop-voip-registration', 'voip-history-page', 'reset-voip-history', 'play-voip-recording', 'download-voip-recording'].includes(action)) return
@@ -300,6 +313,10 @@ export class ViperConnectApp {
       if (!this.identity) return
       if (this.api.getToken().startsWith('mgr_key_')) return
       await this.manager.action(action, actionElement.dataset.id || '', this.identity.role === 'admin')
+      return
+    }
+    if (action.startsWith('mobile-')) {
+      if (this.identity?.role === 'admin') this.mobileDevices.action(action, actionElement.dataset.id || '')
       return
     }
     if (action === 'open-users' || action === 'open-account') {
@@ -619,6 +636,14 @@ export class ViperConnectApp {
     if (!(form instanceof HTMLFormElement) || !form.dataset.form) return
     event.preventDefault()
     const data = new FormData(form)
+    if (form.dataset.form.startsWith('companion-')) {
+      if (this.identity?.role === 'admin') await this.mobileCompanions.submit(form.dataset.form, data)
+      return
+    }
+    if (form.dataset.form.startsWith('mobile-')) {
+      if (this.identity?.role === 'admin') await this.mobileDevices.submit(form.dataset.form, data)
+      return
+    }
     if (form.dataset.form.startsWith('manager-')) {
       if (this.api.getToken().startsWith('mgr_key_')) return
       if (this.identity) await this.manager.form(form.dataset.form, data, this.identity.role === 'admin')
@@ -886,7 +911,13 @@ export class ViperConnectApp {
 
   private handleFilter(event: Event): void {
     const input = event.target as HTMLInputElement | HTMLSelectElement
-    if (input.dataset.filter === 'query') {
+    if (input.dataset.filter === 'mobile-query') {
+      this.mobileDevices.query = input.value
+      this.renderAndRestoreFilter('mobile-query')
+    } else if (input.dataset.filter === 'mobile-status') {
+      this.mobileDevices.statusFilter = input.value
+      this.render()
+    } else if (input.dataset.filter === 'query') {
       this.query = input.value
       this.sessionVisibleLimit = PAGE_SIZE
       this.render()
@@ -984,6 +1015,7 @@ export class ViperConnectApp {
     this.identity = null
     this.manager.reset()
     this.contacts = emptyContactState()
+    this.mobileDevices?.reset()
     this.groups = []
     this.query = ''
     this.statusFilter = 'all'
@@ -1053,6 +1085,8 @@ export class ViperConnectApp {
       const sessions = await this.api.sessions()
       if (token !== this.api.getToken()) return
       this.sessions = sessions
+      await this.mobileDevices.load(this.identity?.role === 'admin')
+      if (token !== this.api.getToken()) return
       this.refreshIn = REFRESH_SECONDS
       this.loginError = ''
       if (this.selectedPhone) {
@@ -1070,12 +1104,12 @@ export class ViperConnectApp {
       throw error
     } finally {
       this.loading = false
-      if (shouldRenderBackgroundUpdate(!!this.modal)) this.render()
+      if (shouldRenderBackgroundUpdate(!!this.modal || !!this.mobileDevices?.modal || !!this.mobileCompanions?.isCapturing)) this.render()
     }
   }
 
   private tickRefresh(): void {
-    if (!this.api.getToken() || this.modal || this.manager?.pending) return
+    if (!this.api.getToken() || this.modal || this.manager?.pending || this.mobileDevices.modal || this.mobileDevices.busy) return
     // Preserve the iframe navigation and scroll position while reading docs.
     if (this.view === 'documentation' || this.view === 'session-webhooks' || this.view === 'users' || this.view === 'account') return
     if (this.view === 'queues') {
@@ -1121,9 +1155,12 @@ export class ViperConnectApp {
   }
 
   private async openSession(phone: string): Promise<void> {
+    this.mobileCompanions?.reset()
     const session = this.findSession(phone)
     if (!session) return
     this.selectedPhone = phone
+    this.overviewContactCount = undefined
+    this.contactCountRevision = (this.contactCountRevision || 0) + 1
     this.webhookHistoryRequest = (this.webhookHistoryRequest || 0) + 1
     this.webhookHistorySnapshots = []
     this.webhookHistoryError = ''
@@ -1140,6 +1177,7 @@ export class ViperConnectApp {
     this.sectionError = ''
     this.render()
     if (isLegacySession(session)) return
+    void this.loadOverviewContactCount(phone, this.contactCountRevision)
     try {
       const detail = await this.api.session(phone)
       this.replaceSession(phone, {
@@ -1159,12 +1197,30 @@ export class ViperConnectApp {
   }
 
   private async openSessionTab(tab: SessionTab): Promise<void> {
+    this.mobileCompanions?.reset()
     this.tab = tab
     this.sectionError = ''
     this.render()
+    if (tab === 'devices' && this.identity?.role === 'admin') {
+      const id = this.findSession(this.selectedPhone)?.mobilePrimaryDraftId
+      if (id) this.mobileCompanions.open(id)
+    }
+    if (tab === 'overview' && this.selectedPhone) void this.loadOverviewContactCount(this.selectedPhone, ++this.contactCountRevision)
     if (tab === 'contacts' && !this.contacts.items.length) await this.loadContacts(true)
     if (tab === 'groups' && !this.groups.length) await this.loadGroups(true)
     if (tab === 'webhooks') await this.loadWebhookHistory()
+  }
+
+  private async loadOverviewContactCount(phone: string, revision: number): Promise<void> {
+    try {
+      // One cache page, no full directory download or avatar hydration.
+      const page = await this.api.contacts(phone, '0', 1, '')
+      if (phone !== this.selectedPhone || revision !== this.contactCountRevision) return
+      this.overviewContactCount = page.total_count
+      if (this.view === 'dashboard' && this.tab === 'overview' && !this.modal) this.render()
+    } catch {
+      // Unknown is displayed as a dash, never as a false zero.
+    }
   }
 
   private async loadWebhookHistory(): Promise<void> {
@@ -1673,6 +1729,13 @@ export class ViperConnectApp {
   private async openConnection(phone: string): Promise<void> {
     const session = this.findSession(phone)
     if (!session) return
+    if (session.mobilePrimaryDraftId) {
+      if (this.identity?.role !== 'admin') { this.showToast('Solicite ao administrador a conexão do dispositivo principal.'); return }
+      await this.mobileDevices.load(true)
+      if (!this.mobileDevices.devices.some(device => device.id === session.mobilePrimaryDraftId)) { this.showToast('Cadastro do dispositivo indisponível. Atualize a lista.'); return }
+      this.mobileDevices.action('mobile-details', session.mobilePrimaryDraftId)
+      return
+    }
     this.modal = { type: 'connection', phone }
     this.connectionEvent = undefined
     this.connectionLoading = true
@@ -1697,6 +1760,7 @@ export class ViperConnectApp {
   }
 
   private async requestConnection(phone: string): Promise<void> {
+    if (this.findSession(phone)?.mobilePrimaryDraftId) { await this.openConnection(phone); return }
     this.connectionLoading = true
     this.connectionEvent = undefined
     this.watchConnection(phone)
@@ -1742,6 +1806,7 @@ export class ViperConnectApp {
   }
 
   private render(): void {
+    if (this.view !== 'dashboard' || this.tab !== 'devices' || !this.selectedPhone || !this.api.getToken()) this.mobileCompanions?.reset()
     if (!this.api.getToken()) {
       this.root.innerHTML = renderLogin(escapeHtml(this.loginError))
       return
@@ -1801,12 +1866,13 @@ export class ViperConnectApp {
                     canManageUsers: this.identity?.role === 'admin',
                     restricted: this.identity?.role === 'user',
                     webhookHistoryHtml: this.identity?.role === 'user' ? '' : renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
+                    companionsHtml: this.tab === 'devices' ? this.mobileCompanions.html(selected, this.identity?.role !== 'admin') : '',
                     session: selected,
                     tab: this.tab,
                     contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
                     contactsHasMore:
                       this.contacts.hasMore || filterContacts(this.contacts.items, this.contactsQuery).length > this.contactsVisibleLimit,
-                    contactCount: this.contacts.totalCount,
+                    contactCount: this.overviewContactCount,
                     contactsQuery: this.contactsQuery,
                     groups: filterGroups(this.groups, this.groupsQuery),
                     groupsHasMore: this.groupsHasMore,
@@ -1815,6 +1881,9 @@ export class ViperConnectApp {
                     sectionError: this.sectionError,
                   })
                 : renderDashboard({
+                    mobileButton: this.identity?.role === 'admin' ? this.mobileDevices.renderButton() : '',
+                    mobileGrid: this.identity?.role === 'admin' ? this.mobileDevices.renderGrid(this.sessions) : '',
+                    mobileSessionPhones: this.identity?.role === 'admin' ? this.mobileDevices.listedSessionPhones(this.sessions) : [],
                     canCreate: this.identity?.role !== 'user',
                     sessions: this.sessions,
                     query: this.query,
@@ -1836,6 +1905,7 @@ export class ViperConnectApp {
       }) +
       this.renderModal() +
       (this.manager?.renderConfirmation() || '') +
+      this.mobileDevices.renderDialog() +
       this.renderToastHtml()
   }
 

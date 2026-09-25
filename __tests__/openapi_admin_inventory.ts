@@ -29,11 +29,12 @@ describe('administrative executable documentation inventory', () => {
     const sources = [
       ['src/router.ts', ''],
       ['src/controllers/manager_controller.ts', '/manager'],
+      ['src/controllers/mobile_device_controller.ts', '/manager/mobile-devices'],
     ]
     for (const [file, prefix] of sources) {
       const source = fs.readFileSync(file, 'utf8')
       for (const match of source.matchAll(/router\.(get|post|put|patch|delete)\(\s*'([^']+)'/g)) {
-        const route = prefix + normalize(match[2])
+        const route = (prefix + normalize(match[2])).replace(/\/$/, '')
         if (!route.startsWith('/admin/') && !route.startsWith('/manager/')) continue
         for (const document of [spec, publicSpec]) {
           const op = document.paths[route]?.[match[1]]

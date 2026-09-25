@@ -258,6 +258,7 @@ describe('ClientZapo', () => {
     expect(voipPlugin).toHaveBeenCalledWith({
       maxConcurrentCalls: expect.any(Number),
       logLevel: 'debug',
+      preferWebRelayPort: false,
     })
   })
 

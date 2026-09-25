@@ -33,6 +33,11 @@ export class LogoutBaileys implements Logout {
 
   async run(phone: string) {
     const config = await this.getConfig(phone)
+    if (config.mobilePrimaryDraftId) {
+      // Generic logout jobs are never allowed to destroy a primary registration.
+      logger.warn('Ignore destructive logout for mobile primary phone=%s; use integration suspension', phone)
+      return
+    }
     const provider = resolveWhatsAppEngine(config.provider)
     logger.debug('Logout provider session for phone %s (provider=%s)', phone, provider)
     const store = await config.getStore(phone, config)

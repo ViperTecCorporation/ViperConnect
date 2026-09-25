@@ -77,8 +77,17 @@ export function selectMediaRelayEndpoint(
  */
 export function orderMediaRelayCandidates(
     endpoints: readonly RelayEndpoint[],
-    incoming: boolean
+    incoming: boolean,
+    options: { preferWebRelayPort?: boolean } = {}
 ): NormalizedRelayEndpoint[] {
+    // Only change the dial port. Keep the authenticated relay identity and
+    // binary credentials intact; do not use the legacy web-token fallback.
+    if (options.preferWebRelayPort === true) {
+        return orderMediaRelayCandidates(
+            endpoints.map((endpoint) => ({ ...endpoint, port: WEB_RELAY_PORT })),
+            incoming
+        )
+    }
     const normalized = normalizeRelayEndpoints(endpoints, {
         includeWebTokenFallback: false
     })

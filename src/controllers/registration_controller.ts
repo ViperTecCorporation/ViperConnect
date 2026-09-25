@@ -9,6 +9,8 @@ import { resolveSessionProvider, resolveWhatsAppEngine } from '../services/provi
 import { resolveRegistrationConnectionType } from '../services/providers/connection_type_policy'
 import { isProviderRuntimeEnabled } from '../services/providers/provider_runtime_policy'
 import { isWebhookOnlyUpdate } from '../services/webhook_only_update'
+import { mergeMobileWebhooks } from '../services/mobile_primary/integration_policy'
+import { MobileDeviceError } from '../services/mobile_device_service'
 
 export class RegistrationController {
   private static readonly REGISTER_DEBOUNCE_MS = 15000
@@ -35,6 +37,22 @@ export class RegistrationController {
     try {
       const previousConfig = await this.getConfig(phone)
       const storedConfig = await getStoredConfig(phone)
+      if (storedConfig?.mobilePrimaryDeleting) return res.status(409).json({ status: 'error', message: 'mobile_deletion_in_progress' })
+      if (req.body.mobilePrimaryDraftId !== undefined || req.body.mobilePrimaryImported !== undefined || req.body.mobilePrimaryDeleting !== undefined) {
+        return res.status(400).json({ status: 'error', message: 'mobile_primary_internal_fields' })
+      }
+      // Temporary compatibility for ViperChat's fixed server name in the local lab.
+      const labServerAlias = !!storedConfig?.mobilePrimaryDraftId &&
+        process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' &&
+        process.env.UNOAPI_SERVER_NAME === 'mobile_lab' &&
+        previousConfig.server === 'mobile_lab' && req.body.server === 'server_1'
+      if (storedConfig?.mobilePrimaryDraftId && (
+        (req.body.provider !== undefined && req.body.provider !== previousConfig.provider) ||
+        (req.body.server !== undefined && req.body.server !== previousConfig.server && !labServerAlias) ||
+        req.body.mobilePrimaryDraftId !== undefined || req.body.mobilePrimaryImported !== undefined
+      )) {
+        return res.status(409).json({ status: 'error', message: 'mobile_primary_configuration_protected' })
+      }
       if (storedConfig && !isProviderRuntimeEnabled(previousConfig.provider)) {
         return res.status(409).json({
           status: 'error',
@@ -61,6 +79,11 @@ export class RegistrationController {
       }
       const requestedConfig = {
         ...req.body,
+        ...(labServerAlias ? { server: previousConfig.server } : {}),
+        ...(storedConfig?.mobilePrimaryDraftId ? { autoConnect: true } : {}),
+        ...(storedConfig?.mobilePrimaryDraftId && req.body.webhooks !== undefined ? {
+          webhooks: mergeMobileWebhooks(storedConfig.webhooks || [], req.body.webhooks), overrideWebhooks: true,
+        } : {}),
         provider,
         ...(connectionType.value ? { connectionType: connectionType.value } : {}),
       }
@@ -74,6 +97,11 @@ export class RegistrationController {
       }
       await setConfig(phone, requestedConfig)
       const config = await this.getConfig(phone)
+      if (storedConfig?.mobilePrimaryDraftId) {
+        // Await publication; a 200 does not mean WhatsApp has connected yet.
+        if (!previousConfig.autoConnect || !isWebhookOnlyUpdate(previousConfig, config) || !Array.isArray(req.body.webhooks)) await this.reload.run(phone)
+        return res.status(200).json(config)
+      }
       if (storedConfig && config.provider === 'zapo' && Array.isArray(req.body.webhooks) && isWebhookOnlyUpdate(previousConfig, config)) {
         // setConfig publishes cache invalidation to every process. The webhook
         // pipeline reads the fresh config; the WhatsApp socket need not restart.
@@ -117,6 +145,20 @@ export class RegistrationController {
     logger.debug('deregister body %s', JSON.stringify(req.body))
     logger.debug('deregister query %s', JSON.stringify(req.query))
     const phone = await resolveSessionPhoneByMetaId(req.params.phone)
+    const storedConfig = await getStoredConfig(phone)
+    if (storedConfig?.mobilePrimaryDraftId) {
+      try {
+        // setConfig archives the previous destinations through webhook history.
+        // Deregistration suspends the whole connection, not one integration.
+        await setConfig(phone, { webhooks: [], overrideWebhooks: true, autoConnect: false })
+        // Reconcile desired state on the owning worker, never publish logout.
+        await this.reload.run(phone)
+        return res.status(204).send()
+      } catch (error) {
+        const code = error instanceof MobileDeviceError ? error.status : 503
+        return res.status(code).json({ status: 'error', message: error instanceof MobileDeviceError ? error.message : 'mobile_suspend_publication_failed' })
+      }
+    }
     await this.logout.run(phone)
     return res.status(204).send()
   }

@@ -93,6 +93,7 @@ export class ClientZapo implements Client {
   private connectTask?: Promise<void>
   private socketAbort = new AbortController()
   private connected = false
+  private stopCompanionWorker?: () => void
   private readonly pendingIncoming = new Map<string, any>()
   private readonly decryptedAddonIds = new Set<string>()
   private readonly forwardedHistoryIds = new BoundedTtlSet<string>({
@@ -909,6 +910,8 @@ export class ClientZapo implements Client {
   }
 
   private async releaseRuntimeOwnership() {
+    this.stopCompanionWorker?.()
+    this.stopCompanionWorker = undefined
     this.lifecycleObserver.stop()
     this.presenceHeartbeat.stop()
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
@@ -1007,10 +1010,23 @@ export class ClientZapo implements Client {
       linkPreview: ZAPO_LINK_PREVIEW_IP_FAMILY,
     })
     const youtubeLinkPreviewResolver = createYouTubeLinkPreviewResolverForTransport(proxy?.linkPreview)
+    let companionRuntime: any
+    let companionHost: any
+    if (this.config.mobilePrimaryDraftId && this.config.useRedis && process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab') {
+      const { MobileCompanionPersistence } = await import('./mobile_primary/companion_persistence.js')
+      const { MobileCompanionOperations, startCompanionWorker } = await import('./mobile_primary/companion_operations.js')
+      const { RegistrationVault } = await import('./mobile_primary/registration_vault.js')
+      const { getRedis } = await import('./redis.js')
+      const redis = await getRedis(), vault = new RegistrationVault(process.env.MOBILE_REGISTRATION_KEY || '')
+      const fence = this.lease!.ownership()
+      companionHost = { persistence: new MobileCompanionPersistence(redis, vault, this.config.mobilePrimaryDraftId, this.phone, fence.token) }
+      companionRuntime = { startCompanionWorker, fence, operations: new MobileCompanionOperations(redis, vault, this.config.mobilePrimaryDraftId) }
+    }
     const client = this.clientFactory({
       store: zapoStore,
       sessionId: this.phone,
       proxy,
+      ...(companionHost ? { companionHost } : {}),
       markOnlineOnConnect: this.config.markOnlineOnConnect,
       recoverFromClientTooOld: true,
       history: {
@@ -1024,7 +1040,12 @@ export class ClientZapo implements Client {
       addons: { autoDecrypt: false },
       media: zapoMediaOptions,
       signPasskeyAssertion: this.signPasskeyAssertion.bind(this),
-      plugins: [voipPlugin({ maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS, logLevel: 'debug' })],
+      plugins: [voipPlugin({
+        maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS,
+        logLevel: 'debug',
+        preferWebRelayPort: !!this.config.mobilePrimaryDraftId &&
+          process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab',
+      })],
     })
     const generation = ++this.connectionGeneration
     const voiceBridgeUrl = resolveZapoVoiceBridgeUrl(VOIP_SERVICE_URL, VOIP_BRIDGE_URL)
@@ -1042,6 +1063,8 @@ export class ClientZapo implements Client {
           })
         : undefined
     this.socket = client
+    this.stopCompanionWorker?.()
+    if (companionRuntime) this.stopCompanionWorker = companionRuntime.startCompanionWorker(companionRuntime.operations, client.mobile, companionRuntime.fence, () => this.socket === client && this.connected && !this.intentionalDisconnect)
     this.socketAbort = new AbortController()
     this.messages = new ZapoMessages(client, this.unoStore.dataStore, {
       customMessageCharactersFunction: this.config.customMessageCharactersFunction,

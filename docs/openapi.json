@@ -16,6 +16,1154 @@
     }
   ],
   "paths": {
+    "/manager/mobile-devices/{id}/companions": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar, vincular ou revogar dispositivo secundário no worker",
+        "description": "Experimental, administrador no mobile_lab. Enfileira um comando cifrado no Redis por até 10 minutos, processado pelo worker que já possui a conexão do principal, fora da fila de mensagens. Listagem usa o epoch persistido, não presença nem inventário remoto completo. QR é o conteúdo decodificado da imagem; code é o código de 8 caracteres solicitado pelo secundário (não SMS). Mutações exigem confirm=true. Sem repetição automática em resultado incerto. Consultar o identificador retornado até estado terminal.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "list",
+                      "qr",
+                      "code",
+                      "revoke"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "writeOnly": true,
+                    "description": "QR decodificado",
+                    "código ou JID do secundário": null,
+                    "conforme action": null
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ],
+                    "description": "Obrigatório para qr",
+                    "code e revoke": null
+                  }
+                }
+              },
+              "example": {
+                "action": "list"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Comando aceito, não significa vínculo concluído",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "queued"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Comando ou confirmação inválida"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Recurso desabilitado ou cadastro ausente"
+          },
+          "409": {
+            "description": "Principal suspenso",
+            "comando em andamento ou resultado incerto exige atualizar vínculos": null
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/companions/{operation}": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar resultado de comando de dispositivos vinculados",
+        "description": "Somente administrador. Não envia comandos ao WhatsApp. QR, código e chaves nunca são retornados. queued/running são estados pendentes; done confirma a chamada SDK; unknown indica resultado remoto incerto, sem retry automático; expired indica que o comando não foi executado no prazo. Lista retorna companions com deviceJid, keyIndex e addedAtSeconds e source=persisted_epoch. Não garante que o bootstrap de histórico do secundário terminou.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado sem material de autenticação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "done",
+                        "unknown",
+                        "expired"
+                      ]
+                    },
+                    "result": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Operação expirada",
+            "substituída ou não pertence ao dispositivo": null
+          },
+          "409": {
+            "description": "Principal suspenso ou configuração incompatível"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/backup": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Suspender e exportar backup criptografado do dispositivo principal",
+        "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens e registro em um arquivo .viperdevice cifrado por senha (AES-256-GCM e scrypt). Não inclui mensagens, mídias, webhooks, usuários ou tokens da stack. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "password",
+                  "confirmSuspend"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 128,
+                    "writeOnly": true
+                  },
+                  "confirmSuspend": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo criptografado para download; resposta com Cache-Control no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fileName": {
+                      "type": "string"
+                    },
+                    "archive": {
+                      "type": "string",
+                      "description": "Envelope JSON cifrado",
+                      "salvar sem alterações": null
+                    },
+                    "sourceSuspended": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Senha ou confirmação inválida"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Dispositivo incompatível",
+            "ocupado ou ainda encerrando a conexão; aguardar e repetir": null
+          },
+          "413": {
+            "description": "Backup excedeu os limites de tamanho ou quantidade de chaves"
+          },
+          "503": {
+            "description": "Falha operacional; origem pode já estar suspensa"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/restore": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Restaurar dispositivo principal a partir de backup criptografado",
+        "description": "Experimental, somente administrador no mobile_lab. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura desconectado, autoConnect=false e sem webhooks. Não solicita SMS, não abre socket e não garante validade remota de credenciais revogadas. Confirme que a origem está desligada antes de conectar manualmente no destino.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "archive",
+                  "password",
+                  "confirmOriginOffline"
+                ],
+                "properties": {
+                  "archive": {
+                    "type": "string",
+                    "maxLength": 16777216,
+                    "description": "Conteúdo integral do arquivo .viperdevice"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 128,
+                    "writeOnly": true
+                  },
+                  "confirmOriginOffline": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Dispositivo restaurado, sem conexão automática",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "$ref": "#/components/schemas/MobileDeviceDraft"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected"
+                      ]
+                    },
+                    "restored": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Arquivo inválido",
+            "incompatível": null,
+            "senha incorreta ou confirmação ausente": null
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Destino ocupado ou com dados existentes; nada é sobrescrito"
+          },
+          "413": {
+            "description": "Arquivo excedeu o limite"
+          },
+          "503": {
+            "description": "Falha de armazenamento ou formato DUMP incompatível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/connection": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar conexão do dispositivo principal",
+        "description": "Somente administrador no laboratório mobile_lab. Consulta a sessão Uno pelo número canônico registrado; não abre socket nem retorna credenciais.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado persistido da conexão, não confirmação de entrega de mensagens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phone": {
+                      "type": "string"
+                    },
+                    "imported": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Registro incompleto ou sessão conflitante"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Importar registro e conectar dispositivo principal à Zapo",
+        "description": "Somente laboratório mobile_lab. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Credenciais preservadas e solicitação publicada ao worker"
+          },
+          "400": {
+            "description": "Confirmação ausente"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Registro incompleto",
+            "sessão em uso ou conflito de identidade": null
+          },
+          "503": {
+            "description": "Falha de armazenamento ou publicação; consultar estado antes de repetir"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/registration": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar estado do registro mobile experimental",
+        "description": "Somente administrador com Bearer, UNOAPI_MOBILE_PRIMARY_LAB=true e MOBILE_REGISTRATION_ENABLED=true. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado público do registro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer ausente ou inválido"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente ou laboratório desativado"
+          },
+          "503": {
+            "description": "Registro desativado ou armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/registration/request": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Solicitar SMS para registro mobile experimental",
+        "description": "Teste real com consentimento explícito, administrador e as duas flags ativas. Faz uma tentativa de SMS, sem trocar método. Gera e persiste as chaves cifradas antes da rede. Repetição retorna 409, exceto com confirmResend=true e canResendSms=true. Preserva as chaves. A recusa exata too_recent permite tentativa manual após o prazo remoto, sem teto local de solicitações. Sem prazo informado, não calcula liberação. Desafios e outras recusas por limite continuam bloqueados. Não há repetição automática. Em timeout consultar estado antes de qualquer ação. Não conecta pela Zapo.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "confirmResend": {
+                    "type": "boolean",
+                    "description": "Consentimento para reenvio quando canResendSms=true, incluindo código não recebido em code_required. Respeita a espera informada no envio aceito; sem prazo nesse sucesso, permite reenvio manual. Não libera desafios. No laboratório, device_confirm_or_second_code admite uma experiência de SMS comum até três solicitações totais, após cinco minutos; não comprova suporte ao segundo código."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consulte status; bloqueio não equivale a SMS enviado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Consentimento inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente ou laboratório desativado"
+          },
+          "409": {
+            "description": "Operação já iniciada ou estado incompatível"
+          },
+          "503": {
+            "description": "Registro desativado ou infraestrutura indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/registration/verify": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Confirmar código SMS do registro mobile experimental",
+        "description": "Código de seis dígitos como string. Aceito após code_required ou recuperação explícita com confirmRecovery=true quando canRetryVerification=true. Recuperação preserva chaves, não solicita SMS, exige intervalo de 60 segundos e limita a três confirmações totais. Falhas legadas sem diagnóstico permitem uma recuperação; erros conhecidos só permitem corrigir código inválido. Autorizações no aparelho devem ser concluídas manualmente; ainda não há detecção automática. PIN, CAPTCHA e outros desafios não são contornados. Nunca inicia socket Zapo.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$",
+                    "writeOnly": true
+                  },
+                  "confirmRecovery": {
+                    "type": "boolean",
+                    "description": "Consentimento explícito para recuperação permitida pelo estado atual"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado atualizado; registrado não equivale a conectado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Código inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente ou laboratório desativado"
+          },
+          "409": {
+            "description": "Estado incompatível ou operação concorrente"
+          },
+          "503": {
+            "description": "Registro desativado ou infraestrutura indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/capabilities": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar capacidades do laboratório mobile-primary",
+        "description": "Exige UNOAPI_MOBILE_PRIMARY_LAB=true e Authorization: Bearer com token administrativo. Informa capacidades disponíveis no laboratório: SMS depende do componente habilitado; conexão/importação e companions dependem do servidor mobile_lab. VoIP mobile permanece indisponível. A consulta não abre sockets nem envia SMS. Desativado por padrão.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capacidades reais da implementação experimental",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "experimental": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "draftManagement": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "smsRegistration": {
+                      "type": "boolean",
+                      "description": "Habilitado somente com MOBILE_REGISTRATION_ENABLED=true; ainda exige homologação real"
+                    },
+                    "credentialImport": {
+                      "type": "boolean"
+                    },
+                    "primaryConnection": {
+                      "type": "boolean"
+                    },
+                    "companionQr": {
+                      "type": "boolean"
+                    },
+                    "companionCode": {
+                      "type": "boolean"
+                    },
+                    "voip": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "mobile_registration_provider_unavailable",
+                        "mobile_registration_unverified"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer ausente ou inválido"
+          },
+          "403": {
+            "description": "Administrador obrigatório; chaves pessoais não são aceitas"
+          },
+          "404": {
+            "description": "Funcionalidade experimental desativada"
+          },
+          "503": {
+            "description": "Autenticação indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Listar rascunhos de dispositivos principais",
+        "description": "Somente administrador e flag experimental ativa. Retorna até 100 rascunhos, ordenados por telefone. Esses registros não são sessões conectadas nem reservam o número. Authorization exige Bearer; tokens na URL não são aceitos. Cache-Control: no-store.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rascunhos experimentais",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "$ref": "#/components/schemas/MobileDeviceDraft"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial ausente ou inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Funcionalidade experimental desativada"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Cadastrar rascunho de dispositivo principal",
+        "description": "Salva somente metadados no Redis; não solicita SMS, não cria credenciais, não conecta e não muda sessões existentes. Requer administrador, Bearer e UNOAPI_MOBILE_PRIMARY_LAB=true. Consentimento obrigatório; telefone único entre rascunhos. Repetição retorna 409, sem criar duplicata. Nome máximo de 80 caracteres sem caracteres de controle. Não aceita proxy, OTP, tokens, credenciais, estado ou atribuição de responsável.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "phone",
+                  "name",
+                  "platform",
+                  "accountType",
+                  "labConsent"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{7,14}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "android",
+                      "ios"
+                    ]
+                  },
+                  "accountType": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "business"
+                    ]
+                  },
+                  "labConsent": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "phone": "5511999999999",
+                "name": "Laboratório",
+                "platform": "android",
+                "accountType": "personal",
+                "labConsent": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Rascunho criado, não registrado no WhatsApp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dados inválidos",
+            "campos extras ou consentimento ausente": null
+          },
+          "401": {
+            "description": "Credencial ausente ou inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Funcionalidade experimental desativada"
+          },
+          "409": {
+            "description": "Telefone já cadastrado ou limite de 100 rascunhos"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar rascunho de dispositivo principal",
+        "description": "Consulta administrativa, com Bearer e flag experimental. Não consulta o WhatsApp. O ID identifica somente o cadastro local.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadados do cadastro experimental",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceDraft"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Rascunho inexistente ou funcionalidade desativada"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Remover somente um rascunho experimental",
+        "description": "Requer administrador, Bearer e flag experimental. Exige confirm=true. Compare-and-delete impede apagar um registro substituído concorrentemente. Não desconecta nem exclui contas WhatsApp, credenciais, mídias, webhooks ou sessões vinculadas. Somente estado draft pode ser removido por esta operação.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Rascunho removido"
+          },
+          "400": {
+            "description": "Confirmação inválida"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Rascunho inexistente ou funcionalidade desativada"
+          },
+          "409": {
+            "description": "Cadastro alterado concorrentemente ou não está em draft"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/full": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Excluir definitivamente dispositivo principal e credenciais locais",
+        "description": "Exclusivo de administrador. Exige confirmação, aceite de novo SMS e número exato do cadastro. Marca exclusão em andamento, bloqueia registro/importação, suspende a conexão e aguarda a liberação da lease do worker antes de limpar o store Zapo, configuração, registro SMS cifrado e cadastro. Não exclui a conta no WhatsApp. Novo uso exige novo registro por SMS, sujeito às validações e esperas do provider. Mídias, histórico de webhooks e atribuições históricas são preservados. Em caso de falha parcial, repita a exclusão; o cadastro fica marcado como deleting.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm",
+                  "acknowledgeNewSms",
+                  "phone"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "acknowledgeNewSms": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{7,14}$"
+                  }
+                }
+              },
+              "example": {
+                "confirm": true,
+                "acknowledgeNewSms": true,
+                "phone": "5511999999999"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Dispositivo e credenciais locais excluídos"
+          },
+          "400": {
+            "description": "Confirmação incompleta ou telefone divergente"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro inexistente"
+          },
+          "409": {
+            "description": "Conflito ou conexão ainda encerrando. Aguarde e repita sem solicitar SMS."
+          },
+          "503": {
+            "description": "Falha parcial no armazenamento. Repita para concluir."
+          }
+        }
+      }
+    },
     "/admin/redis/tree": {
       "get": {
         "tags": [
@@ -7308,6 +8456,7 @@
     "/v15.0/{phone}/register": {
       "post": {
         "summary": "Registrar/atualizar configuração da sessão",
+        "description": "Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS enquanto o registro for válido. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -7342,15 +8491,30 @@
     },
     "/v15.0/{phone}/deregister": {
       "post": {
-        "summary": "Encerrar sessão (logout) e remover registro",
+        "summary": "Encerrar sessão comum ou suspender integração mobile primary",
+        "description": "Sessões comuns mantêm logout e remoção. Em mobile primary aceita corpo vazio, remove todos os webhooks ativos, encaminha a configuração anterior ao histórico, desativa autoConnect e desconecta sem logout nem limpeza de credenciais ou filas. Falhas de arquivamento são registradas em log sem bloquear a operação. Reconectar não restaura destinos automaticamente. HTTP 204 confirma publicação, não conclusão da desconexão. Register ou Conectar no painel retoma a sessão. Mensagens durante o período offline dependem da recuperação disponibilizada pelo WhatsApp.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {}
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Sem conteúdo"
+          },
+          "503": {
+            "description": "Publicação falhou; suspensão pode já estar persistida. Repita a operação."
           }
         }
       }
@@ -11140,6 +12304,156 @@
       }
     },
     "schemas": {
+      "MobileRegistrationStatus": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "requesting",
+              "code_required",
+              "verifying",
+              "registered",
+              "blocked",
+              "uncertain",
+              "additional_confirmation_required"
+            ]
+          },
+          "canonicalPhone": {
+            "type": "string",
+            "description": "Número devolvido pelo servidor após registro confirmado"
+          },
+          "error": {
+            "type": "string",
+            "description": "Categoria sanitizada sem resposta bruta ou credenciais"
+          },
+          "retryAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fim da espera remota em Unix milissegundos, calculado com diagnostic.waitSeconds. Ausente quando o prazo remoto é desconhecido. Não garante liberação nem inicia reenvio."
+          },
+          "canRetryVerification": {
+            "type": "boolean",
+            "description": "Permite confirmação manual com confirmRecovery; nunca reenvia SMS"
+          },
+          "canResendSms": {
+            "type": "boolean",
+            "description": "Permite reenvio manual com confirmResend, preservando as chaves. Em code_required, respeita eventual espera remota do envio aceito; sem prazo, permite tentativa explícita. Falha legada ou código expirado: cinco minutos e um reenvio; confirmação adicional experimental: até três solicitações; too_recent na solicitação sem desafio: somente após prazo remoto conhecido, sem teto local de solicitações. Nunca representa garantia de liberação pelo provedor."
+          },
+          "diagnostic": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "prepare",
+                  "request",
+                  "verify"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "description": "Motivo técnico de lista permitida; nunca texto bruto do provedor"
+              },
+              "httpStatus": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              "providerStatus": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{1,47}$",
+                "description": "Código de status retornado pelo componente"
+              },
+              "providerReason": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{1,47}$",
+                "description": "Código técnico do motivo; não inclui texto livre"
+              },
+              "providerPending": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{1,47}$",
+                "description": "Código técnico de pendência; não comprova aprovação no aparelho"
+              },
+              "waitSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647,
+                "description": "Espera remota em segundos: sms_wait, maior espera dos demais métodos ou retry_after. Tem prioridade sobre a espera local."
+              }
+            }
+          }
+        }
+      },
+      "MobileDeviceDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "platform",
+          "accountType",
+          "connectionMode",
+          "state",
+          "createdAt",
+          "createdBy"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{7,14}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "android",
+              "ios"
+            ]
+          },
+          "accountType": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "business"
+            ]
+          },
+          "connectionMode": {
+            "type": "string",
+            "enum": [
+              "mobile_primary"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "deleting"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          }
+        }
+      },
       "ManagerVoipHistoryScope": {
         "type": "object",
         "additionalProperties": false,

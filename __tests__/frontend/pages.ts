@@ -217,7 +217,7 @@ describe('frontend pages', () => {
     })
 
     expect(dashboard).toContain('Overview')
-    expect(dashboard).toContain('Automatic refresh in')
+    expect(dashboard).toContain('Automatic refresh of sessions in')
     expect(session).toContain('Session contacts')
     expect(session).toContain('Back to Dashboard')
   })

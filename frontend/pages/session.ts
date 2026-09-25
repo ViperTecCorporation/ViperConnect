@@ -7,6 +7,7 @@ import { CONTACT_SEARCH_MIN_LENGTH, renderContactCards, renderGroupCards } from 
 import { renderSessionConfig } from '../features/session_config.js'
 import { renderWebhooks } from '../features/webhooks.js'
 import { formatNumber, t, type TranslationKey } from '../core/i18n.js'
+import { renderMobileCompanions } from '../features/mobile_companions.js'
 
 interface SessionPageOptions {
   restricted?: boolean
@@ -15,7 +16,7 @@ interface SessionPageOptions {
   tab: SessionTab
   contacts: ContactDirectoryItem[]
   contactsHasMore: boolean
-  contactCount: number
+  contactCount: number | undefined
   contactsQuery: string
   groups: GroupSummary[]
   groupsHasMore: boolean
@@ -23,6 +24,7 @@ interface SessionPageOptions {
   loadingSection: boolean
   sectionError: string
   webhookHistoryHtml?: string
+  companionsHtml?: string
 }
 
 const tabs: Array<[SessionTab, TranslationKey]> = [
@@ -70,10 +72,10 @@ const renderWhatsAppIntegration = (session: SessionConfig): string => {
   `
 }
 
-const renderOverview = (session: SessionConfig, contactCount: number): string => `
+const renderOverview = (session: SessionConfig, contactCount: number | undefined): string => `
   <section class="stats" aria-label="${t('Resumo da sessão')}">
     <article class="stat-card"><span>Status</span><strong class="stat-card__status">${renderStatus(session.status)}</strong><small>${escapeHtml(session.server || 'server_1')}</small></article>
-    <article class="stat-card"><span>${t('Contatos')}</span><strong>${formatNumber(contactCount)}</strong><small>${t('armazenados no cache Zapo')}</small></article>
+    <article class="stat-card"><span>${t('Contatos')}</span><strong>${contactCount === undefined ? '—' : formatNumber(contactCount)}</strong><small>${t('armazenados no cache Zapo')}</small></article>
     <article class="stat-card"><span>${t('Webhooks')}</span><strong>${session.webhooks?.filter((item) => item.enabled !== false && item.disabled !== true).length || 0}</strong><small>${t('destinos ativos')}</small></article>
   </section>
   ${renderWhatsAppIntegration(session)}
@@ -81,8 +83,8 @@ const renderOverview = (session: SessionConfig, contactCount: number): string =>
     <div class="section__heading"><div><h2>${t('Ações da sessão')}</h2><p class="muted">${escapeHtml(t('Toda operação abaixo usa o telefone {phone}.', { phone: sessionPhone(session) }))}</p></div></div>
     <div class="action-grid">
       <button class="action-card" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone(session))}">${icon('send')}<span><strong>${t('Testar mensagem')}</strong><small>${t('Enviar texto pela API')}</small></span></button>
-      <button class="action-card" type="button" data-action="connect-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('link')}<span><strong>${isOnlineStatus(session.status) ? t('Ver conexão') : t('Conectar')}</strong><small>${t('QR Code ou código de pareamento')}</small></span></button>
-      <button class="action-card action-card--danger" type="button" data-action="deregister-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}<span><strong>${t('Desconectar')}</strong><small>${t('Remover vínculo e exigir novo pareamento')}</small></span></button>
+      <button class="action-card" type="button" data-action="connect-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('link')}<span><strong>${session.mobilePrimaryDraftId ? t('Visão geral do dispositivo') : isOnlineStatus(session.status) ? t('Ver conexão') : t('Conectar')}</strong><small>${session.mobilePrimaryDraftId ? t('Credenciais salvas; conexão pela Zapo, sem QR Code') : t('QR Code ou código de pareamento')}</small></span></button>
+      <button class="action-card action-card--danger" type="button" data-action="deregister-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}<span><strong>${t('Desconectar')}</strong><small>${session.mobilePrimaryDraftId ? t('Suspender conexão e remover webhooks; preservar credenciais') : t('Remover vínculo e exigir novo pareamento')}</small></span></button>
     </div>
   </section>
 `
@@ -119,6 +121,7 @@ const renderGroups = (session: SessionConfig, groups: GroupSummary[], hasMore: b
 `
 
 const renderPanel = (options: SessionPageOptions): string => {
+  if (options.tab === 'devices' && options.session.mobilePrimaryDraftId) return options.companionsHtml || renderMobileCompanions(options.session, !!options.restricted)
   if (options.tab === 'config') return renderSessionConfig(options.session, options.restricted)
   if (options.tab === 'contacts') {
     return renderContacts(options.session, options.contacts, options.contactsHasMore, options.loadingSection, options.sectionError, options.contactsQuery)
@@ -159,7 +162,7 @@ export const renderSessionPage = (options: SessionPageOptions): string => {
           <button class="btn btn--danger" type="button" data-action="deregister-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}${t('Remover sessão legada')}</button>
         </section>`
         : `<nav class="tabs" aria-label="${t('Áreas da sessão')}">
-          ${tabs.map(([value, label]) => `<button class="tab ${tab === value ? 'tab--active' : ''}" type="button" data-action="session-tab" data-tab="${value}" aria-selected="${tab === value}">${escapeHtml(t(label))}</button>`).join('')}
+          ${tabs.flatMap((entry, index): Array<[SessionTab, TranslationKey]> => index === 0 && session.mobilePrimaryDraftId ? [entry, ['devices', 'Dispositivos conectados']] : [entry]).map(([value, label]) => `<button class="tab ${tab === value ? 'tab--active' : ''}" type="button" data-action="session-tab" data-tab="${value}" aria-selected="${tab === value}">${escapeHtml(t(label))}</button>`).join('')}
         </nav>
         <div class="session-content">${renderPanel(options)}</div>`
     }

@@ -80,6 +80,9 @@ export type Config = {
   composingMessage: boolean
   autoRestartMs: number
   autoConnect: boolean
+  mobilePrimaryDraftId?: string
+  mobilePrimaryImported?: boolean
+  mobilePrimaryDeleting?: boolean
   retryRequestDelayMs: number
   rejectCalls: string
   throwWebhookError: boolean
@@ -154,6 +157,9 @@ export const defaultConfig: Config = {
   messageCallsWebhook: '',
   logLevel: 'fatal',
   autoConnect: true,
+  mobilePrimaryDraftId: '',
+  mobilePrimaryImported: false,
+  mobilePrimaryDeleting: false,
   autoRestartMs: 0,
   retryRequestDelayMs: 1_000,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

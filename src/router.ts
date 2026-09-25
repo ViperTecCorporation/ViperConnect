@@ -45,6 +45,7 @@ import { SessionWebhooksController } from './controllers/session_webhooks_contro
 import { WebhookHistoryController } from './controllers/webhook_history_controller'
 import { apiErrorLocalization } from './services/api_error_localization'
 import { managerRouter } from './controllers/manager_controller'
+import { mobileDeviceRouter } from './controllers/mobile_device_controller'
 import { managerAccess } from './services/manager_access'
 
 export const router = (
@@ -65,6 +66,7 @@ export const router = (
 ) => {
   const router: Router = Router()
   router.use(apiErrorLocalization)
+  router.use('/manager/mobile-devices', mobileDeviceRouter())
   router.use('/manager', managerRouter())
   router.use(managerAccess())
   const messagesController = new MessagesController(incoming, outgoing, getConfig)

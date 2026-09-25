@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { PassThrough } from 'node:stream'
+import { PassThrough, Writable } from 'node:stream'
 import { test } from 'node:test'
 
 import { NativeRelayTransport } from '../NativeRelayTransport.js'
 
 class FakeChild extends EventEmitter {
-    stdin = new PassThrough()
+    stdin: Writable = new PassThrough()
     stdout = new PassThrough()
     stderr = new PassThrough()
     exitCode: number | null = null
@@ -55,6 +55,57 @@ test('native relay transport preserves binary packet boundaries in both directio
         assert.equal(transport.send(new Uint8Array([0, 4, 5])), true)
         assert.deepEqual(Buffer.concat(written), frame(2, Buffer.from([0, 4, 5])))
         transport.close()
+})
+
+test('asynchronous EPIPE while sending reports one transport error without crashing', async () => {
+    const child = new FakeChild()
+    child.stdin = new Writable({ write(_chunk, _encoding, callback) {
+        process.nextTick(() => callback(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })))
+    } })
+    const transport = new NativeRelayTransport({ host: '127.0.0.1', port: 3478, spawnBridge: (() => child) as never })
+    const errors: Error[] = []
+    transport.on('transport_error', error => errors.push(error))
+    child.stdout.write(frame(1))
+    assert.equal(transport.send(new Uint8Array([1])), true)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(transport.state, 'failed')
+    assert.equal(errors.length, 1)
+    assert.match(errors[0].message, /stdin failed: write EPIPE/)
+    child.emit('exit', 1, null)
+    assert.equal(errors.length, 1)
+    assert.equal(transport.send(new Uint8Array([2])), false)
+    transport.close()
+})
+
+test('asynchronous EPIPE while closing is handled without a spurious recovery', async () => {
+    const child = new FakeChild()
+    let writes = 0
+    child.stdin = new Writable({ write(_chunk, _encoding, callback) {
+        writes++
+        process.nextTick(() => callback(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })))
+    } })
+    const transport = new NativeRelayTransport({ host: '127.0.0.1', port: 3478, spawnBridge: (() => child) as never })
+    const errors: Error[] = []
+    transport.on('transport_error', error => errors.push(error))
+    transport.close()
+    transport.close()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(writes, 1)
+    assert.equal(transport.state, 'closed')
+    assert.equal(errors.length, 0)
+})
+
+test('native error followed by close never writes to the failed helper', () => {
+    const child = new FakeChild()
+    let writes = 0
+    child.stdin.on('data', () => writes++)
+    const transport = new NativeRelayTransport({ host: '127.0.0.1', port: 3478, spawnBridge: (() => child) as never })
+    transport.on('transport_error', () => transport.close())
+    child.stdout.write(frame(3, Buffer.from('sctp client: association closed before connecting')))
+    assert.equal(writes, 0)
+    assert.equal(child.stdin.destroyed, true)
+    assert.equal(transport.state, 'closed')
+    assert.doesNotThrow(() => child.stdin.emit('error', new Error('late EPIPE')))
 })
 
 test('native relay transport selects an explicit udp6 socket for IPv6', () => {

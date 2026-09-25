@@ -48,7 +48,12 @@ function selectMediaRelayEndpoint(endpoints, incoming) {
  * uses the same first-candidate rule but does not attempt another relay after
  * a live transport stops forwarding remote media.
  */
-function orderMediaRelayCandidates(endpoints, incoming) {
+function orderMediaRelayCandidates(endpoints, incoming, options = {}) {
+    // Only change the dial port. Keep the authenticated relay identity and
+    // binary credentials intact; do not use the legacy web-token fallback.
+    if (options.preferWebRelayPort === true) {
+        return orderMediaRelayCandidates(endpoints.map((endpoint) => ({ ...endpoint, port: WEB_RELAY_PORT })), incoming);
+    }
     const normalized = normalizeRelayEndpoints(endpoints, {
         includeWebTokenFallback: false
     });

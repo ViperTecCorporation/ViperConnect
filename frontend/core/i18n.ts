@@ -1,6 +1,13 @@
 export type AppLocale = 'pt-BR' | 'en'
 
 const english = {
+  'Dispositivos conectados': 'Connected devices',
+  'Visão geral do dispositivo': 'Device overview',
+  'Credenciais salvas; conexão pela Zapo, sem QR Code': 'Saved credentials; connect through Zapo, without a QR code',
+  'Suspender conexão e remover webhooks; preservar credenciais': 'Suspend connection and remove webhooks; preserve credentials',
+  'Esta ação suspende a conexão e desativa a reconexão automática. As credenciais do dispositivo principal serão preservadas.': 'This suspends the connection and disables automatic reconnection. Primary device credentials are preserved.',
+  'Todos os webhooks ativos serão removidos, com arquivamento no histórico. Reconectar não restaura esses webhooks automaticamente.': 'All active webhooks will be removed and archived in history. Reconnecting does not restore these webhooks automatically.',
+  'Para reativar, use Visão geral do dispositivo → Conectar à Zapo.': 'To resume, use Device overview → Connect to Zapo.',
   Telefonia: 'Telephony',
   Chamadas: 'Calls',
   'Linhas Zapo, ramais e chamadas em uma única interface.': 'Zapo lines, extensions, and calls in one interface.',
@@ -250,6 +257,8 @@ const english = {
   Sessões: 'Sessions',
   'Atualizando…': 'Updating…',
   'Atualização automática em': 'Automatic refresh in',
+  'Atualização automática de dispositivos e sessões em': 'Automatic refresh of devices and sessions in',
+  'Atualização automática de sessões em': 'Automatic refresh of sessions in',
   Automático: 'Automatic',
   'Atualizar agora': 'Refresh now',
   'Buscar nome ou telefone': 'Search name or phone',

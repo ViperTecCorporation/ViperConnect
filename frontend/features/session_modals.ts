@@ -73,8 +73,7 @@ export const renderConnectionModal = (
 export const renderConfirmDeregisterModal = (session: SessionConfig): string =>
   renderModal('deregister-session', t('Desconectar sessão'), `
     <div class="stack">
-      <p>${escapeHtml(t('Esta ação executa deregister em {session} e exigirá um novo pareamento.', { session: sessionLabel(session) }))}</p>
-      <p class="form-error">${icon('warning')}${t('As credenciais nativas da sessão serão removidas.')}</p>
+      ${session.mobilePrimaryDraftId ? `<p>${t('Esta ação suspende a conexão e desativa a reconexão automática. As credenciais do dispositivo principal serão preservadas.')}</p><p class="form-error">${icon('warning')}${t('Todos os webhooks ativos serão removidos, com arquivamento no histórico. Reconectar não restaura esses webhooks automaticamente.')}</p><p>${t('Para reativar, use Visão geral do dispositivo → Conectar à Zapo.')}</p>` : `<p>${escapeHtml(t('Esta ação executa deregister em {session} e exigirá um novo pareamento.', { session: sessionLabel(session) }))}</p><p class="form-error">${icon('warning')}${t('As credenciais nativas da sessão serão removidas.')}</p>`}
       <div class="form-actions">
         <button class="btn btn--danger" type="button" data-action="confirm-deregister" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}${t('Confirmar desconexão')}</button>
       </div>

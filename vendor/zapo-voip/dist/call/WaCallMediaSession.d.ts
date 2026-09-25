@@ -11,6 +11,7 @@ export interface WaCallMediaSessionDelegate {
     emitOutboundAudioFinished(call: CallInfo): void;
 }
 export interface WaCallMediaSessionOptions {
+    readonly preferWebRelayPort?: boolean;
     readonly deps: WaVoipDeps;
     readonly logger: Logger;
     readonly info: CallInfo;
@@ -19,6 +20,7 @@ export interface WaCallMediaSessionOptions {
 export declare class WaCallMediaSession implements AudioSender {
     readonly info: CallInfo;
     private readonly deps;
+    private readonly preferWebRelayPort;
     private readonly logger;
     private readonly delegate;
     private rtpSession;

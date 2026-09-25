@@ -35,7 +35,9 @@ export declare function selectMediaRelayEndpoint(endpoints: readonly RelayEndpoi
  * uses the same first-candidate rule but does not attempt another relay after
  * a live transport stops forwarding remote media.
  */
-export declare function orderMediaRelayCandidates(endpoints: readonly RelayEndpoint[], incoming: boolean): NormalizedRelayEndpoint[];
+export declare function orderMediaRelayCandidates(endpoints: readonly RelayEndpoint[], incoming: boolean, options?: {
+    preferWebRelayPort?: boolean;
+}): NormalizedRelayEndpoint[];
 export declare function normalizeRelayEndpoints(endpoints: readonly RelayEndpoint[], options?: {
     includeWebTokenFallback?: boolean;
 }): NormalizedRelayEndpoint[];

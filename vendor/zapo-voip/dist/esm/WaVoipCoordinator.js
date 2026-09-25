@@ -19,7 +19,8 @@ export class WaVoipCoordinator {
             deps: ctx.deps,
             stores: ctx.stores,
             logger: this.logger,
-            maxConcurrentCalls: options.maxConcurrentCalls
+            maxConcurrentCalls: options.maxConcurrentCalls,
+            preferWebRelayPort: options.preferWebRelayPort
         });
         this.registerIncomingHandlers(ctx);
         this.wireClientEvents(ctx);
