@@ -108,10 +108,24 @@ Transferring a Manager assignment denies subsequent reads by the previous owner,
 No `mobile_lab`, `UNOAPI_MOBILE_PRIMARY_LAB` or `MOBILE_REGISTRATION_ENABLED`
 requirement remains. Admin registration, import, connection, backups and companions
 use the configured `UNOAPI_SERVER_NAME` (default `server_1`). Web and the owning
-worker must share that identity, Redis access and a persistent
-`MOBILE_REGISTRATION_KEY`: 64 random hexadecimal characters. Preserve and securely
-back up this encryption key; never replace it while encrypted records exist.
-Missing keys are reported through capabilities. Authentication, confirmations,
+worker must share that identity and the same persistent Redis database.
+Internal protection is provisioned atomically in Redis before web/workers start,
+without an extra ENV, API-token dependency or shared local volume. This supports
+standalone Docker and Swarm across hosts. The key does not expire or change when
+containers restart or the API token rotates.
+
+When upgrading a legacy installation, keep its `MOBILE_REGISTRATION_KEY` for the
+first startup of every process. Existing credentials are checked before adopting
+that key. After verifying migration, remove the variable from all processes.
+Invalid, conflicting or missing legacy keys fail closed, without replacing data.
+Stop old processes before migration; do not mix versions during this upgrade.
+
+Protect Redis persistence and backups: a full Redis copy contains both the key
+and encrypted records. This mode does not isolate keys from a full Redis compromise.
+Key material is excluded from the panel, API, logs and session-transfer archives.
+Transfer archives retain their own password and are reprotected with the target's
+independent key on restore. Use `noeviction` and never discard credential storage.
+Authentication, confirmations,
 WhatsApp challenges, attempt limits and exclusive session leases remain enforced.
 
 The production image includes the pinned isolated SMS runtime from

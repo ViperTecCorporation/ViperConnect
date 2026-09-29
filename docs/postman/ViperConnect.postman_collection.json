@@ -2253,7 +2253,7 @@
               ],
               "query": []
             },
-            "description": "Somente administrador com Bearer e MOBILE_REGISTRATION_KEY configurada. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+            "description": "Somente administrador com Bearer. Proteção das credenciais provisionada automaticamente no Redis persistente; sem nova ENV em instalações novas. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2284,7 +2284,7 @@
                   ],
                   "query": []
                 },
-                "description": "Somente administrador com Bearer e MOBILE_REGISTRATION_KEY configurada. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+                "description": "Somente administrador com Bearer. Proteção das credenciais provisionada automaticamente no Redis persistente; sem nova ENV em instalações novas. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -2531,7 +2531,7 @@
               ],
               "query": []
             },
-            "description": "Exige Authorization: Bearer administrativo. Disponível em qualquer UNOAPI_SERVER_NAME; registro, conexão e companions exigem MOBILE_REGISTRATION_KEY de 64 caracteres hexadecimais compartilhada entre web e worker. Runtime SMS incluído na imagem. VoIP requer serviço integrado configurado. A consulta não abre sockets nem envia SMS.",
+            "description": "Exige Authorization: Bearer administrativo. Disponível em qualquer UNOAPI_SERVER_NAME, Docker standalone ou Swarm. Web e worker compartilham a chave interna provisionada automaticamente na mesma base Redis persistente, independente do token da API. Instalações legadas preservam MOBILE_REGISTRATION_KEY durante a migração inicial. Runtime SMS incluído na imagem. VoIP requer serviço integrado configurado. A consulta não abre sockets nem envia SMS.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2561,7 +2561,7 @@
                   ],
                   "query": []
                 },
-                "description": "Exige Authorization: Bearer administrativo. Disponível em qualquer UNOAPI_SERVER_NAME; registro, conexão e companions exigem MOBILE_REGISTRATION_KEY de 64 caracteres hexadecimais compartilhada entre web e worker. Runtime SMS incluído na imagem. VoIP requer serviço integrado configurado. A consulta não abre sockets nem envia SMS.",
+                "description": "Exige Authorization: Bearer administrativo. Disponível em qualquer UNOAPI_SERVER_NAME, Docker standalone ou Swarm. Web e worker compartilham a chave interna provisionada automaticamente na mesma base Redis persistente, independente do token da API. Instalações legadas preservam MOBILE_REGISTRATION_KEY durante a migração inicial. Runtime SMS incluído na imagem. VoIP requer serviço integrado configurado. A consulta não abre sockets nem envia SMS.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [

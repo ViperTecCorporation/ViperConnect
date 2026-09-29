@@ -14,10 +14,26 @@ backup, dispositivos vinculados e histórico usam o `UNOAPI_SERVER_NAME` configu
 (padrão `server_1`). Web e worker responsável devem usar o mesmo nome e acesso ao
 Redis. Fila e exchange de histórico são isoladas por servidor.
 
-Configure `MOBILE_REGISTRATION_KEY` com 64 caracteres hexadecimais aleatórios,
-iguais no web e worker. É a chave de criptografia persistente: preserve-a nos
-reinícios e mantenha backup seguro. Não use uma chave fixa de exemplo nem a
-altere com registros existentes. A ausência da chave é exibida nas capacidades.
+A proteção interna é provisionada automaticamente no Redis persistente, antes
+de iniciar web e workers. Não exige nova ENV, token da API ou volume local
+compartilhado: funciona em Docker standalone e Swarm com processos em máquinas
+diferentes usando a mesma base Redis. A criação é atômica e a chave não expira.
+Reinícios, atualizações e troca do token da API não alteram essa chave.
+
+Na atualização de uma instalação antiga, preserve `MOBILE_REGISTRATION_KEY`
+durante a primeira inicialização de todos os processos. O serviço valida as
+credenciais existentes e adota essa mesma chave; após confirmar a migração,
+a variável pode ser removida de todos os processos. Uma chave conflitante,
+inválida ou perdida bloqueia a inicialização, sem substituir credenciais.
+Atualize com os processos antigos parados; não misture versões durante a migração.
+
+Proteja o Redis, sua persistência e seus backups: uma cópia completa contém
+tanto a chave quanto os dados criptografados. Esse modo não oferece isolamento
+contra comprometimento integral do Redis. A chave não aparece no painel,
+API, logs nem no backup de transferência da sessão. O backup de transferência
+continua protegido pela senha escolhida; na restauração, o destino usa sua própria
+chave interna. Não apague a persistência do Redis nem use política de eviction
+que remova credenciais/chaves (use `noeviction`).
 A imagem inclui o runtime SMS isolado, instalado com o lockfile de
 `lab/registration/package.json`; esse caminho histórico não restringe seu uso.
 O workflow e a imagem validam os módulos e o hash da fonte sem enviar SMS.
