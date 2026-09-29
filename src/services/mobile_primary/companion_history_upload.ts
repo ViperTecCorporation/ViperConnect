@@ -1,4 +1,5 @@
 import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
 import type { WaClientPluginContext } from 'zapo-js'
 import type { HistoryUpload } from './companion_history_continuation'
 
@@ -7,8 +8,9 @@ import type { HistoryUpload } from './companion_history_continuation'
  * with an explicit contract test instead of mislabeling history as a document. */
 export function uploadCompanionHistory(ctx: WaClientPluginContext, bytes: Uint8Array): Promise<HistoryUpload> {
   const root = dirname(require.resolve('zapo-js'))
-  const { uploadMedia } = require(join(root, 'client/messaging/messages.js'))
-  const { MEDIA_UPLOAD_PATHS } = require(join(root, 'media/constants.js'))
+  const loadSdk = createRequire(__filename)
+  const { uploadMedia } = loadSdk(join(root, 'client/messaging/messages.js'))
+  const { MEDIA_UPLOAD_PATHS } = loadSdk(join(root, 'media/constants.js'))
   if (typeof uploadMedia !== 'function' || !MEDIA_UPLOAD_PATHS['md-msg-hist']) throw new Error('mobile_history_upload_unsupported')
   return uploadMedia(ctx.deps.mediaMessageBuildOptions, {
     source: bytes, cryptoType: 'history', uploadPath: MEDIA_UPLOAD_PATHS['md-msg-hist'],

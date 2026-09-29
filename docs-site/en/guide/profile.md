@@ -203,6 +203,17 @@ See [interactive API](/en/api-reference), [Postman](/en/guide/postman) and the
 targets installed SDK 1.9.0. Tests use synthetic accounts/images; real writes in
 each account/transport combination still require an authorized acceptance test.
 
+### Account email action feedback
+
+Each button shows progress and an inline result. Failures preserve inputs except
+verification codes, cleared for security. There is no automatic retry. HTTP 502
+neither confirms nor rules out code delivery: check your inbox before retrying.
+Saving only calls `setEmail`; requesting calls `requestVerificationCode` for both
+initial and subsequent requests. Automatic server-side delivery on save has not
+been established locally. `PROFILE_EMAIL_PROVIDER_FAILED` logs stage, IQ code
+when available and classified reason, never addresses, verification codes or raw
+errors. Previously discarded error details cannot be recovered.
+
 ### Invalid image diagnostics
 
 In the panel, **Edit → Upload photo/cover** opens the file picker directly.

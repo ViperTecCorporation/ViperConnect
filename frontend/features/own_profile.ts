@@ -3,6 +3,7 @@ import { escapeHtml as esc } from '../core/html.js'
 import { openProfileMap, profileMapControls } from './profile_map.js'
 import { renderProfileHours } from './profile_hours.js'
 import { renderAccountEmail, accountEmailRequest, AccountEmailStatus } from './profile_email.js'
+import { accountEmailError, accountEmailFeedback } from './profile_email_feedback.js'
 import { renderPrivacy, privacyCommands, PrivacyState } from './profile_privacy.js'
 import { bindPrivacyListModals } from './privacy_list_modal.js'
 
@@ -191,6 +192,7 @@ export class OwnProfilePanel {
       if (kind.startsWith('email-')) {
         if (!this.profile?.mobile_primary) throw new Error('Disponível somente no mobile primary.')
         this.busy = true; this.error = ''; this.notice = ''
+        accountEmailFeedback(this.root, kind, 'pending')
         // Clear code from the DOM; never retain it in the profile or browser storage.
         const codeInput = this.root?.querySelector<HTMLInputElement>('[data-form="profile-email-verify"] input[name="code"]')
         if (codeInput) codeInput.value = ''
@@ -202,7 +204,9 @@ export class OwnProfilePanel {
         this.notice = ({ 'email-get': 'Situação consultada no WhatsApp.', 'email-set': 'E-mail salvo. Solicite o código para verificar.',
           'email-request_code': 'Código solicitado. Confira sua caixa de entrada.', 'email-verify': 'Código verificado. Confirme a vinculação.',
           'email-confirm': 'Vinculação confirmada. Consulte para atualizar a situação exibida.' } as Record<string, string>)[kind]
-        this.busy = false; this.render(); return
+        this.busy = false; this.render()
+        accountEmailFeedback(this.root, kind, 'success', this.notice)
+        return
       }
       if (kind === 'general') {
         const changes = (['name', 'about'] as const).filter(field => data.has(field) && String(data.get(field) ?? '') !== (this.profile?.[field] ?? ''))
@@ -242,6 +246,12 @@ export class OwnProfilePanel {
       await this.open(phone, true)
       if (this.phone === phone) { this.notice = `Alteração confirmada.${result.id ? ` ID: ${result.id}` : ''}${result.warning ? ` Atenção: ${result.warning}. Guarde o ID; a persistência ou limpeza local não foi concluída.` : ''}`; this.render() }
     } catch (e) {
+      if (revision === this.revision && kind.startsWith('email-')) {
+        const message = accountEmailError(e)
+        accountEmailFeedback(this.root, kind, 'error', message)
+        this.error = message; this.busy = false
+        throw new Error(message)
+      }
       if (revision === this.revision) { this.error = (e as Error).message; this.busy = false; /* caller shows the error without destroying drafts */ throw e }
     } finally { if (revision === this.revision) this.busy = false }
   }

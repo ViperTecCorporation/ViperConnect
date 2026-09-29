@@ -26,7 +26,7 @@ export async function companionHistoryService(device: string) {
   const { getRedis } = await import('../redis.js')
   return new CompanionHistory(await getRedis(), new RegistrationVault(process.env.MOBILE_REGISTRATION_KEY || ''), device)
 }
-export async function requestCompanionHistory(device: string, body: unknown) {
+export async function requestCompanionHistory(device: string, _body: unknown) {
   await companionOperations(device) // Validate registration, active configuration and lab scope.
   throw new MobileDeviceError(410, 'mobile_history_pair_time_only')
 }

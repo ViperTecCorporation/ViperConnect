@@ -464,6 +464,11 @@
           "Perfil"
         ],
         "operationId": "getGoogleMapsBrowserConfig",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
         "summary": "Obter chave de navegador para Google Maps (administrador)",
         "description": "Somente administrador. Retorna chave restrita a referrers para Maps JavaScript API, com Cache-Control no-store. A chave será visível no navegador; nunca usar chave irrestrita de servidor.",
         "responses": {
@@ -498,6 +503,11 @@
           "Perfil"
         ],
         "operationId": "getGoogleMapsSettings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
         "summary": "Consultar configuração Google Maps (administrador)",
         "description": "Estado global da instância; não retorna a chave. Mapa disponível ao administrador no perfil comercial, com carregamento explícito.",
         "responses": {
@@ -529,6 +539,11 @@
           "Perfil"
         ],
         "operationId": "setGoogleMapsSettings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
         "summary": "Salvar chave de navegador Google Maps (administrador)",
         "description": "Redis sem TTL e sem criptografia adicional. Restrinja domínios e APIs no Google Cloud. Não verifica validade ou quota e nunca retorna a chave.",
         "requestBody": {
@@ -573,6 +588,11 @@
           "Perfil"
         ],
         "operationId": "deleteGoogleMapsSettings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
         "summary": "Remover chave Google Maps (administrador)",
         "description": "Remove a configuração global compartilhada entre as sessões.",
         "responses": {

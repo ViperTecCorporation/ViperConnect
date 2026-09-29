@@ -23,7 +23,7 @@ export async function createSessionTransfer() {
   const { clearZapoSession } = await import('../zapo/zapo_session_cleanup.js')
   const prefix = resolveZapoRedisKeyPrefix(ZAPO_REDIS_KEY_PREFIX)
   const versionCheck = () => {
-    if (require('zapo-js/package.json').version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') fail('session_backup_incompatible', 400)
+    if (JSON.parse(readFileSync(require.resolve('zapo-js/package.json'), 'utf8')).version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') fail('session_backup_incompatible', 400)
   }
   const config = async (phone: string) => {
     phoneCheck(phone)

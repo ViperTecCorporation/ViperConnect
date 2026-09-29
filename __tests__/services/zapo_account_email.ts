@@ -1,5 +1,6 @@
 import { ZapoOwnProfile } from '../../src/services/zapo/zapo_own_profile'
 import { validateProfileCommand } from '../../src/services/profile_input'
+import logger from '../../src/services/logger'
 
 const fixture = (mobile = true) => {
   const email = { getStatus: jest.fn().mockResolvedValue({ email: 'me@example.com', verified: true, confirmed: false }),
@@ -8,6 +9,21 @@ const fixture = (mobile = true) => {
   const client: any = { email, getCredentials: () => ({ meJid: '5511000000000@s.whatsapp.net' }), getState: () => ({ connected: true }) }
   return { email, client, run: (value?: any) => new ZapoOwnProfile(client, undefined, mobile).execute({ action: value ? 'set' : 'get', field: 'account_email', ...(value ? { value } : {}) }) }
 }
+test('request diagnostics distinguish lookup from requesting without exposing secrets', async () => {
+  const log = jest.spyOn(logger, 'warn').mockImplementation(() => undefined)
+  try {
+    const f = fixture()
+    f.email.getStatus.mockRejectedValueOnce(new Error('query timed out private@example.com 123456'))
+    await expect(f.run({ operation: 'request_code' })).rejects.toThrow('provider_request_failed')
+    expect(log).toHaveBeenLastCalledWith({ stage: 'getStatus', providerCode: null, reason: 'timeout' }, 'PROFILE_EMAIL_PROVIDER_FAILED')
+    expect(f.email.requestVerificationCode).not.toHaveBeenCalled()
+    f.email.requestVerificationCode.mockRejectedValueOnce(new Error('email.requestCode iq failed (500: private@example.com 123456)'))
+    await expect(f.run({ operation: 'request_code' })).rejects.toThrow('provider_request_failed')
+    expect(log).toHaveBeenLastCalledWith({ stage: 'requestVerificationCode', providerCode: 500, reason: 'iq_rejected' }, 'PROFILE_EMAIL_PROVIDER_FAILED')
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private@example|123456/)
+    expect(f.email.requestVerificationCode).toHaveBeenCalledTimes(1)
+  } finally { log.mockRestore() }
+})
 test('linked sessions cannot read or mutate email', async () => {
   const { email, run } = fixture(false)
   await expect(run()).rejects.toThrow('mobile_primary_required')

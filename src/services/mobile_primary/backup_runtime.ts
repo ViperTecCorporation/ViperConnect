@@ -47,7 +47,7 @@ export async function createMobileBackupService() {
 
   async function run<T>(action: (redis: Redis, vault: RegistrationVault) => Promise<T>): Promise<T> {
     if (process.env.UNOAPI_MOBILE_PRIMARY_LAB !== 'true' || process.env.UNOAPI_SERVER_NAME !== 'mobile_lab') return fail('mobile_backup_disabled', 404)
-    if (require('zapo-js/package.json').version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') return fail('mobile_backup_incompatible', 400)
+    if (JSON.parse(readFileSync(require.resolve('zapo-js/package.json'), 'utf8')).version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') return fail('mobile_backup_incompatible', 400)
     if (busy) return fail('mobile_backup_busy')
     busy = true
     let redis: Redis | undefined

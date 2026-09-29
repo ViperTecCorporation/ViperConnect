@@ -9,7 +9,7 @@ export function renderAccountEmail(status?: AccountEmailStatus): string {
     <div class="stack"><p class="field-help">Após salvar, solicite o código. Verifique os seis dígitos recebidos e confirme a vinculação. Aguarde antes de solicitar outro código.</p>
     <form data-form="profile-email-request_code"><button class="btn" type="submit">Solicitar código por e-mail</button></form>
     <form class="stack" data-form="profile-email-verify"><label class="field"><span class="field-label">Código recebido</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000"></label><div class="form-actions"><button class="btn" type="submit">Verificar código</button></div></form>
-    <form data-form="profile-email-confirm"><button class="btn btn--primary" type="submit">Confirmar vinculação do e-mail</button></form></div>`
+    <form data-form="profile-email-confirm"><button class="btn btn--primary" type="submit">Confirmar vinculação do e-mail</button></form></div>`.replace(/<\/form>/g, '<p data-email-feedback role="status" aria-live="polite" hidden></p></form>')
 }
 
 export function accountEmailRequest(kind: string, data: FormData) {

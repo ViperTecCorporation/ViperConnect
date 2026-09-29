@@ -25,6 +25,18 @@ const find = (method: string, route: string) => requests.find((item: any) =>
   && item.request.url.raw.split('?')[0] === '{{base_url}}' + route.replace(/\{([^}]+)\}/g, '{{$1}}'))
 
 describe('administrative executable documentation inventory', () => {
+  test.each([
+    ['get', '/admin/settings/google-maps/browser'],
+    ['get', '/admin/settings/google-maps'],
+    ['put', '/admin/settings/google-maps'],
+    ['delete', '/admin/settings/google-maps'],
+  ])('Google Maps %s %s requires admin authentication in all published contracts', (method, route) => {
+    for (const document of [spec, publicSpec]) {
+      expect(document.paths[route][method].security).toEqual([{ AdminToken: [] }])
+    }
+    expect(find(method, route).request.auth.bearer[0].value).toBe('{{admin_token}}')
+  })
+
   test('every explicit admin and mounted Manager operation has canonical, interactive and Postman coverage', () => {
     const sources = [
       ['src/router.ts', ''],

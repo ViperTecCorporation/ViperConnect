@@ -303,6 +303,18 @@ quando a leitura comercial falha, evitando gravar vazios por engano.
 - 501: motor sem a capacidade (sem troca silenciosa de provedor).
 - 502: falha do provedor; consulte antes de repetir.
 
+### Retornos das ações de e-mail
+
+Cada botão mostra andamento e um retorno junto da ação. Falhas preservam os
+campos, exceto o código de verificação, limpo por segurança. Não há reenvio
+automático. HTTP 502 não confirma nem descarta a entrega do código: confira a
+caixa de entrada antes de repetir. Salvar chama somente `setEmail`; solicitar
+chama `requestVerificationCode`, tanto na primeira solicitação quanto nas seguintes.
+Não há comprovação local de envio automático pelo servidor ao salvar o endereço.
+O log `PROFILE_EMAIL_PROVIDER_FAILED` registra etapa, código IQ quando disponível
+e classificação da falha, sem endereço, código de verificação ou erro bruto.
+Não é possível recuperar detalhes descartados dos erros antigos.
+
 ## Fontes e validação
 
 ### Diagnóstico de imagem inválida
