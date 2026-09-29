@@ -11,6 +11,9 @@ import { indexController } from './controllers/index_controller'
 import { WebhookController } from './controllers/webhook_controller'
 import { WebhookFakeController } from './controllers/webhook_fake_controller'
 import { ContactsController } from './controllers/contacts_controller'
+import { OwnProfileController } from './controllers/own_profile_controller'
+import { OwnProfileCover } from './services/own_profile_cover'
+import { GoogleMapsSettingsController } from './controllers/google_maps_settings_controller'
 import { JidMapController } from './controllers/jidmap_controller'
 import { TemplatesController } from './controllers/templates_controller'
 import { MessagesController } from './controllers/messages_controller'
@@ -46,6 +49,7 @@ import { WebhookHistoryController } from './controllers/webhook_history_controll
 import { apiErrorLocalization } from './services/api_error_localization'
 import { managerRouter } from './controllers/manager_controller'
 import { mobileDeviceRouter } from './controllers/mobile_device_controller'
+import { sessionTransferRouter } from './controllers/session_transfer_controller'
 import { managerAccess } from './services/manager_access'
 
 export const router = (
@@ -67,8 +71,14 @@ export const router = (
   const router: Router = Router()
   router.use(apiErrorLocalization)
   router.use('/manager/mobile-devices', mobileDeviceRouter())
+  router.use('/manager/session-transfers', sessionTransferRouter())
   router.use('/manager', managerRouter())
   router.use(managerAccess())
+  const mapsSettings = new GoogleMapsSettingsController()
+  router.get('/admin/settings/google-maps', mapsSettings.handle.bind(mapsSettings))
+  router.get('/admin/settings/google-maps/browser', mapsSettings.handle.bind(mapsSettings))
+  router.put('/admin/settings/google-maps', mapsSettings.handle.bind(mapsSettings))
+  router.delete('/admin/settings/google-maps', mapsSettings.handle.bind(mapsSettings))
   const messagesController = new MessagesController(incoming, outgoing, getConfig)
   const marketingMessagesController = new MarketingMessagesController(incoming, outgoing, getConfig)
   const mediaController = new MediaController(baseUrl, getConfig, sessionStore)
@@ -79,6 +89,14 @@ export const router = (
   const webhookController = new WebhookController(outgoing, getConfig)
   const blacklistController = new BlacklistController(addToBlacklist)
   const contactsController = new ContactsController(contact, new ZapoContactDirectory(getConfig), new ContactBookIncoming(incoming))
+  const ownProfileController = new OwnProfileController(incoming, undefined, async phone => {
+    const config = await getConfig(phone)
+    return new OwnProfileCover(phone, (await config.getStore(phone, config)).mediaStore)
+  })
+  router.get('/:phone/profile', middleware, ownProfileController.handle.bind(ownProfileController))
+  router.get('/:phone/profile/:field', middleware, ownProfileController.handle.bind(ownProfileController))
+  router.put('/:phone/profile/:field', middleware, express.json({ limit: '7mb' }), ownProfileController.handle.bind(ownProfileController))
+  router.delete('/:phone/profile/:field', middleware, express.json({ limit: '7mb' }), ownProfileController.handle.bind(ownProfileController))
   const preflightController = new PreflightController(getConfig, contact)
   const groupsController = new GroupsController(incoming, outgoing, contact, getConfig)
   const embeddedController = new EmbeddedController()

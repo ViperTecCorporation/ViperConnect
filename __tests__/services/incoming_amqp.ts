@@ -19,6 +19,14 @@ const amqpPublishMock = amqpPublish as jest.MockedFunction<typeof amqpPublish>
 const amqpRpcMock = amqpRpc as jest.MockedFunction<typeof amqpRpc>
 
 describe('service incoming amqp', () => {
+  test('own profile uses owning provider RPC with no retries', async () => {
+    const incoming = new IncomingAmqp(async () => ({ ...defaultConfig, provider: 'zapo', server: 'mobile_lab' }))
+    amqpRpcMock.mockResolvedValue({ success: true })
+    const command = { action: 'set' as const, field: 'name' as const, value: 'Nome' }
+    await expect(incoming.ownProfile('5511999999999', command)).resolves.toEqual({ success: true })
+    expect(amqpRpcMock).toHaveBeenCalledWith(UNOAPI_EXCHANGE_BRIDGE_NAME, expect.stringContaining('mobile_lab'), '5511999999999',
+      { type: 'provider_operation', action: 'ownProfile', args: [command] }, { type: 'direct', priority: 5, maxRetries: 0 })
+  })
   beforeEach(() => {
     amqpPublishMock.mockClear()
     amqpRpcMock.mockReset()

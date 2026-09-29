@@ -135,7 +135,7 @@ conversão. Os padrões operacionais são:
 | --- | --- | --- |
 | `UNOAPI_VIDEO_STAGE_PREFETCH` | `4` | Downloads preparados em paralelo. |
 | `UNOAPI_VIDEO_MAX_INPUT_BYTES` | `268435456` | Limite de entrada de 256 MiB. |
-| `UNOAPI_VIDEO_TARGET_BYTES` | `15728640` | Alvo de saída, limitado a 15 MiB. |
+| `UNOAPI_VIDEO_MAX_OUTPUT_BYTES` | `268435456` | Teto operacional Zapo de saída (256 MiB), sem compressão adicional. Substitui TARGET_BYTES. |
 | `UNOAPI_VIDEO_STAGE_TIMEOUT_MS` | `300000` | Timeout de download e staging. |
 | `UNOAPI_VIDEO_TRANSCODE_TIMEOUT_MS` | `420000` | Timeout da conversão FFmpeg. |
 

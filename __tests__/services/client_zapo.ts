@@ -114,6 +114,15 @@ describe('ClientZapo', () => {
     clients.clear()
   })
 
+  test('own profile delegates only to the connected Zapo socket', async () => {
+    await expect(service.ownProfile({ action: 'get' })).rejects.toThrow('profile_session_not_connected')
+    ;(service as any).socket = client
+    client.getCredentials.mockReturnValue({ meJid: `${phone}@s.whatsapp.net` } as any)
+    client.getState.mockReturnValue({ connected: true, registered: true, hasQr: false, hasPairingCode: false })
+    await expect(service.ownProfile({ action: 'set', field: 'name', value: 'Perfil' })).resolves.toEqual({ success: true })
+    expect(client.profile.setPushName).toHaveBeenCalledWith('Perfil')
+  })
+
   test('waits for existing key persistence before loading auth or connecting', async () => {
     let finish!: (result: [string, string[]]) => void
     const scan = jest.fn().mockReturnValue(new Promise((resolve) => { finish = resolve }))
@@ -128,15 +137,19 @@ describe('ClientZapo', () => {
     expect(client.connect).toHaveBeenCalledTimes(1)
   })
 
-  test('online starts the presence pulse and disconnect stops it', async () => {
+  test.each([false, true])('online presence respects normal config and forces mobile available (mobile=%s)', async (mobile) => {
     jest.useFakeTimers()
     config.markOnlineOnConnect = false
+    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
     await service.connect(1)
     expect(client.presence.send).not.toHaveBeenCalled()
     await handlers.connection({ status: 'open' })
     await jest.advanceTimersByTimeAsync(0)
     expect(client.presence.send).toHaveBeenCalledWith('available')
-    expect(client.presence.send).toHaveBeenCalledWith('unavailable')
+    if (mobile) expect(client.presence.send).not.toHaveBeenCalledWith('unavailable')
+    else expect(client.presence.send).toHaveBeenCalledWith('unavailable')
+    await jest.advanceTimersByTimeAsync(3 * 60 * 60 * 1000)
+    if (mobile) expect(client.presence.send.mock.calls).toEqual([['available'], ['available']])
     await service.disconnect()
     client.presence.send.mockClear()
     await jest.advanceTimersByTimeAsync(3 * 60 * 60 * 1000)
@@ -305,6 +318,29 @@ describe('ClientZapo', () => {
       message: { conversation: 'zapo_passkey_signer_ready' },
     })], 'status')
     await service.disconnect()
+  })
+
+  test.each([false, true])('persists incoming names only for mobile primary=%s', async (mobile) => {
+    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
+    await service.connect(1)
+    await handlers.message({
+      key: { id: 'named-message', remoteJid: '111@lid', fromMe: false },
+      pushName: 'Nome recebido', message: { conversation: 'oi' }, timestampSeconds: 1,
+    })
+    if (mobile) expect(session.contacts.upsert).toHaveBeenCalledWith(expect.objectContaining({ jid: '111@lid', pushName: 'Nome recebido' }))
+    else expect(session.contacts.upsert).not.toHaveBeenCalled()
+    expect(listener.process).toHaveBeenCalledWith(phone, expect.any(Array), 'notify')
+  })
+
+  test('a mobile contact storage failure does not discard the incoming message', async () => {
+    config.mobilePrimaryDraftId = 'test-mobile'
+    session.contacts.upsert.mockRejectedValue(new Error('storage unavailable'))
+    await service.connect(1)
+    await handlers.message({
+      key: { id: 'name-failure', remoteJid: '111@lid', fromMe: false },
+      pushName: 'Nome recebido', message: { conversation: 'oi' }, timestampSeconds: 1,
+    })
+    expect(listener.process).toHaveBeenCalledWith(phone, expect.any(Array), 'notify')
   })
 
   test('maps connection, message and receipt events to Uno listener contracts', async () => {

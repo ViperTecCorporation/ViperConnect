@@ -1,6 +1,7 @@
 import { UNOAPI_API_LANGUAGE } from '../defaults'
 
 const catalog: Record<string, [string, string]> = {
+  VIDEO_TRANSCODED: ['Vídeo fora do perfil recomendado ou com metadados insuficientes; convertido pelo worker. Prepare o arquivo conforme a documentação para evitar recompressão.', 'Video outside the recommended profile or missing metadata; converted by the worker. Prepare the file according to the documentation to avoid recompression.'],
   mobile_registration_disabled: ['O registro experimental não está habilitado ou configurado.', 'Experimental registration is disabled or not configured.'],
   mobile_registration_invalid_input: ['Confirme o envio do SMS ou informe o código de seis dígitos, sem campos adicionais.', 'Confirm SMS delivery or provide the six-digit code, without extra fields.'],
   mobile_registration_state_conflict: ['Operação já iniciada ou estado incompatível. Consulte o andamento; não repita o envio.', 'Operation already started or incompatible state. Check status; do not resend.'],

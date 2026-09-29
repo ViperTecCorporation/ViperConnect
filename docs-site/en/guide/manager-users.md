@@ -4,6 +4,19 @@ description: Manager users, persistent account assignments and personal credenti
 
 # Manager users and personal keys
 
+## Dashboard layout
+
+The primary-device registration button and dialog are labeled **Novo dispositivo**
+(New device), with a phone-plus icon and no Experimental badge. **Nova sessão**
+(New session) uses a link icon. These visual changes do not alter
+SMS registration gates, permissions or required confirmations.
+
+The overview shows counters and a compact automatic-refresh toolbar, followed by
+primary devices and linked sessions. Session backups appear below the lists and
+remain administrator-only. Device **Details** opens the registration overview;
+the trash icon keeps the existing deletion confirmations. Layout changes do not
+change permissions or backup, messaging and deletion rules.
+
 ## Safe Redis inspection
 
 Administrators can inspect `manager-identity:{v1}:users`, `names`, `assignments`,

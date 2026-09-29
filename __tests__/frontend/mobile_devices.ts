@@ -1,6 +1,7 @@
 import { MobileDevicesPanel } from '../../frontend/features/mobile_devices'
 import { ApiClient, ApiError } from '../../frontend/core/api'
 import { renderDashboard } from '../../frontend/pages/dashboard'
+import { icon } from '../../frontend/components/icons'
 
 const draft = { id: '00000000-0000-0000-0000-000000000001', phone: '5511999999999', name: '<img src=x onerror=alert(1)>', platform: 'android' as const, accountType: 'personal' as const, state: 'draft' as const, connectionMode: 'mobile_primary' as const, createdAt: '2026-09-22' }
 const setup = () => {
@@ -14,6 +15,67 @@ const form = (values: Record<string, string>) => {
   return data
 }
 describe('experimental mobile devices panel', () => {
+  test('uses Novo dispositivo without experimental title or introductory notice', () => {
+    const { panel } = setup()
+    panel.enabled = true; panel.modal = 'new'
+    expect(panel.renderButton()).toContain('Novo dispositivo')
+    expect(panel.renderButton()).toContain(icon('devicePlus'))
+    expect(panel.renderButton()).not.toContain('principal')
+    const html = panel.renderDialog()
+    expect(html).toContain('id="mobile-draft-title">Novo dispositivo')
+    expect(html).not.toMatch(/experimental|Novo dispositivo principal/i)
+    expect(html).not.toContain('não conecta automaticamente')
+    expect(html).toContain('name="labConsent" required')
+    expect(panel.renderGrid()).not.toContain('Experimental')
+  })
+  test('deletion modal separates warnings, phone, consent and destructive action', () => {
+    const { panel } = setup()
+    panel.enabled = true; panel.selected = draft; panel.modal = 'remove'
+    const html = panel.renderDialog()
+    expect(html).toContain('id="mobile-draft-title">Excluir dispositivo')
+    expect(html).toContain('class="mobile-removal__warning" role="alert"')
+    expect(html).toContain('<label class="field">')
+    expect(html).toContain('name="confirm" required')
+    expect(html).toContain('name="acknowledgeNewSms" required')
+    expect(html).toContain('class="btn btn--danger"')
+    expect(html).toContain('>Cancelar</button>')
+    expect(html).not.toContain('Cadastro experimental.')
+    expect(html).not.toContain('<img src=x')
+    panel.busy = true
+    expect(panel.renderDialog()).toContain('disabled>Excluindo…')
+  })
+  test('overview groups registration, backup and destructive actions with a styled SMS field', () => {
+    const { panel } = setup()
+    panel.enabled = true; panel.smsRegistration = true; panel.selected = draft; panel.modal = 'details'
+    panel.registration = { status: 'code_required', canResendSms: true }
+    const html = panel.renderDialog()
+    expect(html).toContain('class="mobile-overview"')
+    expect(html).toContain('<label class="field"><span>Código recebido por SMS</span>')
+    expect(html).toContain('autocomplete="one-time-code"')
+    expect(html).toContain('pattern="[0-9]{6}"')
+    expect(html).toContain('class="mobile-overview__danger"')
+    expect(html).toContain('<details class="mobile-overview__notes">')
+    expect(html).toContain('name="confirmSms" required')
+    expect(html).not.toContain('vincular por QR')
+    expect(html).not.toContain('<img src=x')
+  })
+  test('migration deletion is hidden before eligibility and requires admin password and validation', async () => {
+    const { panel, api } = setup(); panel.enabled = true; panel.selected = draft; panel.devices = [draft]; panel.modal = 'details'
+    expect(panel.renderDialog()).not.toContain('mobile-transfer-remove')
+    api.request.mockResolvedValueOnce({ eligible: true })
+    await panel.refreshTransferEligibility()
+    expect(panel.renderDialog()).toContain('mobile-transfer-remove')
+    panel.action('mobile-transfer-remove', draft.id)
+    expect(panel.renderDialog()).toContain('O backup foi validado no novo servidor?')
+    expect(panel.renderDialog()).toContain('type="password"')
+    api.request.mockClear()
+    await panel.submit('mobile-transfer-delete', form({ confirm: 'on', phone: draft.phone }))
+    expect(api.request).not.toHaveBeenCalled()
+    api.request.mockResolvedValue({ devices: [], draftManagement: true })
+    await panel.submit('mobile-transfer-delete', form({ confirm: 'on', phone: draft.phone, backupValidated: 'on', password: 'sample' }))
+    expect(api.request).toHaveBeenCalledWith(expect.stringContaining('/transfer-removal'), expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ confirm: true, backupValidated: true, phone: draft.phone, password: 'sample' }) }))
+    expect(JSON.stringify(panel)).not.toContain('sample')
+  })
   test('registered device connects only with explicit confirmation and reports worker request', async () => {
     const { panel, api } = setup(); panel.enabled = true; panel.selected = draft; panel.smsRegistration = true
     panel.registration = { status: 'registered' }
@@ -208,7 +270,8 @@ describe('experimental mobile devices panel', () => {
     expect(grid).not.toContain('<img')
     const html = renderDashboard({ sessions: [], query: '', status: 'all', loading: false, refreshIn: 15, visibleLimit: 20, mobileButton: panel.renderButton(), mobileGrid: grid })
     expect(html.indexOf('Dispositivos principais')).toBeLessThan(html.indexOf('<h2>Sessões</h2>'))
-    expect(html).toContain('Novo dispositivo principal')
+    expect(html).toContain('Novo dispositivo')
+    expect(html).toContain(`${icon('link')}Nova sessão`)
     panel.action('mobile-details', draft.id)
     expect(panel.renderDialog()).toContain('desativado até autorização do teste real')
   })

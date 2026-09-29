@@ -49,7 +49,7 @@ export class App {
     )
     const defaultJson = express.json()
     // Large backups are parsed only after manager authentication, inside the mobile router.
-    this.app.use((req, res, next) => /^\/manager\/mobile-devices\/restore\/?$/.test(req.path) ? next() : defaultJson(req, res, next))
+    this.app.use((req, res, next) => /^\/manager\/mobile-devices\/restore\/?$/.test(req.path) || /^\/\d{8,15}\/profile\/(picture|cover)\/?$/.test(req.path) ? next() : defaultJson(req, res, next))
     this.app.use(express.urlencoded({ extended: true }))
     this.server = createServer(this.app)
     this.socket = new Server(this.server, {

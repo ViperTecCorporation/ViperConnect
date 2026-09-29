@@ -69,6 +69,37 @@ describe('ListenerZapo', () => {
     expect(payload.entry[0].changes[0].value.messages[0].id).not.toBe('3EB0ZAPO')
   })
 
+  test('preserves location labels and existing UnoID, suppressing repeated delivery', async () => {
+    const unoId = 'b85f5910-b9bd-11f1-9eb5-d9bee238f01e'
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue(unoId)
+    const source = { key: { id: 'provider-location', remoteJid: '5511999999999@s.whatsapp.net', fromMe: false },
+      message: { locationMessage: { degreesLatitude: -11.499317, degreesLongitude: -54.873917, name: 'Viper Tec', address: 'Cláudia, MT' } }, messageTimestamp: 1790435992 }
+    await service.process('5511888888888', [source, source], 'notify')
+    expect(outgoing.send).toHaveBeenCalledTimes(1)
+    const messages = (outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value.messages
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({ id: unoId, type: 'location', location: { latitude: -11.499317, longitude: -54.873917, name: 'Viper Tec', address: 'Cláudia, MT' } })
+    expect(source.key.id).toBe('provider-location')
+  })
+
+  test('preserves view-once after media storage, maps the original ID once and deduplicates', async () => {
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-view-once')
+    ;(store.mediaStore.saveDownloadedMedia as jest.Mock).mockImplementation(async message => {
+      message.message.imageMessage.url = 'https://example.test/stored.jpg'
+      return message
+    })
+    const source = { key: { id: 'provider-view-once', remoteJid: '5511999999999@s.whatsapp.net', fromMe: false },
+      message: { imageMessage: { mimetype: 'image/jpeg', viewOnce: true } },
+      __unoapiMediaBytes: Buffer.from([1, 2, 3]), messageTimestamp: 1790672409 }
+    await service.process('5511888888888', [source, source], 'notify')
+    expect(store.mediaStore.saveDownloadedMedia).toHaveBeenCalledTimes(1)
+    expect(outgoing.send).toHaveBeenCalledTimes(1)
+    expect((outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value.messages).toEqual([
+      expect.objectContaining({ id: 'uno-view-once', type: 'image', message_type: 'view_once',
+        image: expect.objectContaining({ url: 'https://example.test/stored.jpg' }) }),
+    ])
+  })
+
   test('marks synthetic call webhooks for Typebot exclusion', async () => {
     await service.process('5566999999999', [{
       key: {

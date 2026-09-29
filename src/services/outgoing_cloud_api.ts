@@ -1,4 +1,5 @@
 import { Outgoing } from './outgoing'
+import { createHash } from 'crypto'
 import fetch, { Response, RequestInit } from 'node-fetch'
 import { Webhook, getConfig, isWebhookEnabled } from './config'
 import { isChatwootWebhook, resolveWebhookUrl } from './webhook_config'
@@ -239,8 +240,19 @@ export class OutgoingCloudApi implements Outgoing {
       logger.info('Skip synthetic call webhook for Typebot phone=%s webhook=%s', phone, webhook?.id || '<none>')
       return
     }
+    let url = resolveWebhookUrl(webhook, phone)
+    if (!url) {
+      logger.warn('Skip webhook without target phone=%s id=%s', phone, webhook.id || '<none>')
+      return
+    }
+    try {
+      const m = url.match(/\/webhooks\/whatsapp\/(\d+)$/)
+      if (m && m[1] !== `${phone}`) url = `${webhook.url}/${phone}`
+    } catch {}
     const cbEnabled = !!WEBHOOK_CB_ENABLED && WEBHOOK_CB_FAILURE_THRESHOLD > 0 && WEBHOOK_CB_OPEN_MS > 0
-    const cbId = (webhook && (webhook.id || webhook.url || webhook.urlAbsolute)) ? `${webhook.id || webhook.url || webhook.urlAbsolute}` : 'default'
+    // Queue jobs retain their destination. Isolate old/new URLs even when the
+    // logical webhook ID is unchanged; hash to keep URL secrets out of keys/logs.
+    const cbId = `v2:${createHash('sha256').update(JSON.stringify([webhook.id || 'default', url])).digest('hex')}`
     const cbKey = `${phone}:${cbId}`
     const now = Date.now()
     const probeMs = Math.max(WEBHOOK_CB_HALF_OPEN_PROBE_MS || 30000, webhook.timeoutMs || 0)
@@ -469,18 +481,6 @@ export class OutgoingCloudApi implements Outgoing {
       headers[webhook.header] = webhook.token
     }
     // Garantir que o endpoint do Chatwoot use o mesmo phone da sessÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â£o (metadata.phone_number_id)
-    let url = resolveWebhookUrl(webhook, phone)
-    if (!url) {
-      logger.warn('Skip webhook without target phone=%s id=%s', phone, webhook.id || '<none>')
-      return
-    }
-    try {
-      const m = url.match(/\/webhooks\/whatsapp\/(\d+)$/)
-      if (m && m[1] !== `${phone}`) {
-        // Reescreve para URL base + phone
-        url = `${webhook.url}/${phone}`
-      }
-    } catch {}
     try {
       const v: any = (message as any)?.entry?.[0]?.changes?.[0]?.value || {}
       const m = Array.isArray(v.messages) ? v.messages[0] : undefined

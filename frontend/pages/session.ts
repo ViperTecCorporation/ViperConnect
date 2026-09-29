@@ -25,6 +25,7 @@ interface SessionPageOptions {
   sectionError: string
   webhookHistoryHtml?: string
   companionsHtml?: string
+  profileHtml?: string
 }
 
 const tabs: Array<[SessionTab, TranslationKey]> = [
@@ -96,7 +97,10 @@ const renderContacts = (session: SessionConfig, contacts: ContactDirectoryItem[]
   <section class="section">
     <div class="section__heading">
       <div><h2>${t('Contatos da sessão')}</h2><p class="muted">${t('Nome, username, telefone de apresentação e LID canônico.')}</p></div>
-      <button class="btn btn--ghost" type="button" data-action="reload-contacts">${icon('refresh')}${t('Atualizar')}</button>
+      <div class="actions">
+        <button class="btn btn--primary" type="button" data-action="add-contact">${icon('plus')}${t('Adicionar contato')}</button>
+        <button class="btn btn--ghost" type="button" data-action="reload-contacts">${icon('refresh')}${t('Atualizar')}</button>
+      </div>
     </div>
     <label class="search-field entity-search">${icon('search')}<input data-filter="contacts-query" value="${escapeHtml(query)}" placeholder="${t('Pesquisar nome, telefone, username ou LID')}" aria-label="${t('Pesquisar contatos')}" minlength="${CONTACT_SEARCH_MIN_LENGTH}" autocomplete="off"></label>
     ${awaitingMinimum ? `<p class="entity-search-hint" aria-live="polite">${t('Digite pelo menos 3 caracteres para pesquisar.')}</p>` : ''}
@@ -121,6 +125,7 @@ const renderGroups = (session: SessionConfig, groups: GroupSummary[], hasMore: b
 `
 
 const renderPanel = (options: SessionPageOptions): string => {
+  if (options.tab === 'profile') return options.profileHtml || '<section class="section">Consultando perfil…</section>'
   if (options.tab === 'devices' && options.session.mobilePrimaryDraftId) return options.companionsHtml || renderMobileCompanions(options.session, !!options.restricted)
   if (options.tab === 'config') return renderSessionConfig(options.session, options.restricted)
   if (options.tab === 'contacts') {
@@ -130,7 +135,7 @@ const renderPanel = (options: SessionPageOptions): string => {
   if (options.tab === 'groups') {
     return renderGroups(options.session, options.groups, options.groupsHasMore, options.loadingSection, options.sectionError, options.groupsQuery)
   }
-  return renderOverview(options.session, options.contactCount)
+  return renderOverview(options.session, options.contactCount) + (options.canManageUsers && !options.session.mobilePrimaryDraftId && !isLegacySession(options.session) ? `<section class="section"><h2>Backup e migração</h2><p class="muted">Transfira as credenciais desta sessão Zapo para outra instância. O backup suspende a origem; não use as duas instâncias simultaneamente.</p><button type="button" class="btn" data-action="transfer-open" data-id="${escapeHtml(sessionPhone(options.session))}">Backup e migração da sessão</button></section>` : '')
 }
 
 export const renderSessionPage = (options: SessionPageOptions): string => {
@@ -162,7 +167,7 @@ export const renderSessionPage = (options: SessionPageOptions): string => {
           <button class="btn btn--danger" type="button" data-action="deregister-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}${t('Remover sessão legada')}</button>
         </section>`
         : `<nav class="tabs" aria-label="${t('Áreas da sessão')}">
-          ${tabs.flatMap((entry, index): Array<[SessionTab, TranslationKey]> => index === 0 && session.mobilePrimaryDraftId ? [entry, ['devices', 'Dispositivos conectados']] : [entry]).map(([value, label]) => `<button class="tab ${tab === value ? 'tab--active' : ''}" type="button" data-action="session-tab" data-tab="${value}" aria-selected="${tab === value}">${escapeHtml(t(label))}</button>`).join('')}
+          ${tabs.flatMap((entry, index): Array<[SessionTab, TranslationKey]> => index === 0 ? [entry, ...(session.mobilePrimaryDraftId ? [['devices', 'Dispositivos conectados'] as [SessionTab, TranslationKey]] : []), ['profile', 'Perfil']] : [entry]).map(([value, label]) => `<button class="tab ${tab === value ? 'tab--active' : ''}" type="button" data-action="session-tab" data-tab="${value}" aria-selected="${tab === value}">${escapeHtml(t(label))}</button>`).join('')}
         </nav>
         <div class="session-content">${renderPanel(options)}</div>`
     }

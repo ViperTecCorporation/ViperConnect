@@ -30,6 +30,7 @@ describe('administrative executable documentation inventory', () => {
       ['src/router.ts', ''],
       ['src/controllers/manager_controller.ts', '/manager'],
       ['src/controllers/mobile_device_controller.ts', '/manager/mobile-devices'],
+      ['src/controllers/session_transfer_controller.ts', '/manager/session-transfers'],
     ]
     for (const [file, prefix] of sources) {
       const source = fs.readFileSync(file, 'utf8')

@@ -246,6 +246,21 @@ export class ManagerIdentity {
     })
   }
 
+  async confirmAdminPassword(principal: ManagerPrincipal, secret: string, ip: string): Promise<void> {
+    if (principal.role !== 'admin' || principal.kind === 'api') throw new ManagerError(403, 'Administrator required')
+    if (typeof secret !== 'string' || !secret || secret.length > 4096) throw new ManagerError(401, 'Invalid credentials')
+    await this.run(async redis => {
+      const allowed = await redis.eval(RATE, { keys: [`${PREFIX}reauth:user:${digest(principal.id)}`, `${PREFIX}reauth:ip:${digest(ip)}`], arguments: [] })
+      if (Number(allowed) !== 1) throw new ManagerError(429, 'Too many attempts')
+      if (principal.id === 'admin') {
+        if (!this.adminToken || !equal(secret, this.adminToken)) throw new ManagerError(401, 'Invalid credentials')
+      } else {
+        const user = await this.user(redis, principal.id)
+        if (!user.active || user.role !== 'admin' || !await checkPassword(secret, user.password)) throw new ManagerError(401, 'Invalid credentials')
+      }
+    })
+  }
+
   async users() {
     return this.run(async redis => {
       const [rows, assignments] = await Promise.all([redis.hGetAll(USERS), redis.hGetAll(ASSIGNMENTS)])

@@ -1,5 +1,5 @@
 import { decryptMobileBackup, encryptMobileBackup, validateBackupPassword, BACKUP_MAX_BYTES } from '../../src/services/mobile_primary/backup_archive'
-import { BACKUP_DOMAINS, isMobileBackupKey, validateMobileBackup, backupRegistration } from '../../src/services/mobile_primary/backup_manifest'
+import { BACKUP_DOMAINS, BACKUP_DATA_DOMAINS, BACKUP_UNO_DOMAINS, backupRecordKey, isMobileBackupKey, validateMobileBackup, backupRegistration } from '../../src/services/mobile_primary/backup_manifest'
 
 const password = 'test-only-backup-password'
 test('registration backup strips OTP, provider diagnostics and infrastructure fields', () => {
@@ -52,5 +52,38 @@ test('key scope includes Signal indexes and rejects other sessions or operationa
   }
   for (const key of [`auth:${phone}0`, `auth:111${phone}`, 'unoapi-config:999123456789', `lease:${phone}`, `auth:${phone}:*`, `auth:${phone}:x\ny`]) expect(isMobileBackupKey(key, phone)).toBe(false)
   const value = manifest(); value.records.push(value.records[0])
+  expect(() => validateMobileBackup(value, value.prefix)).toThrow()
+})
+
+test('v2 complete archive round-trips all data namespaces while v1 stays credentials-only', async () => {
+  const value = { ...manifest(), version: 2, mode: 'complete', createdAt: new Date().toISOString(), records: [
+    ...manifest().records,
+    ...BACKUP_DATA_DOMAINS.map(domain => ({ key: `${domain}:${phone}:item`, dump: 'AP8=' })),
+    ...BACKUP_UNO_DOMAINS.map(domain => ({ key: `${domain}:${phone}:item`, namespace: 'uno', expiresAt: Date.now() + 60000, dump: 'AP8=' })),
+  ] }
+  validateMobileBackup(value, value.prefix)
+  const decoded = await decryptMobileBackup(await encryptMobileBackup(value, password), password)
+  validateMobileBackup(decoded, value.prefix)
+  expect(decoded).toEqual(value)
+  expect(backupRecordKey({ key: `id:${phone}:item`, namespace: 'uno', dump: 'AQ==' }, value.prefix)).toBe(`unoapi-id:${phone}:item`)
+  expect(backupRecordKey({ key: `msg:${phone}:item`, dump: 'AQ==' }, value.prefix)).toBe(`unoapi:zapo:msg:${phone}:item`)
+  expect(() => validateMobileBackup({ ...value, mode: 'credentials' }, value.prefix)).toThrow()
+  expect(() => validateMobileBackup({ ...manifest(), records: value.records }, value.prefix)).toThrow()
+})
+
+test.each([
+  { key: `msg:${phone}0:item` }, { key: `config:${phone}`, namespace: 'uno' },
+  { key: `jidmap:global:item`, namespace: 'uno' }, { key: `message:${phone}:*`, namespace: 'uno' },
+  { key: `msg:${phone}:item`, namespace: 'other' }, { key: `msg:${phone}:item`, expiresAt: -1 },
+  { key: `msg:${phone}:item`, expiresAt: 'tomorrow' },
+])('complete manifest rejects unsafe scope or expiry %#', entry => {
+  const value = { ...manifest(), version: 2, mode: 'complete', createdAt: new Date().toISOString(), records: [...manifest().records, { dump: 'AQ==', ...entry }] }
+  expect(() => validateMobileBackup(value, value.prefix)).toThrow('incompatible')
+})
+
+test('credentials v2 accepts TTL metadata and rejects duplicate destination keys', () => {
+  const value = { ...manifest(), version: 2, mode: 'credentials', createdAt: new Date().toISOString() }
+  expect(() => validateMobileBackup(value, value.prefix)).not.toThrow()
+  value.records.push(value.records[0])
   expect(() => validateMobileBackup(value, value.prefix)).toThrow()
 })

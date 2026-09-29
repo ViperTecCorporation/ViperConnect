@@ -47,6 +47,7 @@ const portugueseTheme = {
         { text: 'Restaurar webhooks anteriores', link: '/guide/webhook-history' },
         { text: 'Status das sessões', link: '/guide/session-webhooks' },
         { text: 'Identidades e contatos', link: '/guide/contacts' },
+        { text: 'Perfil da sessão', link: '/guide/profile' },
       ],
     },
     {
@@ -128,6 +129,7 @@ const englishTheme = {
         { text: 'Restore previous webhooks', link: '/en/guide/webhook-history' },
         { text: 'Session status', link: '/en/guide/session-webhooks' },
         { text: 'Identities and contacts', link: '/en/guide/contacts' },
+        { text: 'Session profile', link: '/en/guide/profile' },
       ],
     },
     {

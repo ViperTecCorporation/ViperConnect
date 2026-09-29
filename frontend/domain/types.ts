@@ -303,4 +303,4 @@ export interface VoipBootstrap {
   [key: string]: unknown
 }
 
-export type SessionTab = 'overview' | 'devices' | 'config' | 'contacts' | 'webhooks' | 'groups'
+export type SessionTab = 'overview' | 'devices' | 'profile' | 'config' | 'contacts' | 'webhooks' | 'groups'

@@ -7,6 +7,7 @@ jest.mock('../../src/services/reply_warning_outbox', () => ({
 }))
 
 import { mock } from 'jest-mock-extended'
+import { UNOAPI_MEDIA_STORAGE_KEY } from '../../src/services/messages/outgoing_media_input'
 
 import { IncomingJob } from '../../src/jobs/incoming'
 import { Incoming } from '../../src/services/incoming'
@@ -15,8 +16,43 @@ import { defaultConfig, getConfig } from '../../src/services/config'
 import type { DataStore } from '../../src/services/data_store'
 import { SendError } from '../../src/services/send_error'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../../src/services/messages/outgoing_media_input'
+import { loadReplyWarning } from '../../src/services/reply_warning_outbox'
 
 describe('incoming job', () => {
+  test('replays a pending video warning without sending the video again', async () => {
+    const incoming = mock<Incoming>(); const outgoing = mock<Outgoing>(); const dataStore = mock<DataStore>()
+    dataStore.loadStatus.mockResolvedValue('delivered')
+    const warnings = [{ code: 'VIDEO_TRANSCODED', message: 'Convertido' }]
+    ;(loadReplyWarning as jest.Mock).mockResolvedValueOnce({ recipientId: '5511222222222', timestamp: '100', warnings })
+    const job = new IncomingJob(incoming, outgoing, async () => ({ ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: true,
+      webhooks: [{ ...defaultConfig.webhooks[0] }], getStore: async () => ({ dataStore }) as any }))
+    await job.consume('5511000000000', { id: 'video-original', payload: { to: '5511222222222', type: 'video', video: { link: 'https://example.com/video.mp4' } }, options: { videoTranscoded: 'hd' } })
+    expect(incoming.send).not.toHaveBeenCalled()
+    const status = (outgoing.sendHttp as jest.Mock).mock.calls[0][2].entry[0].changes[0].value.statuses[0]
+    expect(status).toMatchObject({ id: 'video-original', status: 'delivered', warnings })
+  })
+  test.each([
+    { latitude: -11.499317, longitude: -54.873917, name: 'Viper Tec', address: 'Cláudia, MT' },
+    { latitude: 0, longitude: 0 },
+    { latitude: 0, longitude: -54, name: 'São João' },
+    { latitude: -11, longitude: 0, address: 'Avenida São José; '.repeat(80) },
+  ])('preserves a single location echo without inventing absent labels (case %#)', async location => {
+    const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
+    dataStore.loadProviderId.mockResolvedValue('provider-location')
+    dataStore.setUnoId.mockResolvedValue('uno-location')
+    incoming.send.mockResolvedValue({ ok: { messaging_product: 'whatsapp', messages: [{ id: 'uno-location' }] } })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+      webhooks: [{ ...defaultConfig.webhooks[0], sendNewMessages: true, url: '', urlAbsolute: 'https://chatwoot.example.com/webhooks/whatsapp/5511888888888' }],
+      getStore: async () => ({ dataStore }) as any,
+    }))
+    await job.consume('5511888888888', { id: 'uno-location', payload: { to: '5511999999999', type: 'location', location }, options: { endpoint: 'messages' } })
+    expect(incoming.send).toHaveBeenCalledTimes(1)
+    const echoes = (outgoing.sendHttp as jest.Mock).mock.calls.flatMap(call => call[2]?.entry?.[0]?.changes?.[0]?.value?.message_echoes || [])
+    expect(echoes).toHaveLength(1)
+    expect(echoes[0]).toMatchObject({ id: 'uno-location', type: 'location' })
+    expect(echoes[0].location).toEqual(location)
+  })
   test.each([undefined, 'delivered', 'read'])('delivers warnings in the status webhook without regressing %s', async previous => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()
@@ -427,6 +463,26 @@ describe('incoming job', () => {
     },
   )
 
+  test.each(['image', 'video', 'audio'])('marks %s echoes for Chatwoot and generic webhooks', async type => {
+    const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
+    incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-once' }] } })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+      webhooks: ['https://chatwoot.example.com/webhooks/whatsapp/5511888888888', 'https://example.com/hook']
+        .map(urlAbsolute => ({ ...defaultConfig.webhooks[0], sendNewMessages: true, url: '', urlAbsolute })),
+      getStore: async () => ({ dataStore }) as any,
+    }))
+    const payload = { to: '5511999999999', type, [type]: { link: 'https://example.test/media', view_once: true, [UNOAPI_MEDIA_STORAGE_KEY]: 'stored/media' } }
+    await job.consume('5511888888888', { id: 'uno-once', payload, options: { endpoint: 'messages', videoPrepared: true } })
+    const values = (outgoing.sendHttp as jest.Mock).mock.calls.map(call => call[2].entry[0].changes[0].value).filter(value => value.messages || value.message_echoes)
+    expect(values).toHaveLength(2)
+    for (const value of values) {
+      const messages = value.messages || value.message_echoes
+      expect(messages).toHaveLength(1)
+      expect(messages[0]).toMatchObject({ id: 'uno-once', type, message_type: 'view_once' })
+    }
+  })
+
   test('renders a PIX key as text in the Chatwoot outgoing echo', async () => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()
@@ -764,6 +820,17 @@ describe('incoming job', () => {
       }),
     ).resolves.toEqual([{ input: '5566', status: 'valid' }])
     expect(incoming.contacts).toHaveBeenCalledWith('556600000000', ['5566'])
+    expect(incoming.send).not.toHaveBeenCalled()
+  })
+
+  test('dispatches own profile through the provider allowlist exactly once', async () => {
+    const incoming = mock<Incoming>()
+    incoming.ownProfile = jest.fn().mockResolvedValue({ success: true })
+    const job = new IncomingJob(incoming, mock<Outgoing>(), async () => ({ ...defaultConfig, server: 'server_1' }))
+    const command = { action: 'set', field: 'name', value: 'Nome' }
+    await expect(job.consume('5511999999999', { type: 'provider_operation', action: 'ownProfile', args: [command] })).resolves.toEqual({ success: true })
+    expect(incoming.ownProfile).toHaveBeenCalledTimes(1)
+    expect(incoming.ownProfile).toHaveBeenCalledWith('5511999999999', command)
     expect(incoming.send).not.toHaveBeenCalled()
   })
 

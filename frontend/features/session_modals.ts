@@ -17,6 +17,7 @@ export const renderNewSessionModal = (): string =>
       </div>
       <div class="form-actions"><button class="btn" type="submit">${icon('plus')}${t('Registrar sessão')}</button></div>
     </form>
+    <hr><p class="muted">Já possui um backup criptografado desta sessão?</p><button type="button" class="btn btn--ghost" data-action="transfer-restore">Restaurar sessão de backup</button>
   `, { subtitle: t('Motor Zapo') })
 
 export const renderMessageModal = (session: SessionConfig, recipient = ''): string =>

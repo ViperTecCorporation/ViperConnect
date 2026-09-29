@@ -4,6 +4,10 @@ import type { ApiClient } from '../core/api.js'
 import { createQrReader } from './qr_reader.js'
 
 type Companion = { deviceJid: string; keyIndex: number; addedAtSeconds: number }
+export function formatCompanionCode(value: string): string {
+  const code = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+  return code.length > 4 ? `${code.slice(0, 4)}-${code.slice(4)}` : code
+}
 export class MobileCompanionsPanel {
   private device = ''
   private revision = 0
@@ -27,20 +31,17 @@ export class MobileCompanionsPanel {
     if (!session.mobilePrimaryDraftId) return ''
     if (restricted) return '<p>O gerenciamento de vínculos está reservado ao administrador neste piloto.</p>'
     const disabled = this.busy ? 'disabled' : ''
-    return `<section class="section"><h2>Dispositivos conectados</h2>
-      <p>Vínculos conhecidos pelo principal. A lista não indica presença on-line nem inclui necessariamente vínculos criados fora desta instância.</p>
-      <p role="status">${escapeHtml(this.message || 'A lista ainda não foi consultada.')}</p>
-      <button class="btn" data-action="companion-list" ${disabled}>Atualizar vínculos</button>
-      ${this.rows ? this.rows.length ? `<div class="table-wrap"><table><thead><tr><th>Dispositivo</th><th>Vinculado em</th><th>Ação</th></tr></thead><tbody>${this.rows.map(row => `<tr><td>${escapeHtml(row.deviceJid)}</td><td>${escapeHtml(new Date(row.addedAtSeconds * 1000).toLocaleString())}</td><td><button class="btn" data-action="companion-revoke" data-id="${escapeHtml(row.deviceJid)}" ${disabled}>Revogar vínculo</button></td></tr>`).join('')}</tbody></table></div>` : '<p>Nenhum vínculo registrado neste principal.</p>' : ''}
-      <p>No aparelho secundário, escolha vincular como dispositivo adicional. O código abaixo é o de pareamento, não o SMS de registro.</p>
-      <form data-form="companion-code"><label>Código de pareamento<input name="value" required maxlength="9" autocomplete="off" placeholder="ABCD-EFGH" ${disabled}></label><button class="btn" ${disabled}>Vincular por código</button></form>
-      <p>O QR do WhatsApp Web é renovado periodicamente. Mantenha a página aberta e use o código atual. A câmera evita a demora de salvar e selecionar um print.</p>
-      <form data-form="companion-image"><label>QR Code por print recente ou imagem<input type="file" name="image" accept="image/png,image/jpeg,image/webp" required ${disabled}></label><button class="btn" ${disabled}>Ler imagem e vincular</button></form>
-      <button class="btn" data-action="companion-camera" ${disabled}>Ler QR Code pela câmera</button>
-      <button class="btn" data-action="companion-stop-camera">Desligar câmera</button>
-      <video data-companion-video autoplay playsinline muted style="max-width:100%;max-height:320px"></video>
-      <details><summary>Informar conteúdo do QR Code manualmente</summary><form data-form="companion-qr"><label>Conteúdo do QR<textarea name="value" required maxlength="4096" autocomplete="off" ${disabled}></textarea></label><button class="btn" ${disabled}>Vincular por QR Code</button></form></details>
-      <p>O leitor JavaScript está incluído no painel e processa a imagem neste aparelho, sem upload a serviços externos. A câmera exige HTTPS ou localhost e autorização. Revogar remove somente o secundário selecionado.</p></section>`
+    return `<section class="section companions-panel">
+      <header class="companions-heading"><div><h2>Dispositivos conectados</h2><p class="muted">Gerencie os dispositivos vinculados à sua conta.</p></div>
+      <button class="btn" data-action="companion-list" ${disabled}>Atualizar vínculos</button></header>
+      <p class="companions-status muted" role="status">${escapeHtml(this.message || 'A lista ainda não foi consultada.')}</p>
+      ${this.rows ? this.rows.length ? `<ul class="companions-list">${this.rows.map(row => `<li class="companion-row"><div class="companion-identity"><strong>Dispositivo${row.deviceJid.match(/:(\d+)@/) ? ` ${escapeHtml(row.deviceJid.match(/:(\d+)@/)![1])}` : ' vinculado'}</strong><span class="muted">${escapeHtml(row.deviceJid)}</span></div><div class="companion-date"><span class="muted">Vinculado em</span><span>${escapeHtml(new Date(row.addedAtSeconds * 1000).toLocaleString())}</span></div><button class="btn btn--danger" data-action="companion-revoke" data-id="${escapeHtml(row.deviceJid)}" aria-label="Revogar vínculo de ${escapeHtml(row.deviceJid)}" ${disabled}>Revogar vínculo</button></li>`).join('')}</ul>` : '<div class="companions-empty muted">Nenhum vínculo registrado neste principal. Use o código abaixo para adicionar um dispositivo.</div>' : ''}
+      <p class="companions-note muted">A lista confirma vínculos, não presença on-line. Revogar remove somente o secundário selecionado.</p>
+      <section class="companion-pairing" aria-labelledby="companion-pairing-title"><h3 id="companion-pairing-title">Vincular novo dispositivo</h3>
+      <p class="muted">No WhatsApp Web ou aparelho secundário, escolha vincular pelo número de telefone e informe aqui o código exibido.</p>
+      <form class="companion-code-form" data-form="companion-code"><label class="field" for="companion-pairing-code"><span>Código de pareamento</span><input id="companion-pairing-code" data-companion-code name="value" required maxlength="9" pattern="[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}" title="Informe os 8 caracteres do código de pareamento." autocomplete="off" autocapitalize="characters" spellcheck="false" aria-describedby="companion-code-help" placeholder="ABCD-EFGH" ${disabled}></label><button class="btn" ${disabled}>Vincular por código</button></form>
+      <p id="companion-code-help" class="companions-note muted">8 caracteres (letras e números). Use o código de pareamento, não o SMS de registro.</p></section>
+      <details class="companion-history"><summary>Histórico do novo vínculo · textos e vídeos</summary><p class="muted">No novo vínculo, o histórico disponível no Redis é enviado automaticamente em lotes, sem corte por idade ou quantidade total. Inclui somente textos e vídeos; outros tipos não são exportados. Arquivos expirados podem não abrir. Exclui mensagens temporárias e de visualização única. Reconectar não reenvia o histórico. A lista pode não incluir vínculos criados fora desta instância.</p></details></section>`
   }
   async action(action: string, value = ''): Promise<void> {
     if (action === 'companion-stop-camera') { this.stopCamera(); return }
@@ -74,7 +75,11 @@ export class MobileCompanionsPanel {
     }
     const value = String(data.get('value') || '').trim()
     if (form === 'companion-qr') await this.confirmQr(value)
-    if (form === 'companion-code' && window.confirm('Autorizar este dispositivo secundário a acessar sua conta?')) await this.command('code', value.replace(/[-\s]/g, '').toUpperCase())
+    if (form === 'companion-code') {
+      const code = value.replace(/[-\s]/g, '').toUpperCase()
+      if (!/^[A-Z0-9]{8}$/.test(code)) { this.message = 'Informe os 8 caracteres do código de pareamento (letras e números).'; this.render(); return }
+      if (window.confirm('Autorizar este dispositivo secundário a acessar sua conta?')) await this.command('code', code)
+    }
   }
   private async confirmQr(value: string): Promise<void> {
     this.stopCamera()
@@ -128,7 +133,7 @@ export class MobileCompanionsPanel {
           if (['queued', 'running'].includes(response.state)) { this.timer = setTimeout(() => void poll(), 1000); return }
           this.busy = false
           if (response.state === 'done') {
-            if (action === 'list') { this.rows = response.result.companions; this.message = 'Lista consultada no worker.' }
+            if (action === 'list') { this.rows = response.result.companions; this.message = response.result.source === 'epoch_after_reconciliation' ? 'Lista atualizada após reconciliação de vínculos.' : 'Lista consultada no worker.' }
             else { this.message = 'Operação concluída. Atualize a lista para conferir o vínculo.'; this.rows = undefined }
           } else this.message = action === 'qr'
             ? 'Vínculo não confirmado. O QR pode ter expirado ou o WhatsApp pode ter recusado o pedido. Atualize os vínculos antes de repetir; se não estiver vinculado, leia o QR atual ou envie um novo print. O QR antigo não será reenviado automaticamente.'

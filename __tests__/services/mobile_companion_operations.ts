@@ -11,7 +11,7 @@ function fixture() {
   }) }
   const operations = new MobileCompanionOperations(redis, new RegistrationVault('ab'.repeat(32)), draft)
   const mobile = { listCompanions: jest.fn().mockResolvedValue([{ deviceJid: '999123456789:2@s.whatsapp.net', keyIndex: 2, addedAtSeconds: 100, companionIdentityPublicKey: 'SECRET' }]), linkCompanion: jest.fn().mockResolvedValue({ deviceJid: '999123456789:2@s.whatsapp.net', keyIndex: 2 }), linkCompanionByCode: jest.fn().mockResolvedValue({ deviceJid: '999123456789:2@s.whatsapp.net', keyIndex: 2 }), revokeCompanion: jest.fn().mockResolvedValue(undefined) }
-  return { operations, mobile, redis, raw: () => raw, loseLease: () => { lease = 'other' } }
+  return { operations, mobile: { ...mobile, reconcileCompanions: jest.fn().mockResolvedValue([]) }, redis, raw: () => raw, loseLease: () => { lease = 'other' } }
 }
 test.each([null, {}, { action: 'logout' }, { action: 'list', extra: true }, { action: 'code', value: 'ABCD1234' }, { action: 'code', value: '123456', confirm: true }, { action: 'revoke', value: '*', confirm: true }, { action: 'qr', value: 'https://example.com', confirm: true }])('rejects invalid or unconfirmed commands %j', value => {
   expect(() => validateCompanionCommand(value)).toThrow('mobile_companion')
@@ -22,9 +22,36 @@ test('list is claimed once, filtered, encrypted and scoped', async () => {
   await f.operations.tick(f.mobile, fence, () => true)
   const status = await f.operations.status(op.id)
   expect(status.state).toBe('done'); expect(f.mobile.listCompanions).toHaveBeenCalledTimes(1)
+  expect(f.mobile.reconcileCompanions).toHaveBeenCalledTimes(1)
+  expect(f.mobile.reconcileCompanions.mock.invocationCallOrder[0]).toBeLessThan(f.mobile.listCompanions.mock.invocationCallOrder[0])
   expect(JSON.stringify(status)).not.toContain('SECRET')
   expect(f.raw()).not.toContain('deviceJid')
   await expect(f.operations.status('another-id')).rejects.toThrow('expired')
+})
+
+test('refresh removes companions that reconciliation found unlinked remotely', async () => {
+  const f = fixture(), op = await f.operations.submit({ action: 'list' })
+  f.mobile.reconcileCompanions.mockImplementation(async () => { f.mobile.listCompanions.mockResolvedValue([]); return ['999123456789:2@s.whatsapp.net'] })
+  await f.operations.tick(f.mobile, fence, () => true)
+  expect(await f.operations.status(op.id)).toMatchObject({ state: 'done', result: { companions: [], source: 'epoch_after_reconciliation' } })
+  expect(f.mobile.revokeCompanion).not.toHaveBeenCalled()
+})
+
+test('failed remote refresh does not return a stale list as successful', async () => {
+  const f = fixture(), op = await f.operations.submit({ action: 'list' })
+  f.mobile.reconcileCompanions.mockRejectedValue(new Error('remote unavailable'))
+  await f.operations.tick(f.mobile, fence, () => true)
+  expect(await f.operations.status(op.id)).toEqual({ id: op.id, state: 'unknown' })
+  expect(f.mobile.listCompanions).not.toHaveBeenCalled()
+})
+
+test('ownership loss during reconciliation prevents reading or publishing the list', async () => {
+  const f = fixture(), op = await f.operations.submit({ action: 'list' })
+  let current = true
+  f.mobile.reconcileCompanions.mockImplementation(async () => { current = false; return [] })
+  await f.operations.tick(f.mobile, fence, () => current)
+  expect(f.mobile.listCompanions).not.toHaveBeenCalled()
+  expect((await f.operations.status(op.id)).state).toBe('running')
 })
 test.each(['code', 'qr', 'revoke'])('executes %s only through the existing mobile coordinator', async action => {
   const f = fixture()

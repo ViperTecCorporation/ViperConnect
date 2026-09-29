@@ -73,10 +73,15 @@ describe('video preparation jobs', () => {
       payload: {
         to: '5577',
         type: 'video',
-        video: { link: 'https://chatwoot.example/original.mov', filename: 'original.mov', caption: 'teste' },
+        video: { link: 'https://chatwoot.example/original.mov', filename: 'original.mov', caption: 'teste', quality: 'sd', view_once: true },
       },
     })
 
+    expect(preparation.prepare).toHaveBeenCalledWith(mediaStore, '5566', 'id-2', '5566/id-2.video-source', 'sd')
+    const queued = amqpPublishMock.mock.calls[0][3] as any
+    expect(queued.payload.video).not.toHaveProperty('quality')
+    expect(queued.payload.video.view_once).toBe(true)
+    expect(queued.options.videoTranscoded).toBe('sd')
     expect(amqpPublishMock).toHaveBeenCalledWith(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
       `${UNOAPI_QUEUE_INCOMING}.server_2.zapo`,

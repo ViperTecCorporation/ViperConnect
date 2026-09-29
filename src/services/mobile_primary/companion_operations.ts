@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { MobileDeviceError } from '../mobile_device_service'
 import { RegistrationVault } from './registration_vault'
 import logger from '../logger'
+import { companionDiagnostic } from './companion_diagnostic'
+import { observeCompanionQuery } from './companion_trace'
 
 export const companionOperationKey = (id: string) => `mobile-primary:{v1}:companion-operation:${id}`
 export const COMPANION_CAS = `
@@ -19,6 +21,7 @@ interface Operation extends CompanionCommand {
   createdAt: number; result?: unknown
 }
 export interface CompanionMobile {
+  reconcileCompanions(): Promise<readonly string[]>
   listCompanions(): Promise<readonly { deviceJid: string; keyIndex: number; addedAtSeconds: number }[]>
   linkCompanion(qr: string): Promise<{ deviceJid: string; keyIndex: number }>
   linkCompanionByCode(code: string): Promise<{ deviceJid: string; keyIndex: number }>
@@ -86,10 +89,19 @@ export class MobileCompanionOperations {
     }
     const claimed = await this.replace(raw, { ...operation, state: 'running' }, fence)
     if (!claimed) return
+    const startedAt = Date.now()
+    logger.info({ operationId: operation.id, action: operation.action }, 'MOBILE_COMPANION_STARTED')
     let result: unknown, state: Operation['state'] = 'done'
+    const stopTrace = process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab' && ['qr', 'code'].includes(operation.action)
+      ? observeCompanionQuery(mobile, (event, structure) => logger.info({ operationId: operation.id, structure }, event))
+      : () => undefined
     try {
       if (!current()) throw new Error('worker_changed')
-      if (operation.action === 'list') result = { companions: (await mobile.listCompanions()).map(({ deviceJid, keyIndex, addedAtSeconds }) => ({ deviceJid, keyIndex, addedAtSeconds })), source: 'persisted_epoch' }
+      if (operation.action === 'list') {
+        await mobile.reconcileCompanions()
+        if (!current()) throw new Error('worker_changed')
+        result = { companions: (await mobile.listCompanions()).map(({ deviceJid, keyIndex, addedAtSeconds }) => ({ deviceJid, keyIndex, addedAtSeconds })), source: 'epoch_after_reconciliation', checkedAt: Date.now() }
+      }
       else if (operation.action === 'qr') result = await mobile.linkCompanion(operation.value!)
       else if (operation.action === 'code') result = await mobile.linkCompanionByCode(operation.value!)
       else {
@@ -97,11 +109,16 @@ export class MobileCompanionOperations {
         await mobile.revokeCompanion(operation.value!)
         result = { revoked: true }
       }
-    } catch {
+    } catch (error) {
       state = 'unknown'
-      logger.warn({ operationId: operation.id, action: operation.action }, 'MOBILE_COMPANION_RESULT_UNKNOWN')
+      logger.warn({ operationId: operation.id, action: operation.action, elapsedMs: Date.now() - startedAt, diagnostic: companionDiagnostic(error) }, 'MOBILE_COMPANION_RESULT_UNKNOWN')
+    } finally {
+      stopTrace()
     }
-    if (current()) await this.replace(claimed, { ...operation, value: undefined, state, result }, fence)
+    if (current()) {
+      const saved = await this.replace(claimed, { ...operation, value: undefined, state, result }, fence)
+      logger.info({ operationId: operation.id, action: operation.action, state, persisted: !!saved, elapsedMs: Date.now() - startedAt }, 'MOBILE_COMPANION_FINISHED')
+    }
   }
 }
 

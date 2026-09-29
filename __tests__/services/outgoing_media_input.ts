@@ -39,7 +39,7 @@ describe('outgoing Base64 media input', () => {
       messaging_product: 'whatsapp',
       to: '5577',
       type: 'image',
-      image: { base64: bytes.toString('base64'), mime_type: 'image/jpeg', filename: 'foto.jpg', caption: 'Oi' },
+      image: { base64: bytes.toString('base64'), mime_type: 'image/jpeg', filename: 'foto.jpg', caption: 'Oi', view_once: true },
     }, getConfig as any)
 
     expect(mediaStore.saveMediaBuffer).toHaveBeenCalledWith('5566/message.jpeg', bytes, 'image/jpeg')
@@ -50,6 +50,7 @@ describe('outgoing Base64 media input', () => {
       mime_type: 'image/jpeg',
       filename: 'foto.jpg',
       caption: 'Oi',
+      view_once: true,
       [UNOAPI_MEDIA_STORAGE_KEY]: '5566/message.jpeg',
       [UNOAPI_MEDIA_SOURCE]: 'base64',
       [UNOAPI_MEDIA_PUBLIC_URL]: 'https://uno.test/v15.0/download/5566/message.jpeg',

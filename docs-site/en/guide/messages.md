@@ -1,5 +1,55 @@
 # Messages
 
+## Editor-prepared video: Zapo HD and SD
+
+Set `video.quality` to `hd` (default) or `sd`, alongside `video.link` or
+`video.base64`. This ViperConnect extension does not guarantee WhatsApp's HD badge.
+
+| Recommended parameter | HD | SD |
+| --- | --- | --- |
+| Landscape / portrait bounds | 1280×720 / 720×1280 | 854×480 / 480×854 |
+| Quality | CRF 23 | CRF 27 |
+| Video maxrate / VBV buffer | 2500 / 5000 kbps | 1200 / 2400 kbps |
+| Audio | AAC-LC 96 kbps, 48 kHz | AAC-LC 64 kbps, 48 kHz |
+
+64 kbps is the SD encoding target, not its acceptance ceiling. Both profiles
+accept prepared AAC-LC up to **96 kbps + 5% (100,800 bps)** with no 64 kbps floor.
+48 kHz and mono/stereo are still required. If only audio needs correction,
+`-c:v copy` preserves encoded video packets; logs show `mode=audio-transcode`.
+The existing `VIDEO_TRANSCODED` warning reports processing on the same message.
+
+Both use MP4/H.264 `yuv420p`, `veryfast`, square pixels, preserved aspect ratio,
+no cropping/upscaling, original FPS capped at 30, mono preserved (maximum stereo),
+and `+faststart`. Bake rotation into pixels. Silent files remain silent. Use
+CRF with VBV, not constant bitrate or a 15 MiB target. See
+[FFmpeg libx264](https://ffmpeg.org/ffmpeg-codecs.html#libx264_002c-libx264rgb).
+
+All sources are inspected, including browser-prepared files. Compatible streams
+in a non-fragmented MP4 with `moov` before `mdat` reuse the original stored object:
+no FFmpeg, remux, recompression or second storage upload. Local download, ffprobe,
+box inspection and the WhatsApp upload still occur. Compatible files lacking
+faststart are remuxed; incompatible files are transcoded. Logs distinguish
+`mode=passthrough`, `mode=remux` and `mode=transcode`. Checks cover even
+dimensions, FPS, rotation, pixel aspect ratio, reported bitrate and audio format.
+AAC average bitrate allows 5% encoder tolerance. Original CRF and instantaneous bitrate peaks cannot be proven from ffprobe;
+missing metadata or incompatible parameters trigger conversion. HD reduces 1080p.
+
+Converted video emits `VIDEO_TRANSCODED` in
+`entry[].changes[].value.statuses[].warnings` on the original message ID after
+sending. This is informational, not a request to resend; no second message is
+created. The warning outbox supports status replay without resending the video.
+
+Input defaults to 256 MiB (Base64 also has separate HTTP limits). Output defaults
+to **256 MiB**, independently configured with
+`UNOAPI_VIDEO_MAX_OUTPUT_BYTES` on the worker. This operational ceiling is not a
+universal WhatsApp limit and still needs real-channel validation.
+`UNOAPI_VIDEO_TARGET_BYTES` is no longer used. No Compact mode or silent HD-to-SD
+downgrade: oversized output emits `failed`, error 131053, and
+`VIDEO_OUTPUT_TOO_LARGE` on the original ID, suggesting SD, trimming or a document
+when supported. Other preparation failures use `VIDEO_PREPARATION_FAILED`.
+Provider rejections still follow the regular failed-status flow. ViperChat is
+not modified by this implementation.
+
 Send messages through the Cloud API-compatible endpoint:
 
 ```http
@@ -25,6 +75,38 @@ content block.
 `link` and `id` preserve the existing contract. `base64` is a ViperConnect
 extension. Never send more than one source for the same media object.
 :::
+
+## Send view-once media (Zapo)
+
+Set `image.view_once`, `video.view_once` or `audio.view_once` to the boolean
+`true`. This ViperConnect extension maps to Zapo's official `viewOnce` send
+option. Omitted/false keeps normal media. Strings/numbers and unsupported
+types (text, document, sticker) return HTTP 400 before enqueueing. Do not use
+the webhook field `message_type` as an outgoing request flag.
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "5511999999999",
+  "type": "image",
+  "image": { "link": "https://example.com/image.jpg", "view_once": true }
+}
+```
+
+The flag survives video preparation and Base64 input. Audio `ptt` remains an
+independent option. Normal media source rules and size limits apply. Enabled
+outgoing echoes carry `message_type: "view_once"` in `messages` or
+`message_echoes`, preserving the ID and media type. This does not make integration
+storage URLs single-access. See [Zapo send options](https://zapo.to/en/guides/sending-messages#send-options-reference).
+
+## Contact cards
+
+Use `type: "contacts"` and `contacts: [...]` in the public API, even for a single
+card. The Zapo adapter sends one card as `contactMessage`, and two or more as
+`contactsArrayMessage` in one message, preserving their order. Each card keeps
+its display name and vCard data, including the phone's `wa_id`. Empty lists and
+cards without a phone are rejected. No application payload change is required.
+See the [Zapo raw-send contract](https://zapo.to/en/guides/raw-sends#contacts).
 
 ## Text and link previews
 

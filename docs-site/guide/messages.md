@@ -1,5 +1,67 @@
 # Envio de mensagens
 
+## Vídeo preparado pelo editor: HD e SD (Zapo)
+
+Envie `video.quality: "hd"` (padrão) ou `"sd"` junto de `video.link` ou
+`video.base64`. Esses perfis são extensão ViperConnect, não um selo HD do WhatsApp.
+O worker sempre inspeciona os bytes; não confia em uma flag de vídeo pronto.
+
+| Parâmetro recomendado | HD | SD |
+| --- | --- | --- |
+| Horizontal / vertical | até 1280×720 / 720×1280 | até 854×480 / 480×854 |
+| Qualidade | CRF 23 | CRF 27 |
+| Teto de bitrate / buffer VBV | 2500 / 5000 kbps | 1200 / 2400 kbps |
+| Áudio | AAC-LC 96 kbps, 48 kHz | AAC-LC 64 kbps, 48 kHz |
+
+64 kbps é o alvo de conversão SD, não um teto de aceitação. Nos dois perfis,
+áudio pronto AAC-LC é aceito até **96 kbps + 5% (100.800 bps)**, sem mínimo
+obrigatório de 64 kbps. Permanecem 48 kHz e mono/estéreo. Se apenas o áudio
+precisar de correção, o worker preserva os pacotes de vídeo com `-c:v copy` e
+registra `mode=audio-transcode`; o warning `VIDEO_TRANSCODED` continua informando
+que houve processamento, sem gerar outra mensagem.
+
+Ambos: MP4, H.264 `yuv420p`, preset `veryfast`, pixels quadrados, proporção
+preservada sem recorte, sem ampliar vídeos menores, FPS original até 30,
+mono preservado e no máximo estéreo, `+faststart`. Normalize a rotação nos pixels.
+Sem áudio continua sem áudio. Não use bitrate constante nem alvo de 15 MiB.
+CRF/VBV segue a [documentação do FFmpeg](https://ffmpeg.org/ffmpeg-codecs.html#libx264_002c-libx264rgb).
+
+```json
+{ "to": "5511999999999", "type": "video", "video": {
+  "link": "https://example.com/pronto.mp4", "quality": "hd", "caption": "Teste"
+} }
+```
+
+O worker reutiliza o objeto original quando os streams atendem ao perfil e o MP4
+não fragmentado contém `moov` antes de `mdat` (faststart). Nesse caso não executa
+FFmpeg, remux, recompressão nem novo upload ao storage. Continua baixando para
+validação local com ffprobe e inspeção dos boxes; o upload ao WhatsApp permanece.
+Sem faststart, faz remux; fora do perfil, converte. Logs distinguem
+`mode=passthrough`, `mode=remux` e `mode=transcode`.
+Verifica codec, dimensões pares, FPS, rotação, proporção de pixel,
+bitrate reportado e parâmetros de áudio (tolerância de 5% no bitrate médio AAC).
+CRF original e picos instantâneos de
+bitrate não são comprovados pelo ffprobe: a decisão usa os metadados disponíveis.
+Metadados insuficientes ou incompatibilidade causam conversão, inclusive 1080p
+no perfil HD. Arquivos de qualquer aplicação passam pela mesma validação.
+
+Quando converte, o status da **mesma mensagem** inclui
+`warnings: [{"code":"VIDEO_TRANSCODED","message":"..."}]` em
+`entry[].changes[].value.statuses[]`, após o envio. Isso não é falha nem pedido
+para reenviar. Não cria outra mensagem. A outbox permite repetir o aviso sem
+reenviar o vídeo quando a publicação do status precisa ser repetida.
+
+Entrada padrão: **256 MiB** (Base64 também respeita seu próprio limite HTTP).
+Saída: **256 MiB**, configurada independentemente por
+`UNOAPI_VIDEO_MAX_OUTPUT_BYTES` no worker. É um teto operacional inicial, ainda
+dependente de testes reais no canal, não limite oficial universal do WhatsApp.
+`UNOAPI_VIDEO_TARGET_BYTES` foi removida e não controla mais a conversão.
+Não há modo Compacto nem redução automática de HD para SD. Excesso de saída
+gera status `failed`, erro 131053 e mensagem `VIDEO_OUTPUT_TOO_LARGE` no ID
+original, sugerindo SD, corte ou documento quando suportado. Falhas não são
+disfarçadas como sucesso com warning. Rejeições posteriores do provider seguem
+o fluxo normal de `failed`. Nenhuma chamada muda o ViperChat automaticamente.
+
 Endpoint comum:
 
 ```text
@@ -163,7 +225,42 @@ controlado separadamente por `UNOAPI_MESSAGES_JSON_LIMIT`, cujo padrão é
 }
 ```
 
+## Enviar mídia de visualização única (Zapo)
+
+Informe `view_once: true` dentro de `image`, `video` ou `audio`. A extensão
+ViperConnect é traduzida para a opção oficial `viewOnce` da Zapo; não use
+`message_type` para solicitar o envio. Omitir ou enviar `false` mantém a mídia
+normal. Aceita booleano, não strings ou números. Texto, documento e sticker não
+suportam essa opção; campo inválido retorna HTTP 400 antes do enfileiramento.
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "5511999999999",
+  "type": "image",
+  "image": {
+    "link": "https://exemplo.com/imagem.jpg",
+    "view_once": true
+  }
+}
+```
+
+Para vídeo, use `video.view_once`; para áudio, `audio.view_once` (independente
+de `ptt`). A opção permanece durante a preparação do vídeo e na entrada por
+Base64. Origens e limites seguem as regras normais de mídia. O eco de envio
+inclui `message_type: "view_once"`, mantendo ID e tipo, tanto em `messages`
+quanto em `message_echoes` quando habilitados. O armazenamento e as URLs da
+integração não passam a ter acesso único por causa desse marcador.
+Referência: [opções de envio da Zapo](https://zapo.to/en/guides/sending-messages#send-options-reference).
+
 ## Figurinha, contato e reação
+
+O envio de contatos mantém `type: "contacts"` e `contacts: [...]` na API,
+mesmo para um único contato. Na Zapo, um item é enviado como `contactMessage`;
+dois ou mais usam `contactsArrayMessage`, na mesma mensagem e na ordem recebida.
+Cada cartão preserva o nome e os dados da vCard, incluindo `wa_id` no telefone.
+Listas vazias e cartões sem telefone são rejeitados. Não é necessário alterar
+o payload da aplicação. Veja o [contrato raw da Zapo](https://zapo.to/en/guides/raw-sends#contacts).
 
 ```json
 {

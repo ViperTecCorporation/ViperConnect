@@ -1,16 +1,64 @@
 import { Readable } from 'stream'
-import { writeFile } from 'fs/promises'
+import { writeFile, truncate, access } from 'fs/promises'
 import { mock } from 'jest-mock-extended'
 import type { MediaStore } from '../../src/services/media_store'
 import {
   isWhatsAppCompatibleVideo,
   transcodeArgs,
-  videoBitrateKbps,
+  matchesVideoProfile,
+  matchesAudioProfile,
+  matchesVideoStreamProfile,
   VideoPreparationService,
 } from '../../src/services/video_preparation'
 import { BASE_URL } from '../../src/defaults'
+import { videoQuality } from '../../src/services/video_profile'
 
 describe('video preparation', () => {
+  test.each([32000, 64000, 96000, 100800, 100801])('SD accepts prepared AAC up to 100800 bps: %s', bitrate => {
+    const probe = { durationSeconds: 10, sizeBytes: 1000, videoCodec: 'h264', pixelFormat: 'yuv420p', width: 854, height: 480, fps: 30, sampleAspectRatio: '1:1', videoBitrate: 1000000, audioCodecs: ['aac'], audioProfile: 'LC', audioChannels: 1, audioSampleRate: 48000, audioBitrate: bitrate }
+    expect(matchesVideoStreamProfile(probe, 'sd')).toBe(true)
+    expect(matchesAudioProfile(probe)).toBe(bitrate <= 100800)
+    expect(matchesVideoProfile(probe, 'sd')).toBe(bitrate <= 100800)
+    if (bitrate > 100800) {
+      const args = transcodeArgs('input', 'output', probe, 'sd')
+      expect(args).toEqual(expect.arrayContaining(['-c:v', 'copy', '-b:a', '64k', '-ac', '1']))
+      expect(args).not.toContain('libx264')
+      expect(args).not.toContain('-vf')
+      expect(args).not.toContain('-fpsmax')
+    }
+    for (const override of [{ audioCodecs: ['opus'] }, { audioSampleRate: 44100 }, { audioChannels: 6 }, { audioProfile: 'HE-AAC' }, { audioBitrate: undefined }]) {
+      expect(matchesAudioProfile({ ...probe, ...override })).toBe(false)
+    }
+  })
+  test.each(['s3', 'file'])('reuses an inspected fast-start MP4 in %s without ffmpeg or another upload', async type => {
+    const box = (kind: string, body = Buffer.alloc(0)) => { const h = Buffer.alloc(8); h.writeUInt32BE(body.length + 8); h.write(kind, 4); return Buffer.concat([h, body]) }
+    const bytes = Buffer.concat([box('ftyp', Buffer.from('isom0000')), box('moov'), box('mdat', Buffer.from('media'))])
+    const mediaStore = mock<MediaStore>(); mediaStore.type = type
+    mediaStore.downloadMediaStream.mockResolvedValue(Readable.from(bytes))
+    mediaStore.getFileUrl.mockResolvedValue('https://example.com/source')
+    mediaStore.getDownloadUrl.mockResolvedValue('https://example.com/local-source')
+    const runner = jest.fn().mockResolvedValue({ stdout: JSON.stringify({ format: { size: bytes.length, duration: 1 }, streams: [{ codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 640, height: 360, avg_frame_rate: '24/1', r_frame_rate: '24/1', sample_aspect_ratio: '1:1', bit_rate: '500000' }] }), stderr: '' })
+    const result = await new VideoPreparationService(runner).prepare(mediaStore, 'test', 'id', 'original-source')
+    expect(result).toMatchObject({ key: 'original-source', sizeBytes: bytes.length, transcoded: false, reused: true })
+    expect(runner).toHaveBeenCalledTimes(1)
+    expect(runner.mock.calls[0][0]).toBe('ffprobe')
+    expect(mediaStore.saveMediaBuffer).not.toHaveBeenCalled()
+  })
+  test('validates profiles and remux eligibility without trusting browser flags', () => {
+    expect(videoQuality(undefined)).toBe('hd')
+    expect(videoQuality('sd')).toBe('sd')
+    expect(() => videoQuality('compact')).toThrow()
+    const probe = { durationSeconds: 600, sizeBytes: 30_000_000, videoCodec: 'h264', pixelFormat: 'yuv420p', audioCodecs: [], width: 1280, height: 720, fps: 30, rotation: 0, sampleAspectRatio: '1:1', videoBitrate: 1000000 }
+    expect(matchesVideoProfile(probe, 'hd')).toBe(true)
+    expect(matchesVideoProfile(probe, 'sd')).toBe(false)
+    for (const overrides of [{ width: 1920, height: 1080 }, { fps: 60 }, { rotation: 90 }, { videoBitrate: undefined }, { pixelFormat: 'yuv420p10le' }]) {
+      expect(matchesVideoProfile({ ...probe, ...overrides }, 'hd')).toBe(false)
+    }
+    const args = transcodeArgs('in', 'out', { ...probe, audioCodecs: ['aac'], audioChannels: 1 }, 'sd')
+    expect(args).toEqual(expect.arrayContaining(['-crf', '27', '-maxrate', '1200k', '-bufsize', '2400k', '-b:a', '64k', '-ac', '1']))
+    expect(args.join(' ')).toContain('min(854,iw)')
+    expect(transcodeArgs('in', 'out', probe)).toContain('-an')
+  })
   test('recognizes the documented H264/AAC MP4-compatible streams', () => {
     expect(isWhatsAppCompatibleVideo({
       durationSeconds: 10,
@@ -28,6 +76,29 @@ describe('video preparation', () => {
     })).toBe(false)
   })
 
+  test.each([17, 65, 257])('handles %s MiB output without a silent quality fallback and cleans temporary files', async mib => {
+    const mediaStore = mock<MediaStore>()
+    mediaStore.type = 's3'
+    mediaStore.downloadMediaStream.mockResolvedValue(Readable.from('source'))
+    mediaStore.getFileUrl.mockResolvedValue('https://example.com/video.mp4')
+    let outputPath = ''
+    const runner = jest.fn(async (command: string, args: string[]) => {
+      if (command === 'ffprobe') return { stdout: JSON.stringify({ format: { duration: '1800', size: '40000000' }, streams: [{ codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p' }] }), stderr: '' }
+      outputPath = args[args.length - 1]
+      await writeFile(outputPath, '')
+      await truncate(outputPath, mib * 1024 * 1024)
+      return { stdout: '', stderr: '' }
+    })
+    const task = new VideoPreparationService(runner).prepare(mediaStore, 'test', 'id', 'source', 'hd')
+    if (mib <= 256) await expect(task).resolves.toMatchObject({ sizeBytes: mib * 1024 * 1024, transcoded: true })
+    else {
+      await expect(task).rejects.toThrow('video_output_too_large:')
+      expect(mediaStore.saveMediaBuffer).not.toHaveBeenCalled()
+    }
+    expect(runner.mock.calls.filter(([cmd]) => cmd === 'ffmpeg')).toHaveLength(1)
+    await expect(access(outputPath)).rejects.toThrow()
+  })
+
   test('caps CPU and bitrate in the generated ffmpeg command', () => {
     const probe = {
       durationSeconds: 17,
@@ -38,7 +109,9 @@ describe('video preparation', () => {
     }
     const args = transcodeArgs('/tmp/input', '/tmp/output.mp4', probe)
 
-    expect(videoBitrateKbps(17, true)).toBeLessThanOrEqual(2500)
+    expect(args).toEqual(expect.arrayContaining(['-crf', '23', '-maxrate', '2500k', '-bufsize', '5000k', '-fpsmax', '30']))
+    expect(args).not.toContain('-b:v')
+    expect(transcodeArgs('/tmp/input', '/tmp/output.mp4', { ...probe, durationSeconds: 3600 })).toEqual(args)
     expect(args).toEqual(expect.arrayContaining(['-threads', '1', '-filter_threads', '1', '-movflags', '+faststart']))
     expect(args).toContain('libx264')
   })
@@ -111,7 +184,7 @@ describe('video preparation', () => {
       if (command === 'ffprobe') return {
         stdout: JSON.stringify({
           format: { duration: '5', size: '1000' },
-          streams: [{ codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p' }],
+          streams: [{ codec_type: 'video', codec_name: 'h264', pix_fmt: 'yuv420p', width: 1280, height: 720, avg_frame_rate: '30/1', r_frame_rate: '30/1', sample_aspect_ratio: '1:1', bit_rate: '1000000' }],
         }),
         stderr: '',
       }

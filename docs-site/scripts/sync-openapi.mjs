@@ -34,8 +34,9 @@ const normalize = (value) => value.replace(/:([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\
 const publicRoute = (route) => route.replace(/^\/v\d+(?:\.\d+)?(?=\/|$)/, '/{version}')
 
 const tagFor = (route) => {
+  if (/\/profile(?:\/|$)/.test(route)) return 'Perfil'
   if (route.startsWith('/manager/')) return 'Manager'
-  if (/^\/admin\/(?:redis|rabbitmq)\//.test(route)) return 'Administração'
+  if (/^\/admin\/(?:redis|rabbitmq|settings)\//.test(route)) return 'Administração'
   if (/^\/(?:ping|version)$/.test(route)) return 'Sistema'
   if (route.startsWith('/admin/voip/')) return 'Telefonia'
   if (route.startsWith('/passkey-bridge/') || route.startsWith('/connect/') || route.endsWith('/request_code')) return 'Pareamento'
@@ -138,6 +139,7 @@ spec.tags = [
   ['Pareamento', 'QR code, código numérico e desafios de pareamento.'],
   ['Mensagens', 'Envio, recuperação, pré-validação e timers.'],
   ['Contatos', 'Diretório de contatos armazenado pela sessão.'],
+  ['Perfil', 'Consulta e edição da própria conta WhatsApp; campos comerciais exigem Business.'],
   ['Grupos', 'Grupos, participantes, administradores, convites e solicitações.'],
   ['Mídia', 'Consulta e download de arquivos de mídia.'],
   ['Modelos de mensagem', 'Consulta e gerenciamento de modelos de mensagem.'],
@@ -170,6 +172,8 @@ for (const line of router.split(/\r?\n/)) {
   const original = match[2]
   if (ignored.test(original)) continue
   const route = publicRoute(normalize(original))
+  // Profile uses one dispatcher; concrete fields have reviewed schemas in the source.
+  if (route === '/{phone}/profile/{field}') continue
   if (unsupported.some((pattern) => pattern.test(route))) continue
   const handlerMatch = match[3].match(/([A-Za-z0-9_]+Controller)\.([A-Za-z0-9_]+)\.bind/)
   const handler = handlerMatch ? `${handlerMatch[1]}.${handlerMatch[2]}` : undefined

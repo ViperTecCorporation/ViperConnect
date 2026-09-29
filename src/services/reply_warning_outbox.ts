@@ -23,7 +23,7 @@ export const loadReplyWarning = async (phone: string, id: string): Promise<Reply
   const value = JSON.parse(raw)
   if (!value || typeof value.recipientId !== 'string' || typeof value.timestamp !== 'string'
     || !Array.isArray(value.warnings) || !value.warnings.length
-    || value.warnings.some((warning: any) => warning?.code !== 'REPLY_SENT_WITHOUT_QUOTE' || typeof warning.message !== 'string')) {
+    || value.warnings.some((warning: any) => !['REPLY_SENT_WITHOUT_QUOTE', 'VIDEO_TRANSCODED'].includes(warning?.code) || typeof warning.message !== 'string')) {
     throw new Error('invalid_reply_warning')
   }
   return value

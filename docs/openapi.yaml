@@ -12,6 +12,465 @@ security:
   - ApiToken: []
 
 paths:
+  /{phone}/profile/privacy:
+    get:
+      tags: [Perfil]
+      operationId: getOwnPrivacy
+      summary: Consultar privacidade da própria conta
+      description: 'Sessões Zapo vinculadas e mobile primary. Consulta o worker; snapshot Redis por sessão, TTL 24h, como fallback de falhas totais/parciais. Sem polling. Cache não inclui Status/e-mail; erros de autorização não usam fallback. Escritas invalidam snapshot e impedem gravação de leituras anteriores. Ausência não significa vazio. Exige autenticação e escopo da sessão.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      responses:
+        '200':
+          description: Configurações disponíveis e falhas parciais
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { type: object, nullable: true, additionalProperties: { type: string }, description: 'Valores por configuração conforme PrivacyInput; categorias indisponíveis são omitidas.' }
+                  cache:
+                    type: object
+                    properties:
+                      source: { type: string, enum: [live, cache, mixed] }
+                      updated_at: { type: string, format: date-time }
+                      stale: { type: boolean }
+                      refresh_failed: { type: boolean }
+                  blocked: { type: array, nullable: true, items: { type: string } }
+                  duration: { type: integer, nullable: true, description: Duração consultada em segundos; null indica ausência de resultado }
+                  exceptions: { type: object, additionalProperties: { type: array, nullable: true, items: { type: string } } }
+                  warnings: { type: array, items: { type: string }, description: 'settings, blocked, timer ou exceptions.NOME cuja consulta falhou' }
+        '400': { description: Telefone ou entrada inválida }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo }
+        '409': { description: Sessão desconectada }
+        '501': { description: Capacidade indisponível }
+        '502': { description: Falha no transporte ou provedor }
+    put:
+      tags: [Perfil]
+      operationId: updateOwnPrivacy
+      summary: Alterar uma configuração, exceções, bloqueio ou duração padrão
+      description: 'Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { $ref: '#/components/schemas/PrivacyInput' }
+            examples:
+              visibility: { value: { value: { operation: setting, setting: lastSeen, value: contacts } } }
+              exceptions: { value: { value: { operation: exceptions, setting: lastSeen, add: ['5511999999999'], remove: [] } } }
+              block: { value: { value: { operation: block, jid: '5511999999999' } } }
+              unblock: { value: { value: { operation: unblock, jid: '123456789@lid' } } }
+              timer: { value: { value: { operation: timer, duration: 604800 } } }
+              status: { value: { value: { operation: status, mode: ALLOW_LIST, userJids: ['5511999999999'] } } }
+      responses:
+        '200': { description: Escrita confirmada pelo SDK, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Operação ou valor inválido para a configuração }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo }
+        '409': { description: Sessão desconectada }
+        '501': { description: Capacidade indisponível }
+        '502': { description: 'Falha ao alterar; consultar antes de repetir. Não prova que a alteração remota não ocorreu.' }
+  /{phone}/profile/account_email:
+    get:
+      tags: [Perfil]
+      operationId: getOwnAccountEmail
+      summary: Consultar e-mail da conta WhatsApp (mobile primary)
+      description: 'Consulta direta sem cache Redis, com Cache-Control no-store. Usa autenticação e escopo da sessão; indisponível em sessão vinculada. Não é o e-mail comercial público.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      responses:
+        '200': { description: Estado atual, content: { application/json: { schema: { $ref: '#/components/schemas/AccountEmailStatus' } } } }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação proibida }
+        '409': { description: Sessão desconectada ou não mobile primary }
+        '502': { description: Falha de consulta no provedor }
+    put:
+      tags: [Perfil]
+      operationId: updateOwnAccountEmail
+      summary: Cadastrar ou verificar e-mail da conta (mobile primary)
+      description: 'Ações explícitas e separadas: set cadastra; request_code solicita código pt-BR; verify valida seis dígitos; confirm confirma a propriedade após verificação. Não envia código automaticamente, não remove e-mail e não altera o e-mail comercial. Código não entra no cache de perfil. Falha de transporte pode ter resultado incerto: consultar antes de repetir.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value:
+                  oneOf:
+                    - type: object
+                      additionalProperties: false
+                      required: [operation, email]
+                      properties:
+                        operation: { type: string, enum: [set] }
+                        email: { type: string, format: email, maxLength: 320 }
+                    - type: object
+                      additionalProperties: false
+                      required: [operation, code]
+                      properties:
+                        operation: { type: string, enum: [verify] }
+                        code: { type: string, pattern: '^[0-9]{6}$', writeOnly: true }
+                    - type: object
+                      additionalProperties: false
+                      required: [operation]
+                      properties:
+                        operation: { type: string, enum: [request_code, confirm] }
+            examples:
+              set: { value: { value: { operation: set, email: 'conta@example.com' } } }
+              request_code: { value: { value: { operation: request_code } } }
+              verify: { value: { value: { operation: verify, code: '123456' } } }
+              confirm: { value: { value: { operation: confirm } } }
+      responses:
+        '200':
+          description: Operação confirmada pelo SDK; verify não executa confirm automaticamente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success: { type: boolean }
+                  email: { type: string, nullable: true }
+                  verified: { type: boolean }
+                  confirmed: { type: boolean }
+                  auto_verify_failed: { type: boolean }
+        '400': { description: Entrada inválida ou código incorreto/expirado }
+        '401': { description: Autenticação necessária }
+        '403': { description: Fora do escopo ou operação proibida }
+        '409': { description: Offline, não mobile primary, e-mail ausente ou não verificado }
+        '429': { description: Bloqueio temporário ou excesso de tentativas; não repetir automaticamente }
+        '502': { description: Falha de provedor; consultar situação antes de repetir }
+  /admin/settings/google-maps/browser:
+    get:
+      tags: [Perfil]
+      operationId: getGoogleMapsBrowserConfig
+      summary: Obter chave de navegador para Google Maps (administrador)
+      description: 'Somente administrador. Retorna chave restrita a referrers para Maps JavaScript API, com Cache-Control no-store. A chave será visível no navegador; nunca usar chave irrestrita de servidor.'
+      responses:
+        '200': { description: Configuração do navegador, content: { application/json: { schema: { type: object, properties: { apiKey: { type: string, nullable: true } } } } } }
+        '403': { description: Administrador obrigatório }
+        '503': { description: Redis indisponível }
+  /admin/settings/google-maps:
+    get:
+      tags: [Perfil]
+      operationId: getGoogleMapsSettings
+      summary: Consultar configuração Google Maps (administrador)
+      description: Estado global da instância; não retorna a chave. Mapa disponível ao administrador no perfil comercial, com carregamento explícito.
+      responses:
+        '200': { description: Estado, content: { application/json: { schema: { type: object, properties: { configured: { type: boolean } } } } } }
+        '403': { description: Administrador obrigatório }
+        '503': { description: Redis indisponível }
+    put:
+      tags: [Perfil]
+      operationId: setGoogleMapsSettings
+      summary: Salvar chave de navegador Google Maps (administrador)
+      description: Redis sem TTL e sem criptografia adicional. Restrinja domínios e APIs no Google Cloud. Não verifica validade ou quota e nunca retorna a chave.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [apiKey]
+              properties:
+                apiKey: { type: string, minLength: 20, maxLength: 200, writeOnly: true }
+      responses:
+        '200': { description: Chave salva; configured true }
+        '400': { description: Corpo inválido }
+        '403': { description: Administrador obrigatório }
+        '503': { description: Redis indisponível }
+    delete:
+      tags: [Perfil]
+      operationId: deleteGoogleMapsSettings
+      summary: Remover chave Google Maps (administrador)
+      description: Remove a configuração global compartilhada entre as sessões.
+      responses:
+        '200': { description: Chave removida; configured false }
+        '403': { description: Administrador obrigatório }
+        '503': { description: Redis indisponível }
+  /{phone}/profile:
+    get:
+      tags: [Perfil]
+      operationId: getOwnProfile
+      summary: Consultar o perfil da própria sessão Zapo
+      description: 'Funciona com sessões vinculadas e mobile primary, pessoais e Business. Campos de leitura indisponíveis ficam nulos e são listados em warnings; não são campos apagados. Não retorna credenciais nem PIN de username. Somente a sessão autenticada, sem parâmetro de JID alvo.'
+      parameters:
+        - { $ref: '#/components/parameters/PhonePath' }
+        - name: refresh
+          in: query
+          description: 'Use 1 para consultar a Zapo e renovar o cache. Sem esse parâmetro, retorna Redis quando disponível; cache ausente consulta a Zapo. Falhas preservam snapshot anterior e sinalizam stale/refresh_failed. Retenção de 24h.'
+          schema: { type: string, enum: ['1'] }
+      responses:
+        '200': { description: Perfil e avisos de leituras parciais, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfile' } } } }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo }
+        '409': { description: Sessão desconectada }
+        '501': { description: Motor sem suporte }
+        '502': { description: Falha no provedor }
+  /{phone}/profile/name:
+    put:
+      tags: [Perfil]
+      operationId: setOwnProfileName
+      summary: Alterar nome de exibição
+      description: 'pushName; não modifica o nome comercial verificado. String vazia restaura o padrão do dispositivo.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { type: string, maxLength: 128 }
+            example: { value: 'João Silva' }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+  /{phone}/profile/about:
+    put:
+      tags: [Perfil]
+      operationId: setOwnProfileAbout
+      summary: Alterar recado About
+      description: 'Recado legado via setStatus, não Status de 24 horas. String vazia limpa.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { type: string, maxLength: 139 }
+            example: { value: 'Atendimento de segunda a sexta' }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+  /{phone}/profile/username:
+    put:
+      tags: [Perfil]
+      operationId: setOwnProfileUsername
+      summary: Alterar nome de usuário
+      description: 'Sujeito às regras adicionais da Zapo e disponibilidade no servidor. Retorno false do SDK resulta em 409, não sucesso.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { type: string, minLength: 3, maxLength: 35, pattern: '^[a-zA-Z0-9_.]+$' }
+            example: { value: 'empresa_suporte' }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+    delete:
+      tags: [Perfil]
+      operationId: deleteOwnProfileUsername
+      summary: Remover username da própria sessão
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+  /{phone}/profile/business:
+    put:
+      tags: [Perfil]
+      operationId: setOwnProfileBusiness
+      summary: Atualizar dados comerciais
+      description: 'Exclusivo de conta Business, independentemente do tipo de conexão. Delta: campos omitidos preservados, string vazia limpa, listas vazias limpam. Não edita nome verificado, área de cobertura nem observações de localização. IDs de categoria devem ser conhecidos; sem catálogo.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { $ref: '#/components/schemas/OwnBusinessInput' }
+            example: { value: { description: 'Suporte de TI', address: 'Cláudia - MT', latitude: -11.499317, longitude: -54.873917, websites: [{ url: 'https://example.com' }], businessHours: { timezone: 'America/Cuiaba', config: [{ dayOfWeek: mon, mode: specific_hours, openTime: 480, closeTime: 1080 }] } } }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+  /{phone}/profile/picture:
+    put:
+      tags: [Perfil]
+      operationId: setOwnProfilePicture
+      summary: Enviar foto de perfil
+      description: 'Até 5 MiB de bytes decodificados, máximo 20 milhões de pixels. PNG/JPEG/WebP são decodificados, orientação corrigida, recorte central 640x640 e JPEG. Sem URLs remotas nem JID alvo.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { type: string, format: byte, maxLength: 7000000 }
+            example: { value: 'BASE64_DA_IMAGEM_SEM_PREFIXO_DATA' }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+    delete:
+      tags: [Perfil]
+      operationId: deleteOwnProfilePicture
+      summary: Remover foto da própria sessão
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+  /{phone}/profile/cover:
+    put:
+      tags: [Perfil]
+      operationId: setOwnProfileCover
+      summary: Enviar capa Business
+      description: 'Business somente; exige S3 configurado. Até 5 MiB, 20 milhões de pixels; JPEG com largura máxima 1600, sem recorte quadrado. Persiste imagem no S3 e ID no Redis sem TTL. GET profile retorna preview local com URL assinada por 15 minutos. O SDK não oferece leitura da capa remota; alterações externas não são detectadas. Falhas de persistência após confirmação remota retornam success e warning; guarde o ID nesse caso.'
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [value]
+              properties:
+                value: { type: string, format: byte, maxLength: 7000000 }
+            example: { value: 'BASE64_DA_IMAGEM_SEM_PREFIXO_DATA' }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+    delete:
+      tags: [Perfil]
+      operationId: deleteOwnProfileCover
+      summary: Remover capa comercial pelo ID retornado no envio
+      parameters: [{ $ref: '#/components/parameters/PhonePath' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [value], properties: { value: { type: string, maxLength: 128, pattern: '^[\w-]+$' } } }
+            example: { value: 'ID_RETORNADO_AO_ENVIAR_CAPA' }
+      responses:
+        '200': { description: Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos, content: { application/json: { schema: { $ref: '#/components/schemas/OwnProfileMutation' } } } }
+        '400': { description: Campo ou valor inválido }
+        '401': { description: Autenticação necessária }
+        '403': { description: Sessão fora do escopo ou operação recusada }
+        '409': { description: Sessão offline, conta não Business ou username recusado }
+        '501': { description: Motor não suporta edição de perfil }
+        '502': { description: Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto }
+  /manager/mobile-devices/{id}/companion-history:
+    post:
+      tags: [Manager]
+      summary: Envio manual de histórico desabilitado
+      deprecated: true
+      description: 'Retorna 410 mobile_history_pair_time_only. O histórico agora é iniciado automaticamente no bootstrap de um novo vínculo, não depois nem em reconexões. Fila separada; todo o histórico elegível disponível no Redis, sem corte por idade ou quantidade total, lido em páginas de 20 registros. Mantém filtros de privacidade e limites de tamanho por registro do piloto inline. A importação no secundário ainda depende de validação real.'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [target, confirm]
+              properties:
+                target: { type: string, pattern: '^\d+:\d+@s\.whatsapp\.net$' }
+                confirm: { type: boolean, enum: [true] }
+            example: { target: '5511999999999:2@s.whatsapp.net', confirm: true }
+      responses:
+        '410': { description: Envio manual removido; histórico somente durante novo vínculo }
+        '400': { description: Alvo ou confirmação inválida }
+        '401': { description: Bearer obrigatório }
+        '403': { description: Administrador obrigatório }
+        '404': { description: Laboratório desabilitado ou dispositivo ausente }
+        '409': { description: Dispositivo não conectado ou tarefa em andamento }
+        '503': { description: Armazenamento indisponível ou confirmação AMQP incerta; a tarefa pode ter sido publicada }
+  /manager/mobile-devices/{id}/companion-history/{operation}:
+    get:
+      tags: [Manager]
+      summary: Consultar progresso do histórico enviado ao secundário
+      description: 'Não envia mensagens. submitted confirma apenas a conclusão das chamadas de publicação do SDK, não recebimento nem importação; empty indica ausência de registros elegíveis; unknown indica envio parcial/incerto, sem retry automático; failed indica falha antes do envio; expired indica que o worker não executou no prazo. Sem mensagens, chaves ou URLs na resposta. Registro cifrado no Redis por uma hora; nova tarefa substitui a anterior. queued/running vencem após cinco minutos e aparecem como expired/unknown.'
+      security: [{ AdminToken: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: operation, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Estado e contagem, sem conteúdo das mensagens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  state: { type: string, enum: [queued, running, submitted, empty, unknown, failed, expired] }
+                  sent: { type: integer }
+                  total: { type: integer }
+        '401': { description: Bearer obrigatório }
+        '403': { description: Administrador obrigatório }
+        '404': { description: Operação ausente, substituída ou fora do escopo }
+        '503': { description: Armazenamento indisponível }
   /manager/mobile-devices/{id}/companions:
     post:
       tags: [Manager]
@@ -70,11 +529,201 @@ paths:
         '404': { description: Operação expirada, substituída ou não pertence ao dispositivo }
         '409': { description: Principal suspenso ou configuração incompatível }
         '503': { description: Armazenamento indisponível }
+  /manager/session-transfers/backups:
+    get:
+      tags: [Manager]
+      summary: Listar backups assíncronos de sessões Zapo normais
+      security: [{ AdminToken: [] }]
+      description: Administrador via Bearer, sem credenciais API. Retorna somente metadados, retidos por 24 horas.
+      responses:
+        '200': { description: Lista tasks com id, deviceId (telefone), status, createdAt, expiresAt e eventual erro }
+  /manager/session-transfers/{phone}/backup-tasks:
+    parameters:
+      - in: path
+        name: phone
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Manager]
+      summary: Suspender e exportar sessão Zapo Redis em segundo plano
+      security: [{ AdminToken: [] }]
+      description: Administrador autenticado. Suspende a origem e gera arquivo criptografado com senha, disponível por 24 horas.
+      requestBody:
+        $ref: '#/paths/~1manager~1mobile-devices~1{id}~1backup-tasks/post/requestBody'
+      responses:
+        '202': { description: Tarefa aceita; consultar lista para resultado }
+        '409': { description: Motor ou armazenamento incompatível; tarefa concorrente }
+  /manager/session-transfers/{phone}/backup-tasks/{task}/download:
+    parameters:
+      - in: path
+        name: phone
+        required: true
+        schema: { type: string }
+      - in: path
+        name: task
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Manager]
+      summary: Baixar .vipersession criptografado
+      security: [{ AdminToken: [] }]
+      description: Somente administrador; retorna arquivo criptografado sem senha, com Cache-Control no-store.
+      responses:
+        '200': { description: JSON fileName e archive; somente administrador }
+        '409': { description: Tarefa pendente ou substituída }
+        '410': { description: Arquivo expirado }
+  /manager/session-transfers/restore:
+    post:
+      tags: [Manager]
+      summary: Restaurar sessão vinculada offline sem sobrescrever o destino
+      security: [{ AdminToken: [] }]
+      description: Somente Zapo Redis compatível. Webhooks vazios; nenhum QR ou socket é aberto por esta operação. Confirmação obrigatória da origem offline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [archive, password, confirmOriginOffline]
+              properties:
+                archive: { type: string }
+                password: { type: string, format: password, writeOnly: true }
+                confirmOriginOffline: { type: boolean, enum: [true] }
+      responses:
+        '201': { description: Sessão restaurada offline, aguardando conexão explícita }
+        '400': { description: Arquivo, senha ou identidade incompatível }
+        '409': { description: Destino ocupado; nenhum dado sobrescrito }
+  /manager/session-transfers/{phone}/transfer-removal:
+    parameters:
+      - in: path
+        name: phone
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Manager]
+      summary: Consultar se a remoção local após migração está liberada
+      security: [{ AdminToken: [] }]
+      description: Administrador; verifica checkpoint de backup e suspensão da origem.
+      responses:
+        '200': { description: Objeto eligible; exige backup concluído e suspensão }
+    delete:
+      tags: [Manager]
+      summary: Remover origem após migração, sem logout no WhatsApp
+      security: [{ AdminToken: [] }]
+      description: Exige senha do administrador, telefone e confirmação da validação do backup no destino. Apenas limpeza local, sem revogação remota.
+      requestBody:
+        $ref: '#/paths/~1manager~1mobile-devices~1{id}~1transfer-removal/delete/requestBody'
+      responses:
+        '204': { description: Credenciais Zapo e configuração locais removidas }
+        '401': { description: Senha do administrador incorreta }
+        '409': { description: Backup ou suspensão ausente, ou sessão em uso }
+        '429': { description: Limite de tentativas de senha }
+  /manager/mobile-devices/backups:
+    get:
+      tags: [Manager]
+      summary: Listar tarefas de backup dos dispositivos
+      security: [{ AdminToken: [] }]
+      description: Somente administrador autenticado, sem credencial API. Retorna metadados, nunca a senha ou o arquivo. Atualizar ao retornar ao painel.
+      responses:
+        '200':
+          description: Tarefas running, ready, failed ou interrupted. Inclui id, deviceId, createdAt, expiresAt e eventual código de erro.
+  /manager/mobile-devices/{id}/backup-tasks:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Manager]
+      summary: Gerar backup em segundo plano
+      security: [{ AdminToken: [] }]
+      description: Somente administrador. Uma tarefa simultânea. Senha apenas em memória durante execução; arquivo criptografado disponível por 24 horas após conclusão. Reinício durante geração não retoma automaticamente; após 10 minutos aparece interrupted. Mantém somente o último resultado por dispositivo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password, confirmSuspend, mode]
+              properties:
+                password: { type: string, format: password, writeOnly: true, minLength: 12, maxLength: 128 }
+                confirmSuspend: { type: boolean, enum: [true] }
+                mode: { type: string, enum: [credentials, complete] }
+      responses:
+        '202': { description: Tarefa aceita; consultar a lista de backups para o resultado }
+        '400': { description: Confirmação ou senha inválida }
+        '409': { description: Já existe uma tarefa em execução }
+  /manager/mobile-devices/{id}/backup-tasks/{task}/download:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+      - in: path
+        name: task
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Manager]
+      summary: Baixar arquivo criptografado de backup concluído
+      security: [{ AdminToken: [] }]
+      description: Somente administrador autenticado. Resposta JSON com fileName e archive para download pelo navegador. Cache-Control no-store. A senha não é retornada.
+      responses:
+        '200': { description: Arquivo criptografado disponível }
+        '409': { description: Tarefa pendente, substituída ou inexistente }
+        '410': { description: Arquivo expirado }
+  /manager/mobile-devices/{id}/transfer-removal:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Manager]
+      summary: Consultar liberação de remoção local após migração
+      security: [{ AdminToken: [] }]
+      description: Administrador autenticado. Requer checkpoint de backup concluído e origem suspensa.
+      responses:
+        '200':
+          description: Elegibilidade local; não confirma restauração no destino.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eligible: { type: boolean }
+    delete:
+      tags: [Manager]
+      summary: Remover somente desta instância após migração
+      security: [{ AdminToken: [] }]
+      description: Confere novamente a senha do administrador conectado, com limite de tentativas. Exige backup concluído, suspensão e confirmação humana da validação no destino. Não faz logout remoto nem revoga vínculos. Reativar a origem invalida o checkpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [phone, confirm, backupValidated, password]
+              properties:
+                phone: { type: string }
+                confirm: { type: boolean, enum: [true] }
+                backupValidated: { type: boolean, enum: [true] }
+                password: { type: string, format: password, writeOnly: true, maxLength: 4096 }
+      responses:
+        '204': { description: Cadastro e credenciais locais removidos }
+        '400': { description: Confirmação inválida }
+        '401': { description: Senha inválida }
+        '403': { description: Administrador requerido; credencial API não autorizada }
+        '409': { description: Backup ou suspensão ausente; conflito de ownership }
+        '429': { description: Limite de tentativas de senha }
   /manager/mobile-devices/{id}/backup:
     post:
       tags: [Manager]
       summary: Suspender e exportar backup criptografado do dispositivo principal
-      description: 'Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens e registro em um arquivo .viperdevice cifrado por senha (AES-256-GCM e scrypt). Não inclui mensagens, mídias, webhooks, usuários ou tokens da stack. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.'
+      description: 'Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens, companions e registro em .viperdevice cifrado por senha (AES-256-GCM e scrypt). mode=complete inclui também mensagens de todos os tipos, índices, contatos, mapeamentos UnoID/provider e status, preservando expiração. mode=credentials é o padrão da API para compatibilidade; o painel seleciona complete. Não inclui arquivos de mídia, webhooks, usuários ou tokens da stack. Limites de 16 MiB por arquivo e 10000 registros, sem truncamento silencioso. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.'
       security: [{ AdminToken: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -89,6 +738,7 @@ paths:
               properties:
                 password: { type: string, format: password, minLength: 12, maxLength: 128, writeOnly: true }
                 confirmSuspend: { type: boolean, enum: [true] }
+                mode: { type: string, enum: [credentials, complete], default: credentials }
       responses:
         '200':
           description: Conteúdo criptografado para download; resposta com Cache-Control no-store
@@ -3541,6 +4191,18 @@ paths:
                   ttl: 86400
                   text:
                     body: 'Esta mensagem expira em 24 horas.'
+              location:
+                summary: Localização estática (formato Cloud API)
+                value:
+                  messaging_product: whatsapp
+                  recipient_type: individual
+                  to: '5511999999999'
+                  type: location
+                  location:
+                    latitude: -15.601
+                    longitude: -56.0974
+                    name: 'Praça em Cuiabá'
+                    address: 'Cuiabá, MT'
               textGroupMentionAll:
                 summary: Texto em grupo com @all/@todos
                 value:
@@ -3587,6 +4249,15 @@ paths:
                     mime_type: image/jpeg
                     filename: foto.jpg
                     caption: 'Legenda opcional'
+              imageViewOnce:
+                summary: Imagem de visualização única (Zapo)
+                value:
+                  messaging_product: whatsapp
+                  to: '5511999999999'
+                  type: image
+                  image:
+                    link: 'https://exemplo.com/imagem.jpg'
+                    view_once: true
               document:
                 summary: Documento
                 value:
@@ -6697,6 +7368,141 @@ components:
         enum: [companies, accounts, lineGroups, extensionGroups, sessions, extensions]
 
   schemas:
+    PrivacyInput:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [operation, mode, userJids]
+          description: 'Substitui público dos próximos Status. CONTACTS exige lista vazia; ALLOW_LIST/DENY_LIST exigem de 1 a 100 contatos. Números viram JIDs PN, LIDs são preservados e duplicados removidos. Não consulta público atual, não publica Status nem envia flags Facebook/Instagram.'
+          properties:
+            operation: { type: string, enum: [status] }
+            mode: { type: string, enum: [CONTACTS, DENY_LIST, ALLOW_LIST] }
+            userJids: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PrivacyContactId' } }
+        - type: object
+          additionalProperties: false
+          required: [operation, setting, value]
+          description: 'Valores: lastSeen/profilePicture/about/linkedProfiles/pix = all|contacts|contact_blacklist|none; online = all|none|match_last_seen; readReceipts = all|none; groupAdd = all|contacts|contact_blacklist; callAdd = all|known|contacts; messages = all|contacts; defenseMode = off|on_standard. Valor incompatível com setting é rejeitado.'
+          properties:
+            operation: { type: string, enum: [setting] }
+            setting: { type: string, enum: [lastSeen, online, profilePicture, about, readReceipts, groupAdd, callAdd, messages, defenseMode, linkedProfiles, pix] }
+            value: { type: string, enum: [all, contacts, contact_blacklist, none, match_last_seen, known, 'off', on_standard] }
+        - type: object
+          additionalProperties: false
+          required: [operation, setting]
+          description: Pelo menos um ID em add ou remove; mesmo ID não pode estar nas duas listas. Não substitui toda a lista.
+          properties:
+            operation: { type: string, enum: [exceptions] }
+            setting: { type: string, enum: [about, groupAdd, lastSeen, profilePicture, linkedProfiles, pix] }
+            add: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PrivacyContactId' } }
+            remove: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PrivacyContactId' } }
+        - type: object
+          additionalProperties: false
+          required: [operation, jid]
+          properties:
+            operation: { type: string, enum: [block, unblock] }
+            jid: { $ref: '#/components/schemas/PrivacyContactId' }
+        - type: object
+          additionalProperties: false
+          required: [operation, duration]
+          properties:
+            operation: { type: string, enum: [timer] }
+            duration: { type: integer, enum: [0, 86400, 604800, 7776000] }
+    PrivacyContactId:
+      type: string
+      pattern: '^\d{5,20}(?:@(?:s\.whatsapp\.net|lid))?$'
+      description: Número com país e DDD somente dígitos ou JID PN/LID. Não aceita grupos nem username nesta rota.
+    AccountEmailStatus:
+      type: object
+      required: [email, verified, confirmed]
+      properties:
+        email: { type: string, nullable: true, format: email }
+        verified: { type: boolean }
+        confirmed: { type: boolean }
+    OwnProfileMutation:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean, enum: [true] }
+        id: { type: string, nullable: true, description: ID de foto ou capa retornado pelo SDK }
+        warning: { type: string, description: Alteração remota confirmada mas persistência ou limpeza local incompleta }
+    OwnProfile:
+      type: object
+      properties:
+        mobile_primary: { type: boolean, description: Habilita o fluxo de e-mail da conta, separado do e-mail comercial }
+        cover:
+          type: object
+          nullable: true
+          description: Última capa enviada pela Uno; não representa consulta da capa remota. Registro independente do cache de perfil.
+          properties:
+            id: { type: string }
+            url: { type: string, format: uri, description: URL S3 assinada por 900 segundos, renovada em cada GET }
+            source: { type: string, enum: [uno_upload] }
+            updated_at: { type: string, format: date-time }
+        cache:
+          type: object
+          properties:
+            source: { type: string, enum: [cache, live] }
+            updated_at: { type: string, format: date-time, description: Momento da última consulta armazenada, que pode ser parcial conforme warnings }
+            stale: { type: boolean }
+            refresh_failed: { type: boolean }
+        name: { type: string }
+        about: { type: string, nullable: true }
+        username: { type: string, nullable: true }
+        verified_name: { type: string, nullable: true, readOnly: true }
+        business_account: { type: boolean, nullable: true }
+        picture: { type: object, nullable: true, properties: { url: { type: string }, id: { type: string } } }
+        business:
+          type: object
+          nullable: true
+          description: Perfil comercial lido da Zapo; campos de OwnBusinessInput, jid, categorias com id/name e profileOptions.
+          additionalProperties: true
+        warnings: { type: array, items: { type: string }, description: Seções cuja consulta falhou; não confundir com dados apagados }
+        unsupported: { type: array, items: { type: string } }
+    OwnBusinessInput:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        description: { type: string, maxLength: 1024 }
+        address: { type: string, maxLength: 1024 }
+        email: { type: string, maxLength: 254, description: E-mail válido ou string vazia para limpar }
+        latitude: { type: number, minimum: -90, maximum: 90, description: Enviar junto com longitude; zero permitido }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        websites:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [url]
+            properties: { url: { type: string, maxLength: 2048, description: URL HTTP ou HTTPS } }
+        categories:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [id]
+            properties: { id: { type: string, pattern: '^[0-9]+$', maxLength: 64 } }
+        businessHours:
+          type: object
+          additionalProperties: false
+          required: [config]
+          properties:
+            timezone: { type: string, maxLength: 100, example: America/Cuiaba }
+            config:
+              type: array
+              maxItems: 7
+              description: Uma entrada por dia aberto. Dias fechados omitidos; specific_hours requer início menor que fim. Limite local de um intervalo por dia.
+              items:
+                type: object
+                additionalProperties: false
+                required: [dayOfWeek, mode]
+                properties:
+                  dayOfWeek: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+                  mode: { type: string, enum: [open_24h, specific_hours, appointment_only] }
+                  openTime: { type: integer, minimum: 0, maximum: 1439, description: Minutos desde meia-noite; somente specific_hours }
+                  closeTime: { type: integer, minimum: 0, maximum: 1439 }
     MobileRegistrationStatus:
       type: object
       required: [status]
@@ -7718,6 +8524,31 @@ components:
               items: { type: string }
               description: 'Atalho opcional equivalente a text.mentions'
 
+    MessageLocation:
+      allOf:
+        - $ref: '#/components/schemas/MessageCommon'
+        - type: object
+          required: [location]
+          properties:
+            type: { const: location }
+            location:
+              type: object
+              required: [latitude, longitude]
+              description: 'Localização estática. Nome e endereço são opcionais. Aceita números ou strings decimais; coordenadas são normalizadas antes da fila. Não compartilha localização em tempo real.'
+              properties:
+                latitude:
+                  description: Latitude entre -90 e 90, inclusive; zero é válido.
+                  oneOf:
+                    - { type: number, minimum: -90, maximum: 90 }
+                    - { type: string, pattern: '^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$', example: '-15.601' }
+                longitude:
+                  description: Longitude entre -180 e 180, inclusive; zero é válido.
+                  oneOf:
+                    - { type: number, minimum: -180, maximum: 180 }
+                    - { type: string, pattern: '^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$', example: '-56.0974' }
+                name: { type: string }
+                address: { type: string }
+
     MessageEdit:
       allOf:
         - $ref: '#/components/schemas/MessageCommon'
@@ -7768,6 +8599,10 @@ components:
                 caption: { type: string }
                 filename: { type: string }
                 mime_type: { type: string, example: image/jpeg }
+                view_once:
+                  type: boolean
+                  default: false
+                  description: 'Extensão ViperConnect/Zapo: visualização única. Aceita somente booleano; omitido ou false mantém envio normal. Mapeado para options.viewOnce da Zapo.'
 
     MessageVideo:
       allOf:
@@ -7791,6 +8626,15 @@ components:
                 caption: { type: string }
                 filename: { type: string }
                 mime_type: { type: string, example: video/mp4 }
+                view_once:
+                  type: boolean
+                  default: false
+                  description: 'Extensão ViperConnect/Zapo: visualização única; preservada durante a preparação do vídeo. Aceita somente booleano.'
+                quality:
+                  type: string
+                  enum: [hd, sd]
+                  default: hd
+                  description: 'Extensão Zapo: hd até 720p/CRF23, sd até 480p/CRF27, até 30 FPS. MP4 faststart conforme é reutilizado sem FFmpeg; sem faststart recebe remux. Conversão gera statuses[].warnings com VIDEO_TRANSCODED. Teto operacional de saída configurável (256 MiB padrão), sem redução automática para 15 MiB. Não garante selo HD no WhatsApp.'
 
     MessageSticker:
       allOf:
@@ -7837,6 +8681,10 @@ components:
                   description: 'Extensão ViperConnect. Aceita Base64 puro ou Data URI. Para Base64 puro, informe mime_type.'
                 filename: { type: string }
                 mime_type: { type: string, example: audio/ogg }
+                view_once:
+                  type: boolean
+                  default: false
+                  description: 'Extensão ViperConnect/Zapo: áudio de reprodução única. Independente de ptt. Aceita somente booleano.'
                 ptt:
                   type: boolean
                   description: Envia como mensagem de voz quando `true`.
@@ -8649,6 +9497,7 @@ components:
       oneOf:
         - $ref: '#/components/schemas/MessageStatusBroadcast'
         - $ref: '#/components/schemas/MessageText'
+        - $ref: '#/components/schemas/MessageLocation'
         - $ref: '#/components/schemas/MessageEdit'
         - $ref: '#/components/schemas/MessageImage'
         - $ref: '#/components/schemas/MessageVideo'
@@ -8943,7 +9792,7 @@ components:
         code:
           type: string
           example: REPLY_SENT_WITHOUT_QUOTE
-          description: Código estável; um aviso não é uma falha e não exige reenvio.
+          description: 'Código estável; um aviso não é uma falha e não exige reenvio. VIDEO_TRANSCODED informa conversão automática ao perfil solicitado (HD/SD); arquivo fora do recomendado ou metadados insuficientes.'
         message:
           type: string
           description: Texto em pt-BR por padrão; UNOAPI_API_LANGUAGE=en seleciona inglês.
@@ -9081,7 +9930,7 @@ components:
           items: { $ref: '#/components/schemas/CatalogOrderItem' }
 
     WebhookInbound:
-      description: Mensagens recebidas (compatível com WhatsApp Cloud API)
+      description: Mensagens recebidas no envelope Cloud API, com extensões ViperConnect como message_type=view_once.
       type: object
       properties:
         object: { type: string }
@@ -9113,6 +9962,10 @@ components:
                               from: { type: string }
                               id: { type: string }
                               timestamp: { type: string }
+                              message_type:
+                                type: string
+                                example: view_once
+                                description: Extensão ViperConnect. view_once identifica imagem, vídeo ou áudio de visualização única no evento original, sem novo ID ou evento posterior. message_edit identifica edição. Ausente em mídia comum; não impõe acesso único à URL.
                               type:
                                 type: string
                                 description: Inclui os tipos estruturados `product` e `order` para eventos de catálogo.

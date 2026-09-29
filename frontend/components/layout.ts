@@ -9,7 +9,7 @@ interface LayoutOptions {
   collapsed: boolean
   mobileOpen: boolean
   versionStatus: VersionStatus
-  activeView?: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account'
+  activeView?: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps'
   identity?: ManagerIdentity | null
   canManageAccount?: boolean
 }
@@ -52,7 +52,7 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <button class="nav-item ${activeView === 'session-webhooks' ? 'nav-item--active' : ''}" type="button" data-action="open-session-webhooks" title="Webhook">
           ${icon('globe')}<span>Webhook</span>
         </button>` : ''}
-        ${identity?.role === 'admin' ? `<button class="nav-item ${activeView === 'users' ? 'nav-item--active' : ''}" type="button" data-action="open-users">${icon('users')}<span>Usuários</span></button>` : ''}
+        ${identity?.role === 'admin' ? `<button class="nav-item ${activeView === 'users' || activeView === 'google-maps' ? 'nav-item--active' : ''}" type="button" data-action="open-settings">${icon('settings')}<span>Configurações</span></button>` : ''}
         ${identity?.role === 'user' ? `<button class="nav-item ${activeView === 'voip' ? 'nav-item--active' : ''}" type="button" data-action="open-voip">${icon('phone')}<span>Telefonia</span></button>` : ''}
         ${identity?.role === 'user' && canManageAccount ? `<button class="nav-item ${activeView === 'account' ? 'nav-item--active' : ''}" type="button" data-action="open-account">${icon('settings')}<span>Minha conta / Chaves API</span></button>` : ''}
         <button class="nav-item ${activeView === 'documentation' ? 'nav-item--active' : ''}" type="button" data-action="open-documentation" title="${t('Documentação')}">

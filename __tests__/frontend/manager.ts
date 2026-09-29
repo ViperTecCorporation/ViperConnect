@@ -56,13 +56,13 @@ describe('Manager identity and access', () => {
 
   test('shows users below session webhooks for admin, scoped phone and account for user', () => {
     const admin = layout('admin')
-    expect(admin).toContain(`${icon('users')}<span>Usuários</span>`)
+    expect(admin).toContain(`${icon('settings')}<span>Configurações</span>`)
     expect(admin).toContain('<span>Webhook</span>')
     expect(admin).not.toContain('Webhooks de sessões')
-    expect(admin.indexOf('data-action="open-users"')).toBeGreaterThan(admin.indexOf('data-action="open-session-webhooks"'))
+    expect(admin.indexOf('data-action="open-settings"')).toBeGreaterThan(admin.indexOf('data-action="open-session-webhooks"'))
     expect(admin).not.toContain('data-action="open-account"')
     const regular = layout('user')
-    for (const action of ['open-users', 'open-redis', 'open-queues', 'open-session-webhooks']) expect(regular).not.toContain(`data-action="${action}"`)
+    for (const action of ['open-settings', 'open-users', 'open-redis', 'open-queues', 'open-session-webhooks']) expect(regular).not.toContain(`data-action="${action}"`)
     expect(regular).toContain('data-action="open-voip"')
     expect(regular).toContain('data-action="open-account"')
     expect(layout('user', false)).not.toContain('data-action="open-account"')
@@ -71,7 +71,7 @@ describe('Manager identity and access', () => {
     expect(renderLogin()).toContain('data-form="legacy-login"')
   })
 
-  test.each(['open-users', 'open-queues', 'open-redis', 'open-session-webhooks', 'new-session', 'new-voip-resource', 'play-voip-recording', 'end-voip-call'])(
+  test.each(['open-settings', 'open-google-maps', 'open-users', 'open-queues', 'open-redis', 'open-session-webhooks', 'new-session', 'new-voip-resource', 'play-voip-recording', 'end-voip-call'])(
     'rejects forged user action %s', async action => {
       const app = Object.create(ViperConnectApp.prototype) as any
       app.identity = identity

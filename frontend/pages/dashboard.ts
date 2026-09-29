@@ -15,10 +15,11 @@ interface DashboardOptions {
   canCreate?: boolean
   mobileButton?: string
   mobileGrid?: string
+  backupPanel?: string
   mobileSessionPhones?: string[]
 }
 
-export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', mobileSessionPhones = [] }: DashboardOptions): string => {
+export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', mobileSessionPhones = [] }: DashboardOptions): string => {
   const excluded = new Set(canCreate && mobileGrid ? mobileSessionPhones : [])
   const filtered = filterSessions(sessions.filter(session => !excluded.has(sessionPhone(session))), query, status)
   const visible = filtered.slice(0, visibleLimit)
@@ -27,11 +28,12 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
   const offline = Math.max(0, sessions.length - online - connecting)
 
   return `
+    <div class="dashboard-layout">
     <header class="page-header">
       <div><span class="eyebrow">${t('Operação')}</span><h1>${t('Visão geral')}</h1><p class="muted">${t('Sessões e serviços em tempo real.')}</p></div>
       <div class="actions">
         <a class="btn btn--icon btn--ghost" href="https://github.com/ViperTecCorporation/ViperConnect" target="_blank" rel="noopener" aria-label="GitHub">${icon('github')}</a>
-        ${canCreate ? `<button class="btn" type="button" data-action="new-session">${icon('plus')}${t('Nova sessão')}</button>` : ''}
+        ${canCreate ? `<button class="btn" type="button" data-action="new-session">${icon('link')}${t('Nova sessão')}</button>` : ''}
         ${canCreate ? mobileButton : ''}
       </div>
     </header>
@@ -47,11 +49,9 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
       <article class="stat-card"><span>${t('Offline')}</span><strong>${offline}</strong><small>${t('requerem atenção')}</small></article>
     </section>
 
-    <section class="section" aria-label="${t('Atualização')}">
-      <div class="section__heading">
+    <section class="dashboard-refresh" aria-label="${t('Atualização')}">
         <p class="muted" aria-live="polite">${loading ? t('Atualizando…') : `${t(canCreate && mobileGrid ? 'Atualização automática de dispositivos e sessões em' : 'Atualização automática de sessões em')} <span data-refresh-countdown>${refreshIn}s</span>`}</p>
         <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh" ${loading ? 'disabled' : ''}>${icon('refresh')}${t('Atualizar agora')}</button></div>
-      </div>
     </section>
 
     ${canCreate ? mobileGrid : ''}
@@ -107,5 +107,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
           : ''
       }
     </section>
+    ${canCreate ? backupPanel : ''}
+    </div>
   `
 }

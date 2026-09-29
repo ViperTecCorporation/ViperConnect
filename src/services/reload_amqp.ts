@@ -3,7 +3,6 @@ import { RELOAD_PUBLISH_BROKER, UNOAPI_EXCHANGE_BRIDGE_NAME, UNOAPI_EXCHANGE_BRO
 import { getConfig } from './config'
 import { Reload } from './reload'
 import { providerQueueName } from './providers/provider_queue'
-import { WHATSAPP_ENGINES } from './providers/provider_types'
 
 export class ReloadAmqp extends Reload {
   private getConfig: getConfig
@@ -24,12 +23,14 @@ export class ReloadAmqp extends Reload {
         { type: 'topic' }
       )
     }
-    await Promise.all(WHATSAPP_ENGINES.map((engine) => amqpPublish(
+    // Only Zapo has a runtime worker. Keep invalidation even for legacy config
+    // so a previously cached Zapo client can be cleared without reviving Baileys.
+    await amqpPublish(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
-      providerQueueName(UNOAPI_QUEUE_RELOAD, config.server || 'server_1', engine),
+      providerQueueName(UNOAPI_QUEUE_RELOAD, config.server || 'server_1', 'zapo'),
       '',
       { phone },
       { type: 'direct' }
-    )))
+    )
   }
 }

@@ -18,6 +18,33 @@ function fixture() {
 }
 
 describe('full mobile deletion', () => {
+  test('migration removal requires completed backup and suspended source, without reload', async () => {
+    const s = fixture()
+    const completed = jest.fn(async () => true)
+    const service = new MobileDeletionService({ ...s.deps, backupCompleted: completed })
+    const body = { confirm: true, backupValidated: true, phone }
+    await expect(service.remove(id, body, true)).rejects.toMatchObject({ status: 409 })
+    expect(s.deps.clear).not.toHaveBeenCalled()
+    s.deps.config.mockResolvedValue({ mobilePrimaryDraftId: id, mobilePrimaryImported: true, autoConnect: false })
+    completed.mockResolvedValue(false)
+    expect(await service.transferEligibility(id)).toEqual({ eligible: false })
+    await expect(service.remove(id, body, true)).rejects.toMatchObject({ status: 409 })
+    completed.mockResolvedValue(true)
+    await expect(service.remove(id, { ...body, backupValidated: false }, true)).rejects.toMatchObject({ status: 400 })
+    expect(await service.transferEligibility(id)).toEqual({ eligible: true })
+    await service.remove(id, body, true)
+    expect(s.deps.clear).toHaveBeenCalledTimes(1)
+    expect(s.deps.dispatch).not.toHaveBeenCalled()
+    expect(s.deps.eval.mock.calls.at(-1)?.[1].keys).toContain(`mobile-primary:{v1}:backup-completed:${phone}`)
+  })
+  test('migration removal checks the checkpoint again after acquiring socket ownership', async () => {
+    const s = fixture()
+    s.deps.config.mockResolvedValue({ mobilePrimaryDraftId: id, mobilePrimaryImported: true, autoConnect: false })
+    const completed = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const service = new MobileDeletionService({ ...s.deps, backupCompleted: completed })
+    await expect(service.remove(id, { confirm: true, backupValidated: true, phone }, true)).rejects.toMatchObject({ status: 409 })
+    expect(s.deps.clear).not.toHaveBeenCalled()
+  })
   test.each([{}, { confirm: true }, { ...confirmation, phone: '999000000000' }, { ...confirmation, extra: true }])('requires explicit full consent and exact phone %j', async body => {
     const s = fixture()
     await expect(s.service.remove(id, body)).rejects.toMatchObject({ status: 400 })

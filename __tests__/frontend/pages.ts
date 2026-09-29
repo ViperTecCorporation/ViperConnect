@@ -4,6 +4,26 @@ import { renderSessionPage } from '../../frontend/pages/session'
 import { setLocale } from '../../frontend/core/i18n'
 
 describe('frontend pages', () => {
+  test('dashboard prioritizes devices and sessions, with backups last and admin-only', () => {
+    const options = { sessions: [], query: '', status: 'all', loading: false, refreshIn: 3,
+      visibleLimit: 20, mobileGrid: '<section>DEVICES_MARKER</section>', backupPanel: '<section>BACKUPS_MARKER</section>' }
+    const html = renderDashboard(options)
+    expect(html).toContain('class="dashboard-layout"')
+    expect(html).toContain('class="dashboard-refresh"')
+    expect(html.indexOf('DEVICES_MARKER')).toBeLessThan(html.indexOf('class="section sessions-section"'))
+    expect(html.indexOf('BACKUPS_MARKER')).toBeGreaterThan(html.indexOf('class="section sessions-section"'))
+    expect(renderDashboard({ ...options, canCreate: false })).not.toContain('BACKUPS_MARKER')
+    expect(renderDashboard({ ...options, canCreate: false })).not.toContain('DEVICES_MARKER')
+  })
+  test.each([true, false])('profile follows devices for mobile=%s and overview otherwise', mobile => {
+    const html = renderSessionPage({ session: { phone: '5511999999999', mobilePrimaryDraftId: mobile ? 'draft' : undefined },
+      tab: 'profile', contacts: [], contactsHasMore: false, contactCount: 0, contactsQuery: '', groups: [], groupsHasMore: false,
+      groupsQuery: '', loadingSection: false, sectionError: '', profileHtml: '<div>profile-form</div>' })
+    expect(html).toContain('profile-form')
+    expect(html.indexOf('data-tab="profile"')).toBeGreaterThan(html.indexOf(`data-tab="${mobile ? 'devices' : 'overview'}"`))
+    expect(html.indexOf('data-tab="profile"')).toBeLessThan(html.indexOf('data-tab="config"'))
+    if (!mobile) expect(html).not.toContain('data-tab="devices"')
+  })
   afterEach(() => setLocale('pt-BR'))
 
   test('renders dashboard sessions with automatic refresh and management action', () => {
@@ -40,6 +60,8 @@ describe('frontend pages', () => {
     expect(html).toContain('data-action="go-dashboard"')
     expect(html).toContain('data-tab="contacts"')
     expect(html).toContain('Contatos da sessão')
+    expect(html).toMatch(/class="actions">\s*<button[^>]+data-action="add-contact"/)
+    expect(html).not.toMatch(/class="entity-card__actions">\s*<button[^>]+data-action="add-contact"/)
     expect(html).not.toContain('aria-modal="true"')
     expect(html.indexOf('data-tab="webhooks"')).toBeLessThan(html.indexOf('data-tab="contacts"'))
     expect(html.indexOf('data-tab="contacts"')).toBeLessThan(html.indexOf('data-tab="groups"'))

@@ -16,6 +16,14 @@ describe('reply reference fallback', () => {
   }
   const payload = (id = 'old-uuid') => ({ to: 'group@g.us', type: 'text', text: { body: 'Resposta' }, context: { message_id: id } })
   beforeEach(() => { jest.clearAllMocks(); (loadTranscriptionReference as jest.Mock).mockResolvedValue(undefined) })
+  it('attaches conversion warning to the original video ID without sending internal flags to Zapo', async () => {
+    const { client, messages } = setup()
+    const result = await messages.send({ to: 'group@g.us', type: 'video', video: { link: '/test/video.mp4' } }, { unoMessageId: 'video-id', videoPrepared: true, videoTranscoded: 'hd' })
+    expect(client.message.send).toHaveBeenCalledTimes(1)
+    expect(client.message.send.mock.calls[0][2]).not.toHaveProperty('videoTranscoded')
+    expect(result.ok.warnings).toEqual([expect.objectContaining({ code: 'VIDEO_TRANSCODED' })])
+    expect(saveReplyWarning).toHaveBeenCalledWith('session', 'video-id', expect.objectContaining({ warnings: result.ok.warnings }))
+  })
   it('sends an old unresolved UUID once, without a quote and with a warning', async () => {
     const { client, messages } = setup()
     const result = await messages.send(payload())

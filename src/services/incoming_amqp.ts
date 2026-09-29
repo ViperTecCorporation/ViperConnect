@@ -81,6 +81,10 @@ export class IncomingAmqp implements Incoming {
     )
   }
 
+  public ownProfile(phone: string, command: import('./profile_input').ProfileCommand) {
+    return this.providerOperation<any>(phone, 'ownProfile', [command])
+  }
+
   public saveContact(phone: string, input: SaveContactInput) {
     return this.providerOperation<SaveContactResponse>(phone, 'saveContact', [input])
   }

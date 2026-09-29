@@ -188,6 +188,11 @@
       "type": "string"
     },
     {
+      "key": "refresh",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "registrationId",
       "value": "",
       "type": "string"
@@ -209,6 +214,11 @@
     },
     {
       "key": "startDate",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "task",
       "value": "",
       "type": "string"
     },
@@ -240,8 +250,1060 @@
   ],
   "item": [
     {
+      "name": "Perfil",
+      "item": [
+        {
+          "name": "Consultar privacidade da própria conta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Sessões Zapo vinculadas e mobile primary. Consulta o worker; snapshot Redis por sessão, TTL 24h, como fallback de falhas totais/parciais. Sem polling. Cache não inclui Status/e-mail; erros de autorização não usam fallback. Escritas invalidam snapshot e impedem gravação de leituras anteriores. Ausência não significa vazio. Exige autenticação e escopo da sessão."
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar uma configuração, exceções, bloqueio ou duração padrão — visibility",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"setting\",\n    \"setting\": \"lastSeen\",\n    \"value\": \"contacts\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar uma configuração, exceções, bloqueio ou duração padrão — exceptions",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"exceptions\",\n    \"setting\": \"lastSeen\",\n    \"add\": [\n      \"5511999999999\"\n    ],\n    \"remove\": []\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar uma configuração, exceções, bloqueio ou duração padrão — block",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"block\",\n    \"jid\": \"5511999999999\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar uma configuração, exceções, bloqueio ou duração padrão — unblock",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"unblock\",\n    \"jid\": \"123456789@lid\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar uma configuração, exceções, bloqueio ou duração padrão — timer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"timer\",\n    \"duration\": 604800\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar uma configuração, exceções, bloqueio ou duração padrão — status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/privacy",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "privacy"
+              ],
+              "query": []
+            },
+            "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"status\",\n    \"mode\": \"ALLOW_LIST\",\n    \"userJids\": [\n      \"5511999999999\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar e-mail da conta WhatsApp (mobile primary)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/account_email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "account_email"
+              ],
+              "query": []
+            },
+            "description": "Consulta direta sem cache Redis, com Cache-Control no-store. Usa autenticação e escopo da sessão; indisponível em sessão vinculada. Não é o e-mail comercial público."
+          },
+          "response": []
+        },
+        {
+          "name": "Cadastrar ou verificar e-mail da conta (mobile primary) — set",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/account_email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "account_email"
+              ],
+              "query": []
+            },
+            "description": "Ações explícitas e separadas: set cadastra; request_code solicita código pt-BR; verify valida seis dígitos; confirm confirma a propriedade após verificação. Não envia código automaticamente, não remove e-mail e não altera o e-mail comercial. Código não entra no cache de perfil. Falha de transporte pode ter resultado incerto: consultar antes de repetir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"set\",\n    \"email\": \"conta@example.com\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cadastrar ou verificar e-mail da conta (mobile primary) — request_code",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/account_email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "account_email"
+              ],
+              "query": []
+            },
+            "description": "Ações explícitas e separadas: set cadastra; request_code solicita código pt-BR; verify valida seis dígitos; confirm confirma a propriedade após verificação. Não envia código automaticamente, não remove e-mail e não altera o e-mail comercial. Código não entra no cache de perfil. Falha de transporte pode ter resultado incerto: consultar antes de repetir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"request_code\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cadastrar ou verificar e-mail da conta (mobile primary) — verify",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/account_email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "account_email"
+              ],
+              "query": []
+            },
+            "description": "Ações explícitas e separadas: set cadastra; request_code solicita código pt-BR; verify valida seis dígitos; confirm confirma a propriedade após verificação. Não envia código automaticamente, não remove e-mail e não altera o e-mail comercial. Código não entra no cache de perfil. Falha de transporte pode ter resultado incerto: consultar antes de repetir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"verify\",\n    \"code\": \"123456\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cadastrar ou verificar e-mail da conta (mobile primary) — confirm",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/account_email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "account_email"
+              ],
+              "query": []
+            },
+            "description": "Ações explícitas e separadas: set cadastra; request_code solicita código pt-BR; verify valida seis dígitos; confirm confirma a propriedade após verificação. Não envia código automaticamente, não remove e-mail e não altera o e-mail comercial. Código não entra no cache de perfil. Falha de transporte pode ter resultado incerto: consultar antes de repetir.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"operation\": \"confirm\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Obter chave de navegador para Google Maps (administrador)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/settings/google-maps/browser",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "google-maps",
+                "browser"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. Retorna chave restrita a referrers para Maps JavaScript API, com Cache-Control no-store. A chave será visível no navegador; nunca usar chave irrestrita de servidor.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Configuração do navegador",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/settings/google-maps/browser",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "settings",
+                    "google-maps",
+                    "browser"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador. Retorna chave restrita a referrers para Maps JavaScript API, com Cache-Control no-store. A chave será visível no navegador; nunca usar chave irrestrita de servidor.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Configuração do navegador",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar configuração Google Maps (administrador)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/settings/google-maps",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "google-maps"
+              ],
+              "query": []
+            },
+            "description": "Estado global da instância; não retorna a chave. Mapa disponível ao administrador no perfil comercial, com carregamento explícito.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Estado",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/settings/google-maps",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "settings",
+                    "google-maps"
+                  ],
+                  "query": []
+                },
+                "description": "Estado global da instância; não retorna a chave. Mapa disponível ao administrador no perfil comercial, com carregamento explícito.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Estado",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Salvar chave de navegador Google Maps (administrador)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/settings/google-maps",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "google-maps"
+              ],
+              "query": []
+            },
+            "description": "Redis sem TTL e sem criptografia adicional. Restrinja domínios e APIs no Google Cloud. Não verifica validade ou quota e nunca retorna a chave.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiKey\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remover chave Google Maps (administrador)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/settings/google-maps",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "settings",
+                "google-maps"
+              ],
+              "query": []
+            },
+            "description": "Remove a configuração global compartilhada entre as sessões.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar o perfil da própria sessão Zapo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile?refresh={{refresh}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile"
+              ],
+              "query": [
+                {
+                  "key": "refresh",
+                  "value": "{{refresh}}",
+                  "description": "Use 1 para consultar a Zapo e renovar o cache. Sem esse parâmetro, retorna Redis quando disponível; cache ausente consulta a Zapo. Falhas preservam snapshot anterior e sinalizam stale/refresh_failed. Retenção de 24h.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Funciona com sessões vinculadas e mobile primary, pessoais e Business. Campos de leitura indisponíveis ficam nulos e são listados em warnings; não são campos apagados. Não retorna credenciais nem PIN de username. Somente a sessão autenticada, sem parâmetro de JID alvo."
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar nome de exibição",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/name",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "name"
+              ],
+              "query": []
+            },
+            "description": "pushName; não modifica o nome comercial verificado. String vazia restaura o padrão do dispositivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"João Silva\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar recado About",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/about",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "about"
+              ],
+              "query": []
+            },
+            "description": "Recado legado via setStatus, não Status de 24 horas. String vazia limpa.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"Atendimento de segunda a sexta\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Alterar nome de usuário",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/username",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "username"
+              ],
+              "query": []
+            },
+            "description": "Sujeito às regras adicionais da Zapo e disponibilidade no servidor. Retorno false do SDK resulta em 409, não sucesso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"empresa_suporte\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remover username da própria sessão",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/username",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "username"
+              ],
+              "query": []
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar dados comerciais",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/business",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "business"
+              ],
+              "query": []
+            },
+            "description": "Exclusivo de conta Business, independentemente do tipo de conexão. Delta: campos omitidos preservados, string vazia limpa, listas vazias limpam. Não edita nome verificado, área de cobertura nem observações de localização. IDs de categoria devem ser conhecidos; sem catálogo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {\n    \"description\": \"Suporte de TI\",\n    \"address\": \"Cláudia - MT\",\n    \"latitude\": -11.499317,\n    \"longitude\": -54.873917,\n    \"websites\": [\n      {\n        \"url\": \"https://example.com\"\n      }\n    ],\n    \"businessHours\": {\n      \"timezone\": \"America/Cuiaba\",\n      \"config\": [\n        {\n          \"dayOfWeek\": \"mon\",\n          \"mode\": \"specific_hours\",\n          \"openTime\": 480,\n          \"closeTime\": 1080\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Enviar foto de perfil",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/picture",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "picture"
+              ],
+              "query": []
+            },
+            "description": "Até 5 MiB de bytes decodificados, máximo 20 milhões de pixels. PNG/JPEG/WebP são decodificados, orientação corrigida, recorte central 640x640 e JPEG. Sem URLs remotas nem JID alvo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"BASE64_DA_IMAGEM_SEM_PREFIXO_DATA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remover foto da própria sessão",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/picture",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "picture"
+              ],
+              "query": []
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Enviar capa Business",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/cover",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "cover"
+              ],
+              "query": []
+            },
+            "description": "Business somente; exige S3 configurado. Até 5 MiB, 20 milhões de pixels; JPEG com largura máxima 1600, sem recorte quadrado. Persiste imagem no S3 e ID no Redis sem TTL. GET profile retorna preview local com URL assinada por 15 minutos. O SDK não oferece leitura da capa remota; alterações externas não são detectadas. Falhas de persistência após confirmação remota retornam success e warning; guarde o ID nesse caso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"BASE64_DA_IMAGEM_SEM_PREFIXO_DATA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remover capa comercial pelo ID retornado no envio",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/profile/cover",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "profile",
+                "cover"
+              ],
+              "query": []
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"ID_RETORNADO_AO_ENVIAR_CAPA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Manager",
       "item": [
+        {
+          "name": "Envio manual de histórico desabilitado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companion-history",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "companion-history"
+              ],
+              "query": []
+            },
+            "description": "Retorna 410 mobile_history_pair_time_only. O histórico agora é iniciado automaticamente no bootstrap de um novo vínculo, não depois nem em reconexões. Fila separada; todo o histórico elegível disponível no Redis, sem corte por idade ou quantidade total, lido em páginas de 20 registros. Mantém filtros de privacidade e limites de tamanho por registro do piloto inline. A importação no secundário ainda depende de validação real.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target\": \"5511999999999:2@s.whatsapp.net\",\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar progresso do histórico enviado ao secundário",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companion-history/{{operation}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "companion-history",
+                "{{operation}}"
+              ],
+              "query": []
+            },
+            "description": "Não envia mensagens. submitted confirma apenas a conclusão das chamadas de publicação do SDK, não recebimento nem importação; empty indica ausência de registros elegíveis; unknown indica envio parcial/incerto, sem retry automático; failed indica falha antes do envio; expired indica que o worker não executou no prazo. Sem mensagens, chaves ou URLs na resposta. Registro cifrado no Redis por uma hora; nova tarefa substitui a anterior. queued/running vencem após cinco minutos e aparecem como expired/unknown.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Estado e contagem, sem conteúdo das mensagens",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/companion-history/{{operation}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "companion-history",
+                    "{{operation}}"
+                  ],
+                  "query": []
+                },
+                "description": "Não envia mensagens. submitted confirma apenas a conclusão das chamadas de publicação do SDK, não recebimento nem importação; empty indica ausência de registros elegíveis; unknown indica envio parcial/incerto, sem retry automático; failed indica falha antes do envio; expired indica que o worker não executou no prazo. Sem mensagens, chaves ou URLs na resposta. Registro cifrado no Redis por uma hora; nova tarefa substitui a anterior. queued/running vencem após cinco minutos e aparecem como expired/unknown.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Estado e contagem, sem conteúdo das mensagens",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
         {
           "name": "Consultar, vincular ou revogar dispositivo secundário no worker",
           "request": {
@@ -419,6 +1481,442 @@
           ]
         },
         {
+          "name": "Listar backups assíncronos de sessões Zapo normais",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/session-transfers/backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "session-transfers",
+                "backups"
+              ],
+              "query": []
+            },
+            "description": "Administrador via Bearer, sem credenciais API. Retorna somente metadados, retidos por 24 horas.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Suspender e exportar sessão Zapo Redis em segundo plano",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/session-transfers/{{phone}}/backup-tasks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "session-transfers",
+                "{{phone}}",
+                "backup-tasks"
+              ],
+              "query": []
+            },
+            "description": "Administrador autenticado. Suspende a origem e gera arquivo criptografado com senha, disponível por 24 horas.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Baixar .vipersession criptografado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/session-transfers/{{phone}}/backup-tasks/{{task}}/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "session-transfers",
+                "{{phone}}",
+                "backup-tasks",
+                "{{task}}",
+                "download"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador; retorna arquivo criptografado sem senha, com Cache-Control no-store.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restaurar sessão vinculada offline sem sobrescrever o destino",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/session-transfers/restore",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "session-transfers",
+                "restore"
+              ],
+              "query": []
+            },
+            "description": "Somente Zapo Redis compatível. Webhooks vazios; nenhum QR ou socket é aberto por esta operação. Confirmação obrigatória da origem offline.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"archive\": \"string\",\n  \"password\": \"string\",\n  \"confirmOriginOffline\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar se a remoção local após migração está liberada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/session-transfers/{{phone}}/transfer-removal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "session-transfers",
+                "{{phone}}",
+                "transfer-removal"
+              ],
+              "query": []
+            },
+            "description": "Administrador; verifica checkpoint de backup e suspensão da origem.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remover origem após migração, sem logout no WhatsApp",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/session-transfers/{{phone}}/transfer-removal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "session-transfers",
+                "{{phone}}",
+                "transfer-removal"
+              ],
+              "query": []
+            },
+            "description": "Exige senha do administrador, telefone e confirmação da validação do backup no destino. Apenas limpeza local, sem revogação remota.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar tarefas de backup dos dispositivos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "backups"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador autenticado, sem credencial API. Retorna metadados, nunca a senha ou o arquivo. Atualizar ao retornar ao painel.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Gerar backup em segundo plano",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/backup-tasks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "backup-tasks"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador. Uma tarefa simultânea. Senha apenas em memória durante execução; arquivo criptografado disponível por 24 horas após conclusão. Reinício durante geração não retoma automaticamente; após 10 minutos aparece interrupted. Mantém somente o último resultado por dispositivo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true,\n  \"mode\": \"credentials\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Baixar arquivo criptografado de backup concluído",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/backup-tasks/{{task}}/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "backup-tasks",
+                "{{task}}",
+                "download"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador autenticado. Resposta JSON com fileName e archive para download pelo navegador. Cache-Control no-store. A senha não é retornada.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar liberação de remoção local após migração",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/transfer-removal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "transfer-removal"
+              ],
+              "query": []
+            },
+            "description": "Administrador autenticado. Requer checkpoint de backup concluído e origem suspensa.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Elegibilidade local; não confirma restauração no destino.",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/mobile-devices/{{id}}/transfer-removal",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "mobile-devices",
+                    "{{id}}",
+                    "transfer-removal"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador autenticado. Requer checkpoint de backup concluído e origem suspensa.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Elegibilidade local; não confirma restauração no destino.",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Remover somente desta instância após migração",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/mobile-devices/{{id}}/transfer-removal",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "mobile-devices",
+                "{{id}}",
+                "transfer-removal"
+              ],
+              "query": []
+            },
+            "description": "Confere novamente a senha do administrador conectado, com limite de tentativas. Exige backup concluído, suspensão e confirmação humana da validação no destino. Não faz logout remoto nem revoga vínculos. Reativar a origem invalida o checkpoint.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"string\",\n  \"confirm\": true,\n  \"backupValidated\": true,\n  \"password\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Suspender e exportar backup criptografado do dispositivo principal",
           "request": {
             "method": "POST",
@@ -441,7 +1939,7 @@
               ],
               "query": []
             },
-            "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens e registro em um arquivo .viperdevice cifrado por senha (AES-256-GCM e scrypt). Não inclui mensagens, mídias, webhooks, usuários ou tokens da stack. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+            "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens, companions e registro em .viperdevice cifrado por senha (AES-256-GCM e scrypt). mode=complete inclui também mensagens de todos os tipos, índices, contatos, mapeamentos UnoID/provider e status, preservando expiração. mode=credentials é o padrão da API para compatibilidade; o painel seleciona complete. Não inclui arquivos de mídia, webhooks, usuários ou tokens da stack. Limites de 16 MiB por arquivo e 10000 registros, sem truncamento silencioso. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -454,7 +1952,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true\n}",
+              "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true,\n  \"mode\": \"credentials\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -486,7 +1984,7 @@
                   ],
                   "query": []
                 },
-                "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens e registro em um arquivo .viperdevice cifrado por senha (AES-256-GCM e scrypt). Não inclui mensagens, mídias, webhooks, usuários ou tokens da stack. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+                "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens, companions e registro em .viperdevice cifrado por senha (AES-256-GCM e scrypt). mode=complete inclui também mensagens de todos os tipos, índices, contatos, mapeamentos UnoID/provider e status, preservando expiração. mode=credentials é o padrão da API para compatibilidade; o painel seleciona complete. Não inclui arquivos de mídia, webhooks, usuários ou tokens da stack. Limites de 16 MiB por arquivo e 10000 registros, sem truncamento silencioso. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -499,7 +1997,7 @@
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true\n}",
+                  "raw": "{\n  \"password\": \"string\",\n  \"confirmSuspend\": true,\n  \"mode\": \"credentials\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -20449,6 +21947,41 @@
           "response": []
         },
         {
+          "name": "Enviar mensagem (WhatsApp Cloud shape) — Localização estática (formato Cloud API)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "messages"
+              ],
+              "query": []
+            },
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": \"{{to}}\",\n  \"type\": \"location\",\n  \"location\": {\n    \"latitude\": -15.601,\n    \"longitude\": -56.0974,\n    \"name\": \"Praça em Cuiabá\",\n    \"address\": \"Cuiabá, MT\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Enviar mensagem (WhatsApp Cloud shape) — Texto em grupo com @all/@todos",
           "request": {
             "method": "POST",
@@ -20614,6 +22147,41 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"base64\": \"/9j/4AAQSkZJRgABAQ...\",\n    \"mime_type\": \"image/jpeg\",\n    \"filename\": \"foto.jpg\",\n    \"caption\": \"Legenda opcional\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Enviar mensagem (WhatsApp Cloud shape) — Imagem de visualização única (Zapo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "messages"
+              ],
+              "query": []
+            },
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://exemplo.com/imagem.jpg\",\n    \"view_once\": true\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

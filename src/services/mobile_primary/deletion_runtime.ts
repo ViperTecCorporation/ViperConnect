@@ -18,6 +18,7 @@ export async function createMobileDeletionService() {
       return raw ? new RegistrationVault(process.env.MOBILE_REGISTRATION_KEY || '').open(id, raw) : undefined
     },
     config: redis.getConfig, saveConfig: redis.setConfig,
+    backupCompleted: async (phone, id) => (await (await redis.getRedis()).get(`mobile-primary:{v1}:backup-completed:${phone}`)) === id,
     dispatch: phone => new ReloadAmqp(getConfigRedis).run(phone),
     eval: async (script, options) => (await redis.getRedis()).eval(script, options),
     lease: name => new RedisLease(name, 120000),

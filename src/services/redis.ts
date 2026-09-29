@@ -1296,7 +1296,11 @@ export const addAuthTokensToIndex = async (tokens: string[]) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const setConfig = async (phone: string, value: any) => {
+  // Resuming the origin invalidates the previous migration checkpoint.
+  if (value?.autoConnect === true) await client.del(`mobile-primary:{v1}:backup-completed:${phone}`)
+  if (value?.autoConnect === true) await client.del(`session-transfer:{v1}:completed:${phone}`)
   const currentConfig = await getConfig(phone)
+  if (value?.autoConnect === true && currentConfig?.sessionTransferDeleting) throw new Error('session_transfer_deletion_in_progress')
   const currentWebhooks: Webhook[] = currentConfig && currentConfig.webhooks || []
   const newWebhooks: Webhook[] = value && value.webhooks || []
   const updatedWebooks: Webhook[] = []

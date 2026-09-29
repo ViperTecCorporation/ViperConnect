@@ -39,6 +39,23 @@ let incoming: Incoming
 let outgoing: Outgoing
 
 describe('messages routes', () => {
+  test.each(['image', 'video', 'audio'])('preserves %s view_once in the enqueued payload', async type => {
+    const spy = jest.spyOn(incoming, 'send').mockResolvedValue({ ok: { messages: [{ id: 'once' }] } })
+    const payload = { to: '5511999999999', type, [type]: { link: 'https://example.test/media', view_once: true } }
+    const res = await request(app.server).post(`/v15.0/${phone}/messages`).send(payload)
+    expect(res.status).toBe(200)
+    expect(spy).toHaveBeenCalledWith(phone, expect.objectContaining(payload), expect.anything())
+  })
+  test.each([
+    { type: 'image', image: { view_once: 'true' } },
+    { type: 'document', document: { view_once: true } },
+    { type: 'image', view_once: true },
+  ])('rejects invalid view_once before enqueueing (%j)', payload => {
+    const spy = jest.spyOn(incoming, 'send')
+    return request(app.server).post(`/v15.0/${phone}/messages`).send({ to: '5511999999999', ...payload }).then(res => {
+      expect(res.status).toBe(400); expect(spy).not.toHaveBeenCalled()
+    })
+  })
   beforeEach(() => {
     phone = `${new Date().getTime()}`
     json = { data: `${new Date().getTime()}` }
@@ -68,6 +85,36 @@ describe('messages routes', () => {
         requestId: expect.any(String),
       }),
     )
+  })
+
+  test('enqueues normalized location preserving reply context', async () => {
+    const sendSpy = jest.spyOn(incoming, 'send').mockResolvedValue({ ok: { messages: [{ id: 'queued' }] } })
+    const payload = { messaging_product: 'whatsapp', to: '5511999999999', type: 'location', context: { message_id: 'original' }, location: { latitude: '0', longitude: '-56.1', name: 'Praça' } }
+    const res = await request(app.server).post(`/v15.0/${phone}/messages`).send(payload)
+    expect(res.status).toBe(200)
+    expect(sendSpy).toHaveBeenCalledWith(phone, expect.objectContaining({ ...payload, location: { latitude: 0, longitude: -56.1, name: 'Praça' } }), expect.anything())
+  })
+
+  test.each(['hd', 'sd'])('accepts video quality %s without dropping it before the worker', async quality => {
+    const sendSpy = jest.spyOn(incoming, 'send').mockResolvedValue({ ok: { messages: [{ id: 'video-test' }] } })
+    const video = { link: 'https://example.com/video.mp4', quality }
+    const res = await request(app.server).post(`/v15.0/${phone}/messages`).send({ to: '5511999999999', type: 'video', video })
+    expect(res.status).toBe(200)
+    expect(sendSpy).toHaveBeenCalledWith(phone, expect.objectContaining({ video }), expect.anything())
+  })
+
+  test('rejects unsupported video quality before enqueueing', async () => {
+    const sendSpy = jest.spyOn(incoming, 'send').mockClear()
+    const res = await request(app.server).post(`/v15.0/${phone}/messages`).send({ to: '5511999999999', type: 'video', video: { link: 'https://example.com/video.mp4', quality: '4k' } })
+    expect(res.status).toBe(400)
+    expect(sendSpy).not.toHaveBeenCalled()
+  })
+
+  test.each([undefined, {}, { latitude: 91, longitude: 0 }, { latitude: null, longitude: 0 }])('rejects invalid location before queueing: %s', async (location) => {
+    const sendSpy = jest.spyOn(incoming, 'send')
+    const res = await request(app.server).post(`/v15.0/${phone}/messages`).send({ to: '5511999999999', type: 'location', location })
+    expect(res.status).toBe(400)
+    expect(sendSpy).not.toHaveBeenCalled()
   })
 
   test('normalizes raw Baileys interactive payload before sending', async () => {
