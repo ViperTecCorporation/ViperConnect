@@ -103,6 +103,26 @@ Transferring a Manager assignment denies subsequent reads by the previous owner,
 
 ## HTTP contract
 
+### Mobile Primary on any server — 4.0.33
+
+No `mobile_lab`, `UNOAPI_MOBILE_PRIMARY_LAB` or `MOBILE_REGISTRATION_ENABLED`
+requirement remains. Admin registration, import, connection, backups and companions
+use the configured `UNOAPI_SERVER_NAME` (default `server_1`). Web and the owning
+worker must share that identity, Redis access and a persistent
+`MOBILE_REGISTRATION_KEY`: 64 random hexadecimal characters. Preserve and securely
+back up this encryption key; never replace it while encrypted records exist.
+Missing keys are reported through capabilities. Authentication, confirmations,
+WhatsApp challenges, attempt limits and exclusive session leases remain enforced.
+
+The production image includes the pinned isolated SMS runtime from
+`lab/registration/package.json`. CI and image builds validate its modules and
+source checksum without sending SMS. The historical directory name is not a
+runtime restriction. Optional `MOBILE_PRIMARY_DIAGNOSTICS=true` enables extra
+diagnostics, not functionality. VoIP uses the configured integrated service.
+History queues and exchanges are server-scoped. Upgrade web and workers together
+with no pending history tasks; the previous shared exchange is not consumed by
+the new queue. Availability does not guarantee WhatsApp acceptance of registration.
+
 Administrative routes are available in interactive OpenAPI and Postman, including Redis, RabbitMQ and concrete VoIP console resources. Documentation does not grant access. Writes, deletions, disconnections and call commands affect the real environment: review targets, back up when applicable and send one operation at a time. Do not automatically run the entire collection.
 
 In Postman, use `admin_token` for global administration, `manager_login_token` for own keys/password and `token` for scoped session/VoIP operations. Login needs no Bearer token. Copy the returned token into the appropriate variable; the collection does not automatically log in, call or delete anything. Select a binary file manually for transfer-audio uploads.

@@ -9,6 +9,7 @@ import { REGISTRATION_PREFIX } from './registration_service'
 import { convertWhalibmobCredentials } from './whalibmob_credentials'
 import { BACKUP_DOMAINS, BACKUP_DATA_DOMAINS, BACKUP_UNO_DOMAINS, BackupMode, BackupRecord, backupRecordKey, isMobileBackupKey, validateMobileBackup, MobileBackupManifest, backupRegistration } from './backup_manifest'
 import { BACKUP_MAX_BYTES, decryptMobileBackup, encryptMobileBackup, validateBackupPassword } from './backup_archive'
+import { mobilePrimaryReady, mobilePrimaryServer } from './runtime_policy'
 
 export const COMMIT_MOBILE_BACKUP = `
 if redis.call('GET', KEYS[5]) ~= ARGV[5] then return 0 end
@@ -46,7 +47,7 @@ export async function createMobileBackupService() {
   const fail = (code: string, status = 409): never => { throw new MobileDeviceError(status, code) }
 
   async function run<T>(action: (redis: Redis, vault: RegistrationVault) => Promise<T>): Promise<T> {
-    if (process.env.UNOAPI_MOBILE_PRIMARY_LAB !== 'true' || process.env.UNOAPI_SERVER_NAME !== 'mobile_lab') return fail('mobile_backup_disabled', 404)
+    if (!mobilePrimaryReady()) return fail('mobile_registration_key_required', 503)
     if (JSON.parse(readFileSync(require.resolve('zapo-js/package.json'), 'utf8')).version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') return fail('mobile_backup_incompatible', 400)
     if (busy) return fail('mobile_backup_busy')
     busy = true
@@ -102,7 +103,7 @@ export async function createMobileBackupService() {
         const phone = state?.canonicalPhone
         if (state?.status !== 'registered' || !/^[1-9]\d{7,14}$/.test(phone || '')) return fail('mobile_registration_required')
         const config = await redisService.getConfig(phone)
-        if (!config?.mobilePrimaryImported || config.mobilePrimaryDraftId !== id || config.server !== 'mobile_lab' || config.provider !== 'zapo' || !config.useRedis || config.mobilePrimaryDeleting) return fail('mobile_backup_requires_imported_redis_device')
+        if (!config?.mobilePrimaryImported || config.mobilePrimaryDraftId !== id || config.server !== mobilePrimaryServer() || config.provider !== 'zapo' || !config.useRedis || config.mobilePrimaryDeleting) return fail('mobile_backup_requires_imported_redis_device')
         // Suspension preserves webhooks and credentials; no deregister/logout is invoked.
         await redisService.setConfig(phone, { autoConnect: false })
         await new ReloadAmqp(getConfigRedis).run(phone)
@@ -167,7 +168,7 @@ export async function createMobileBackupService() {
             const auth = await new WaAuthRedisStore({ redis, keyPrefix: stage + prefix, sessionId: phone }).load()
             if (!auth || auth.meJid !== credentials.meJid || auth.deviceInfo?.os !== credentials.deviceInfo?.os || auth.deviceInfo?.business !== credentials.deviceInfo?.business || !Buffer.from(auth.noiseKeyPair.pubKey).equals(Buffer.from(credentials.noiseKeyPair.pubKey)) || !Buffer.from(auth.registrationInfo.identityKeyPair.pubKey).equals(Buffer.from(credentials.registrationInfo.identityKeyPair.pubKey))) return fail('mobile_backup_identity_mismatch', 400)
             const draft = { ...snapshot.device, id, connectionMode: 'mobile_primary', state: 'draft', createdAt: new Date().toISOString(), createdBy: actor }
-            const config = { provider: 'zapo', server: 'mobile_lab', name: draft.name, useRedis: true, useS3: true, autoConnect: false, markOnlineOnConnect: false, webhooks: [], mobilePrimaryDraftId: id, mobilePrimaryImported: true }
+            const config = { provider: 'zapo', server: mobilePrimaryServer(), name: draft.name, useRedis: true, useS3: true, autoConnect: false, markOnlineOnConnect: false, webhooks: [], mobilePrimaryDraftId: id, mobilePrimaryImported: true }
             const keys = [MOBILE_DRAFTS_KEY, REGISTRATION_PREFIX + id, redisService.configKey(phone), redisService.sessionPhoneIndexKey(), leaseKey, ...records.flatMap(record => [stage + backupRecordKey(record, prefix), backupRecordKey(record, prefix)])]
             if (snapshot.companionEpoch) {
               const epochKey = `mobile-primary:{v1}:companions:${id}`, stagingKey = stage + 'companions'

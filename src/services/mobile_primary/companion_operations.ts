@@ -92,7 +92,7 @@ export class MobileCompanionOperations {
     const startedAt = Date.now()
     logger.info({ operationId: operation.id, action: operation.action }, 'MOBILE_COMPANION_STARTED')
     let result: unknown, state: Operation['state'] = 'done'
-    const stopTrace = process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab' && ['qr', 'code'].includes(operation.action)
+    const stopTrace = process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true' && ['qr', 'code'].includes(operation.action)
       ? observeCompanionQuery(mobile, (event, structure) => logger.info({ operationId: operation.id, structure }, event))
       : () => undefined
     try {

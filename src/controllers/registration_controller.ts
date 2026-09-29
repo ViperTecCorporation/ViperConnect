@@ -41,11 +41,9 @@ export class RegistrationController {
       if (req.body.mobilePrimaryDraftId !== undefined || req.body.mobilePrimaryImported !== undefined || req.body.mobilePrimaryDeleting !== undefined) {
         return res.status(400).json({ status: 'error', message: 'mobile_primary_internal_fields' })
       }
-      // Temporary compatibility for ViperChat's fixed server name in the local lab.
+      // Legacy clients send server_1 by default; preserve the existing primary owner.
       const labServerAlias = !!storedConfig?.mobilePrimaryDraftId &&
-        process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' &&
-        process.env.UNOAPI_SERVER_NAME === 'mobile_lab' &&
-        previousConfig.server === 'mobile_lab' && req.body.server === 'server_1'
+        req.body.server === 'server_1'
       if (storedConfig?.mobilePrimaryDraftId && (
         (req.body.provider !== undefined && req.body.provider !== previousConfig.provider) ||
         (req.body.server !== undefined && req.body.server !== previousConfig.server && !labServerAlias) ||

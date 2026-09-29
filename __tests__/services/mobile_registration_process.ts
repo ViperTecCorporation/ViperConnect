@@ -8,14 +8,16 @@ describe('bounded isolated registration child', () => {
   let child: any
   beforeEach(() => {
     jest.useFakeTimers(); jest.clearAllMocks()
-    process.env.UNOAPI_MOBILE_PRIMARY_LAB = 'true'; process.env.MOBILE_REGISTRATION_ENABLED = 'true'
+    process.env.MOBILE_REGISTRATION_KEY = 'ab'.repeat(32)
+    delete process.env.UNOAPI_MOBILE_PRIMARY_LAB; delete process.env.MOBILE_REGISTRATION_ENABLED
+    process.env.UNOAPI_SERVER_NAME = 'production_east'
     child = new EventEmitter(); child.kill = jest.fn(); child.send = jest.fn()
     ;(fork as jest.Mock).mockReturnValue(child)
   })
   afterEach(() => { jest.useRealTimers(); process.env = { ...before } })
   const input: any = { action: 'prepare', draft: { platform: 'android', accountType: 'personal' } }
-  test('disabled flag does not spawn', async () => {
-    delete process.env.MOBILE_REGISTRATION_ENABLED
+  test('missing encryption key does not spawn', async () => {
+    delete process.env.MOBILE_REGISTRATION_KEY
     expect(registrationEnabled()).toBe(false)
     await expect(registrationProcess(input)).rejects.toThrow('disabled')
     expect(fork).not.toHaveBeenCalled()

@@ -16,11 +16,12 @@ import { traceCompanionHistoryRequest } from './companion_history_request_trace'
 import { CompanionHistoryReceiptTrace } from './companion_history_receipt_trace'
 import logger from '../logger'
 import { traceCompanionOutgoing } from './companion_outgoing_trace'
+import { mobilePrimaryReady, mobilePrimaryServer, mobileHistoryQueue } from './runtime_policy'
 
-export const COMPANION_HISTORY_QUEUE = 'unoapi.mobile.companion.history.mobile_lab.zapo'
-const EXCHANGE = 'unoapi.mobile.companion.history'
+export const COMPANION_HISTORY_QUEUE = mobileHistoryQueue()
+const EXCHANGE = COMPANION_HISTORY_QUEUE
 const runtimes = new Map<string, HistoryRuntime>()
-const enabled = () => process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab'
+const enabled = mobilePrimaryReady
 
 export async function companionHistoryService(device: string) {
   const { getRedis } = await import('../redis.js')
@@ -75,7 +76,7 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
         if (!current() || !enabled()) return false
         const { getRedis, getConfig } = await import('../redis.js')
         const redis = await getRedis(), config = await getConfig(phone)
-        return current() && await redis.get(fence.key) === fence.token && config?.mobilePrimaryDraftId === device && config.autoConnect !== false && !config.mobilePrimaryDeleting && config.server === 'mobile_lab'
+        return current() && await redis.get(fence.key) === fence.token && config?.mobilePrimaryDraftId === device && config.autoConnect !== false && !config.mobilePrimaryDeleting && config.server === mobilePrimaryServer()
       },
       async linked(target) { return provisioned.has(target) && (await ctx.client.mobile.listCompanions()).some(item => item.deviceJid === target) },
       async *packets() {

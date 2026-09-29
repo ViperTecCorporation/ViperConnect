@@ -2,6 +2,7 @@ import { MobileConnectionService } from './connection_service'
 import { MobileDeviceService } from '../mobile_device_service'
 import { RegistrationVault } from './registration_vault'
 import { REGISTRATION_PREFIX } from './registration_service'
+import { mobilePrimaryReady, mobilePrimaryServer } from './runtime_policy'
 
 export async function createMobileConnectionService() {
   const { getRedis, getConfig, setConfig, getSessionStatus } = await import('../redis.js')
@@ -11,8 +12,8 @@ export async function createMobileConnectionService() {
   const { ReloadAmqp } = await import('../reload_amqp.js')
   const drafts = new MobileDeviceService()
   return new MobileConnectionService({
-    enabled: () => process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab',
-    server: 'mobile_lab',
+    enabled: mobilePrimaryReady,
+    server: mobilePrimaryServer(),
     draft: id => drafts.get(id),
     registration: async id => {
       const raw = await (await getRedis()).get(REGISTRATION_PREFIX + id)

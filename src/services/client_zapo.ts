@@ -82,7 +82,7 @@ type LeaseFactory = (phone: string) => RedisLease
 const defaultClientFactory: ClientFactory = (options) =>
   new ZapoWaClient(options, companionDiagnosticLogger(
     new PinoLogger(logger.child({ scope: 'zapo' }), 'error'),
-    !!options.companionHost && process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab',
+    !!options.companionHost && process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true',
     options.sessionId || '',
   )) as ZapoClient
 const mediaMessageKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage', 'ptvMessage'] as const
@@ -1025,7 +1025,7 @@ export class ClientZapo implements Client {
     let companionRuntime: any
     let companionHost: any
     const companionPlugins: import('zapo-js').WaClientPluginDefinition[] = []
-    if (this.config.mobilePrimaryDraftId && this.config.useRedis && process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab') {
+    if (this.config.mobilePrimaryDraftId && this.config.useRedis) {
       const { MobileCompanionPersistence } = await import('./mobile_primary/companion_persistence.js')
       const { MobileCompanionOperations, startCompanionWorker } = await import('./mobile_primary/companion_operations.js')
       const { RegistrationVault } = await import('./mobile_primary/registration_vault.js')
@@ -1058,8 +1058,7 @@ export class ClientZapo implements Client {
       plugins: [...companionPlugins, voipPlugin({
         maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS,
         logLevel: 'debug',
-        preferWebRelayPort: !!this.config.mobilePrimaryDraftId &&
-          process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.UNOAPI_SERVER_NAME === 'mobile_lab',
+        preferWebRelayPort: !!this.config.mobilePrimaryDraftId,
       })],
     })
     const generation = ++this.connectionGeneration

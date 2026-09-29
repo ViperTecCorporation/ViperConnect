@@ -1421,7 +1421,7 @@
           "Manager"
         ],
         "summary": "Consultar, vincular ou revogar dispositivo secundário no worker",
-        "description": "Experimental, administrador no mobile_lab. Enfileira um comando cifrado no Redis por até 10 minutos, processado pelo worker que já possui a conexão do principal, fora da fila de mensagens. Listagem usa o epoch persistido, não presença nem inventário remoto completo. QR é o conteúdo decodificado da imagem; code é o código de 8 caracteres solicitado pelo secundário (não SMS). Mutações exigem confirm=true. Sem repetição automática em resultado incerto. Consultar o identificador retornado até estado terminal.",
+        "description": "Administrador em qualquer servidor configurado. Enfileira um comando cifrado no Redis por até 10 minutos, processado pelo worker que já possui a conexão do principal, fora da fila de mensagens. Listagem usa o epoch persistido, não presença nem inventário remoto completo. QR é o conteúdo decodificado da imagem; code é o código de 8 caracteres solicitado pelo secundário (não SMS). Mutações exigem confirm=true. Sem repetição automática em resultado incerto. Consultar o identificador retornado até estado terminal.",
         "security": [
           {
             "AdminToken": []
@@ -2083,7 +2083,7 @@
           "Manager"
         ],
         "summary": "Suspender e exportar backup criptografado do dispositivo principal",
-        "description": "Experimental, somente administrador no mobile_lab com Redis. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens, companions e registro em .viperdevice cifrado por senha (AES-256-GCM e scrypt). mode=complete inclui também mensagens de todos os tipos, índices, contatos, mapeamentos UnoID/provider e status, preservando expiração. mode=credentials é o padrão da API para compatibilidade; o painel seleciona complete. Não inclui arquivos de mídia, webhooks, usuários ou tokens da stack. Limites de 16 MiB por arquivo e 10000 registros, sem truncamento silencioso. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+        "description": "Somente administrador, com Redis e chave de criptografia configurada. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens, companions e registro em .viperdevice cifrado por senha (AES-256-GCM e scrypt). mode=complete inclui também mensagens de todos os tipos, índices, contatos, mapeamentos UnoID/provider e status, preservando expiração. mode=credentials é o padrão da API para compatibilidade; o painel seleciona complete. Não inclui arquivos de mídia, webhooks, usuários ou tokens da stack. Limites de 16 MiB por arquivo e 10000 registros, sem truncamento silencioso. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
         "security": [
           {
             "AdminToken": []
@@ -2190,7 +2190,7 @@
           "Manager"
         ],
         "summary": "Restaurar dispositivo principal a partir de backup criptografado",
-        "description": "Experimental, somente administrador no mobile_lab. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura desconectado, autoConnect=false e sem webhooks. Não solicita SMS, não abre socket e não garante validade remota de credenciais revogadas. Confirme que a origem está desligada antes de conectar manualmente no destino.",
+        "description": "Somente administrador em qualquer servidor configurado. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura desconectado, autoConnect=false e sem webhooks. Não solicita SMS, não abre socket e não garante validade remota de credenciais revogadas. Confirme que a origem está desligada antes de conectar manualmente no destino.",
         "security": [
           {
             "AdminToken": []
@@ -2286,7 +2286,7 @@
           "Manager"
         ],
         "summary": "Consultar conexão do dispositivo principal",
-        "description": "Somente administrador no laboratório mobile_lab. Consulta a sessão Uno pelo número canônico registrado; não abre socket nem retorna credenciais.",
+        "description": "Somente administrador no servidor configurado. Consulta a sessão Uno pelo número canônico registrado; não abre socket nem retorna credenciais.",
         "security": [
           {
             "AdminToken": []
@@ -2341,7 +2341,7 @@
           "Manager"
         ],
         "summary": "Importar registro e conectar dispositivo principal à Zapo",
-        "description": "Somente laboratório mobile_lab. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
+        "description": "Disponível no servidor configurado. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
         "security": [
           {
             "AdminToken": []
@@ -2412,7 +2412,7 @@
           "Manager"
         ],
         "summary": "Consultar estado do registro mobile experimental",
-        "description": "Somente administrador com Bearer, UNOAPI_MOBILE_PRIMARY_LAB=true e MOBILE_REGISTRATION_ENABLED=true. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+        "description": "Somente administrador com Bearer e MOBILE_REGISTRATION_KEY configurada. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
         "security": [
           {
             "AdminToken": []
@@ -2447,7 +2447,7 @@
             "description": "Administrador obrigatório"
           },
           "404": {
-            "description": "Cadastro ausente ou laboratório desativado"
+            "description": "Cadastro ausente"
           },
           "503": {
             "description": "Registro desativado ou armazenamento indisponível"
@@ -2525,7 +2525,7 @@
             "description": "Administrador obrigatório"
           },
           "404": {
-            "description": "Cadastro ausente ou laboratório desativado"
+            "description": "Cadastro ausente"
           },
           "409": {
             "description": "Operação já iniciada ou estado incompatível"
@@ -2605,7 +2605,7 @@
             "description": "Administrador obrigatório"
           },
           "404": {
-            "description": "Cadastro ausente ou laboratório desativado"
+            "description": "Cadastro ausente"
           },
           "409": {
             "description": "Estado incompatível ou operação concorrente"
@@ -2621,8 +2621,8 @@
         "tags": [
           "Manager"
         ],
-        "summary": "Consultar capacidades do laboratório mobile-primary",
-        "description": "Exige UNOAPI_MOBILE_PRIMARY_LAB=true e Authorization: Bearer com token administrativo. Informa capacidades disponíveis no laboratório: SMS depende do componente habilitado; conexão/importação e companions dependem do servidor mobile_lab. VoIP mobile permanece indisponível. A consulta não abre sockets nem envia SMS. Desativado por padrão.",
+        "summary": "Consultar capacidades Mobile Primary",
+        "description": "Exige Authorization: Bearer administrativo. Disponível em qualquer UNOAPI_SERVER_NAME; registro, conexão e companions exigem MOBILE_REGISTRATION_KEY de 64 caracteres hexadecimais compartilhada entre web e worker. Runtime SMS incluído na imagem. VoIP requer serviço integrado configurado. A consulta não abre sockets nem envia SMS.",
         "security": [
           {
             "AdminToken": []
@@ -2630,7 +2630,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Capacidades reais da implementação experimental",
+            "description": "Capacidades e configuração do Mobile Primary",
             "content": {
               "application/json": {
                 "schema": {
@@ -2639,7 +2639,7 @@
                     "experimental": {
                       "type": "boolean",
                       "enum": [
-                        true
+                        false
                       ]
                     },
                     "draftManagement": {
@@ -2650,7 +2650,7 @@
                     },
                     "smsRegistration": {
                       "type": "boolean",
-                      "description": "Habilitado somente com MOBILE_REGISTRATION_ENABLED=true; ainda exige homologação real"
+                      "description": "Disponível com chave de criptografia válida; aceitação do registro depende do WhatsApp"
                     },
                     "credentialImport": {
                       "type": "boolean"
@@ -2665,16 +2665,13 @@
                       "type": "boolean"
                     },
                     "voip": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
+                      "type": "boolean"
                     },
                     "reason": {
                       "type": "string",
                       "enum": [
-                        "mobile_registration_provider_unavailable",
-                        "mobile_registration_unverified"
+                        "",
+                        "mobile_registration_key_required"
                       ]
                     }
                   }
@@ -2703,7 +2700,7 @@
           "Manager"
         ],
         "summary": "Listar rascunhos de dispositivos principais",
-        "description": "Somente administrador e flag experimental ativa. Retorna até 100 rascunhos, ordenados por telefone. Esses registros não são sessões conectadas nem reservam o número. Authorization exige Bearer; tokens na URL não são aceitos. Cache-Control: no-store.",
+        "description": "Somente administrador. Retorna até 100 rascunhos, ordenados por telefone. Esses registros não são sessões conectadas nem reservam o número. Authorization exige Bearer; tokens na URL não são aceitos. Cache-Control: no-store.",
         "security": [
           {
             "AdminToken": []
@@ -2711,7 +2708,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Rascunhos experimentais",
+            "description": "Rascunhos de dispositivos",
             "content": {
               "application/json": {
                 "schema": {
@@ -2748,7 +2745,7 @@
           "Manager"
         ],
         "summary": "Cadastrar rascunho de dispositivo principal",
-        "description": "Salva somente metadados no Redis; não solicita SMS, não cria credenciais, não conecta e não muda sessões existentes. Requer administrador, Bearer e UNOAPI_MOBILE_PRIMARY_LAB=true. Consentimento obrigatório; telefone único entre rascunhos. Repetição retorna 409, sem criar duplicata. Nome máximo de 80 caracteres sem caracteres de controle. Não aceita proxy, OTP, tokens, credenciais, estado ou atribuição de responsável.",
+        "description": "Salva somente metadados no Redis; não solicita SMS, não cria credenciais, não conecta e não muda sessões existentes. Requer administrador e Bearer. Consentimento obrigatório; telefone único entre rascunhos. Repetição retorna 409, sem criar duplicata. Nome máximo de 80 caracteres sem caracteres de controle. Não aceita proxy, OTP, tokens, credenciais, estado ou atribuição de responsável.",
         "security": [
           {
             "AdminToken": []

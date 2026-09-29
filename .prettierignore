@@ -1,0 +1,3 @@
+# Preserve upstream bytes checked by the pinned-source integrity tests.
+public/app/vendor/**
+lab/registration/node_modules/**

@@ -44,6 +44,19 @@ describe('mobile draft administrative API', () => {
     expect(response.body).toMatchObject({ smsRegistration: false, primaryConnection: false, companionQr: false })
     expect(response.headers['cache-control']).toBe('no-store')
   })
+  test('default router enables primary capabilities on a production server without lab flags', async () => {
+    const previous = { ...process.env }
+    try {
+      delete process.env.UNOAPI_MOBILE_PRIMARY_LAB
+      delete process.env.MOBILE_REGISTRATION_ENABLED
+      process.env.UNOAPI_SERVER_NAME = 'production_east'
+      process.env.MOBILE_REGISTRATION_KEY = 'ab'.repeat(32)
+      const production = express().use('/manager/mobile-devices', mobileDeviceRouter(identity as any, service))
+      const response = await request(production).get('/manager/mobile-devices/capabilities').set(auth)
+      expect(response.status).toBe(200)
+      expect(response.body).toMatchObject({ experimental: false, smsRegistration: true, primaryConnection: true, credentialImport: true, companionQr: true, companionCode: true, voip: true })
+    } finally { process.env = previous }
+  })
   test('create delegates actor from authenticated identity, never from request input', async () => {
     service.create.mockResolvedValue({ id: 'test', state: 'draft' })
     const response = await request(app).post('/manager/mobile-devices').set(auth).send({ name: 'Lab' })

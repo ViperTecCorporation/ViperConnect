@@ -4,8 +4,9 @@ import type { RegistrationProvider, RegistrationResult } from './registration_se
 import { MobileRegistrationService } from './registration_service'
 import { RegistrationVault } from './registration_vault'
 import { MobileDeviceService } from '../mobile_device_service'
+import { mobilePrimaryReady } from './runtime_policy'
 
-export const registrationEnabled = () => process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true' && process.env.MOBILE_REGISTRATION_ENABLED === 'true'
+export const registrationEnabled = mobilePrimaryReady
 let activeChildren = 0
 
 /** One bounded child per operation; no inherited production tokens, S3 or proxy config. */
@@ -17,7 +18,7 @@ export const registrationProcess: RegistrationProvider = input => new Promise((r
     env: {
       PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
       HOME: process.env.MOBILE_REGISTRATION_HOME || '/tmp/mobile-registration',
-      MOBILE_REGISTRATION_MODULE: process.env.MOBILE_REGISTRATION_MODULE || '',
+      MOBILE_REGISTRATION_MODULE: process.env.MOBILE_REGISTRATION_MODULE || '/opt/mobile-registration/node_modules/whalibmob',
       WA_OS: input.draft.platform, WA_BUSINESS: input.draft.accountType === 'business' ? '1' : '0',
       WA_REG_PACING: '0', WA_FUNNEL_LOG: '0',
       NODE_OPTIONS: '--max-old-space-size=256',

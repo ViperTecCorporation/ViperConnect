@@ -112,6 +112,11 @@ RUN corepack enable \
     && YARN_ENABLE_IMMUTABLE_INSTALLS=0 yarn install --production --frozen-lockfile --no-progress --network-timeout 600000 \
     && node --input-type=module -e "const fileType = await import('file-type'); if (typeof fileType.fileTypeFromBuffer !== 'function') process.exit(1)"
 
+FROM production-dependencies AS mobile-registration
+COPY ./lab/registration ./lab/registration
+RUN npm ci --prefix lab/registration --omit=dev --ignore-scripts \
+    && node scripts/check-mobile-runtime.cjs
+
 FROM node:24-bookworm-slim AS runtime-base
 
 ARG VOIP_SOURCE_SHA=unknown
@@ -127,6 +132,7 @@ LABEL \
   io.vipertec.viperconnect.voip.revision="${VOIP_SOURCE_SHA}"
 
 ENV NODE_ENV=production
+ENV MOBILE_REGISTRATION_MODULE=/opt/mobile-registration/node_modules/whalibmob
  
 RUN groupadd -r u && useradd -r -g u u
 WORKDIR /home/u/app
@@ -144,6 +150,11 @@ COPY --from=voip-builder /app/package.json ./voip/package.json
 COPY --from=voip-builder /app/package-lock.json ./voip/package-lock.json
 COPY --from=voip-updater /out ./voip/updater
 COPY ./scripts/container-entrypoint.sh ./container-entrypoint.sh
+COPY ./lab/registration/*.cjs ./lab/registration/
+COPY ./lab/registration/package*.json ./lab/registration/
+COPY ./scripts/check-mobile-runtime.cjs ./scripts/check-mobile-runtime.cjs
+COPY --from=mobile-registration /app/lab/registration/node_modules /opt/mobile-registration/node_modules
+RUN node scripts/check-mobile-runtime.cjs
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg qpdf wget ca-certificates \
     && update-ca-certificates \

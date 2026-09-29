@@ -4,11 +4,12 @@ import { managerToken } from '../services/manager_access'
 import { MobileDeviceService, MobileDeviceError, mobileCapabilities } from '../services/mobile_device_service'
 import { createRegistrationService } from '../services/mobile_primary/registration_process'
 import { companionOperations } from '../services/mobile_primary/companion_runtime'
+import { mobilePrimaryReady } from '../services/mobile_primary/runtime_policy'
 
 export function mobileDeviceRouter(
   identity: Pick<ManagerIdentity, 'authenticate'> & Partial<Pick<ManagerIdentity, 'confirmAdminPassword'>> = managerIdentity,
   service = new MobileDeviceService(),
-  enabled = () => process.env.UNOAPI_MOBILE_PRIMARY_LAB === 'true',
+  enabled = () => true,
   registration = createRegistrationService(service),
   connection = async () => (await import('../services/mobile_primary/connection_runtime.js')).createMobileConnectionService(),
   deletion = async () => (await import('../services/mobile_primary/deletion_runtime.js')).createMobileDeletionService(),
@@ -45,7 +46,7 @@ export function mobileDeviceRouter(
   router.post('/:id/companion-history', run(async (req, res) => res.status(202).json(await (await history()).requestCompanionHistory(req.params.id, req.body))))
   router.get('/:id/companion-history/:operation', run(async (req, res) => res.json(await (await (await history()).companionHistoryService(req.params.id)).status(req.params.operation))))
   router.get('/:id/companions/:operation', run(async (req, res) => res.json(await (await companions(req.params.id)).status(req.params.operation))))
-  router.get('/capabilities', (_req, res) => res.json({ ...mobileCapabilities(), smsRegistration: registration.enabled(), primaryConnection: process.env.UNOAPI_SERVER_NAME === 'mobile_lab', credentialImport: process.env.UNOAPI_SERVER_NAME === 'mobile_lab', companionQr: process.env.UNOAPI_SERVER_NAME === 'mobile_lab', companionCode: process.env.UNOAPI_SERVER_NAME === 'mobile_lab', reason: registration.enabled() ? 'mobile_registration_unverified' : 'mobile_registration_provider_unavailable' }))
+  router.get('/capabilities', (_req, res) => res.json({ ...mobileCapabilities(), smsRegistration: registration.enabled(), primaryConnection: mobilePrimaryReady(), credentialImport: mobilePrimaryReady(), companionQr: mobilePrimaryReady(), companionCode: mobilePrimaryReady(), voip: mobilePrimaryReady(), reason: mobilePrimaryReady() ? '' : 'mobile_registration_key_required' }))
   router.post('/restore', json({ limit: '17mb' }), run(async (req, res) => res.status(201).json(await (await backup()).restore(req.body, res.locals.mobileActor))))
   router.post('/:id/backup', run(async (req, res) => res.json(await (await backup()).export(req.params.id, req.body))))
   router.get('/backups', run(async (_req, res) => {

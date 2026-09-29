@@ -53,21 +53,20 @@ describe('RegistrationController connection type policy', () => {
     expect(res.status).toHaveBeenCalledWith(200)
   })
 
-  test.each([true, false])('server_1 alias is restricted to the mobile lab (enabled=%s)', async (enabled) => {
+  test.each([true, false])('server_1 alias preserves primary ownership regardless of legacy lab flag (%s)', async (enabled) => {
     const oldFlag = process.env.UNOAPI_MOBILE_PRIMARY_LAB
     const oldServer = process.env.UNOAPI_SERVER_NAME
     process.env.UNOAPI_MOBILE_PRIMARY_LAB = String(enabled)
-    process.env.UNOAPI_SERVER_NAME = 'mobile_lab'
+    process.env.UNOAPI_SERVER_NAME = 'production_east'
     try {
-      const config = { ...defaultConfig, provider: 'zapo' as const, server: 'mobile_lab', webhooks: [] }
+      const config = { ...defaultConfig, provider: 'zapo' as const, server: 'production_east', webhooks: [] }
       storedConfigMock.mockResolvedValue({ provider: 'zapo', mobilePrimaryDraftId: 'lab-device' })
       const reload = mockDeep<Reload>()
       const controller = new RegistrationController(jest.fn().mockResolvedValue(config), reload, mockDeep<Logout>())
       const res = response()
       await controller.register({ params: { phone: '5566000000083' }, body: { server: 'server_1', webhooks: [] }, headers: {}, query: {} } as unknown as Request, res)
-      expect(res.status).toHaveBeenCalledWith(enabled ? 200 : 409)
-      if (enabled) expect(setConfigMock).toHaveBeenCalledWith('5566000000083', expect.objectContaining({ server: 'mobile_lab', webhooks: [] }))
-      else expect(setConfigMock).not.toHaveBeenCalled()
+      expect(res.status).toHaveBeenCalledWith(200)
+      expect(setConfigMock).toHaveBeenCalledWith('5566000000083', expect.objectContaining({ server: 'production_east', webhooks: [] }))
       expect(reload.run).not.toHaveBeenCalled()
     } finally {
       if (oldFlag === undefined) delete process.env.UNOAPI_MOBILE_PRIMARY_LAB

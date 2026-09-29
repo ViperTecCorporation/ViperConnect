@@ -35,7 +35,7 @@ return 1`
 
 export function mobileCapabilities() {
   return {
-    experimental: true,
+    experimental: false,
     draftManagement: true,
     smsRegistration: false,
     credentialImport: false,
