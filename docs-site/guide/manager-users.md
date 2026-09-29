@@ -28,6 +28,11 @@ registro pelo WhatsApp. `MOBILE_PRIMARY_DIAGNOSTICS=true` habilita diagnóstico
 adicional; não é necessário para operar. VoIP usa o serviço integrado configurado.
 Atualize web e workers juntos, sem tarefas de histórico em andamento; a versão
 anterior usava uma exchange compartilhada, que não é consumida pela nova fila.
+A topologia usa `unoapi.mobile.companion.history.v2.<servidor>.zapo`, inclusive
+para as filas `.delayed` e `.dead`: os argumentos de dead-letter antigos são
+imutáveis no RabbitMQ. As filas antigas não são apagadas nem redeclaradas com
+argumentos diferentes. Antes de atualizar, esvazie as tarefas pendentes pelo
+worker anterior; não exclua mensagens para contornar `PRECONDITION_FAILED`.
 
 O botão e o título do cadastro de aparelho principal são **Novo dispositivo**,
 com ícone de celular e sinal de adição. **Nova sessão** usa um ícone de vínculo.

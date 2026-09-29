@@ -101,6 +101,14 @@ storage URLs single-access. See [Zapo send options](https://zapo.to/en/guides/se
 
 ## Contact cards
 
+Brazilian mobile numbers inside shared cards use the same canonical phone
+resolver as message recipients: session cache first, then WhatsApp if needed.
+When the confirmed identity uses an eight-digit local number, the vCard phone
+and `wa_id` follow that form; the ninth digit is never removed by assumption.
+Unavailable or unconfirmed lookups preserve the original card. Landlines and
+foreign numbers remain unchanged. This applies to single and multiple cards,
+without changing the envelope recipient `to`.
+
 Use `type: "contacts"` and `contacts: [...]` in the public API, even for a single
 card. The Zapo adapter sends one card as `contactMessage`, and two or more as
 `contactsArrayMessage` in one message, preserving their order. Each card keeps

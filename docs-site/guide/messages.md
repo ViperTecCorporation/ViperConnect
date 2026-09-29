@@ -255,6 +255,14 @@ Referência: [opções de envio da Zapo](https://zapo.to/en/guides/sending-messa
 
 ## Figurinha, contato e reação
 
+Ao compartilhar contatos, os celulares brasileiros no cartão usam o PN canônico
+do mesmo resolvedor de destinatários: cache da sessão primeiro e consulta ao
+WhatsApp quando necessário. Se a identidade confirmada usar oito dígitos locais,
+o telefone e `wa_id` da vCard seguem essa forma; não removemos o nono dígito por
+suposição. Sem confirmação ou em falha de consulta, o cartão mantém o número
+original. Fixos e números internacionais não são alterados. A regra vale para
+um cartão ou uma lista e não modifica o destinatário `to` do envelope.
+
 O envio de contatos mantém `type: "contacts"` e `contacts: [...]` na API,
 mesmo para um único contato. Na Zapo, um item é enviado como `contactMessage`;
 dois ou mais usam `contactsArrayMessage`, na mesma mensagem e na ordem recebida.

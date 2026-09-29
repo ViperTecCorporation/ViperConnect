@@ -122,6 +122,11 @@ diagnostics, not functionality. VoIP uses the configured integrated service.
 History queues and exchanges are server-scoped. Upgrade web and workers together
 with no pending history tasks; the previous shared exchange is not consumed by
 the new queue. Availability does not guarantee WhatsApp acceptance of registration.
+The topology uses `unoapi.mobile.companion.history.v2.<server>.zapo`, including
+its `.delayed` and `.dead` queues, because old dead-letter arguments are immutable
+in RabbitMQ. Existing queues are neither deleted nor redeclared with different
+arguments. Drain pending tasks with the previous worker before upgrading;
+never discard messages to work around `PRECONDITION_FAILED`.
 
 Administrative routes are available in interactive OpenAPI and Postman, including Redis, RabbitMQ and concrete VoIP console resources. Documentation does not grant access. Writes, deletions, disconnections and call commands affect the real environment: review targets, back up when applicable and send one operation at a time. Do not automatically run the entire collection.
 

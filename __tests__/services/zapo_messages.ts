@@ -11,6 +11,34 @@ const mockedFetch = fetch as unknown as jest.Mock
 const publishResult = { id: 'provider-id', attempts: 1, ackNode: {}, ack: { refreshLid: false } } as never
 
 describe('Zapo messages adapter', () => {
+  test('contact card resolves canonical PN from network on cache miss', async () => {
+    const client = mockDeep<WaClient>(), store = mockDeep<WaStoreSession>(), dataStore = mockDeep<DataStore>()
+    client.profile.getLidsByPhoneNumbers.mockResolvedValue([{ queriedJid: '5566999554300@s.whatsapp.net', phoneJid: '556699554300@s.whatsapp.net', exists: true, lidJid: '222@lid' }] as never)
+    store.contacts.upsertBatch.mockImplementation(async records => { store.contacts.getByJid.mockResolvedValue(records[0]) })
+    client.message.send.mockResolvedValue(publishResult)
+    await new ZapoMessages(client, dataStore, { store }).send({ to: '123@lid', type: 'contacts', contacts: [{ name: { formatted_name: 'José' }, phones: [{ phone: '+5566999554300' }] }] })
+    expect(client.profile.getLidsByPhoneNumbers).toHaveBeenCalledWith(['5566999554300@s.whatsapp.net'])
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.objectContaining({ contactMessage: expect.objectContaining({ vcard: expect.stringContaining('556699554300') }) }), expect.anything())
+  })
+  test.each([1, 2])('sends %i canonical contact cards using the session identity resolver', async count => {
+    const client = mockDeep<WaClient>(), store = mockDeep<WaStoreSession>(), dataStore = mockDeep<DataStore>()
+    const record = { jid: '222@lid', lid: '222@lid', phoneNumber: '556699554300' }
+    store.contacts.getByPhoneNumber.mockImplementation(async phone => phone === '556699554300' ? record as never : null)
+    store.contacts.getByJid.mockImplementation(async jid => jid === '222@lid' ? record as never : null)
+    client.message.send.mockResolvedValue(publishResult)
+    const messages = new ZapoMessages(client, dataStore, { store })
+    await messages.send({ to: '123@lid', type: 'contacts', contacts: Array.from({ length: count }, () => ({ name: { formatted_name: 'José' }, phones: [{ phone: '+5566999554300', wa_id: '5566999554300' }] })) })
+    expect(client.message.send).toHaveBeenCalledTimes(1)
+    const [target, content] = client.message.send.mock.calls[0] as any
+    expect(target).toBe('123@lid')
+    const cards = count === 1 ? [content.contactMessage] : content.contactsArrayMessage.contacts
+    expect(cards).toHaveLength(count)
+    for (const card of cards) {
+      expect(card.vcard).toContain('556699554300')
+      expect(card.vcard).not.toContain('5566999554300')
+    }
+    expect(client.profile.getLidsByPhoneNumbers).not.toHaveBeenCalled()
+  })
   test.each(['image', 'video', 'audio'])('passes %s viewOnce to the actual SDK send call', async type => {
     const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
     client.message.send.mockResolvedValue(publishResult)

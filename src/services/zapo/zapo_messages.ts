@@ -15,6 +15,7 @@ import { saveReplyWarning, completeReplyWarning } from '../reply_warning_outbox'
 import { getZapoRecipientIdentity, getZapoStoredPhone } from './zapo_recipient'
 import type { YouTubeLinkPreviewResolver } from '../messages/youtube_link_preview'
 import { ZapoSentArchive } from './zapo_sent_archive'
+import { normalizeZapoContactCards } from './zapo_contact_cards'
 
 type ZapoMessagesOptions = {
   customMessageCharactersFunction?: (message: string) => string
@@ -263,6 +264,7 @@ export class ZapoMessages {
     let content: WaSendMessageContent | undefined
     let mappedOptions: Record<string, unknown> = {}
     if (payload?.type) {
+      if (this.identity) payload = await normalizeZapoContactCards(payload, async phone => (await this.identity!.resolveManyPhoneJids([phone]))[0])
       const mapped = await toZapoMessageContent(this.client, payload, this.customMessageCharactersFunction, this.youtubeLinkPreviewResolver)
       content = mapped.content
       mappedOptions = mapped.options
@@ -301,6 +303,7 @@ export class ZapoMessages {
   async send(payload: any, baseOptions: Record<string, unknown> = {}): Promise<Response> {
     if (payload?.status) return this.updateStatus(payload)
     payload = await this.expandTemplate(payload)
+    if (this.identity) payload = await normalizeZapoContactCards(payload, async phone => (await this.identity!.resolveManyPhoneJids([phone]))[0])
     const type = `${payload?.type || ''}`
     let target = await this.canonicalJid(getZapoRecipientIdentity(payload))
     let content

@@ -9,7 +9,8 @@ test.each(['server_1', 'production_east', 'worker-02', 'mobile_lab'])('supports 
   process.env.MOBILE_REGISTRATION_KEY = 'ab'.repeat(32)
   expect(mobilePrimaryReady()).toBe(true)
   expect(mobilePrimaryServer()).toBe(server)
-  expect(mobileHistoryQueue()).toBe(`unoapi.mobile.companion.history.${server}.zapo`)
+  expect(mobileHistoryQueue()).toBe(`unoapi.mobile.companion.history.v2.${server}.zapo`)
+  expect(mobileHistoryQueue()).not.toBe(`unoapi.mobile.companion.history.${server}.zapo`)
   expect(readFileSync('src/services/mobile_primary/companion_history_runtime.ts', 'utf8')).toContain('const EXCHANGE = COMPANION_HISTORY_QUEUE')
 })
 test('defaults to server_1 and still requires a valid encryption key', () => {

@@ -8,7 +8,7 @@ import type { RabbitQueueInfo, RabbitQueueMessage, SessionConfig } from '../doma
 import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js'
 
 export const queueDescriptionKey = (name: string): TranslationKey => {
-  if (/^unoapi\.mobile\.companion\.history\.[^.]+\.zapo(?:\.(?:dead|delayed))?$/.test(name)) return 'Envia histórico local ao dispositivo secundário, sem webhooks. Inclui referências de mídias comuns; não baixa arquivos.'
+  if (/^unoapi\.mobile\.companion\.history\.(?:v2\.)?[^.]+\.zapo(?:\.(?:dead|delayed))?$/.test(name)) return 'Envia histórico local ao dispositivo secundário, sem webhooks. Inclui referências de mídias comuns; não baixa arquivos.'
   const queue = parseRabbitQueueName(name)
   const variants: Record<string, TranslationKey> = {
     'outgoing.history': 'Entrega às aplicações os webhooks do histórico, separados dos eventos em tempo real.',
