@@ -19,6 +19,83 @@ import type { WaClient } from 'zapo-js'
 import fetch from 'node-fetch'
 
 describe('Zapo message mapper', () => {
+  test.each([true, false, undefined])('preserves optional WebView hints through protobuf: %s', async interaction => {
+    const url = { title: 'Abrir', link: 'https://example.com/form',
+      ...(interaction !== undefined ? { webview_presentation: 'full', webview_interaction: interaction } : {}) }
+    const mapped = await toZapoMessageContent(mockDeep<WaClient>(), {
+      type: 'interactive', interactive: { type: 'button', body: { text: 'Formulario' }, action: { buttons: [{ type: 'cta_url', url }] } },
+    })
+    const decoded = proto.Message.decode(proto.Message.encode(mapped.content as any).finish())
+    const button = decoded.interactiveMessage!.nativeFlowMessage!.buttons![0]
+    expect(button.name).toBe('cta_url')
+    expect(JSON.parse(button.buttonParamsJson!)).toEqual({ display_text: 'Abrir', url: url.link, merchant_url: url.link,
+      ...(interaction !== undefined ? { webview_presentation: 'full', webview_interaction: interaction } : {}) })
+  })
+  test.each([
+    [{ webview_interaction: 'true' }, 'webview_interaction_must_be_boolean'],
+    [{ webview_presentation: 'invalid' }, 'webview_presentation_must_be_full'],
+  ])('rejects invalid WebView hints %j', async (hints, error) => {
+    await expect(toZapoMessageContent(mockDeep<WaClient>(), {
+      type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'cta_url', url: { title: 'Abrir', link: 'https://example.com', ...hints as object } }] } },
+    })).rejects.toThrow(error as string)
+  })
+  test.each(['image', 'video', 'audio'])('maps %s view_once to SDK send options, not media content', async type => {
+    for (const view_once of [true, false, undefined]) {
+      const mapped = await toZapoMessageContent(mockDeep<WaClient>(), {
+        type, [type]: { link: '/test/media', view_once }, mentions: ['5511999999999'],
+      })
+      expect(mapped.options).toEqual({ mentions: ['5511999999999@s.whatsapp.net'], ...(view_once === undefined ? {} : { viewOnce: view_once }) })
+      expect(mapped.content).not.toHaveProperty('viewOnce')
+      expect(mapped.content).not.toHaveProperty('view_once')
+    }
+  })
+  test('worker rejects invalid view_once before media download', async () => {
+    await expect(toZapoMessageContent(mockDeep<WaClient>(), { type: 'image', image: { link: 'https://example.test/image.jpg', view_once: 'true' } }))
+      .rejects.toThrow('view_once_must_be_boolean')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  // Official raw-send contract: https://zapo.to/en/guides/raw-sends#contacts
+  test.each([1, 2, 3])('maps %i contact cards to the single/array Zapo protobuf', async (count) => {
+    const contacts = ['José Silva', 'Maria Souza', 'Ana Lima'].slice(0, count).map((name, index) => ({
+      name: { formatted_name: name },
+      phones: [{ phone: `+551198888777${index}`, wa_id: `551198888777${index}` }],
+      emails: [{ email: `contact${index}@example.test` }],
+    }))
+    const mapped = await toZapoMessageContent(mockDeep<WaClient>(), { type: 'contacts', contacts })
+    expect(mapped.options).toEqual({})
+    expect(Object.keys(mapped.content)).toEqual([count === 1 ? 'contactMessage' : 'contactsArrayMessage'])
+    const decoded = proto.Message.decode(proto.Message.encode(mapped.content as any).finish())
+    const cards = count === 1 ? [decoded.contactMessage!] : decoded.contactsArrayMessage!.contacts!
+    expect(cards).toHaveLength(count)
+    if (count > 1) expect(decoded.contactsArrayMessage!.displayName).toBe(`${count} contacts`)
+    cards.forEach((card, index) => {
+      expect(card.displayName).toBe(contacts[index].name.formatted_name)
+      expect(card.vcard).toContain(`FN:${contacts[index].name.formatted_name}`)
+      expect(card.vcard).toMatch(new RegExp(`waid=551198888777${index}`, 'i'))
+      expect(card.vcard).toContain(`contact${index}@example.test`)
+    })
+  })
+
+  test('rejects empty contact lists and cards without phones', async () => {
+    await expect(toZapoMessageContent(mockDeep<WaClient>(), { type: 'contacts', contacts: [] }))
+      .rejects.toThrow('invalid_contacts_payload: empty list')
+    await expect(toZapoMessageContent(mockDeep<WaClient>(), {
+      type: 'contacts', contacts: [{ name: { formatted_name: 'José' } }],
+    })).rejects.toThrow('invalid_contacts_payload: missing phones')
+  })
+
+  test('maps Cloud API static location to a serializable Zapo protobuf', async () => {
+    const mapped = await toZapoMessageContent(mockDeep<WaClient>(), {
+      type: 'location', location: { latitude: '-15.6', longitude: '-56.1', name: 'Praça', address: 'Cuiabá' },
+    })
+    expect(mapped).toEqual({ content: { locationMessage: { degreesLatitude: -15.6, degreesLongitude: -56.1, name: 'Praça', address: 'Cuiabá' } }, options: {} })
+    const decoded = proto.Message.decode(proto.Message.encode(mapped.content as any).finish())
+    expect(decoded.locationMessage).toMatchObject({ degreesLatitude: -15.6, degreesLongitude: -56.1, name: 'Praça', address: 'Cuiabá' })
+  })
+
+  test('worker mapper rejects invalid location even without the HTTP validator', async () => {
+    await expect(toZapoMessageContent(mockDeep<WaClient>(), { type: 'location', location: { latitude: 91, longitude: 0 } })).rejects.toThrow('invalid_location_latitude')
+  })
   const client = mockDeep<WaClient>()
   const mockFetch = fetch as unknown as jest.Mock
   const mockGenerateImageThumbnail = zapoMediaProcessor.generateImageThumbnail as jest.Mock

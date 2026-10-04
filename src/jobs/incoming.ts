@@ -18,6 +18,7 @@ import { resolveProfilePictureId } from '../services/profile_picture_identity'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../services/messages/outgoing_media_input'
 
 import { outgoingEditWebhook } from '../services/messages/outgoing_edit_webhook'
+import { outgoingViewOnceWebhook } from '../services/messages/outgoing_view_once'
 
 type RetryContext = {
   countRetries: number
@@ -93,7 +94,7 @@ export class IncomingJob {
   }
 
   private async consumeProviderOperation(phone: string, data: any) {
-    const allowedActions = ['contacts', 'saveContact', 'requestPairingCode', 'resyncAppState', 'fetchPrivacyTokens', 'fetchMessageHistory']
+    const allowedActions = ['contacts', 'saveContact', 'ownProfile', 'requestPairingCode', 'resyncAppState', 'fetchPrivacyTokens', 'fetchMessageHistory']
     if (!allowedActions.includes(data.action)) throw new Error(`Unknown provider operation ${data.action}`)
     const fn = this.incoming[data.action]
     if (typeof fn !== 'function') throw new Error(`Incoming provider does not support operation ${data.action}`)
@@ -111,6 +112,7 @@ export class IncomingJob {
       [payload.type]: messagePayload,
       type: payload.type,
       ...outgoingEditWebhook(payload, timestamp),
+      ...outgoingViewOnceWebhook(payload),
     }
     if (groupId) message.group_id = groupId
     const userId =
@@ -217,6 +219,7 @@ export class IncomingJob {
                     [type]: content,
                     type,
                     ...outgoingEditWebhook(payload, timestamp),
+                    ...outgoingViewOnceWebhook(payload),
                   },
                 ],
               },
@@ -300,12 +303,12 @@ export class IncomingJob {
     } catch (e) {
       // For replies, inability to verify a previous send must not cause a resend
       // while its warning publication may still be pending.
-      if (payload?.context && !isStatusOperation) throw e
+      if ((payload?.context || a.options?.videoTranscoded) && !isStatusOperation) throw e
       logger.warn(e as any, 'Ignore error checking outgoing idempotency')
     }
     if (alreadyProcessed) {
       // Outside the guard catch: failure to replay a warning must never resend to WhatsApp.
-      if (successfulSend && payload?.context) {
+      if (successfulSend && (payload?.context || a.options?.videoTranscoded)) {
         const pending = await loadReplyWarning(phone, idUno)
         if (pending) {
           const statusPayload = replyWarningStatus(phone, idUno, {
@@ -552,7 +555,7 @@ export class IncomingJob {
         { type: 'topic' },
       )
       await Promise.all(config.webhooks.map((w) => this.outgoing.sendHttp(phone, w, outgingPayload, optionsOutgoing)))
-      if (ok?.warnings?.length || (provider === 'zapo' && error && payload?.context)) await completeReplyWarning(phone, idUno)
+      if (ok?.warnings?.length || (provider === 'zapo' && error && (payload?.context || a.options?.videoTranscoded))) await completeReplyWarning(phone, idUno)
       if (error) {
         try {
           const notices = buildRestrictionNoticeWebhooks({

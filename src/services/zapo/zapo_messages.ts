@@ -10,10 +10,12 @@ import { toZapoMessageContent } from './zapo_message_mapper'
 import { resolveProviderMessageId } from '../message_id_map'
 import logger from '../logger'
 import { loadTranscriptionReference } from '../transcription_reference'
-import { replyWithoutQuoteWarning } from '../api_messages'
+import { apiMessage, replyWithoutQuoteWarning } from '../api_messages'
 import { saveReplyWarning, completeReplyWarning } from '../reply_warning_outbox'
 import { getZapoRecipientIdentity, getZapoStoredPhone } from './zapo_recipient'
 import type { YouTubeLinkPreviewResolver } from '../messages/youtube_link_preview'
+import { ZapoSentArchive } from './zapo_sent_archive'
+import { normalizeZapoContactCards } from './zapo_contact_cards'
 
 type ZapoMessagesOptions = {
   customMessageCharactersFunction?: (message: string) => string
@@ -46,6 +48,7 @@ const mappedOrderReferenceId = (content: WaSendMessageContent): string | undefin
 }
 
 export class ZapoMessages {
+  readonly sentArchive = new ZapoSentArchive()
   private readonly identity?: ZapoIdentity
   private readonly store?: WaStoreSession
   private readonly customMessageCharactersFunction: (message: string) => string
@@ -261,6 +264,7 @@ export class ZapoMessages {
     let content: WaSendMessageContent | undefined
     let mappedOptions: Record<string, unknown> = {}
     if (payload?.type) {
+      if (this.identity) payload = await normalizeZapoContactCards(payload, async phone => (await this.identity!.resolveManyPhoneJids([phone]))[0])
       const mapped = await toZapoMessageContent(this.client, payload, this.customMessageCharactersFunction, this.youtubeLinkPreviewResolver)
       content = mapped.content
       mappedOptions = mapped.options
@@ -279,7 +283,7 @@ export class ZapoMessages {
     await this.dataStore.setUnoId(result.id, messageId)
     const sentKey = { remoteJid: target, id: result.id, fromMe: true }
     await this.dataStore.setKey(result.id, sentKey)
-    await this.dataStore.setMessage(target, { key: sentKey, message: content } as never)
+    await this.persistSent(result.id)
     return {
       ok: {
         messaging_product: 'whatsapp',
@@ -299,12 +303,18 @@ export class ZapoMessages {
   async send(payload: any, baseOptions: Record<string, unknown> = {}): Promise<Response> {
     if (payload?.status) return this.updateStatus(payload)
     payload = await this.expandTemplate(payload)
+    if (this.identity) payload = await normalizeZapoContactCards(payload, async phone => (await this.identity!.resolveManyPhoneJids([phone]))[0])
     const type = `${payload?.type || ''}`
     let target = await this.canonicalJid(getZapoRecipientIdentity(payload))
     let content
     const requestedUnoId = `${baseOptions.unoMessageId || ''}`.trim()
     const options: Record<string, unknown> = { ...baseOptions }
     const warnings: ReturnType<typeof replyWithoutQuoteWarning>[] = []
+    if (type === 'video' && (baseOptions.videoTranscoded === 'hd' || baseOptions.videoTranscoded === 'sd')) {
+      warnings.push({ code: 'VIDEO_TRANSCODED', message: `${apiMessage('VIDEO_TRANSCODED')} (${String(baseOptions.videoTranscoded).toUpperCase()})` })
+    }
+    delete options.videoTranscoded
+    delete options.videoPrepared
     delete options.unoMessageId
     delete options.endpoint
     delete options.requestId
@@ -399,7 +409,7 @@ export class ZapoMessages {
     unoId = await this.dataStore.setUnoId(result.id, unoId) || unoId
     await this.dataStore.setKey(result.id, key)
     await this.dataStore.setKey(unoId, key)
-    await this.dataStore.setMessage(target, { key, message: content } as never)
+    await this.persistSent(result.id)
     const orderReferenceId = mappedOrderReferenceId(content)
     if (orderReferenceId) await this.dataStore.setKey(orderReferenceCacheId(orderReferenceId), key)
     const input = `${payload?.to || target || ''}`
@@ -419,6 +429,17 @@ export class ZapoMessages {
         messages: [{ id: unoId }],
         ...(warnings.length ? { warnings } : {}),
       },
+    }
+  }
+
+  private async persistSent(id: string) {
+    try {
+      if (!await this.sentArchive.commit(id, this.dataStore, this.store)) {
+        logger.warn({ phone: this.phone }, 'ZAPO_SENT_ARCHIVE_CAPTURE_MISSING')
+      }
+    } catch {
+      // A storage failure must not trigger a duplicate network send.
+      logger.error({ phone: this.phone }, 'ZAPO_SENT_ARCHIVE_PERSIST_FAILED')
     }
   }
 

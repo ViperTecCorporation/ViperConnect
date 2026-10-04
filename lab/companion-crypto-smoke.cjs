@@ -1,0 +1,46 @@
+// Offline synthetic vectors against the installed SDK; no account or network calls.
+const assert = require('node:assert/strict')
+const path = require('node:path')
+const { randomBytes } = require('node:crypto')
+const { X25519 } = require('zapo-js/crypto')
+const { proto } = require('zapo-js/proto')
+const { computeAdvIdentityHmac, verifyDeviceIdentityAccountSignature, verifyKeyIndexListSignature } = require('zapo-js/signal')
+const root = path.dirname(require.resolve('zapo-js'))
+const { parseCompanionQr, buildSignedCompanionIdentity } = require(path.join(root, 'auth/pairing/companion-host.js'))
+const { buildPairDeviceIq } = require(path.join(root, 'transport/node/builders/mobile.js'))
+
+async function main() {
+  const account = await X25519.generateKeyPair(), identity = await X25519.generateKeyPair(), noise = await X25519.generateKeyPair()
+  const secret = randomBytes(32), rawId = 123456789, timestamp = Math.floor(Date.now() / 1000)
+  for (const encoding of ['base64', 'base64url']) {
+    const qr = ['ref,with,commas', ...[noise.pubKey, identity.pubKey, secret].map(bytes => Buffer.from(bytes).toString(encoding)), 'CHROME'].join(',')
+    const parsed = parseCompanionQr(qr)
+    assert.equal(parsed.ref, 'ref,with,commas')
+    assert.deepEqual(Buffer.from(parsed.noisePublicKey), Buffer.from(noise.pubKey))
+    assert.deepEqual(Buffer.from(parsed.identityPublicKey), Buffer.from(identity.pubKey))
+    assert.deepEqual(Buffer.from(parsed.advSecretKey), secret)
+    const signed = await buildSignedCompanionIdentity({ accountIdentityKeyPair: account, companionIdentityPublicKey: parsed.identityPublicKey, advSecretKey: parsed.advSecretKey, rawId, keyIndex: 1, timestampSeconds: timestamp, validIndexes: [0, 1] })
+    const wrapper = proto.ADVSignedDeviceIdentityHMAC.decode(signed.deviceIdentityBytes)
+    assert.deepEqual(Buffer.from(computeAdvIdentityHmac(secret, wrapper.details)), Buffer.from(wrapper.hmac))
+    const adv = proto.ADVSignedDeviceIdentity.decode(wrapper.details)
+    assert.equal(await verifyDeviceIdentityAccountSignature(adv.details, adv.accountSignature, identity.pubKey, adv.accountSignatureKey), true)
+    const details = proto.ADVDeviceIdentity.decode(adv.details)
+    assert.equal(details.rawId, rawId); assert.equal(details.keyIndex, 1)
+    const index = proto.ADVSignedKeyIndexList.decode(signed.keyIndexListBytes)
+    assert.equal(await verifyKeyIndexListSignature(index.details, index.accountSignature, account.pubKey), true)
+    const indices = proto.ADVKeyIndexList.decode(index.details)
+    assert.equal(indices.rawId, rawId); assert.equal(indices.currentIndex, 1)
+    assert.deepEqual(indices.validIndexes, [0, 1])
+    const iq = buildPairDeviceIq({ ref: parsed.ref, companionNoisePublicKey: parsed.noisePublicKey, ...signed, keyIndexListTimestampSeconds: timestamp, clientProps: { isChatDbLidMigrated: true, isSyncdPureLidSession: true, isSyncdSnapshotRecoveryEnabled: false } })
+    assert.deepEqual(iq.attrs, { to: 's.whatsapp.net', type: 'set', xmlns: 'md' })
+    const nodes = iq.content[0].content
+    assert.deepEqual(nodes.map(node => node.tag), ['ref', 'pub-key', 'device-identity', 'key-index-list', 'client-props'])
+    const props = proto.ClientPairingProps.decode(nodes[4].content)
+    assert.equal(props.isChatDbLidMigrated, true); assert.equal(props.isSyncdPureLidSession, true)
+    // Negative control: a changed identity must not verify.
+    const wrongIdentity = await X25519.generateKeyPair()
+    assert.equal(await verifyDeviceIdentityAccountSignature(adv.details, adv.accountSignature, wrongIdentity.pubKey, adv.accountSignatureKey), false)
+    console.log(JSON.stringify({ encoding, qrRoundTrip: 'ok', identitySignature: 'ok', hmac: 'ok', indexSignature: 'ok', indices: 'ok', clientProps: 'ok', invalidIdentityRejected: true }))
+  }
+}
+main().catch(() => { console.error('Offline companion crypto validation failed; no credentials logged.'); process.exitCode = 1 })

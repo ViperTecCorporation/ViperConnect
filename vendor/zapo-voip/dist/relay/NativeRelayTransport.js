@@ -65,6 +65,9 @@ class NativeRelayTransport extends node_events_1.EventEmitter {
             '--network',
             addressFamily === 4 ? 'udp4' : 'udp6'
         ]);
+        // Pipe errors are asynchronous: try/catch around write/end cannot catch
+        // EPIPE when the helper exits during a relay recovery or shutdown.
+        this.process.stdin.on('error', (err) => this.fail(`stdin failed: ${(0, util_1.toError)(err).message}`));
         this.process.stdout.on('data', (chunk) => this.consumeStdout(chunk));
         this.process.stderr.on('data', (chunk) => {
             const message = Buffer.from(chunk).toString('utf8').trim();
@@ -87,7 +90,7 @@ class NativeRelayTransport extends node_events_1.EventEmitter {
         return this.stateValue === 'open';
     }
     send(data) {
-        if (!this.isOpen || !this.process.stdin.writable)
+        if (!this.isOpen || !this.process.stdin.writable || this.process.stdin.destroyed || this.process.stdin.writableEnded)
             return false;
         try {
             // A false return is only Node stream backpressure; the frame was
@@ -103,10 +106,14 @@ class NativeRelayTransport extends node_events_1.EventEmitter {
     close() {
         if (this.closedByOwner)
             return;
+        const wasFailed = this.stateValue === 'failed';
         this.closedByOwner = true;
         this.stateValue = 'closed';
         try {
-            if (this.process.stdin.writable) {
+            if (wasFailed || this.process.exitCode !== null || this.process.signalCode !== null) {
+                this.process.stdin.destroy();
+            }
+            else if (this.process.stdin.writable && !this.process.stdin.destroyed && !this.process.stdin.writableEnded) {
                 this.process.stdin.end(encodeFrame(FRAME_CLOSE));
             }
         }

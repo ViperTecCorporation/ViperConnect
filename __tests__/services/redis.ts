@@ -29,6 +29,10 @@ const mockClient: any = {
     return 'OK'
   }),
   eval: jest.fn(async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+    if (_script.includes("'PXAT',deadline")) {
+      store.set(options.keys[0], options.arguments[3])
+      return 1
+    }
     if (options.arguments[0] === 'save_config' || options.arguments[0] === 'remove') {
       if (mockClient.failNextExec) {
         mockClient.failNextExec = false
@@ -138,7 +142,43 @@ import {
   sessionPhoneIndexKey,
   setBlacklistAliases,
   blacklist,
+  setMessage,
+  getMessage,
+  getMessageWithSecretAnySession,
 } from '../../src/services/redis'
+
+describe('compatibility message age', () => {
+  beforeEach(() => mockClient.__reset())
+  test('encodes and writes with the original timestamp through the atomic retention guard', async () => {
+    const timestamp = Math.floor(Date.now() / 1000) - 86400
+    const value = { key: { id: 'a', remoteJid: '456@lid' }, messageTimestamp: timestamp, message: { conversation: 'hello' } }
+    await setMessage('123', '456@lid', 'a', value)
+    expect(mockClient.eval).toHaveBeenCalledWith(expect.stringContaining("'PXAT',deadline"), expect.objectContaining({ keys: ['unoapi-message:123:456@lid:a'], arguments: [expect.any(String), expect.any(String), String(timestamp * 1000), expect.any(String)] }))
+    expect(await getMessage('123', '456@lid', 'a')).toMatchObject({ message: { conversation: 'hello' } })
+  })
+  test('read paths reject old JSON and protobuf entries that retain a historical sliding TTL', async () => {
+    const timestamp = Math.floor(Date.now() / 1000) - 400 * 86400
+    await setMessage('123', '456@lid', 'a', { messageTimestamp: timestamp, message: { conversation: 'old' } })
+    expect(await getMessage('123', '456@lid', 'a')).toBeUndefined()
+    const key = 'unoapi-message:123:456@lid:b'
+    store.set(key, JSON.stringify({ messageTimestamp: timestamp, message: { messageContextInfo: { messageSecret: 'secret' } } }))
+    expect(await getMessage('123', '456@lid', 'b')).toBeUndefined()
+    mockClient.scan.mockResolvedValueOnce({ cursor: '0', keys: [key] })
+    expect(await getMessageWithSecretAnySession('b')).toBeUndefined()
+  })
+  test('a Redis failure is propagated instead of replacing content with an encoding fallback', async () => {
+    mockClient.eval.mockRejectedValueOnce(new Error('redis down'))
+    await expect(setMessage('123', '456@lid', 'a', { messageTimestamp: Date.now() / 1000 })).rejects.toThrow('redis down')
+    expect(mockClient.eval).toHaveBeenCalledTimes(1)
+  })
+  test('replaying an old sliding-TTL copy preserves its original age even if the incoming timestamp changes', async () => {
+    const original = Math.floor(Date.now() / 1000) - 31 * 86400
+    store.set('unoapi-message:123:456@lid:a', JSON.stringify({ messageTimestamp: original }))
+    await setMessage('123', '456@lid', 'a', { messageTimestamp: Math.floor(Date.now() / 1000), message: { conversation: 'edit' } })
+    expect(mockClient.eval.mock.calls[0][1].arguments[2]).toBe(String(original * 1000))
+    expect(await getMessage('123', '456@lid', 'a')).toBeUndefined()
+  })
+})
 
 describe('redis blacklist identity transaction', () => {
   beforeEach(() => mockClient.__reset())

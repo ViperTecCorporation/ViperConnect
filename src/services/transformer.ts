@@ -11,6 +11,7 @@ import logger from './logger'
 import { Config } from './config'
 import { SendError } from './send_error'
 import { BindTemplateError, DecryptError } from './transformer/errors'
+import { isViewOnceContent } from './transformer/view_once'
 import {
   MESSAGE_STUB_TYPE_ERRORS,
   TYPE_MESSAGES_TO_PROCESS_FILE,
@@ -1264,6 +1265,9 @@ export const normalizeWebhookValueIds = (cloudValue: any): void => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const fromBaileysMessageContent = (phone: string, payload: any, config?: Partial<Config>): [any, string, string] => {
   try {
+    const viewOnce = payload?.__unoapiViewOnce === true || isViewOnceContent(payload?.message) || isViewOnceContent(payload?.update?.message)
+    // Preserve envelope metadata through recursive unwrapping without mutating input.
+    if (viewOnce) payload = { ...payload, __unoapiViewOnce: true }
     const { key: { id: whatsappMessageId, fromMe } } = payload
     const [chatJid, senderPhone, senderId] = getChatAndNumberAndId(payload)
     const messageType = getMessageType(payload)
@@ -1545,6 +1549,7 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
           delete message[mediaType].sha256
         }
         message.type = mediaType
+        if (viewOnce && ['image', 'video', 'audio'].includes(mediaType)) message.message_type = 'view_once'
         break
 
       case 'contactMessage':
@@ -1810,6 +1815,12 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
         message.location = {
           latitude: degreesLatitude,
           longitude: degreesLongitude,
+          // Static locations carry optional labels. Never infer missing details
+          // or change the existing live-location webhook contract.
+          ...(messageType === 'locationMessage' && !binMessage.isLive && typeof binMessage.name === 'string'
+            ? { name: binMessage.name } : {}),
+          ...(messageType === 'locationMessage' && !binMessage.isLive && typeof binMessage.address === 'string'
+            ? { address: binMessage.address } : {}),
         }
         message.type = 'location'
         break

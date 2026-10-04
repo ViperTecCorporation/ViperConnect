@@ -26,6 +26,19 @@ const contactStore = (records: Record<string, any> = {}) => {
 }
 
 describe('ZapoContactBook', () => {
+  test.each(['invalid', 'unavailable'])('does not save a new contact when verification is %s', async outcome => {
+    const contacts = contactStore()
+    const lookup = jest.fn()
+    if (outcome === 'unavailable') lookup.mockRejectedValue(new Error('network unavailable'))
+    else lookup.mockResolvedValue([{ queriedJid: '5511999999999@s.whatsapp.net', exists: false, invalid: true }])
+    const set = jest.fn()
+    const service = new ZapoContactBook({ chat: { set }, profile: { getLidsByPhoneNumbers: lookup } } as never, { contacts } as never, 'session')
+    await expect(service.save({ phone_number: '5511999999999', full_name: 'Maria' })).rejects.toThrow()
+    expect(lookup).toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
+    expect(contacts.upsert).not.toHaveBeenCalled()
+    expect(contacts.upsertBatch).not.toHaveBeenCalled()
+  })
   test('uses the exact PN stored for a supplied LID and saves the official Contact mutation', async () => {
     const contacts = contactStore({
       '53515477086263@lid': {

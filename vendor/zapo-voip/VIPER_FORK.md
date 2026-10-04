@@ -81,12 +81,19 @@ A suite vendorizada possui testes unitarios para os contratos abaixo. Em
 saida com audio bidirecional no primeiro relay. O failover forcado permanece
 como canario separado porque nao foi acionado nessas chamadas.
 
-O caminho ativo desabilita o fallback sintetico do normalizador e usa o endpoint
+Por padrão, o caminho ativo desabilita o fallback sintetico do normalizador e usa o endpoint
 e a porta recebidos no `te2` selecionado; nao forca `3478` nem `3480`. O helper
 de normalizacao preserva uma variante `3480` opcional para consumidores
 explicitos, mas ela nao entra na selecao de midia 1:1 atual. Este pacote contem
 somente a camada de chamada e midia. SIP, PBX, bridge, roteamento, gravacao e
 interface permanecem no servico VoIP.
+
+A opção `preferWebRelayPort` altera somente a porta de discagem para 3480,
+sem trocar tokens, chaves, IPs ou identidade do relay. Na Uno ela está limitada
+a dispositivos mobile-primary com `UNOAPI_MOBILE_PRIMARY_LAB=true` e servidor
+`mobile_lab`. Sessões convencionais preservam a porta anunciada. O handshake
+foi confirmado no laboratório; em 25/09/2026 o usuário também confirmou áudio
+bidirecional em 4G e Wi-Fi. A VPS não foi alterada.
 
 O mapeamento completo contra o Zapo oficial e o MeowCaller, incluindo diferencas
 intencionais e o roteiro de validacao ao vivo, esta em

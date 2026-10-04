@@ -4,6 +4,19 @@ description: Manager users, persistent account assignments and personal credenti
 
 # Manager users and personal keys
 
+## Dashboard layout
+
+The primary-device registration button and dialog are labeled **Novo dispositivo**
+(New device), with a phone-plus icon and no Experimental badge. **Nova sessão**
+(New session) uses a link icon. These visual changes do not alter
+SMS registration gates, permissions or required confirmations.
+
+The overview shows counters and a compact automatic-refresh toolbar, followed by
+primary devices and linked sessions. Session backups appear below the lists and
+remain administrator-only. Device **Details** opens the registration overview;
+the trash icon keeps the existing deletion confirmations. Layout changes do not
+change permissions or backup, messaging and deletion rules.
+
 ## Safe Redis inspection
 
 Administrators can inspect `manager-identity:{v1}:users`, `names`, `assignments`,
@@ -89,6 +102,45 @@ Updating only the UI/documentation does not enable this feature. Contract valida
 Transferring a Manager assignment denies subsequent reads by the previous owner, but does not invalidate a copied SIP password or disconnect an already registered phone. Assignment transfers preserve connections: they do not automatically rotate passwords or remove registrations. Changing or revoking a Manager token alone does not revoke all external SIP access. For complete external revocation, an administrator must rotate the SIP credential and disconnect registrations through the supported telephony process, then verify the outcome.
 
 ## HTTP contract
+
+### Mobile Primary on any server — 4.0.33
+
+No `mobile_lab`, `UNOAPI_MOBILE_PRIMARY_LAB` or `MOBILE_REGISTRATION_ENABLED`
+requirement remains. Admin registration, import, connection, backups and companions
+use the configured `UNOAPI_SERVER_NAME` (default `server_1`). Web and the owning
+worker must share that identity and the same persistent Redis database.
+Internal protection is provisioned atomically in Redis before web/workers start,
+without an extra ENV, API-token dependency or shared local volume. This supports
+standalone Docker and Swarm across hosts. The key does not expire or change when
+containers restart or the API token rotates.
+
+When upgrading a legacy installation, keep its `MOBILE_REGISTRATION_KEY` for the
+first startup of every process. Existing credentials are checked before adopting
+that key. After verifying migration, remove the variable from all processes.
+Invalid, conflicting or missing legacy keys fail closed, without replacing data.
+Stop old processes before migration; do not mix versions during this upgrade.
+
+Protect Redis persistence and backups: a full Redis copy contains both the key
+and encrypted records. This mode does not isolate keys from a full Redis compromise.
+Key material is excluded from the panel, API, logs and session-transfer archives.
+Transfer archives retain their own password and are reprotected with the target's
+independent key on restore. Use `noeviction` and never discard credential storage.
+Authentication, confirmations,
+WhatsApp challenges, attempt limits and exclusive session leases remain enforced.
+
+The production image includes the pinned isolated SMS runtime from
+`lab/registration/package.json`. CI and image builds validate its modules and
+source checksum without sending SMS. The historical directory name is not a
+runtime restriction. Optional `MOBILE_PRIMARY_DIAGNOSTICS=true` enables extra
+diagnostics, not functionality. VoIP uses the configured integrated service.
+History queues and exchanges are server-scoped. Upgrade web and workers together
+with no pending history tasks; the previous shared exchange is not consumed by
+the new queue. Availability does not guarantee WhatsApp acceptance of registration.
+The topology uses `unoapi.mobile.companion.history.v2.<server>.zapo`, including
+its `.delayed` and `.dead` queues, because old dead-letter arguments are immutable
+in RabbitMQ. Existing queues are neither deleted nor redeclared with different
+arguments. Drain pending tasks with the previous worker before upgrading;
+never discard messages to work around `PRECONDITION_FAILED`.
 
 Administrative routes are available in interactive OpenAPI and Postman, including Redis, RabbitMQ and concrete VoIP console resources. Documentation does not grant access. Writes, deletions, disconnections and call commands affect the real environment: review targets, back up when applicable and send one operation at a time. Do not automatically run the entire collection.
 

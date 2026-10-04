@@ -2,6 +2,41 @@
 
 Connection events use a separate [session lifecycle contract](./session-webhooks).
 
+## View-once media
+
+Incoming image, video and audio messages include `message_type: "view_once"`
+inside `value.messages[]` when identified as view-once. The existing `type`,
+UnoAPI ID and media object are preserved. This ViperConnect extension is not
+an edit or a later event: it adds neither edit context nor `edit_timestamp`.
+Existing reply context remains unchanged.
+
+Detection uses the original media's `viewOnce: true` or `viewOnceMessage`,
+`viewOnceMessageV2`, and `viewOnceMessageV2Extension` wrappers before unwrapping.
+There is no extra Redis lookup, media download or duplicate notification.
+Ordinary messages, quoted view-once content and disappearing messages alone
+are not marked. Unavailable media keeps the existing fallback; this does not
+recover content or automatically replay previously delivered webhooks.
+
+```json
+{
+  "id": "ORIGINAL_UNOAPI_ID",
+  "from": "5566996269251",
+  "timestamp": "1790672409",
+  "type": "image",
+  "message_type": "view_once",
+  "image": {
+    "id": "5566936183915/ORIGINAL_UNOAPI_ID",
+    "mime_type": "image/jpeg",
+    "url": "https://example.test/media.jpg"
+  }
+}
+```
+
+Consumers should persist the flag, show a view-once notice and deduplicate by
+the normal message ID. Do not process it as an edit or wait for another event.
+Avoid automatic previews until a viewing policy is defined. This metadata does
+not enforce single access: existing storage and media URLs remain unchanged.
+
 ## Blacklist and history isolation
 
 `POST /{phone}/blacklist/{webhook_id}` accepts phone numbers, `@s.whatsapp.net`,

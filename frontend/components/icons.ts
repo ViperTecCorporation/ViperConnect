@@ -13,6 +13,7 @@ const paths: Record<string, string> = {
   collapse: '<path d="m15 18-6-6 6-6"/><rect x="3" y="3" width="18" height="18" rx="2"/>',
   expand: '<path d="m9 18 6-6-6-6"/><rect x="3" y="3" width="18" height="18" rx="2"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  devicePlus: '<path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-7"/><path d="M8 6h3M10 18h1M19 3v6M16 6h6"/>',
   refresh: '<path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   settings:

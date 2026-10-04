@@ -228,7 +228,9 @@ O fluxo possui duas filas duráveis: `video.stage` baixa a origem por streaming
 e `video.transcode` executa FFmpeg com concorrência igual a uma e prioridade
 baixa. Vídeos já compatíveis podem ser preparados sem recodificação; os demais
 são normalizados antes de retornarem à fila do provider. O limite padrão de
-entrada é 256 MiB e o alvo padrão de saída é no máximo 15 MiB. A separação não
+entrada é 256 MiB e o teto operacional de saída é 256 MiB, configurável
+por `UNOAPI_VIDEO_MAX_OUTPUT_BYTES`. Não é limite universal do WhatsApp nem alvo
+de compressão. Os perfis HD/SD estão no guia de mensagens. A separação não
 atrasa mensagens de texto, porque elas continuam nas filas normais.
 
 Não adicione `entrypoint`, `command`, `yarn cloud` ou `yarn start` ao `x-base`

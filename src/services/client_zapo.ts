@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import QRCode from 'qrcode'
+import { companionLabOptions } from './mobile_primary/companion_lab_options'
+import { ZapoOwnProfile } from './zapo/zapo_own_profile'
+import { OwnProfileCover } from './own_profile_cover'
 import { PinoLogger, WaClient as ZapoWaClient, type WaClient as WaClientType, type WaStoreSession } from 'zapo-js'
 import { voipPlugin, type CallInfo } from '@vipertec/zapo-voip'
 import { v1 as uuid } from 'uuid'
@@ -55,6 +58,7 @@ import { reviveZapoMediaBinaryFields } from './zapo/zapo_media'
 import { zapoMediaOptions } from './zapo/zapo_media_processor'
 import { downloadZapoMediaBytes } from './zapo/zapo_media_reupload'
 import { ZapoContactBook } from './zapo/zapo_contact_book'
+import { persistMobileContactName } from './zapo/zapo_mobile_contact_names'
 import { ZapoContactIdentityResolver } from './zapo/zapo_contact_identity'
 import type { SaveContactInput } from './contacts/contact_book_types'
 import { ZapoCatalog } from './zapo/zapo_catalog'
@@ -66,6 +70,8 @@ import { normalizeInteractiveMediaForWebhook } from './messages/interactive_medi
 import { BoundedTtlSet } from '../utils/bounded_ttl_cache'
 import { createYouTubeLinkPreviewResolverForTransport } from './messages/youtube_link_preview'
 import { zapoOperationDeadline } from './zapo/zapo_operation_deadline'
+import { companionDiagnosticLogger } from './mobile_primary/companion_diagnostic_logger'
+import { recordSessionMessageEvent } from './messages/session_message_events'
 
 type VoipCoordinator = ReturnType<ReturnType<typeof voipPlugin>['setup']>
 type ZapoClient = WaClientType & {
@@ -76,7 +82,11 @@ type ClientFactory = (options: ConstructorParameters<typeof ZapoWaClient>[0]) =>
 type LeaseFactory = (phone: string) => RedisLease
 
 const defaultClientFactory: ClientFactory = (options) =>
-  new ZapoWaClient(options, new PinoLogger(logger.child({ scope: 'zapo' }), 'error')) as ZapoClient
+  new ZapoWaClient(options, companionDiagnosticLogger(
+    new PinoLogger(logger.child({ scope: 'zapo' }), 'error'),
+    !!options.companionHost && process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true',
+    options.sessionId || '',
+  )) as ZapoClient
 const mediaMessageKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage', 'ptvMessage'] as const
 const ZAPO_HISTORY_DEDUP_MAX_IDS = 100_000
 const ZAPO_HISTORY_DEDUP_TTL_MS = 30 * 24 * 60 * 60 * 1_000
@@ -93,6 +103,7 @@ export class ClientZapo implements Client {
   private connectTask?: Promise<void>
   private socketAbort = new AbortController()
   private connected = false
+  private stopCompanionWorker?: () => void
   private readonly pendingIncoming = new Map<string, any>()
   private readonly decryptedAddonIds = new Set<string>()
   private readonly forwardedHistoryIds = new BoundedTtlSet<string>({
@@ -311,6 +322,7 @@ export class ClientZapo implements Client {
   }
 
   private async processAddonEvent(event: any) {
+    await recordSessionMessageEvent(this.phone, event, 'addon')
     if (event.key.id) this.decryptedAddonIds.add(event.key.id)
     const resolved = await resolveZapoPollVoteOptionNames(event, this.zapoSession)
     if (resolved.decrypted.kind === 'poll_vote' && !resolved.decrypted.selectedOptionNames?.length) {
@@ -443,7 +455,7 @@ export class ClientZapo implements Client {
         clients.set(this.phone, this)
         this.connected = true
         if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, true, { is_logout: false, requires_pairing: false })
-        this.presenceHeartbeat.start(client, this.config.markOnlineOnConnect, () => isCurrent() && this.connected)
+        this.presenceHeartbeat.start(client, !!this.config.mobilePrimaryDraftId || this.config.markOnlineOnConnect, () => isCurrent() && this.connected)
         this.voiceBridge?.start()
         this.reconnectAttempts = 0
         await this.unoStore?.sessionStore.setStatus(this.phone, 'online')
@@ -493,6 +505,13 @@ export class ClientZapo implements Client {
       }
     })
     onCurrent('message', async (event) => {
+      if (this.config.mobilePrimaryDraftId) {
+        try {
+          await persistMobileContactName(this.zapoSession?.contacts, event)
+        } catch {
+          logger.warn('ZAPO_MOBILE_CONTACT_NAME_SAVE_FAILED phone=%s', this.phone)
+        }
+      }
       // Zapo emits the encrypted `message` before the decrypted `message_addon`.
       // Awaiting the documented manual path avoids the raw event winning Uno's
       // deduplication window and hiding the readable poll/reaction/edit payload.
@@ -557,12 +576,10 @@ export class ClientZapo implements Client {
     })
     onCurrent('message_send', async (event) => {
       if (!event.id) return
-      const remoteJid = event.to
-      const message = { key: { remoteJid, id: event.id, fromMe: true }, message: event.message }
-      await this.unoStore?.dataStore.setKey(event.id, message.key as never)
-      await this.unoStore?.dataStore.setMessage(remoteJid, message as never)
+      this.messages?.sentArchive.capture(event)
     })
     onCurrent('receipt', async (event) => {
+      await recordSessionMessageEvent(this.phone, event, 'receipt')
       const isGroup = `${event.chatJid || ''}`.endsWith('@g.us')
       const receiptLid = [event.participantJid, event.chatJid].map((value) => `${value || ''}`).find((value) => value.endsWith('@lid'))
       if (event.participantUsername && receiptLid) {
@@ -909,6 +926,8 @@ export class ClientZapo implements Client {
   }
 
   private async releaseRuntimeOwnership() {
+    this.stopCompanionWorker?.()
+    this.stopCompanionWorker = undefined
     this.lifecycleObserver.stop()
     this.presenceHeartbeat.stop()
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
@@ -991,7 +1010,8 @@ export class ClientZapo implements Client {
     this.zapoSession = zapoStore.session(this.phone)
     this.pairingCodeRequest = undefined
     this.pairingCodeIssued = false
-    const requiresPairing = !(await this.zapoSession.auth.load())?.meJid
+    const credentials = await this.zapoSession.auth.load()
+    const requiresPairing = !credentials?.meJid
     logger.info('Zapo session startup phone=%s mode=%s', this.phone, requiresPairing ? 'fresh-pairing' : 'stored-auth')
     if (this.config.useRedis) {
       await statusRecipients.loadOrBootstrap(this.phone).catch((error) => {
@@ -1005,13 +1025,30 @@ export class ClientZapo implements Client {
       mediaUpload: ZAPO_MEDIA_UPLOAD_IP_FAMILY,
       mediaDownload: ZAPO_MEDIA_DOWNLOAD_IP_FAMILY,
       linkPreview: ZAPO_LINK_PREVIEW_IP_FAMILY,
-    })
+    }, undefined, credentials?.deviceInfo ? 'mobile-tcp' : 'websocket')
     const youtubeLinkPreviewResolver = createYouTubeLinkPreviewResolverForTransport(proxy?.linkPreview)
+    let companionRuntime: any
+    let companionHost: any
+    const companionPlugins: import('zapo-js').WaClientPluginDefinition[] = []
+    if (this.config.mobilePrimaryDraftId && this.config.useRedis) {
+      const { MobileCompanionPersistence } = await import('./mobile_primary/companion_persistence.js')
+      const { MobileCompanionOperations, startCompanionWorker } = await import('./mobile_primary/companion_operations.js')
+      const { RegistrationVault } = await import('./mobile_primary/registration_vault.js')
+      const { getRedis } = await import('./redis.js')
+      const redis = await getRedis(), vault = new RegistrationVault(process.env.MOBILE_REGISTRATION_KEY || '')
+      const fence = this.lease!.ownership()
+      const { companionHistoryPlugin } = await import('./mobile_primary/companion_history_runtime.js')
+      companionPlugins.push(companionHistoryPlugin(this.config.mobilePrimaryDraftId, this.phone, fence, () => this.socket === client && this.connected && !this.intentionalDisconnect))
+      companionHost = { persistence: new MobileCompanionPersistence(redis, vault, this.config.mobilePrimaryDraftId, this.phone, fence.token), ...companionLabOptions() }
+      if (companionHost.includePem) logger.info({ phone: this.phone, includePem: true }, 'MOBILE_COMPANION_PEM_LAB_ENABLED')
+      companionRuntime = { startCompanionWorker, fence, operations: new MobileCompanionOperations(redis, vault, this.config.mobilePrimaryDraftId) }
+    }
     const client = this.clientFactory({
       store: zapoStore,
       sessionId: this.phone,
       proxy,
-      markOnlineOnConnect: this.config.markOnlineOnConnect,
+      ...(companionHost ? { companionHost } : {}),
+      markOnlineOnConnect: !!this.config.mobilePrimaryDraftId || this.config.markOnlineOnConnect,
       recoverFromClientTooOld: true,
       history: {
         // Zapo hydrates LID mappings, privacy tokens and nctSalt from history
@@ -1024,7 +1061,11 @@ export class ClientZapo implements Client {
       addons: { autoDecrypt: false },
       media: zapoMediaOptions,
       signPasskeyAssertion: this.signPasskeyAssertion.bind(this),
-      plugins: [voipPlugin({ maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS, logLevel: 'debug' })],
+      plugins: [...companionPlugins, voipPlugin({
+        maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS,
+        logLevel: 'debug',
+        preferWebRelayPort: !!this.config.mobilePrimaryDraftId,
+      })],
     })
     const generation = ++this.connectionGeneration
     const voiceBridgeUrl = resolveZapoVoiceBridgeUrl(VOIP_SERVICE_URL, VOIP_BRIDGE_URL)
@@ -1042,6 +1083,8 @@ export class ClientZapo implements Client {
           })
         : undefined
     this.socket = client
+    this.stopCompanionWorker?.()
+    if (companionRuntime) this.stopCompanionWorker = companionRuntime.startCompanionWorker(companionRuntime.operations, client.mobile, companionRuntime.fence, () => this.socket === client && this.connected && !this.intentionalDisconnect)
     this.socketAbort = new AbortController()
     this.messages = new ZapoMessages(client, this.unoStore.dataStore, {
       customMessageCharactersFunction: this.config.customMessageCharactersFunction,
@@ -1262,6 +1305,12 @@ export class ClientZapo implements Client {
       }
     }
     return output
+  }
+
+  async ownProfile(command: import('./profile_input').ProfileCommand) {
+    if (!this.socket) throw new SendError(409, 'profile_session_not_connected')
+    if (command.field === 'cover' && !this.unoStore?.mediaStore) throw new SendError(409, 'profile_cover_storage_unavailable')
+    return new ZapoOwnProfile(this.socket, this.unoStore?.mediaStore ? new OwnProfileCover(this.phone, this.unoStore.mediaStore) : undefined, !!this.config.mobilePrimaryDraftId).execute(command)
   }
 
   async saveContact(input: SaveContactInput) {

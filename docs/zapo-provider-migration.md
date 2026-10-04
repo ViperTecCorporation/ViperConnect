@@ -38,6 +38,10 @@ Configuracao:
 
 ## Estado atual Zapo-only
 
+Transferência de sessões normais Zapo/Redis por backup criptografado:
+[SESSION_TRANSFER.md](SESSION_TRANSFER.md). Mantém credenciais nativas sem logout;
+restaura offline e exige validação no destino antes da remoção local da origem.
+
 - o Compose nao declara worker Baileys;
 - a imagem e o comando Linux padrao iniciam `cloud.js`;
 - o build de runtime parte de `cloud.ts` e nao emite `index.js`,
@@ -146,6 +150,12 @@ herda a política global. `auto` preserva o caminho nativo sem agente adicional;
 as duas preferências mantêm `autoSelectFamily`, portanto IPv4 e IPv6 continuam
 disponíveis como fallback. O agente direto suporta HTTP, HTTPS e WSS e é
 reutilizado no processo por política efetiva.
+
+Exceção Mobile Primary: credenciais com `deviceInfo` selecionam TCP nativo na
+Zapo. Nesse transporte, sem proxy explícito, não passar o agente de família em
+`proxy.ws`: a Zapo o interpretaria como proxy CONNECT e rejeitaria a conexão.
+O chat mantém seleção de rede nativa; mídia e previews preservam suas políticas.
+Não contornar proxies explícitos: SOCKS continua incompatível com TCP mobile.
 
 Com `PROXY_URL`, o agente SOCKS existente continua prioritário e nunca é
 contornado por uma política de família. Em `socks5h`, DNS e família de saída são
@@ -523,6 +533,34 @@ rajadas de `HeadObject` durante sincronizacoes completas.
 
 ## Username
 
+### Nomes de contatos no mobile primary
+
+Na aba Contatos do painel, o botão de edição permite salvar o nome pela rota
+`POST /{phone}/contacts/import`, usando o telefone e o LID do contato. Essa rota
+mantém a autorização da sessão e envia a mutação de agenda à Zapo antes de
+confirmar o salvamento. O painel recarrega a lista após o sucesso; falhas não
+são apresentadas como alterações concluídas. Contatos sem telefone não exibem
+a edição porque a rota exige esse identificador.
+
+O botão **Adicionar contato** recebe nome e telefone com código do país e DDD.
+Usa a mesma rota de importação: o resolver interno valida a identidade WhatsApp
+antes da mutação de agenda. Para números novos, consulta a Zapo; identidades
+recentes podem usar o cache existente. Número inválido ou consulta indisponível
+sem identidade confiável não cadastram um novo contato. Se o número já existir,
+o nome é atualizado. O painel não exige nem inventa um LID.
+
+No mobile primary, a Uno persiste o `pushName` recebido nas mensagens no cache
+de contatos da Zapo. Em grupos, o nome pertence ao participante remetente, não
+ao grupo. Mensagens próprias, newsletters e broadcasts não alimentam esse nome.
+O nome salvo por importação (`displayName`) continua prioritário e não é alterado.
+Falhas nessa gravação são registradas sem impedir a entrega da mensagem.
+
+Essa correção não consulta a agenda do ViperChat nem recupera nomes que nunca
+foram recebidos. Contatos antigos sem nome são preenchidos por novas mensagens
+com `pushName` ou pela importação de contatos existente. O histórico de vínculo
+usa os nomes disponíveis no cache naquele momento; não atualiza retroativamente
+um histórico já entregue a um dispositivo vinculado.
+
 A identidade canonica Zapo e o LID. `senderUsername`, participantes de grupo e eventos
 MEX alimentam um indice temporal `username -> LID`. A partir de `zapo-js` 1.8.0, os
 campos oficiais `recipientUsername` e `participantUsername`, além do evento
@@ -584,18 +622,26 @@ Se staging ou conversao esgotarem as tentativas, a Uno publica um status Meta-li
 `failed` com codigo de midia `131053`, mantendo o mesmo ID devolvido na requisicao.
 Assim a aplicacao nao fica aguardando indefinidamente uma mensagem aceita pela API.
 
-Video H264/AAC compativel e menor que o alvo recebe apenas remux com `faststart`.
-Os demais sao convertidos com prioridade baixa (`nice 10`) para MP4 H264 Main 4.0,
-`yuv420p`, AAC, no maximo
-1280x720 ou 720x1280. O FFmpeg usa uma thread e a saida fica abaixo de 15 MiB,
-com uma segunda tentativa de bitrate reduzido quando necessario. Entradas acima
-de 256 MiB sao rejeitadas explicitamente.
+Vídeos que atendem ao perfil `video.quality=hd|sd` reutilizam o objeto original
+quando são MP4 não fragmentados com `moov` antes de `mdat`; não há FFmpeg nem
+novo upload ao storage. Download de validação e ffprobe permanecem. Sem faststart,
+recebem remux. Os demais usam CRF 23/27 e teto de bitrate 2500/1200 kbps, sem
+meta de 15 MiB e sem segunda conversão para reduzir qualidade. HD limita a
+720p e SD a 480p; até 30 FPS. A conversão gera `VIDEO_TRANSCODED` em
+`statuses[].warnings` no ID original. O teto de saída operacional é 256 MiB,
+não um limite universal do WhatsApp. Excesso gera `failed`/131053,
+com orientação para SD, corte ou documento; entrada padrão segue 256 MiB.
+Veja parâmetros completos e limites de validação no guia de mensagens do site.
+
+HD e SD aceitam AAC-LC pronto até 100800 bps (96 kbps + 5%), 48 kHz, mono ou
+estéreo. SD mantém alvo de conversão 64 kbps. Se apenas áudio for incompatível,
+o vídeo é copiado sem recodificar e o log registra `mode=audio-transcode`.
 
 Controles runtime:
 
 - `UNOAPI_VIDEO_STAGE_PREFETCH` (padrao `4`);
 - `UNOAPI_VIDEO_MAX_INPUT_BYTES` (padrao `268435456`);
-- `UNOAPI_VIDEO_TARGET_BYTES` (padrao `15728640`, nunca acima de 15 MiB);
+- `UNOAPI_VIDEO_MAX_OUTPUT_BYTES` (padrão `268435456`; substitui TARGET_BYTES, que não é mais usado);
 - `UNOAPI_VIDEO_STAGE_TIMEOUT_MS` (padrao `300000`);
 - `UNOAPI_VIDEO_TRANSCODE_TIMEOUT_MS` (padrao `420000`, limitado pelo timeout
   geral do consumidor).

@@ -54,11 +54,17 @@ describe('session lifecycle persistence boundary', () => {
     const event = sessionEvent('5511999999999', 'removed')
     await store.record('remove', event)
     expect(redis.eval).toHaveBeenCalledWith(SESSION_EVENT_LUA, {
-      keys: [SESSION_WEBHOOK_KEYS.destinations, SESSION_WEBHOOK_KEYS.states, SESSION_WEBHOOK_KEYS.outbox, SESSION_WEBHOOK_KEYS.heartbeat, 'unoapi-config:5511999999999', 'unoapi-sessions:index'],
-      arguments: ['remove', '5511999999999', JSON.stringify(event), '', `${Date.parse(event.occurred_at)}`],
+      keys: [SESSION_WEBHOOK_KEYS.destinations, SESSION_WEBHOOK_KEYS.states, SESSION_WEBHOOK_KEYS.outbox, SESSION_WEBHOOK_KEYS.heartbeat, 'unoapi-config:5511999999999', 'unoapi-sessions:index', 'manager-identity:{v1}:assignments', 'manager-identity:{v1}:history'],
+      arguments: ['remove', '5511999999999', JSON.stringify(event), '', `${Date.parse(event.occurred_at)}`, ''],
     })
     redis.eval.mockRejectedValueOnce(new Error('redis down'))
     await expect(store.record('observe', event)).rejects.toThrow('redis down')
+  })
+  test('explicit local deletion opts into assignment cleanup, unlike ordinary deregistration', async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(1) }
+    const store = new SessionWebhookStore(async () => redis)
+    await store.record('remove', sessionEvent('5511999999999', 'removed'), '', true)
+    expect(redis.eval).toHaveBeenCalledWith(SESSION_EVENT_LUA, expect.objectContaining({ arguments: expect.arrayContaining(['remove_assignment']) }))
   })
   test('reads, saves and deletes destinations; normalizes Lua empty arrays; pages and ACKs only named outbox item', async () => {
     const destination = validateSessionDestination(input())

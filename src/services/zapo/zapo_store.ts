@@ -10,6 +10,7 @@ import {
   ZAPO_REDIS_THREADS_TTL_MS,
 } from '../../defaults'
 import { registerZapoStatePreparation } from './zapo_persistent_state'
+import { decorateMessageBackend } from '../messages/session_message_index'
 
 const persistentDomains = (backend: string) => ({
   auth: backend,
@@ -86,7 +87,9 @@ export const createZapoStore = (config: ZapoStoreConfig): WaStore => {
         contactsMs: ZAPO_REDIS_CONTACTS_TTL_MS,
       },
     })
-    backend = redisBackend
+    backend = redisBackend.redis
+      ? decorateMessageBackend(redisBackend, redisBackend.redis, resolveZapoRedisKeyPrefix(config.redisKeyPrefix))
+      : redisBackend
   } else {
     const path = zapoSqlitePath(config.baseStore)
     mkdirSync(dirname(path), { recursive: true })

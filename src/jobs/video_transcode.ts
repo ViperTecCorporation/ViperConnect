@@ -24,10 +24,11 @@ export class VideoTranscodeJob {
       const config = await this.getConfig(phone)
       if (!isProviderRuntimeEnabled(config.provider)) throw new Error('video_target_provider_disabled')
       const { mediaStore } = await config.getStore(phone, config)
-      const prepared = await this.preparation.prepare(mediaStore, phone, data.id, data.sourceKey)
+      const prepared = await this.preparation.prepare(mediaStore, phone, data.id, data.sourceKey, data.payload?.video?.quality)
       const originalVideo = data.payload?.video || {}
       const stagedFromBase64 = originalVideo[UNOAPI_MEDIA_SOURCE] === 'base64'
       const publicVideo = { ...originalVideo }
+      delete publicVideo.quality
       delete publicVideo[UNOAPI_MEDIA_STORAGE_KEY]
       delete publicVideo[UNOAPI_MEDIA_SOURCE]
       delete publicVideo[UNOAPI_MEDIA_PUBLIC_URL]
@@ -47,7 +48,7 @@ export class VideoTranscodeJob {
           } : {}),
         },
       }
-      const options = { ...(data.options || {}), videoPrepared: true, priority: 5, type: 'direct' as const }
+      const options = { ...(data.options || {}), videoPrepared: true, videoTranscoded: prepared.transcoded ? (originalVideo.quality || 'hd') : false, priority: 5, type: 'direct' as const }
       await amqpPublish(
         UNOAPI_EXCHANGE_BRIDGE_NAME,
         providerQueueName(UNOAPI_QUEUE_INCOMING, config.server || 'server_1', config.provider),
@@ -56,11 +57,12 @@ export class VideoTranscodeJob {
         options,
       )
       logger.info(
-        'Prepared video returned to provider queue phone=%s id=%s bytes=%s transcoded=%s',
+        'Prepared video returned to provider queue phone=%s id=%s bytes=%s transcoded=%s mode=%s',
         phone,
         data.id,
         prepared.sizeBytes,
         prepared.transcoded,
+        prepared.reused ? 'passthrough' : prepared.videoCopied ? 'audio-transcode' : prepared.transcoded ? 'transcode' : 'remux',
       )
       return prepared
     } catch (error) {

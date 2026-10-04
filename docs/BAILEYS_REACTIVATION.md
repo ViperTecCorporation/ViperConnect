@@ -52,3 +52,8 @@ desenvolvimento, onde a Baileys está fixada. O alvo padrão `runtime`, que é o
 Sessões persistidas como Baileys aparecerão offline. O `deregister` continua
 disponível para remover credenciais e chaves legadas do Redis antes do novo
 pareamento direto na Zapo.
+# Recargas de configuração
+
+`ReloadAmqp` publica somente para o worker Zapo no runtime atual. Reativar a
+Baileys exige revisar explicitamente esse roteamento; a lista de tipos legados
+não deve recriar filas sem consumidor. A invalidação geral do broker/web permanece.

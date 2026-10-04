@@ -8,6 +8,12 @@ describe('reply warning persistence', () => {
     get: jest.fn(async key => values.get(key)), del: jest.fn(async key => values.delete(key)) }
   const pending = { recipientId: 'group@g.us', timestamp: '100', warnings: [{ code: 'REPLY_SENT_WITHOUT_QUOTE', message: 'Aviso' }] }
   beforeEach(() => { values.clear(); jest.clearAllMocks(); (getRedis as jest.Mock).mockResolvedValue(redis) })
+  it('preserves video conversion warnings for idempotent status replay', async () => {
+    const video = { ...pending, warnings: [{ code: 'VIDEO_TRANSCODED', message: 'Convertido para HD' }] }
+    await saveReplyWarning('session', 'video-id', video)
+    expect(await loadReplyWarning('session', 'video-id')).toEqual(video)
+    expect(replyWarningStatus('session', 'video-id', video).entry[0].changes[0].value.statuses[0]).toMatchObject({ id: 'video-id', warnings: video.warnings })
+  })
   it('persists without TTL and isolates session/message IDs', async () => {
     await saveReplyWarning('session', 'id', pending)
     expect(redis.set.mock.calls[0]).toHaveLength(2)

@@ -9,6 +9,44 @@ Responda HTTP `2xx` rapidamente e processe o evento de forma idempotente.
 
 Eventos de conexão usam um contrato separado: [Webhooks de sessões](./session-webhooks).
 
+## Mídia de visualização única
+
+O recebimento de imagem, vídeo ou áudio de visualização única inclui
+`message_type: "view_once"` no próprio objeto de `value.messages[]`.
+`type` continua `image`, `video` ou `audio`; o ID UnoAPI e o objeto da mídia
+permanecem iguais. É uma extensão ViperConnect, não um evento de edição nem
+um novo evento posterior. Não adiciona `context` ou `edit_timestamp`; contexto
+de resposta já existente é preservado.
+
+O marcador vem do payload original (`imageMessage.viewOnce`, equivalentes de
+vídeo/áudio, ou wrappers `viewOnceMessage`, `viewOnceMessageV2` e
+`viewOnceMessageV2Extension`) e é preservado ao desembrulhar. Não há consulta
+adicional ao Redis, download extra ou reenvio. Mensagens comuns, citações de
+visualização única e mensagens apenas temporárias não recebem esse marcador.
+Mídia indisponível mantém o fallback existente; este campo não recupera conteúdo.
+
+```json
+{
+  "id": "ID_UNOAPI_DA_MENSAGEM",
+  "from": "5566996269251",
+  "timestamp": "1790672409",
+  "type": "image",
+  "message_type": "view_once",
+  "image": {
+    "id": "5566936183915/ID_UNOAPI_DA_MENSAGEM",
+    "mime_type": "image/jpeg",
+    "url": "https://example.test/media.jpg"
+  }
+}
+```
+
+No ViperChat, persistir o marcador junto à mensagem/anexo e informar
+“Você recebeu uma mensagem de visualização única”. Deduplicar pelo ID normal;
+não tratar como edição ou aguardar atualização posterior. O marcador não
+impõe acesso único: a política atual de armazenamento e URLs não é alterada.
+Evitar prévia automática até a aplicação definir sua política de visualização.
+Webhooks antigos já entregues não são reenviados automaticamente.
+
 ## Eco de edição enviada
 
 Ao editar pela API (`type: "message_edit"`), o eco enviado após sucesso usa

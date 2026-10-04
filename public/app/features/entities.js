@@ -1,7 +1,7 @@
-import { renderAvatar } from '../components/avatar.js?v=4.0.32-1ab9d8f1';
-import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
-import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
-import { t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
+import { renderAvatar } from '../components/avatar.js?v=4.0.34-43ce0548';
+import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
+import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
+import { t } from '../core/i18n.js?v=4.0.34-43ce0548';
 export const CONTACT_SEARCH_MIN_LENGTH = 3;
 const contactUsername = (contact) => {
     const username = `${contact.username || ''}`.trim().replace(/^@/, '');
@@ -36,6 +36,7 @@ export const renderContactCards = (contacts, sessionPhone = '') => {
         ${contact.phone_number ? `<span>${escapeHtml(contact.phone_number)}</span>` : ''}
         <small>${escapeHtml(contact.user_id)}</small>
         <div class="entity-card__actions">
+          ${contact.phone_number && sessionPhone ? `<button class="btn btn--icon btn--ghost" type="button" data-action="edit-contact-name" data-recipient="${escapeHtml(contact.user_id)}" aria-label="${t('Editar nome do contato')}" title="${t('Editar nome do contato')}">${icon('edit')}</button>` : ''}
           <button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone)}" data-recipient="${escapeHtml(contact.user_id)}" aria-label="${escapeHtml(t('Enviar mensagem para {name}', { name }))}" title="${t('Enviar mensagem')}">${icon('send')}</button>
           ${contact.phone_number ? `<button class="btn btn--icon btn--ghost" type="button" data-action="copy-value" data-value="${escapeHtml(contact.phone_number)}" data-copy-label="${t('Telefone')}" aria-label="${escapeHtml(t('Copiar telefone de {name}', { name }))}" title="${t('Copiar telefone')}">${icon('copy')}</button>` : ''}
         </div>

@@ -3,6 +3,14 @@ import type { WaStoreSession } from 'zapo-js'
 import { clearZapoSession } from '../../src/services/zapo/zapo_session_cleanup'
 
 describe('Zapo session cleanup', () => {
+  test('clears signal only after prekey clear has finished recreating its metadata', async () => {
+    const session = mockDeep<WaStoreSession>()
+    let metadata = false
+    session.preKey.clear.mockImplementation(async () => { await Promise.resolve(); metadata = true })
+    session.signal.clear.mockImplementation(async () => { expect(metadata).toBe(true); metadata = false })
+    await clearZapoSession(session)
+    expect(metadata).toBe(false)
+  })
   test('clears every persisted domain and its runtime caches', async () => {
     const session = mockDeep<WaStoreSession>()
 

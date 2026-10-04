@@ -1,20 +1,23 @@
-import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
-import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
-import { renderStatus } from '../components/status.js?v=4.0.32-1ab9d8f1';
-import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.32-1ab9d8f1';
-import { t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
-export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true }) => {
-    const filtered = filterSessions(sessions, query, status);
+import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
+import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
+import { renderStatus } from '../components/status.js?v=4.0.34-43ce0548';
+import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.34-43ce0548';
+import { t } from '../core/i18n.js?v=4.0.34-43ce0548';
+export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', mobileSessionPhones = [] }) => {
+    const excluded = new Set(canCreate && mobileGrid ? mobileSessionPhones : []);
+    const filtered = filterSessions(sessions.filter(session => !excluded.has(sessionPhone(session))), query, status);
     const visible = filtered.slice(0, visibleLimit);
     const online = sessions.filter((session) => isOnlineStatus(session.status)).length;
     const connecting = sessions.filter((session) => `${session.status}`.toLowerCase() === 'connecting').length;
     const offline = Math.max(0, sessions.length - online - connecting);
     return `
+    <div class="dashboard-layout">
     <header class="page-header">
       <div><span class="eyebrow">${t('Operação')}</span><h1>${t('Visão geral')}</h1><p class="muted">${t('Sessões e serviços em tempo real.')}</p></div>
       <div class="actions">
         <a class="btn btn--icon btn--ghost" href="https://github.com/ViperTecCorporation/ViperConnect" target="_blank" rel="noopener" aria-label="GitHub">${icon('github')}</a>
-        ${canCreate ? `<button class="btn" type="button" data-action="new-session">${icon('plus')}${t('Nova sessão')}</button>` : ''}
+        ${canCreate ? `<button class="btn" type="button" data-action="new-session">${icon('link')}${t('Nova sessão')}</button>` : ''}
+        ${canCreate ? mobileButton : ''}
       </div>
     </header>
 
@@ -29,10 +32,15 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
       <article class="stat-card"><span>${t('Offline')}</span><strong>${offline}</strong><small>${t('requerem atenção')}</small></article>
     </section>
 
+    <section class="dashboard-refresh" aria-label="${t('Atualização')}">
+        <p class="muted" aria-live="polite">${loading ? t('Atualizando…') : `${t(canCreate && mobileGrid ? 'Atualização automática de dispositivos e sessões em' : 'Atualização automática de sessões em')} <span data-refresh-countdown>${refreshIn}s</span>`}</p>
+        <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh" ${loading ? 'disabled' : ''}>${icon('refresh')}${t('Atualizar agora')}</button></div>
+    </section>
+
+    ${canCreate ? mobileGrid : ''}
     <section class="section sessions-section">
       <div class="section__heading">
-        <div><h2>${t('Sessões')}</h2><p class="muted" aria-live="polite">${loading ? t('Atualizando…') : `${t('Atualização automática em')} <span data-refresh-countdown>${refreshIn}s</span>`}</p></div>
-        <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh">${icon('refresh')}${t('Atualizar agora')}</button></div>
+        <div><h2>${t('Sessões')}</h2></div>
       </div>
       <div class="filters">
         <label class="search-field">${icon('search')}<input data-filter="query" value="${escapeHtml(query)}" placeholder="${t('Buscar nome ou telefone')}" aria-label="${t('Buscar sessão')}"></label>
@@ -76,5 +84,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
         ? `<div class="load-more"><button class="btn" type="button" data-action="load-more-sessions">${t('Carregar mais')} <span>${t('{visible} de {total}', { visible: visible.length, total: filtered.length })}</span></button></div>`
         : ''}
     </section>
+    ${canCreate ? backupPanel : ''}
+    </div>
   `;
 };

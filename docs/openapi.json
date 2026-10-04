@@ -16,6 +16,3386 @@
     }
   ],
   "paths": {
+    "/{version}/{phone}/conversations": {
+      "get": {
+        "tags": [
+          "Mensagens"
+        ],
+        "operationId": "listSessionConversations",
+        "summary": "Listar conversas do histórico local da sessão",
+        "description": "Zapo/Redis apenas. Token global, da sessão ou Manager autorizado. Sem consulta ao WhatsApp, recibo de leitura ou renovação do TTL. Inicialização do índice em background (indexing=true). Busca examina até 200 resumos por página; página vazia pode ter continuação. Não retorna contagem global. Exclui Status/newsletters.",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor opaco vinculado à sessão/filtros"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 30
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 100
+            },
+            "description": "Nome/telefone/identidade; não conteúdo"
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "direct",
+                "group"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "conversation_ids",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Até 100 JIDs separados por vírgula para atualizar somente resumos afetados"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de resumos locais",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "has_more",
+                    "next_cursor",
+                    "indexing"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SessionConversation"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "indexing": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Filtro/cursor inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Acesso à sessão negado"
+          },
+          "409": {
+            "description": "Zapo/Redis indisponível ou cursor expirado/movido; recarregar primeira página"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/conversations/{conversationId}/messages": {
+      "get": {
+        "tags": [
+          "Mensagens"
+        ],
+        "operationId": "listSessionConversationMessages",
+        "summary": "Histórico local paginado, sem marcar como lido",
+        "description": "Ordem decrescente timestamp/ID, preservando empates. Cursor ancorado no ID, sem deslocamento por novas mensagens. Retenção Redis pela data original (padrão 30 dias), sem renovação por leitura, regravação ou sincronização. Sem data válida, janela fixa desde a primeira gravação. Dados antigos não tocados aguardam o TTL anterior; mensagens com data expirada não são retornadas. Sem protobuf, URLs CDN ou chaves de mídia. Edições/remoções quando recebidas geram overlays locais. Reutilize POST messages para envio/resposta, com reply_id em context.message_id. Políticas existentes readOnReceipt/readOnReply são independentes.",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "JID @lid, @s.whatsapp.net ou @g.us; URL-encode"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "ids",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Até 100 IDs de provider separados por vírgula para delta dentro da conversa"
+          },
+          {
+            "name": "status_ids",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Até 100 IDs UnoAPI separados por vírgula para recuperar status pendente após reconexão"
+          },
+          {
+            "name": "around",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de provider para carregar uma janela limitada ao redor da mensagem citada; não combinar com cursor ou ids. Retorna 404 quando expirada ou fora da conversa."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de projeções públicas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "has_more",
+                    "next_cursor"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SessionConversationMessage"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "statuses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JID",
+            "IDs ou cursor inválidos": null
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Sessão fora do escopo"
+          },
+          "404": {
+            "description": "Mensagem original indisponível no histórico da conversa"
+          },
+          "409": {
+            "description": "Zapo/Redis indisponível ou cursor expirado; recarregar"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/messages/{messageId}/media": {
+      "get": {
+        "tags": [
+          "Mensagens"
+        ],
+        "operationId": "downloadSessionMessageMedia",
+        "summary": "Carregar mídia autorizada sob demanda",
+        "description": "Consulta a mensagem na sessão antes de acessar storage. Reutiliza mídia interna; quando ausente, download/decrypt oficial Zapo sem abrir socket WhatsApp, respeitando proxy/família IP. Máximo 256 MiB/60s; concorrência deduplicada por processo. Mídia expirada pode falhar; nunca expõe view_once ou mídia removida. Sem predownload/reupload automático. Cache-Control no-store, attachment e nosniff.",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "messageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID de provider devolvido na listagem"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bytes da mídia",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Sessão proibida ou mídia view_once/removida"
+          },
+          "404": {
+            "description": "Mensagem expirada/ausente ou sem mídia"
+          },
+          "409": {
+            "description": "Store não Zapo/Redis"
+          },
+          "502": {
+            "description": "Falha no stream do storage"
+          },
+          "503": {
+            "description": "Falha de download/decrypt ou Redis"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/privacy": {
+      "get": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "getOwnPrivacy",
+        "summary": "Consultar privacidade da própria conta",
+        "description": "Sessões Zapo vinculadas e mobile primary. Consulta o worker; snapshot Redis por sessão, TTL 24h, como fallback de falhas totais/parciais. Sem polling. Cache não inclui Status/e-mail; erros de autorização não usam fallback. Escritas invalidam snapshot e impedem gravação de leituras anteriores. Ausência não significa vazio. Exige autenticação e escopo da sessão.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configurações disponíveis e falhas parciais",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Valores por configuração conforme PrivacyInput; categorias indisponíveis são omitidas."
+                    },
+                    "cache": {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "live",
+                            "cache",
+                            "mixed"
+                          ]
+                        },
+                        "updated_at": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "stale": {
+                          "type": "boolean"
+                        },
+                        "refresh_failed": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "blocked": {
+                      "type": "array",
+                      "nullable": true,
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "duration": {
+                      "type": "integer",
+                      "nullable": true,
+                      "description": "Duração consultada em segundos; null indica ausência de resultado"
+                    },
+                    "exceptions": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "settings, blocked, timer ou exceptions.NOME cuja consulta falhou"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Telefone ou entrada inválida"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo"
+          },
+          "409": {
+            "description": "Sessão desconectada"
+          },
+          "501": {
+            "description": "Capacidade indisponível"
+          },
+          "502": {
+            "description": "Falha no transporte ou provedor"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "updateOwnPrivacy",
+        "summary": "Alterar uma configuração, exceções, bloqueio ou duração padrão",
+        "description": "Alterações independentes, sem transação global. Exceções são deltas e ativam contact_blacklist. Timer afeta novas conversas individuais. Status substitui o público/lista dos próximos Status; não há leitura desse público nesta rota. Não repetir automaticamente após falha de transporte. Mesmo controle de escopo do perfil.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "$ref": "#/components/schemas/PrivacyInput"
+                  }
+                }
+              },
+              "examples": {
+                "visibility": {
+                  "value": {
+                    "value": {
+                      "operation": "setting",
+                      "setting": "lastSeen",
+                      "value": "contacts"
+                    }
+                  }
+                },
+                "exceptions": {
+                  "value": {
+                    "value": {
+                      "operation": "exceptions",
+                      "setting": "lastSeen",
+                      "add": [
+                        "5511999999999"
+                      ],
+                      "remove": []
+                    }
+                  }
+                },
+                "block": {
+                  "value": {
+                    "value": {
+                      "operation": "block",
+                      "jid": "5511999999999"
+                    }
+                  }
+                },
+                "unblock": {
+                  "value": {
+                    "value": {
+                      "operation": "unblock",
+                      "jid": "123456789@lid"
+                    }
+                  }
+                },
+                "timer": {
+                  "value": {
+                    "value": {
+                      "operation": "timer",
+                      "duration": 604800
+                    }
+                  }
+                },
+                "status": {
+                  "value": {
+                    "value": {
+                      "operation": "status",
+                      "mode": "ALLOW_LIST",
+                      "userJids": [
+                        "5511999999999"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Escrita confirmada pelo SDK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Operação ou valor inválido para a configuração"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo"
+          },
+          "409": {
+            "description": "Sessão desconectada"
+          },
+          "501": {
+            "description": "Capacidade indisponível"
+          },
+          "502": {
+            "description": "Falha ao alterar; consultar antes de repetir. Não prova que a alteração remota não ocorreu."
+          }
+        }
+      }
+    },
+    "/{phone}/profile/account_email": {
+      "get": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "getOwnAccountEmail",
+        "summary": "Consultar e-mail da conta WhatsApp (mobile primary)",
+        "description": "Consulta direta sem cache Redis, com Cache-Control no-store. Usa autenticação e escopo da sessão; indisponível em sessão vinculada. Não é o e-mail comercial público.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado atual",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountEmailStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação proibida"
+          },
+          "409": {
+            "description": "Sessão desconectada ou não mobile primary"
+          },
+          "502": {
+            "description": "Falha de consulta no provedor"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "updateOwnAccountEmail",
+        "summary": "Cadastrar ou verificar e-mail da conta (mobile primary)",
+        "description": "Ações explícitas e separadas: set cadastra; request_code solicita código pt-BR; verify valida seis dígitos; confirm confirma a propriedade após verificação. Não envia código automaticamente, não remove e-mail e não altera o e-mail comercial. Código não entra no cache de perfil. Falha de transporte pode ter resultado incerto: consultar antes de repetir.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "operation",
+                          "email"
+                        ],
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "set"
+                            ]
+                          },
+                          "email": {
+                            "type": "string",
+                            "format": "email",
+                            "maxLength": 320
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "operation",
+                          "code"
+                        ],
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "verify"
+                            ]
+                          },
+                          "code": {
+                            "type": "string",
+                            "pattern": "^[0-9]{6}$",
+                            "writeOnly": true
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "operation"
+                        ],
+                        "properties": {
+                          "operation": {
+                            "type": "string",
+                            "enum": [
+                              "request_code",
+                              "confirm"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "examples": {
+                "set": {
+                  "value": {
+                    "value": {
+                      "operation": "set",
+                      "email": "conta@example.com"
+                    }
+                  }
+                },
+                "request_code": {
+                  "value": {
+                    "value": {
+                      "operation": "request_code"
+                    }
+                  }
+                },
+                "verify": {
+                  "value": {
+                    "value": {
+                      "operation": "verify",
+                      "code": "123456"
+                    }
+                  }
+                },
+                "confirm": {
+                  "value": {
+                    "value": {
+                      "operation": "confirm"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Operação confirmada pelo SDK; verify não executa confirm automaticamente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "email": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "verified": {
+                      "type": "boolean"
+                    },
+                    "confirmed": {
+                      "type": "boolean"
+                    },
+                    "auto_verify_failed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida ou código incorreto/expirado"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Fora do escopo ou operação proibida"
+          },
+          "409": {
+            "description": "Offline",
+            "não mobile primary": null,
+            "e-mail ausente ou não verificado": null
+          },
+          "429": {
+            "description": "Bloqueio temporário ou excesso de tentativas; não repetir automaticamente"
+          },
+          "502": {
+            "description": "Falha de provedor; consultar situação antes de repetir"
+          }
+        }
+      }
+    },
+    "/admin/settings/google-maps/browser": {
+      "get": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "getGoogleMapsBrowserConfig",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Obter chave de navegador para Google Maps (administrador)",
+        "description": "Somente administrador. Retorna chave restrita a referrers para Maps JavaScript API, com Cache-Control no-store. A chave será visível no navegador; nunca usar chave irrestrita de servidor.",
+        "responses": {
+          "200": {
+            "description": "Configuração do navegador",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "apiKey": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      }
+    },
+    "/admin/settings/google-maps": {
+      "get": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "getGoogleMapsSettings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Consultar configuração Google Maps (administrador)",
+        "description": "Estado global da instância; não retorna a chave. Mapa disponível ao administrador no perfil comercial, com carregamento explícito.",
+        "responses": {
+          "200": {
+            "description": "Estado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "configured": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setGoogleMapsSettings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Salvar chave de navegador Google Maps (administrador)",
+        "description": "Redis sem TTL e sem criptografia adicional. Restrinja domínios e APIs no Google Cloud. Não verifica validade ou quota e nunca retorna a chave.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "apiKey"
+                ],
+                "properties": {
+                  "apiKey": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 200,
+                    "writeOnly": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chave salva; configured true"
+          },
+          "400": {
+            "description": "Corpo inválido"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "deleteGoogleMapsSettings",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Remover chave Google Maps (administrador)",
+        "description": "Remove a configuração global compartilhada entre as sessões.",
+        "responses": {
+          "200": {
+            "description": "Chave removida; configured false"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      }
+    },
+    "/{phone}/profile": {
+      "get": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "getOwnProfile",
+        "summary": "Consultar o perfil da própria sessão Zapo",
+        "description": "Funciona com sessões vinculadas e mobile primary, pessoais e Business. Campos de leitura indisponíveis ficam nulos e são listados em warnings; não são campos apagados. Não retorna credenciais nem PIN de username. Somente a sessão autenticada, sem parâmetro de JID alvo.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "description": "Use 1 para consultar a Zapo e renovar o cache. Sem esse parâmetro, retorna Redis quando disponível; cache ausente consulta a Zapo. Falhas preservam snapshot anterior e sinalizam stale/refresh_failed. Retenção de 24h.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Perfil e avisos de leituras parciais",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo"
+          },
+          "409": {
+            "description": "Sessão desconectada"
+          },
+          "501": {
+            "description": "Motor sem suporte"
+          },
+          "502": {
+            "description": "Falha no provedor"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/name": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setOwnProfileName",
+        "summary": "Alterar nome de exibição",
+        "description": "pushName; não modifica o nome comercial verificado. String vazia restaura o padrão do dispositivo.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 128
+                  }
+                }
+              },
+              "example": {
+                "value": "João Silva"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/about": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setOwnProfileAbout",
+        "summary": "Alterar recado About",
+        "description": "Recado legado via setStatus, não Status de 24 horas. String vazia limpa.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 139
+                  }
+                }
+              },
+              "example": {
+                "value": "Atendimento de segunda a sexta"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/username": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setOwnProfileUsername",
+        "summary": "Alterar nome de usuário",
+        "description": "Sujeito às regras adicionais da Zapo e disponibilidade no servidor. Retorno false do SDK resulta em 409, não sucesso.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 35,
+                    "pattern": "^[a-zA-Z0-9_.]+$"
+                  }
+                }
+              },
+              "example": {
+                "value": "empresa_suporte"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "deleteOwnProfileUsername",
+        "summary": "Remover username da própria sessão",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/business": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setOwnProfileBusiness",
+        "summary": "Atualizar dados comerciais",
+        "description": "Exclusivo de conta Business, independentemente do tipo de conexão. Delta: campos omitidos preservados, string vazia limpa, listas vazias limpam. Não edita nome verificado, área de cobertura nem observações de localização. IDs de categoria devem ser conhecidos; sem catálogo.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "$ref": "#/components/schemas/OwnBusinessInput"
+                  }
+                }
+              },
+              "example": {
+                "value": {
+                  "description": "Suporte de TI",
+                  "address": "Cláudia - MT",
+                  "latitude": -11.499317,
+                  "longitude": -54.873917,
+                  "websites": [
+                    {
+                      "url": "https://example.com"
+                    }
+                  ],
+                  "businessHours": {
+                    "timezone": "America/Cuiaba",
+                    "config": [
+                      {
+                        "dayOfWeek": "mon",
+                        "mode": "specific_hours",
+                        "openTime": 480,
+                        "closeTime": 1080
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/picture": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setOwnProfilePicture",
+        "summary": "Enviar foto de perfil",
+        "description": "Até 5 MiB de bytes decodificados, máximo 20 milhões de pixels. PNG/JPEG/WebP são decodificados, orientação corrigida, recorte central 640x640 e JPEG. Sem URLs remotas nem JID alvo.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "format": "byte",
+                    "maxLength": 7000000
+                  }
+                }
+              },
+              "example": {
+                "value": "BASE64_DA_IMAGEM_SEM_PREFIXO_DATA"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "deleteOwnProfilePicture",
+        "summary": "Remover foto da própria sessão",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      }
+    },
+    "/{phone}/profile/cover": {
+      "put": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "setOwnProfileCover",
+        "summary": "Enviar capa Business",
+        "description": "Business somente; exige S3 configurado. Até 5 MiB, 20 milhões de pixels; JPEG com largura máxima 1600, sem recorte quadrado. Persiste imagem no S3 e ID no Redis sem TTL. GET profile retorna preview local com URL assinada por 15 minutos. O SDK não oferece leitura da capa remota; alterações externas não são detectadas. Falhas de persistência após confirmação remota retornam success e warning; guarde o ID nesse caso.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "format": "byte",
+                    "maxLength": 7000000
+                  }
+                }
+              },
+              "example": {
+                "value": "BASE64_DA_IMAGEM_SEM_PREFIXO_DATA"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Perfil"
+        ],
+        "operationId": "deleteOwnProfileCover",
+        "summary": "Remover capa comercial pelo ID retornado no envio",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "pattern": "^[\\w-]+$"
+                  }
+                }
+              },
+              "example": {
+                "value": "ID_RETORNADO_AO_ENVIAR_CAPA"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmado pelo SDK; não é garantia de propagação imediata aos demais dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnProfileMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Campo ou valor inválido"
+          },
+          "401": {
+            "description": "Autenticação necessária"
+          },
+          "403": {
+            "description": "Sessão fora do escopo ou operação recusada"
+          },
+          "409": {
+            "description": "Sessão offline",
+            "conta não Business ou username recusado": null
+          },
+          "501": {
+            "description": "Motor não suporta edição de perfil"
+          },
+          "502": {
+            "description": "Falha no provedor; consultar perfil antes de repetir uma escrita de resultado incerto"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/companion-history": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Envio manual de histórico desabilitado",
+        "deprecated": true,
+        "description": "Retorna 410 mobile_history_pair_time_only. O histórico agora é iniciado automaticamente no bootstrap de um novo vínculo, não depois nem em reconexões. Fila separada; todo o histórico elegível disponível no Redis, sem corte por idade ou quantidade total, lido em páginas de 20 registros. Mantém filtros de privacidade e limites de tamanho por registro do piloto inline. A importação no secundário ainda depende de validação real.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "target",
+                  "confirm"
+                ],
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "pattern": "^\\d+:\\d+@s\\.whatsapp\\.net$"
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "target": "5511999999999:2@s.whatsapp.net",
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Alvo ou confirmação inválida"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Laboratório desabilitado ou dispositivo ausente"
+          },
+          "409": {
+            "description": "Dispositivo não conectado ou tarefa em andamento"
+          },
+          "410": {
+            "description": "Envio manual removido; histórico somente durante novo vínculo"
+          },
+          "503": {
+            "description": "Armazenamento indisponível ou confirmação AMQP incerta; a tarefa pode ter sido publicada"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/companion-history/{operation}": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar progresso do histórico enviado ao secundário",
+        "description": "Não envia mensagens. submitted confirma apenas a conclusão das chamadas de publicação do SDK, não recebimento nem importação; empty indica ausência de registros elegíveis; unknown indica envio parcial/incerto, sem retry automático; failed indica falha antes do envio; expired indica que o worker não executou no prazo. Sem mensagens, chaves ou URLs na resposta. Registro cifrado no Redis por uma hora; nova tarefa substitui a anterior. queued/running vencem após cinco minutos e aparecem como expired/unknown.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado e contagem, sem conteúdo das mensagens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "submitted",
+                        "empty",
+                        "unknown",
+                        "failed",
+                        "expired"
+                      ]
+                    },
+                    "sent": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Operação ausente",
+            "substituída ou fora do escopo": null
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/companions": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar, vincular ou revogar dispositivo secundário no worker",
+        "description": "Administrador em qualquer servidor configurado. Enfileira um comando cifrado no Redis por até 10 minutos, processado pelo worker que já possui a conexão do principal, fora da fila de mensagens. Listagem usa o epoch persistido, não presença nem inventário remoto completo. QR é o conteúdo decodificado da imagem; code é o código de 8 caracteres solicitado pelo secundário (não SMS). Mutações exigem confirm=true. Sem repetição automática em resultado incerto. Consultar o identificador retornado até estado terminal.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "list",
+                      "qr",
+                      "code",
+                      "revoke"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "writeOnly": true,
+                    "description": "QR decodificado (puro ou com prefixo exato https://wa.me/settings/linked_devices# removido antes da Zapo), código ou JID do secundário, conforme action. O limite inclui o prefixo; outras URLs são rejeitadas."
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ],
+                    "description": "Obrigatório para qr",
+                    "code e revoke": null
+                  },
+                  "sendHistory": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Somente qr/code. false pula a exportação de mensagens antigas do Redis; mantém bootstrap e chaves obrigatórios. A opção vale apenas para o novo vínculo, sem alterar vínculos existentes."
+                  }
+                }
+              },
+              "example": {
+                "action": "list"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Comando aceito, não significa vínculo concluído",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "queued"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Comando ou confirmação inválida"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Recurso desabilitado ou cadastro ausente"
+          },
+          "409": {
+            "description": "Principal suspenso",
+            "comando em andamento ou resultado incerto exige atualizar vínculos": null
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/companions/{operation}": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar resultado de comando de dispositivos vinculados",
+        "description": "Somente administrador. Esta consulta de resultado não envia comandos ao WhatsApp. QR, código e chaves nunca são retornados. queued/running são estados pendentes; done confirma a chamada SDK; unknown indica resultado remoto incerto, sem retry automático; expired indica que o comando não foi executado no prazo. O comando list consulta os dispositivos da própria conta com source=server_device_list e ignora resultados concluídos em cache para refletir desvinculação remota; chamadas ainda em andamento são deduplicadas. Cada companion contém deviceJid e canRevoke; keyIndex e addedAtSeconds são opcionais, presentes somente quando há registro no epoch local. canRevoke=false indica vínculo listado no servidor sem material local necessário para revogar pelo SDK; use o WhatsApp para revogá-lo. Não garante presença online nem conclusão do bootstrap. Falha de consulta não é apresentada como lista vazia.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado sem material de autenticação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "running",
+                        "done",
+                        "unknown",
+                        "expired"
+                      ]
+                    },
+                    "result": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Operação expirada",
+            "substituída ou não pertence ao dispositivo": null
+          },
+          "409": {
+            "description": "Principal suspenso ou configuração incompatível"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/backups": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Listar backups assíncronos de sessões Zapo normais",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Administrador via Bearer, sem credenciais API. Retorna somente metadados, retidos por 24 horas.",
+        "responses": {
+          "200": {
+            "description": "Lista tasks com id",
+            "deviceId (telefone)": null,
+            "status": null,
+            "createdAt": null,
+            "expiresAt e eventual erro": null
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/{phone}/backup-tasks": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "phone",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Suspender e exportar sessão Zapo Redis em segundo plano",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Administrador autenticado. Suspende a origem e gera arquivo criptografado com senha, disponível por 24 horas. Até 50000 registros, 8 MiB de conteúdo interno e 16 MiB por arquivo, sem truncamento.",
+        "requestBody": {
+          "$ref": "#/paths/~1manager~1mobile-devices~1{id}~1backup-tasks/post/requestBody"
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa aceita; consultar lista para resultado"
+          },
+          "409": {
+            "description": "Motor ou armazenamento incompatível; tarefa concorrente"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/{phone}/backup-tasks/{task}/download": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "phone",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "task",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Baixar .vipersession criptografado",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente administrador; retorna arquivo criptografado sem senha, com Cache-Control no-store.",
+        "responses": {
+          "200": {
+            "description": "JSON fileName e archive; somente administrador"
+          },
+          "409": {
+            "description": "Tarefa pendente ou substituída"
+          },
+          "410": {
+            "description": "Arquivo expirado"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/restore": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Restaurar sessão vinculada com conexão automática sem sobrescrever o destino",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente Zapo Redis compatível. Até 50000 registros, 8 MiB de conteúdo interno e 16 MiB por arquivo. JSON HTTP até 17 MiB, lido somente após autenticar o administrador. Webhooks vazios; autoConnect=true. Solicita conexão ao worker após liberar a trava de restauração. Confirmação obrigatória da origem offline.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "archive",
+                  "password",
+                  "confirmOriginOffline"
+                ],
+                "properties": {
+                  "archive": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true
+                  },
+                  "confirmOriginOffline": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sessão restaurada com autoConnect=true; status connection_requested ou disconnected com warning restore_connection_dispatch_failed se falhar a solicitação ao worker. Não repetir importação"
+          },
+          "400": {
+            "description": "Arquivo",
+            "senha ou identidade incompatível": null
+          },
+          "409": {
+            "description": "Destino ocupado; nenhum dado sobrescrito"
+          },
+          "413": {
+            "description": "Corpo JSON ou arquivo acima do limite permitido"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/{phone}/transfer-removal": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "phone",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar se a remoção local após migração está liberada",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Administrador; verifica checkpoint de backup e suspensão da origem.",
+        "responses": {
+          "200": {
+            "description": "Objeto eligible; exige backup concluído e suspensão"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Remover origem após migração, sem logout no WhatsApp",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Exige senha do administrador, telefone e confirmação da validação do backup no destino. Remove cadastro, índice e atribuição ativa ao usuário, preservando histórico de atribuições. Apenas limpeza local, sem revogação remota.",
+        "requestBody": {
+          "$ref": "#/paths/~1manager~1mobile-devices~1{id}~1transfer-removal/delete/requestBody"
+        },
+        "responses": {
+          "204": {
+            "description": "Credenciais Zapo e configuração locais removidas"
+          },
+          "401": {
+            "description": "Senha do administrador incorreta"
+          },
+          "409": {
+            "description": "Backup ou suspensão ausente",
+            "ou sessão em uso": null
+          },
+          "429": {
+            "description": "Limite de tentativas de senha"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/backups": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Listar tarefas de backup dos dispositivos",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente administrador autenticado, sem credencial API. Retorna metadados, nunca a senha ou o arquivo. Atualizar ao retornar ao painel.",
+        "responses": {
+          "200": {
+            "description": "Tarefas running, ready, failed ou interrupted. Inclui id, deviceId, createdAt, expiresAt e eventual código de erro."
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/backup-tasks": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Gerar backup em segundo plano",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente administrador. Uma tarefa simultânea. Senha apenas em memória durante execução; arquivo criptografado disponível por 24 horas após conclusão. Reinício durante geração não retoma automaticamente; após 10 minutos aparece interrupted. Mantém somente o último resultado por dispositivo.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "password",
+                  "confirmSuspend",
+                  "mode"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "minLength": 12,
+                    "maxLength": 128
+                  },
+                  "confirmSuspend": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "credentials",
+                      "complete"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa aceita; consultar a lista de backups para o resultado"
+          },
+          "400": {
+            "description": "Confirmação ou senha inválida"
+          },
+          "409": {
+            "description": "Já existe uma tarefa em execução"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/backup-tasks/{task}/download": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "task",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Baixar arquivo criptografado de backup concluído",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente administrador autenticado. Resposta JSON com fileName e archive para download pelo navegador. Cache-Control no-store. A senha não é retornada.",
+        "responses": {
+          "200": {
+            "description": "Arquivo criptografado disponível"
+          },
+          "409": {
+            "description": "Tarefa pendente",
+            "substituída ou inexistente": null
+          },
+          "410": {
+            "description": "Arquivo expirado"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/transfer-removal": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar liberação de remoção local após migração",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Administrador autenticado. Requer checkpoint de backup concluído e origem suspensa.",
+        "responses": {
+          "200": {
+            "description": "Elegibilidade local; não confirma restauração no destino.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "eligible": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Remover somente desta instância após migração",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Confere novamente a senha do administrador conectado, com limite de tentativas. Exige backup concluído, suspensão e confirmação humana da validação no destino. Remove a atribuição ativa ao usuário, preservando seu histórico. Não faz logout remoto nem revoga vínculos WhatsApp. Reativar a origem invalida o checkpoint.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "phone",
+                  "confirm",
+                  "backupValidated",
+                  "password"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string"
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "backupValidated": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "maxLength": 4096
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Cadastro e credenciais locais removidos"
+          },
+          "400": {
+            "description": "Confirmação inválida"
+          },
+          "401": {
+            "description": "Senha inválida"
+          },
+          "403": {
+            "description": "Administrador requerido; credencial API não autorizada"
+          },
+          "409": {
+            "description": "Backup ou suspensão ausente; conflito de ownership"
+          },
+          "429": {
+            "description": "Limite de tentativas de senha"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/backup": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Suspender e exportar backup criptografado do dispositivo principal",
+        "description": "Somente administrador, com Redis e chave de criptografia configurada. Suspende a conexão sem remover webhooks. Exporta auth, Signal, prekeys, sender keys, app-state, privacy tokens, companions e registro em .viperdevice cifrado por senha (AES-256-GCM e scrypt). mode=complete inclui também mensagens de todos os tipos, índices, contatos, mapeamentos UnoID/provider e status, preservando expiração. mode=credentials é o padrão da API para compatibilidade; o painel seleciona complete. Não inclui arquivos de mídia, webhooks, usuários ou tokens da stack. Limites de 16 MiB por arquivo, 8 MiB de conteúdo interno e 50000 registros, sem truncamento silencioso. A origem permanece com autoConnect=false, inclusive se o download falhar. Nunca reconecte a origem após começar a usar o destino.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "password",
+                  "confirmSuspend"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 128,
+                    "writeOnly": true
+                  },
+                  "confirmSuspend": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "credentials",
+                      "complete"
+                    ],
+                    "default": "credentials"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conteúdo criptografado para download; resposta com Cache-Control no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "fileName": {
+                      "type": "string"
+                    },
+                    "archive": {
+                      "type": "string",
+                      "description": "Envelope JSON cifrado",
+                      "salvar sem alterações": null
+                    },
+                    "sourceSuspended": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Senha ou confirmação inválida"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Dispositivo incompatível",
+            "ocupado ou ainda encerrando a conexão; aguardar e repetir": null
+          },
+          "413": {
+            "description": "Backup excedeu os limites de tamanho ou quantidade de chaves"
+          },
+          "503": {
+            "description": "Falha operacional; origem pode já estar suspensa"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/restore": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Restaurar dispositivo principal a partir de backup criptografado",
+        "description": "Somente administrador em qualquer servidor configurado. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura com autoConnect=true e sem webhooks; solicita conexão ao worker após liberar a trava. Não solicita SMS nem garante validade remota de credenciais revogadas. Exige confirmação da origem desligada. Falha de publicação retorna warning restore_connection_dispatch_failed sem desfazer a restauração.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "archive",
+                  "password",
+                  "confirmOriginOffline"
+                ],
+                "properties": {
+                  "archive": {
+                    "type": "string",
+                    "maxLength": 16777216,
+                    "description": "Conteúdo integral do arquivo .viperdevice"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 128,
+                    "writeOnly": true
+                  },
+                  "confirmOriginOffline": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Dispositivo restaurado com conexão automática habilitada; solicitação ao worker não garante conexão concluída",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "device": {
+                      "$ref": "#/components/schemas/MobileDeviceDraft"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "connection_requested",
+                        "disconnected"
+                      ]
+                    },
+                    "autoConnect": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "warning": {
+                      "type": "string",
+                      "enum": [
+                        "restore_connection_dispatch_failed"
+                      ]
+                    },
+                    "restored": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Arquivo inválido",
+            "incompatível": null,
+            "senha incorreta ou confirmação ausente": null
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Destino ocupado ou com dados existentes; nada é sobrescrito"
+          },
+          "413": {
+            "description": "Arquivo excedeu o limite"
+          },
+          "503": {
+            "description": "Falha de armazenamento ou formato DUMP incompatível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/connection": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar conexão do dispositivo principal",
+        "description": "Somente administrador no servidor configurado. Consulta a sessão Uno pelo número canônico registrado; não abre socket nem retorna credenciais.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado persistido da conexão, não confirmação de entrega de mensagens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phone": {
+                      "type": "string"
+                    },
+                    "imported": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Registro incompleto ou sessão conflitante"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Importar registro e conectar dispositivo principal à Zapo",
+        "description": "Disponível no servidor configurado. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Credenciais preservadas e solicitação publicada ao worker"
+          },
+          "400": {
+            "description": "Confirmação ausente"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Registro incompleto",
+            "sessão em uso ou conflito de identidade": null
+          },
+          "503": {
+            "description": "Falha de armazenamento ou publicação; consultar estado antes de repetir"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/registration": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar estado do registro mobile experimental",
+        "description": "Somente administrador com Bearer. Proteção das credenciais provisionada automaticamente no Redis persistente; sem nova ENV em instalações novas. Retorna estado público, nunca OTP ou credenciais. Registrado não significa conectado pela Zapo. Operação interrompida fica incerta, sem reenvio automático.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado público do registro",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer ausente ou inválido"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente"
+          },
+          "503": {
+            "description": "Registro desativado ou armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/registration/request": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Solicitar código por SMS ou ligação de voz",
+        "description": "Administrador e consentimento explícito. method=sms (padrão) ou voice, inclusive telefone fixo. Uma tentativa por ação, sem troca automática de método. Persiste chaves antes da rede e preserva identidade nos reenvios. Nova solicitação exige confirmResend=true e canResendSms ou canResendVoice conforme o método. Respeita espera remota; desafios e resultados incertos continuam bloqueados. Não conecta automaticamente pela Zapo.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "sms",
+                      "voice"
+                    ],
+                    "default": "sms",
+                    "description": "Método explicitamente escolhido; sem fallback automático"
+                  },
+                  "confirmResend": {
+                    "type": "boolean",
+                    "description": "Após no_routes na solicitação, permite apenas o método alternativo com consentimento, respeitando espera remota e pendências; sem espera informada, não impõe prazo local. Consentimento para reenvio quando canResendSms=true para sms ou canResendVoice=true para voice, incluindo código não recebido em code_required. Respeita a espera informada no envio aceito; sem prazo nesse sucesso, permite reenvio manual. device_confirm_or_second_code permite reenvio comum após prazo remoto conhecido para o método, sem outra pendência e sem teto local; não comprova suporte ao segundo código."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consulte status; bloqueio não equivale a SMS enviado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Consentimento inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente"
+          },
+          "409": {
+            "description": "Operação já iniciada ou estado incompatível"
+          },
+          "503": {
+            "description": "Registro desativado ou infraestrutura indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/registration/verify": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Confirmar código SMS do registro mobile experimental",
+        "description": "Código de seis dígitos como string. Aceito após code_required ou recuperação explícita com confirmRecovery=true quando canRetryVerification=true. Recuperação preserva chaves, não solicita SMS, exige intervalo de 60 segundos e limita a três confirmações totais. Falhas legadas sem diagnóstico permitem uma recuperação; erros conhecidos só permitem corrigir código inválido. Autorizações no aparelho devem ser concluídas manualmente; ainda não há detecção automática. PIN, CAPTCHA e outros desafios não são contornados. Nunca inicia socket Zapo.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$",
+                    "writeOnly": true
+                  },
+                  "confirmRecovery": {
+                    "type": "boolean",
+                    "description": "Consentimento explícito para recuperação permitida pelo estado atual"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estado atualizado; registrado não equivale a conectado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Código inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente"
+          },
+          "409": {
+            "description": "Estado incompatível ou operação concorrente"
+          },
+          "503": {
+            "description": "Registro desativado ou infraestrutura indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/capabilities": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar capacidades Mobile Primary",
+        "description": "Exige Authorization: Bearer administrativo. Disponível em qualquer UNOAPI_SERVER_NAME, Docker standalone ou Swarm. Web e worker compartilham a chave interna provisionada automaticamente na mesma base Redis persistente, independente do token da API. Instalações legadas preservam MOBILE_REGISTRATION_KEY durante a migração inicial. Runtime SMS incluído na imagem. VoIP requer serviço integrado configurado. A consulta não abre sockets nem envia SMS.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capacidades e configuração do Mobile Primary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "experimental": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "draftManagement": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "smsRegistration": {
+                      "type": "boolean",
+                      "description": "Disponível com chave de criptografia válida; aceitação do registro depende do WhatsApp"
+                    },
+                    "credentialImport": {
+                      "type": "boolean"
+                    },
+                    "primaryConnection": {
+                      "type": "boolean"
+                    },
+                    "companionQr": {
+                      "type": "boolean"
+                    },
+                    "companionCode": {
+                      "type": "boolean"
+                    },
+                    "voip": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "",
+                        "mobile_registration_key_required"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bearer ausente ou inválido"
+          },
+          "403": {
+            "description": "Administrador obrigatório; chaves pessoais não são aceitas"
+          },
+          "404": {
+            "description": "Funcionalidade experimental desativada"
+          },
+          "503": {
+            "description": "Autenticação indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices": {
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Listar rascunhos de dispositivos principais",
+        "description": "Somente administrador. Retorna até 100 rascunhos, ordenados por telefone. Esses registros não são sessões conectadas nem reservam o número. Authorization exige Bearer; tokens na URL não são aceitos. Cache-Control: no-store.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rascunhos de dispositivos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "devices": {
+                      "type": "array",
+                      "maxItems": 100,
+                      "items": {
+                        "$ref": "#/components/schemas/MobileDeviceDraft"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial ausente ou inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Funcionalidade experimental desativada"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Cadastrar rascunho de dispositivo principal",
+        "description": "Salva somente metadados no Redis; não solicita SMS, não cria credenciais, não conecta e não muda sessões existentes. Requer administrador e Bearer. Consentimento obrigatório; telefone único entre rascunhos. Repetição retorna 409, sem criar duplicata. Nome máximo de 80 caracteres sem caracteres de controle. Não aceita proxy, OTP, tokens, credenciais, estado ou atribuição de responsável.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "phone",
+                  "name",
+                  "platform",
+                  "accountType",
+                  "labConsent"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{7,14}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "android",
+                      "ios"
+                    ]
+                  },
+                  "accountType": {
+                    "type": "string",
+                    "enum": [
+                      "personal",
+                      "business"
+                    ]
+                  },
+                  "labConsent": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "phone": "5511999999999",
+                "name": "Laboratório",
+                "platform": "android",
+                "accountType": "personal",
+                "labConsent": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Rascunho criado, não registrado no WhatsApp",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceDraft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Dados inválidos",
+            "campos extras ou consentimento ausente": null
+          },
+          "401": {
+            "description": "Credencial ausente ou inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Funcionalidade experimental desativada"
+          },
+          "409": {
+            "description": "Telefone já cadastrado ou limite de 100 rascunhos"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar rascunho de dispositivo principal",
+        "description": "Consulta administrativa, com Bearer e flag experimental. Não consulta o WhatsApp. O ID identifica somente o cadastro local.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadados do cadastro experimental",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileDeviceDraft"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Rascunho inexistente ou funcionalidade desativada"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Remover somente um rascunho experimental",
+        "description": "Requer administrador, Bearer e flag experimental. Exige confirm=true. Compare-and-delete impede apagar um registro substituído concorrentemente. Não desconecta nem exclui contas WhatsApp, credenciais, mídias, webhooks ou sessões vinculadas. Somente estado draft pode ser removido por esta operação.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Rascunho removido"
+          },
+          "400": {
+            "description": "Confirmação inválida"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Rascunho inexistente ou funcionalidade desativada"
+          },
+          "409": {
+            "description": "Cadastro alterado concorrentemente ou não está em draft"
+          },
+          "503": {
+            "description": "Armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/manager/mobile-devices/{id}/full": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Excluir definitivamente dispositivo principal e credenciais locais",
+        "description": "Exclusivo de administrador. Exige confirmação, aceite de novo SMS e número exato do cadastro. Marca exclusão em andamento, bloqueia registro/importação, suspende a conexão e aguarda a liberação da lease do worker antes de limpar o store Zapo, configuração, registro SMS cifrado e cadastro. Não exclui a conta no WhatsApp. Novo uso exige novo registro por SMS, sujeito às validações e esperas do provider. Mídias, histórico de webhooks e atribuições históricas são preservados. A atribuição ativa ao usuário é removida para não manter uma sessão pendente na lista. Em caso de falha parcial, repita a exclusão; o cadastro fica marcado como deleting.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm",
+                  "acknowledgeNewSms",
+                  "phone"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "acknowledgeNewSms": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{7,14}$"
+                  }
+                }
+              },
+              "example": {
+                "confirm": true,
+                "acknowledgeNewSms": true,
+                "phone": "5511999999999"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Dispositivo e credenciais locais excluídos"
+          },
+          "400": {
+            "description": "Confirmação incompleta ou telefone divergente"
+          },
+          "401": {
+            "description": "Bearer obrigatório"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro inexistente"
+          },
+          "409": {
+            "description": "Conflito ou conexão ainda encerrando. Aguarde e repita sem solicitar SMS."
+          },
+          "503": {
+            "description": "Falha parcial no armazenamento. Repita para concluir."
+          }
+        }
+      }
+    },
     "/admin/redis/tree": {
       "get": {
         "tags": [
@@ -5631,6 +9011,21 @@
                     }
                   }
                 },
+                "location": {
+                  "summary": "Localização estática (formato Cloud API)",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "recipient_type": "individual",
+                    "to": "5511999999999",
+                    "type": "location",
+                    "location": {
+                      "latitude": -15.601,
+                      "longitude": -56.0974,
+                      "name": "Praça em Cuiabá",
+                      "address": "Cuiabá, MT"
+                    }
+                  }
+                },
                 "textGroupMentionAll": {
                   "summary": "Texto em grupo com @all/@todos",
                   "value": {
@@ -5690,6 +9085,18 @@
                       "mime_type": "image/jpeg",
                       "filename": "foto.jpg",
                       "caption": "Legenda opcional"
+                    }
+                  }
+                },
+                "imageViewOnce": {
+                  "summary": "Imagem de visualização única (Zapo)",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "image",
+                    "image": {
+                      "link": "https://exemplo.com/imagem.jpg",
+                      "view_once": true
                     }
                   }
                 },
@@ -5887,6 +9294,34 @@
                             "copy_code": {
                               "title": "ChavePix",
                               "code": "0000000055442"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "interactiveWebview": {
+                  "summary": "Interativo - WebView Zapo (validado no lab em 03/10/2026)",
+                  "description": "Abertura dentro do WhatsApp confirmada pelo usuario no iPhone em conversa individual e no Android em testes enviados a dois grupos, usando full e true com https://vipertec.com.br. Versoes de sistema e aplicativo nao registradas. Nao garante todos os clientes, carrosseis ou callback de formulario; delivered sozinho nao prova WebView.",
+                  "value": {
+                    "messaging_product": "whatsapp",
+                    "to": "5511999999999",
+                    "type": "interactive",
+                    "interactive": {
+                      "type": "button",
+                      "body": {
+                        "text": "Abra o formulario pelo botao."
+                      },
+                      "action": {
+                        "buttons": [
+                          {
+                            "type": "cta_url",
+                            "url": {
+                              "title": "Abrir formulario",
+                              "link": "https://example.com/form",
+                              "webview_presentation": "full",
+                              "webview_interaction": true
                             }
                           }
                         ]
@@ -7308,6 +10743,7 @@
     "/v15.0/{phone}/register": {
       "post": {
         "summary": "Registrar/atualizar configuração da sessão",
+        "description": "Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS enquanto o registro for válido. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -7342,15 +10778,30 @@
     },
     "/v15.0/{phone}/deregister": {
       "post": {
-        "summary": "Encerrar sessão (logout) e remover registro",
+        "summary": "Encerrar sessão comum ou suspender integração mobile primary",
+        "description": "Sessões comuns mantêm logout e remoção. Em mobile primary aceita corpo vazio, remove todos os webhooks ativos, encaminha a configuração anterior ao histórico, desativa autoConnect e desconecta sem logout nem limpeza de credenciais ou filas. Falhas de arquivamento são registradas em log sem bloquear a operação. Reconectar não restaura destinos automaticamente. HTTP 204 confirma publicação, não conclusão da desconexão. Register ou Conectar no painel retoma a sessão. Mensagens durante o período offline dependem da recuperação disponibilizada pelo WhatsApp.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {}
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Sem conteúdo"
+          },
+          "503": {
+            "description": "Publicação falhou; suspensão pode já estar persistida. Repita a operação."
           }
         }
       }
@@ -11140,6 +14591,853 @@
       }
     },
     "schemas": {
+      "SessionConversation": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "timestamp_ms",
+          "last_message_id",
+          "preview",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "123456789@lid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phone_number": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "timestamp_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_message_id": {
+            "type": "string"
+          },
+          "preview": {
+            "type": "string",
+            "maxLength": 180
+          },
+          "picture_id": {
+            "type": "string",
+            "description": "Identidade para o endpoint autenticado de profile-pictures; ícone quando foto ausente"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionConversationMessage": {
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "from_me",
+          "timestamp_ms",
+          "type",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ID de provider para paginação/deltas/mídia"
+          },
+          "reply_id": {
+            "type": "string",
+            "description": "ID UnoAPI mapeado ou ID de provider para responder"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "from_me": {
+            "type": "boolean"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "sender_name": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Nome do participante do grupo resolvido no cache da própria sessão; sender preserva a identidade original"
+          },
+          "timestamp_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "video",
+              "audio",
+              "document",
+              "sticker",
+              "contact",
+              "location",
+              "interactive",
+              "view_once",
+              "revoked",
+              "unsupported"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 16000
+          },
+          "reply_to": {
+            "type": "string"
+          },
+          "reply_preview": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 180
+              },
+              "type": {
+                "type": "string"
+              },
+              "sender": {
+                "type": "string"
+              },
+              "sender_name": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Nome do autor da mensagem citada no cache da sessão"
+              },
+              "available": {
+                "type": "boolean",
+                "description": "Original encontrado no histórico local; false pode ter prévia embutida na citação"
+              }
+            }
+          },
+          "edited": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "contacts": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "phones": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              }
+            }
+          },
+          "buttons": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri",
+                  "maxLength": 2048,
+                  "description": "Somente links HTTP(S) sem credenciais"
+                }
+              }
+            }
+          },
+          "media": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "mime_type": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "available": {
+                "type": "boolean",
+                "description": "Referência de mídia; não garante disponibilidade no CDN"
+              }
+            }
+          },
+          "location": {
+            "type": "object",
+            "properties": {
+              "latitude": {
+                "type": "number"
+              },
+              "longitude": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      },
+      "PrivacyInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "mode",
+              "userJids"
+            ],
+            "description": "Substitui público dos próximos Status. CONTACTS exige lista vazia; ALLOW_LIST/DENY_LIST exigem de 1 a 100 contatos. Números viram JIDs PN, LIDs são preservados e duplicados removidos. Não consulta público atual, não publica Status nem envia flags Facebook/Instagram.",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "status"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "CONTACTS",
+                  "DENY_LIST",
+                  "ALLOW_LIST"
+                ]
+              },
+              "userJids": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/components/schemas/PrivacyContactId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "setting",
+              "value"
+            ],
+            "description": "Valores: lastSeen/profilePicture/about/linkedProfiles/pix = all|contacts|contact_blacklist|none; online = all|none|match_last_seen; readReceipts = all|none; groupAdd = all|contacts|contact_blacklist; callAdd = all|known|contacts; messages = all|contacts; defenseMode = off|on_standard. Valor incompatível com setting é rejeitado.",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "setting"
+                ]
+              },
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "lastSeen",
+                  "online",
+                  "profilePicture",
+                  "about",
+                  "readReceipts",
+                  "groupAdd",
+                  "callAdd",
+                  "messages",
+                  "defenseMode",
+                  "linkedProfiles",
+                  "pix"
+                ]
+              },
+              "value": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "contacts",
+                  "contact_blacklist",
+                  "none",
+                  "match_last_seen",
+                  "known",
+                  "off",
+                  "on_standard"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "setting"
+            ],
+            "description": "Pelo menos um ID em add ou remove; mesmo ID não pode estar nas duas listas. Não substitui toda a lista.",
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "exceptions"
+                ]
+              },
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "about",
+                  "groupAdd",
+                  "lastSeen",
+                  "profilePicture",
+                  "linkedProfiles",
+                  "pix"
+                ]
+              },
+              "add": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/components/schemas/PrivacyContactId"
+                }
+              },
+              "remove": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "$ref": "#/components/schemas/PrivacyContactId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "jid"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "block",
+                  "unblock"
+                ]
+              },
+              "jid": {
+                "$ref": "#/components/schemas/PrivacyContactId"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "operation",
+              "duration"
+            ],
+            "properties": {
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "timer"
+                ]
+              },
+              "duration": {
+                "type": "integer",
+                "enum": [
+                  0,
+                  86400,
+                  604800,
+                  7776000
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "PrivacyContactId": {
+        "type": "string",
+        "pattern": "^\\d{5,20}(?:@(?:s\\.whatsapp\\.net|lid))?$",
+        "description": "Número com país e DDD somente dígitos ou JID PN/LID. Não aceita grupos nem username nesta rota."
+      },
+      "AccountEmailStatus": {
+        "type": "object",
+        "required": [
+          "email",
+          "verified",
+          "confirmed"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "format": "email"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OwnProfileMutation": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "id": {
+            "type": "string",
+            "nullable": true,
+            "description": "ID de foto ou capa retornado pelo SDK"
+          },
+          "warning": {
+            "type": "string",
+            "description": "Alteração remota confirmada mas persistência ou limpeza local incompleta"
+          }
+        }
+      },
+      "OwnProfile": {
+        "type": "object",
+        "properties": {
+          "mobile_primary": {
+            "type": "boolean",
+            "description": "Habilita o fluxo de e-mail da conta",
+            "separado do e-mail comercial": null
+          },
+          "cover": {
+            "type": "object",
+            "nullable": true,
+            "description": "Última capa enviada pela Uno; não representa consulta da capa remota. Registro independente do cache de perfil.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "URL S3 assinada por 900 segundos",
+                "renovada em cada GET": null
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "uno_upload"
+                ]
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "cache": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "cache",
+                  "live"
+                ]
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Momento da última consulta armazenada",
+                "que pode ser parcial conforme warnings": null
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "refresh_failed": {
+                "type": "boolean"
+              }
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string",
+            "nullable": true
+          },
+          "username": {
+            "type": "string",
+            "nullable": true
+          },
+          "verified_name": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "business_account": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "picture": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "business": {
+            "type": "object",
+            "nullable": true,
+            "description": "Perfil comercial lido da Zapo; campos de OwnBusinessInput, jid, categorias com id/name e profileOptions.",
+            "additionalProperties": true
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Seções cuja consulta falhou; não confundir com dados apagados"
+          },
+          "unsupported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OwnBusinessInput": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "description": "E-mail válido ou string vazia para limpar"
+          },
+          "latitude": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90,
+            "description": "Enviar junto com longitude; zero permitido"
+          },
+          "longitude": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "websites": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "description": "URL HTTP ou HTTPS"
+                }
+              }
+            }
+          },
+          "categories": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$",
+                  "maxLength": 64
+                }
+              }
+            }
+          },
+          "businessHours": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "config"
+            ],
+            "properties": {
+              "timezone": {
+                "type": "string",
+                "maxLength": 100,
+                "example": "America/Cuiaba"
+              },
+              "config": {
+                "type": "array",
+                "maxItems": 7,
+                "description": "Uma entrada por dia aberto. Dias fechados omitidos; specific_hours requer início menor que fim. Limite local de um intervalo por dia.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "dayOfWeek",
+                    "mode"
+                  ],
+                  "properties": {
+                    "dayOfWeek": {
+                      "type": "string",
+                      "enum": [
+                        "sun",
+                        "mon",
+                        "tue",
+                        "wed",
+                        "thu",
+                        "fri",
+                        "sat"
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open_24h",
+                        "specific_hours",
+                        "appointment_only"
+                      ]
+                    },
+                    "openTime": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1439,
+                      "description": "Minutos desde meia-noite; somente specific_hours"
+                    },
+                    "closeTime": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1439
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "MobileRegistrationStatus": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "requesting",
+              "code_required",
+              "verifying",
+              "registered",
+              "blocked",
+              "uncertain",
+              "additional_confirmation_required"
+            ]
+          },
+          "canonicalPhone": {
+            "type": "string",
+            "description": "Número devolvido pelo servidor após registro confirmado"
+          },
+          "error": {
+            "type": "string",
+            "description": "Categoria sanitizada sem resposta bruta ou credenciais"
+          },
+          "retryAt": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fim da espera remota em Unix milissegundos, calculado com diagnostic.smsWaitSeconds ou espera conservadora. Ausente quando o prazo remoto é desconhecido. Não garante liberação nem inicia reenvio."
+          },
+          "retryAtVoice": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Fim da espera para ligação em Unix milissegundos; não solicita chamada automaticamente"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "voice"
+            ],
+            "description": "Método da última solicitação"
+          },
+          "canRetryVerification": {
+            "type": "boolean",
+            "description": "Permite confirmação manual com confirmRecovery; nunca reenvia SMS"
+          },
+          "canResendSms": {
+            "type": "boolean",
+            "description": "Permite reenvio manual com confirmResend, preservando as chaves. Em code_required, respeita eventual espera remota do envio aceito; sem prazo, permite tentativa explícita. Falha legada ou código expirado: cinco minutos e um reenvio; device_confirm_or_second_code: após prazo remoto conhecido, sem outra pendência e sem teto local; too_recent na solicitação sem desafio: somente após prazo remoto conhecido, sem teto local de solicitações. Nunca representa garantia de liberação pelo provedor."
+          },
+          "canResendVoice": {
+            "type": "boolean",
+            "description": "Permite nova solicitação explícita por ligação com confirmResend; respeita voice_wait e preserva as chaves"
+          },
+          "diagnostic": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "prepare",
+                  "request",
+                  "verify"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "description": "Motivo técnico de lista permitida; nunca texto bruto do provedor"
+              },
+              "httpStatus": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              "providerStatus": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{1,47}$",
+                "description": "Código de status retornado pelo componente"
+              },
+              "providerReason": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{1,47}$",
+                "description": "Código técnico do motivo; não inclui texto livre"
+              },
+              "providerPending": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{1,47}$",
+                "description": "Código técnico de pendência; não comprova aprovação no aparelho"
+              },
+              "waitSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647,
+                "description": "Espera remota em segundos: espera do método solicitado, maior espera dos demais métodos ou retry_after. Tem prioridade sobre a espera local."
+              },
+              "smsWaitSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "voiceWaitSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              }
+            }
+          }
+        }
+      },
+      "MobileDeviceDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "phone",
+          "name",
+          "platform",
+          "accountType",
+          "connectionMode",
+          "state",
+          "createdAt",
+          "createdBy"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{7,14}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "android",
+              "ios"
+            ]
+          },
+          "accountType": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "business"
+            ]
+          },
+          "connectionMode": {
+            "type": "string",
+            "enum": [
+              "mobile_primary"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "deleting"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          }
+        }
+      },
       "ManagerVoipHistoryScope": {
         "type": "object",
         "additionalProperties": false,
@@ -13467,6 +17765,70 @@
           }
         ]
       },
+      "MessageLocation": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MessageCommon"
+          },
+          {
+            "type": "object",
+            "required": [
+              "location"
+            ],
+            "properties": {
+              "type": {
+                "const": "location"
+              },
+              "location": {
+                "type": "object",
+                "required": [
+                  "latitude",
+                  "longitude"
+                ],
+                "description": "Localização estática. Nome e endereço são opcionais. Aceita números ou strings decimais; coordenadas são normalizadas antes da fila. Não compartilha localização em tempo real.",
+                "properties": {
+                  "latitude": {
+                    "description": "Latitude entre -90 e 90, inclusive; zero é válido.",
+                    "oneOf": [
+                      {
+                        "type": "number",
+                        "minimum": -90,
+                        "maximum": 90
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$",
+                        "example": "-15.601"
+                      }
+                    ]
+                  },
+                  "longitude": {
+                    "description": "Longitude entre -180 e 180, inclusive; zero é válido.",
+                    "oneOf": [
+                      {
+                        "type": "number",
+                        "minimum": -180,
+                        "maximum": 180
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$",
+                        "example": "-56.0974"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
       "MessageEdit": {
         "allOf": [
           {
@@ -13571,6 +17933,11 @@
                   "mime_type": {
                     "type": "string",
                     "example": "image/jpeg"
+                  },
+                  "view_once": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Extensão ViperConnect/Zapo: visualização única. Aceita somente booleano; omitido ou false mantém envio normal. Mapeado para options.viewOnce da Zapo."
                   }
                 }
               }
@@ -13626,6 +17993,20 @@
                   "mime_type": {
                     "type": "string",
                     "example": "video/mp4"
+                  },
+                  "view_once": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Extensão ViperConnect/Zapo: visualização única; preservada durante a preparação do vídeo. Aceita somente booleano."
+                  },
+                  "quality": {
+                    "type": "string",
+                    "enum": [
+                      "hd",
+                      "sd"
+                    ],
+                    "default": "hd",
+                    "description": "Extensão Zapo: hd até 720p/CRF23, sd até 480p/CRF27, até 30 FPS. MP4 faststart conforme é reutilizado sem FFmpeg; sem faststart recebe remux. Conversão gera statuses[].warnings com VIDEO_TRANSCODED. Teto operacional de saída configurável (256 MiB padrão), sem redução automática para 15 MiB. Não garante selo HD no WhatsApp."
                   }
                 }
               }
@@ -13728,6 +18109,11 @@
                   "mime_type": {
                     "type": "string",
                     "example": "audio/ogg"
+                  },
+                  "view_once": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Extensão ViperConnect/Zapo: áudio de reprodução única. Independente de ptt. Aceita somente booleano."
                   },
                   "ptt": {
                     "type": "boolean",
@@ -14298,6 +18684,22 @@
                                     "link": {
                                       "type": "string",
                                       "format": "uri"
+                                    },
+                                    "merchant_url": {
+                                      "type": "string",
+                                      "format": "uri",
+                                      "description": "Opcional; padrao igual a link."
+                                    },
+                                    "webview_presentation": {
+                                      "type": "string",
+                                      "enum": [
+                                        "full"
+                                      ],
+                                      "description": "Solicita WebView. Abertura interna validada no lab em 03/10/2026 com interaction=true; nao garante todos os clientes."
+                                    },
+                                    "webview_interaction": {
+                                      "type": "boolean",
+                                      "description": "Experimental Zapo. Encaminhado sem conversao; omissao preserva comportamento anterior. Nao cria callback do formulario."
                                     }
                                   }
                                 }
@@ -14694,6 +19096,21 @@
                                                   "link": {
                                                     "type": "string",
                                                     "format": "uri"
+                                                  },
+                                                  "merchant_url": {
+                                                    "type": "string",
+                                                    "format": "uri"
+                                                  },
+                                                  "webview_presentation": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "full"
+                                                    ],
+                                                    "description": "Experimental Zapo; abertura interna nao garantida."
+                                                  },
+                                                  "webview_interaction": {
+                                                    "type": "boolean",
+                                                    "description": "Dica experimental; nao cria callback do formulario."
                                                   }
                                                 }
                                               }
@@ -15540,6 +19957,9 @@
             "$ref": "#/components/schemas/MessageText"
           },
           {
+            "$ref": "#/components/schemas/MessageLocation"
+          },
+          {
             "$ref": "#/components/schemas/MessageEdit"
           },
           {
@@ -16132,7 +20552,7 @@
           "code": {
             "type": "string",
             "example": "REPLY_SENT_WITHOUT_QUOTE",
-            "description": "Código estável; um aviso não é uma falha e não exige reenvio."
+            "description": "Código estável; um aviso não é uma falha e não exige reenvio. VIDEO_TRANSCODED informa conversão automática ao perfil solicitado (HD/SD); arquivo fora do recomendado ou metadados insuficientes."
           },
           "message": {
             "type": "string",
@@ -16465,7 +20885,7 @@
         }
       },
       "WebhookInbound": {
-        "description": "Mensagens recebidas (compatível com WhatsApp Cloud API)",
+        "description": "Mensagens recebidas no envelope Cloud API, com extensões ViperConnect como message_type=view_once.",
         "type": "object",
         "properties": {
           "object": {
@@ -16517,6 +20937,11 @@
                                 },
                                 "timestamp": {
                                   "type": "string"
+                                },
+                                "message_type": {
+                                  "type": "string",
+                                  "example": "view_once",
+                                  "description": "Extensão ViperConnect. view_once identifica imagem, vídeo ou áudio de visualização única no evento original, sem novo ID ou evento posterior. message_edit identifica edição. Ausente em mídia comum; não impõe acesso único à URL."
                                 },
                                 "type": {
                                   "type": "string",

@@ -29,6 +29,7 @@ export class ConnectionInProgress extends Error {
 }
 
 export interface Client {
+  ownProfile?(command: import('./profile_input').ProfileCommand): Promise<any>
   connect(time: number): Promise<void>
 
   disconnect(options?: { preserveStatus?: boolean }): Promise<void>

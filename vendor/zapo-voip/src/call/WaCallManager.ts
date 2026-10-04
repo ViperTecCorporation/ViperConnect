@@ -59,6 +59,7 @@ export interface WaCallManagerConfig {
     stores: WaVoipStores
     logger?: Logger
     maxConcurrentCalls?: number
+    preferWebRelayPort?: boolean
 }
 
 interface PendingRelaylatency {
@@ -72,6 +73,7 @@ export class WaCallManager extends EventEmitter {
     private readonly stores: WaVoipStores
     private readonly logger: Logger
     private readonly maxConcurrentCalls: number
+    private readonly preferWebRelayPort: boolean
 
     private readonly calls = new Map<string, WaCallMediaSession>()
     private readonly pendingRelaylatency = new Map<string, PendingRelaylatency[]>()
@@ -80,6 +82,7 @@ export class WaCallManager extends EventEmitter {
         super()
         this.deps = config.deps
         this.stores = config.stores
+        this.preferWebRelayPort = config.preferWebRelayPort === true
         this.logger = config.logger ?? createNoopLogger()
         this.maxConcurrentCalls = resolvePositive(
             config.maxConcurrentCalls,
@@ -532,6 +535,7 @@ export class WaCallManager extends EventEmitter {
 
         const sessionLogger = this.logger.child({ callId: info.callId })
         const session = new WaCallMediaSession({
+            preferWebRelayPort: this.preferWebRelayPort,
             deps: this.deps,
             logger: sessionLogger,
             info,

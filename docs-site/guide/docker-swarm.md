@@ -145,8 +145,9 @@ streaming e FFmpeg não competem com webhooks, status e mensagens comuns.
 
 `video.stage` pode preparar vários downloads conforme o prefetch configurado;
 `video.transcode` executa somente uma conversão por instância, com prioridade
-baixa. O limite padrão de entrada é 256 MiB e o alvo de saída é no máximo
-15 MiB. Se o worker parar, os jobs duráveis aguardam no RabbitMQ; o modo
+baixa. O limite padrão de entrada é 256 MiB e o teto operacional de saída é
+256 MiB (`UNOAPI_VIDEO_MAX_OUTPUT_BYTES`), sem compressão adicional.
+Não é limite universal do WhatsApp. Se o worker parar, os jobs duráveis aguardam no RabbitMQ; o modo
 dedicado não faz failover automático para o broker.
 
 Para manter o desenho antigo sem o serviço separado, remova

@@ -1,6 +1,6 @@
 {
   "name": "viperconnect",
-  "version": "4.0.32",
+  "version": "4.0.34",
   "description": "ViperConnect by ViperTec Corporation, based on the original Unoapi Cloud project",
   "repository": {
     "type": "git",
@@ -23,7 +23,8 @@
     "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.frontend.json && node ./scripts/version-frontend-assets.cjs && node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -p tsconfig.runtime.json && node ./scripts/check-zapo-runtime-graph.mjs",
     "build:all": "node ./node_modules/typescript/bin/tsc -p tsconfig.frontend.json && node ./scripts/version-frontend-assets.cjs && node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc -p .",
     "build:frontend": "node ./node_modules/typescript/bin/tsc -p tsconfig.frontend.json && node ./scripts/version-frontend-assets.cjs",
-    "format": "prettier --ignore-path .gitignore --write \"**/*.+(js|ts|json)\"",
+    "format": "prettier --ignore-path .gitignore --ignore-path .prettierignore --write \"**/*.+(js|ts|json)\"",
+    "check:mobile-runtime": "node scripts/check-mobile-runtime.cjs",
     "dev": "NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/nodemon/bin/nodemon.js src/index.ts --trace-deprecation",
     "web-dev": "NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/nodemon/bin/nodemon.js src/web.ts",
     "waker-dev": "NODE_OPTIONS=--max-old-space-size=4096 ./node_modules/nodemon/bin/nodemon.js src/waker.ts",
@@ -121,7 +122,7 @@
     "ws": "^8.21.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yaml": "^2.8.3",
-    "zapo-js": "1.8.2"
+    "zapo-js": "1.9.0"
   },
   "engines": {
     "node": ">= 24.x"

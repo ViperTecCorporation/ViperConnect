@@ -39,7 +39,7 @@ export const managerRequestScope = (path: string): string | 'list' | 'voip' | un
   if (/^\/admin\/voip\//.test(path)) return 'voip' // Controllers verify resource ownership.
   const special = path.match(/^\/(?:connect|generate|sessions)\/(\d{8,15})\/?$/) ||
     path.match(/^\/admin\/webhooks\/history\/(\d{8,15})(?:\/restore)?\/?$/) ||
-    path.match(/^\/(\d{8,15})\/(?:contacts|blacklist)(?:\/.*)?$/) ||
+    path.match(/^\/(\d{8,15})\/(?:contacts|blacklist|profile)(?:\/.*)?$/) ||
     path.match(/^\/timer\/(\d{8,15})\/[^/]+\/?$/) ||
     path.match(/^\/v\d+\.\d+\/download\/(\d{8,15})\/[^/]+\/?$/)
   if (special) return special[1]

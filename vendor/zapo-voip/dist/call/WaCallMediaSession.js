@@ -32,6 +32,7 @@ const INBOUND_PCM_FRAME_SAMPLES = 960;
 class WaCallMediaSession {
     info;
     deps;
+    preferWebRelayPort;
     logger;
     delegate;
     rtpSession = null;
@@ -97,6 +98,7 @@ class WaCallMediaSession {
     firstAudioRecvLogged = false;
     constructor(options) {
         this.deps = options.deps;
+        this.preferWebRelayPort = options.preferWebRelayPort === true;
         this.logger = options.logger;
         this.info = options.info;
         this.delegate = options.delegate;
@@ -1406,7 +1408,7 @@ class WaCallMediaSession {
             callId: this.info.callId,
             endpointCount: endpoints.length
         });
-        const candidates = (0, relay_endpoints_js_1.orderMediaRelayCandidates)(endpoints, this.info.direction === types_js_1.CallDirection.Incoming);
+        const candidates = (0, relay_endpoints_js_1.orderMediaRelayCandidates)(endpoints, this.info.direction === types_js_1.CallDirection.Incoming, { preferWebRelayPort: this.preferWebRelayPort });
         if (candidates.length === 0) {
             this.logger.error('no relay configs', { callId: this.info.callId });
             return;

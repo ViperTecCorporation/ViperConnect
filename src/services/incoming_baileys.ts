@@ -51,6 +51,12 @@ export class IncomingProvider implements Incoming {
     return (await this.client(phone)).contacts(numbers)
   }
 
+  public async ownProfile(phone: string, command: import('./profile_input').ProfileCommand) {
+    const client = await this.client(phone)
+    if (!client.ownProfile) throw new Error('501: own_profile_capability_unavailable')
+    return client.ownProfile(command)
+  }
+
   public async saveContact(phone: string, input: SaveContactInput) {
     const client = await this.client(phone)
     if (typeof client.saveContact !== 'function') {

@@ -702,4 +702,57 @@ describe('service outgoing whatsapp cloud api', () => {
       nowSpy.mockRestore()
     }
   })
+
+  test('a failed old destination does not block the new URL with the same webhook ID', async () => {
+    const oldTarget = { ...config.webhooks[0], id: 'default', url: '', urlAbsolute: 'http://127.0.0.1:3000/old' } as Webhook
+    const newTarget = { ...oldTarget, urlAbsolute: 'https://example.com/new' }
+    mockFetch.mockReset()
+    mockFetch.mockResolvedValue({ ok: false, status: 503, statusText: 'Unavailable', text: async () => 'offline' } as any)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await expect(service.sendHttp(phone!, oldTarget, textPayload, {})).rejects.toThrow()
+    }
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
+    await expect(service.sendHttp(phone!, newTarget, textPayload, {})).resolves.toBeUndefined()
+    expect(mockFetch).toHaveBeenLastCalledWith(newTarget.urlAbsolute, expect.anything())
+    await expect(service.sendHttp(phone!, oldTarget, textPayload, {})).rejects.toMatchObject({ code: 'WEBHOOK_CB_OPEN' })
+    expect(mockFetch).toHaveBeenCalledTimes(4)
+  })
+
+  test('Redis circuits isolate destinations and do not expose URL secrets in keys', async () => {
+    const redis = require('../../src/services/redis')
+    const previous = process.env.REDIS_URL
+    const opened = new Set<string>(['default'])
+    const failures = new Map<string, number>()
+    const spies = [
+      jest.spyOn(redis, 'isWebhookCircuitOpen').mockImplementation(async (_phone: string, id: string) => opened.has(id)),
+      jest.spyOn(redis, 'isWebhookCircuitRecovering').mockResolvedValue(false),
+      jest.spyOn(redis, 'bumpWebhookCircuitFailure').mockImplementation(async (_phone: string, id: string) => {
+        const count = (failures.get(id) || 0) + 1
+        failures.set(id, count)
+        return count
+      }),
+      jest.spyOn(redis, 'openWebhookCircuit').mockImplementation(async (_phone: string, id: string) => { opened.add(id) }),
+      jest.spyOn(redis, 'closeWebhookCircuit').mockImplementation(async (_phone: string, id: string) => { opened.delete(id) }),
+    ]
+    process.env.REDIS_URL = 'redis://unused-test-double'
+    try {
+      const oldTarget = { ...config.webhooks[0], id: 'default', url: '', urlAbsolute: 'https://example.com/old?token=private-test-token' } as Webhook
+      const newTarget = { ...oldTarget, urlAbsolute: 'https://example.com/new?token=other-private-token' }
+      mockFetch.mockReset()
+      mockFetch.mockResolvedValue({ ok: false, status: 503, statusText: 'Unavailable', text: async () => 'offline' } as any)
+      for (let attempt = 0; attempt < 3; attempt++) await expect(service.sendHttp(phone!, oldTarget, textPayload, {})).rejects.toThrow()
+      mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
+      await expect(service.sendHttp(phone!, newTarget, textPayload, {})).resolves.toBeUndefined()
+      await expect(service.sendHttp(phone!, oldTarget, textPayload, {})).rejects.toMatchObject({ code: 'WEBHOOK_CB_OPEN' })
+      expect(mockFetch).toHaveBeenCalledTimes(4)
+      const ids = spies[0].mock.calls.map(call => call[1])
+      expect(new Set(ids).size).toBe(2)
+      for (const id of ids) expect(id).toMatch(/^v2:[a-f0-9]{64}$/)
+      expect(opened.has('default')).toBe(true) // Legacy keys are not deleted or reused.
+    } finally {
+      spies.forEach(spy => spy.mockRestore())
+      if (previous === undefined) delete process.env.REDIS_URL
+      else process.env.REDIS_URL = previous
+    }
+  })
 })

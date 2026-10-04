@@ -25,15 +25,29 @@ const find = (method: string, route: string) => requests.find((item: any) =>
   && item.request.url.raw.split('?')[0] === '{{base_url}}' + route.replace(/\{([^}]+)\}/g, '{{$1}}'))
 
 describe('administrative executable documentation inventory', () => {
+  test.each([
+    ['get', '/admin/settings/google-maps/browser'],
+    ['get', '/admin/settings/google-maps'],
+    ['put', '/admin/settings/google-maps'],
+    ['delete', '/admin/settings/google-maps'],
+  ])('Google Maps %s %s requires admin authentication in all published contracts', (method, route) => {
+    for (const document of [spec, publicSpec]) {
+      expect(document.paths[route][method].security).toEqual([{ AdminToken: [] }])
+    }
+    expect(find(method, route).request.auth.bearer[0].value).toBe('{{admin_token}}')
+  })
+
   test('every explicit admin and mounted Manager operation has canonical, interactive and Postman coverage', () => {
     const sources = [
       ['src/router.ts', ''],
       ['src/controllers/manager_controller.ts', '/manager'],
+      ['src/controllers/mobile_device_controller.ts', '/manager/mobile-devices'],
+      ['src/controllers/session_transfer_controller.ts', '/manager/session-transfers'],
     ]
     for (const [file, prefix] of sources) {
       const source = fs.readFileSync(file, 'utf8')
       for (const match of source.matchAll(/router\.(get|post|put|patch|delete)\(\s*'([^']+)'/g)) {
-        const route = prefix + normalize(match[2])
+        const route = (prefix + normalize(match[2])).replace(/\/$/, '')
         if (!route.startsWith('/admin/') && !route.startsWith('/manager/')) continue
         for (const document of [spec, publicSpec]) {
           const op = document.paths[route]?.[match[1]]

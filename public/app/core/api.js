@@ -1,4 +1,4 @@
-import { t } from './i18n.js?v=4.0.32-1ab9d8f1';
+import { t } from './i18n.js?v=4.0.34-43ce0548';
 export class ApiError extends Error {
     get code() {
         const value = this.payload;
@@ -33,6 +33,18 @@ export class ApiClient {
     }
     getToken() {
         return this.token;
+    }
+    async sessionMessageMedia(phone, id) {
+        const revision = this.authRevision;
+        const response = await this.fetcher.call(globalThis, `${this.baseUrl}/v15.0/${encodeURIComponent(phone)}/messages/${encodeURIComponent(id)}/media`, { headers: { Authorization: `Bearer ${this.token}` } });
+        if (revision !== this.authRevision)
+            throw new ApiError(0, 'Sessão alterada. Requisição descartada.');
+        if (!response.ok)
+            throw new ApiError(response.status, `Mídia indisponível (${response.status}).`);
+        const blob = await response.blob();
+        if (revision !== this.authRevision)
+            throw new ApiError(0, 'Sessão alterada. Requisição descartada.');
+        return blob;
     }
     sessionDestinations() {
         return this.request('/admin/session-webhooks');

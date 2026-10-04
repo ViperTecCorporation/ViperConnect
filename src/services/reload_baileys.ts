@@ -1,6 +1,6 @@
 import { UNOAPI_SERVER_NAME } from '../defaults'
 import { clients, getClient } from '../services/client'
-import { getConfig } from '../services/config'
+import { getConfig, configs } from '../services/config'
 import { Listener } from '../services/listener'
 import type { OnNewLogin } from '../services/login_types'
 import logger from './logger'
@@ -12,6 +12,7 @@ import { BAILEYS_CONNECTION_POLICY } from './baileys_connection_policy'
 export class ReloadBaileys extends Reload {
   private static readonly inFlightByPhone: Set<string> = new Set()
   private static readonly lastRunAtByPhone: Map<string, number> = new Map()
+  private static readonly mobileTasks: Map<string, Promise<void>> = new Map()
   private getClient: getClient
   private getConfig: getConfig
   private listener: Listener
@@ -28,6 +29,19 @@ export class ReloadBaileys extends Reload {
   }
 
   async run(phone: string) {
+    configs.delete(phone)
+    const desired = await this.getConfig(phone)
+    if (desired.mobilePrimaryDraftId) {
+      // Serialize reconciliations, reading the latest desired state after waiting.
+      // A queued old suspend must never log out a device resumed in the meantime.
+      const previous = ReloadBaileys.mobileTasks.get(phone) || Promise.resolve()
+      const task = previous.catch(() => undefined).then(() => this.reconcileMobile(phone))
+      ReloadBaileys.mobileTasks.set(phone, task)
+      try { await task } finally {
+        if (ReloadBaileys.mobileTasks.get(phone) === task) ReloadBaileys.mobileTasks.delete(phone)
+      }
+      return
+    }
     const now = Date.now()
     const lastRunAt = ReloadBaileys.lastRunAtByPhone.get(phone) || 0
     const debounceRemaining = Math.max(0, BAILEYS_CONNECTION_POLICY.reloadDebounceMs - (now - lastRunAt))
@@ -85,5 +99,23 @@ export class ReloadBaileys extends Reload {
     } finally {
       ReloadBaileys.inFlightByPhone.delete(phone)
     }
+  }
+
+  private async reconcileMobile(phone: string) {
+    configs.delete(phone)
+    const config = await this.getConfig(phone)
+    if (!config.mobilePrimaryDraftId || config.provider !== 'zapo' || (this.workerEngine && this.workerEngine !== 'zapo')) return
+    if (config.server !== UNOAPI_SERVER_NAME) return
+    const current = clients.get(phone)
+    if (current) await current.disconnect()
+    await super.run(phone)
+    if (!config.autoConnect || config.mobilePrimaryDeleting) {
+      const store = await config.getStore(phone, config)
+      await store.sessionStore.setStatus(phone, 'offline')
+      logger.info('Mobile primary suspended without logout phone=%s', phone)
+      return
+    }
+    await this.getClient({ phone, listener: this.listener, getConfig: this.getConfig, onNewLogin: this.onNewLogin })
+    logger.info('Mobile primary resume requested phone=%s', phone)
   }
 }

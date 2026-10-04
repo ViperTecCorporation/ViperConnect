@@ -17,10 +17,13 @@ describe('RedisLease', () => {
       }),
     }
     const lease = new RedisLease('zapo:test', 60_000, async () => redis as never)
+    expect(() => lease.ownership()).toThrow('lease_not_owned')
     expect(await lease.acquire()).toBe(true)
+    expect(lease.ownership()).toEqual({ key: 'unoapi-lease:zapo:test', token: value })
     expect(await lease.acquire()).toBe(true)
     expect(await lease.renew()).toBe(true)
     expect(await lease.release()).toBe(true)
+    expect(() => lease.ownership()).toThrow('lease_not_owned')
     expect(value).toBe('')
   })
 

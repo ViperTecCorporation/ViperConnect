@@ -8,12 +8,14 @@ export interface WaCallManagerConfig {
     stores: WaVoipStores;
     logger?: Logger;
     maxConcurrentCalls?: number;
+    preferWebRelayPort?: boolean;
 }
 export declare class WaCallManager extends EventEmitter {
     private readonly deps;
     private readonly stores;
     private readonly logger;
     private readonly maxConcurrentCalls;
+    private readonly preferWebRelayPort;
     private readonly calls;
     private readonly pendingRelaylatency;
     constructor(config: WaCallManagerConfig);

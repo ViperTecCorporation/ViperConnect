@@ -9,6 +9,8 @@ import { SEND_AUDIO_MESSAGE_AS_PTT } from '../../defaults'
 import { zapoMediaProcessor } from './zapo_media_processor'
 import { zapoLegacyPdfNormalizer } from './zapo_legacy_pdf'
 import { normalizeAutomaticLinkPreview } from '../messages/automatic_link_preview'
+import { normalizeOutgoingLocation } from '../messages/outgoing_location'
+import { outgoingViewOnce } from '../messages/outgoing_view_once'
 import type { YouTubeLinkPreviewResolver } from '../messages/youtube_link_preview'
 
 const mediaTypes = ['image', 'audio', 'document', 'video', 'sticker'] as const
@@ -76,7 +78,7 @@ const pollContent = (payload: any): WaSendMessageContent => {
 
 export type ZapoMappedMessage = {
   content: WaSendMessageContent
-  options: Pick<WaSendMessageOptions, 'mentions' | 'customNodes'>
+  options: Pick<WaSendMessageOptions, 'mentions' | 'customNodes' | 'viewOnce'>
 }
 
 const interactiveBusinessNode = {
@@ -248,7 +250,16 @@ const nativeButton = (button: any) => {
   if (button?.type === 'url' || button?.type === 'cta_url' || button?.url) {
     const value = button.url || button
     const url = typeof value === 'string' ? value : value.link || value.url || ''
-    return { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: button.text || value.title || 'Abrir', url, merchant_url: url }) }
+    // Experimental client hints; forwarding them does not prove in-app rendering.
+    const presentation = value.webview_presentation
+    const interaction = value.webview_interaction
+    if (presentation !== undefined && presentation !== 'full') throw new SendError(400, 'webview_presentation_must_be_full')
+    if (interaction !== undefined && typeof interaction !== 'boolean') throw new SendError(400, 'webview_interaction_must_be_boolean')
+    return { name: 'cta_url', buttonParamsJson: JSON.stringify({
+      display_text: button.text || value.title || 'Abrir', url, merchant_url: value.merchant_url || url,
+      ...(presentation !== undefined ? { webview_presentation: presentation } : {}),
+      ...(interaction !== undefined ? { webview_interaction: interaction } : {}),
+    }) }
   }
   if (button?.type === 'call' || button?.type === 'cta_call' || button?.call) {
     const value = button.call || button
@@ -404,7 +415,15 @@ export const toZapoMessageContent = async (
   youtubeLinkPreviewResolver?: YouTubeLinkPreviewResolver,
 ): Promise<ZapoMappedMessage> => {
   const type = `${payload?.type || ''}`
+  const viewOnce = outgoingViewOnce(payload)
   const mentions = getMentions(payload)
+  if (type === 'location') {
+    const { latitude, longitude, ...details } = normalizeOutgoingLocation(payload.location)
+    return {
+      content: { locationMessage: { degreesLatitude: latitude, degreesLongitude: longitude, ...details } },
+      options: {},
+    }
+  }
   if (type === 'text' || type === 'message_edit') {
     const preview = normalizeAutomaticLinkPreview(
       customMessageCharactersFunction(`${payload?.text?.body || ''}`),
@@ -441,7 +460,7 @@ export const toZapoMessageContent = async (
         ...(media.caption ? { caption: customMessageCharactersFunction(media.caption) } : {}),
         ...(media.filename ? { fileName: media.filename } : {}),
       } as WaSendMessageContent,
-      options: mentions.length ? { mentions } : {},
+      options: { ...(mentions.length ? { mentions } : {}), ...(viewOnce !== undefined ? { viewOnce } : {}) },
     }
   }
 
@@ -466,7 +485,9 @@ export const toZapoMessageContent = async (
     const legacyContent = toBaileysMessageContent(payload, customMessageCharactersFunction) as any
     if (legacyContent.contacts) {
       return {
-        content: { contactsArrayMessage: legacyContent.contacts },
+        content: legacyContent.contacts.contacts.length === 1
+          ? { contactMessage: legacyContent.contacts.contacts[0] }
+          : { contactsArrayMessage: legacyContent.contacts },
         options: {},
       }
     }

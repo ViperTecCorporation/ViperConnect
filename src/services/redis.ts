@@ -3,6 +3,8 @@ import { webhookHistory } from './webhook_history'
 import {
   REDIS_URL,
   DATA_TTL,
+  ZAPO_REDIS_KEY_PREFIX,
+  ZAPO_REDIS_MESSAGES_TTL_MS,
   SESSION_TTL,
   DATA_URL_TTL,
   JIDMAP_TTL_SECONDS,
@@ -22,6 +24,8 @@ import { mergeGroupMetadataForCache } from './groups/group_metadata_cache'
 import { normalizeLidJid } from './transformer/jid'
 import { SessionPhoneIndex } from './session_phone_index'
 import { sessionEvent, sessionWebhookStore } from './session_webhook_store'
+import { messageIsExpired, messageRetentionMs, messageTimestampMs, SET_RETAINED_MESSAGE_LUA } from './messages/message_retention'
+import { setRetainedMessageStatus } from './messages/message_status_retention'
 
 const {
   signalPurgeDeviceListEnabled: SIGNAL_PURGE_DEVICE_LIST_ENABLED,
@@ -846,7 +850,7 @@ export const sessionStatusKey = (phone: string) => {
   return `${BASE_KEY}status:${phone}`
 }
 
-const messageStatusKey = (phone: string, id: string) => {
+export const messageStatusKey = (phone: string, id: string) => {
   return `${BASE_KEY}message-status:${phone}:${id}`
 }
 
@@ -876,10 +880,10 @@ const lastIncomingKeyKey = (phone: string, jid: string) => {
 }
 
 // Contact names cache key
-const contactNameKey = (phone: string, jid: string) => {
+export const contactNameKey = (phone: string, jid: string) => {
   return `${BASE_KEY}contact-name:${phone}:${jid}`
 }
-const contactInfoKey = (phone: string, jid: string) => {
+export const contactInfoKey = (phone: string, jid: string) => {
   return `${BASE_KEY}contact-info:${phone}:${jid}`
 }
 const contactSyncPendingKey = (phone: string) => {
@@ -955,7 +959,7 @@ export const groupKey = (phone: string, jid: string) => {
 // Backward-compat com chaves antigas por sessão:
 //   - jidmap:<session>:pn:<lidJid>  => value = pnJid
 //   - jidmap:<session>:lid:<pnJid>  => value = lidJid
-const jidMapPnKeyNew   = (session: string, lidJid: string) => `${BASE_KEY}jidmap:${session}:pn_for_lid:${lidJid}`
+export const jidMapPnKeyNew   = (session: string, lidJid: string) => `${BASE_KEY}jidmap:${session}:pn_for_lid:${lidJid}`
 const jidMapLidKeyNew  = (session: string, pnJid: string) => `${BASE_KEY}jidmap:${session}:lid_for_pn:${pnJid}`
 const jidMapPnKeyGlob  = (lidJid: string) => `${BASE_KEY}jidmap:global:pn_for_lid:${lidJid}`
 const jidMapLidKeyGlob = (pnJid: string)  => `${BASE_KEY}jidmap:global:lid_for_pn:${pnJid}`
@@ -1236,8 +1240,10 @@ export const getMessageStatus = async (phone: string, id: string) => {
 }
 
 export const setMessageStatus = async (phone: string, id: string, status: string) => {
-  const key = messageStatusKey(phone, id)
-  await client.set(key, status, { EX: DATA_TTL })
+  const redis = await getRedis()
+  const configuredPrefix = ZAPO_REDIS_KEY_PREFIX?.trim()
+  const nativePrefix = !configuredPrefix || configuredPrefix === 'unoapi-zapo:' ? 'unoapi:zapo:' : configuredPrefix
+  await setRetainedMessageStatus(redis, phone, id, status, { ttlMs: DATA_TTL * 1000, nativeTtlMs: ZAPO_REDIS_MESSAGES_TTL_MS, nativePrefix })
 }
 
 export const getTemplates = async (phone: string) => {
@@ -1296,7 +1302,11 @@ export const addAuthTokensToIndex = async (tokens: string[]) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const setConfig = async (phone: string, value: any) => {
+  // Resuming the origin invalidates the previous migration checkpoint.
+  if (value?.autoConnect === true) await client.del(`mobile-primary:{v1}:backup-completed:${phone}`)
+  if (value?.autoConnect === true) await client.del(`session-transfer:{v1}:completed:${phone}`)
   const currentConfig = await getConfig(phone)
+  if (value?.autoConnect === true && currentConfig?.sessionTransferDeleting) throw new Error('session_transfer_deletion_in_progress')
   const currentWebhooks: Webhook[] = currentConfig && currentConfig.webhooks || []
   const newWebhooks: Webhook[] = value && value.webhooks || []
   const updatedWebooks: Webhook[] = []
@@ -1350,7 +1360,7 @@ export const setConfig = async (phone: string, value: any) => {
   return config
 }
 
-export const delConfig = async (phone: string) => {
+export const delConfig = async (phone: string, removeAssignment = false) => {
   try {
     const current = await getConfig(phone)
     webhookHistory.capture(phone, current, 'removed')
@@ -1361,7 +1371,7 @@ export const delConfig = async (phone: string) => {
   } catch {}
   await sessionWebhookStore.record('remove', sessionEvent(phone, 'removed', {
     reason: 'session_deregistered', intentional: true, reconnect_expected: false, requires_pairing: true,
-  }))
+  }), '', removeAssignment)
   await delHistorySyncMarker(phone)
   await delPrivacyBootstrapSync(phone)
   await publishConfigUpdate(phone)
@@ -1643,11 +1653,15 @@ export const getMessage = async <T>(phone: string, jid: string, id: string): Pro
   if (!stored) return undefined
   // Detect JSON vs base64-encoded protobuf
   if (stored.trim().startsWith('{') || stored.trim().startsWith('[')) {
-    try { return JSON.parse(stored) as T } catch { return undefined }
+    try {
+      const msg = JSON.parse(stored)
+      return messageIsExpired(msg?.messageTimestamp, DATA_TTL * 1000, true) ? undefined : msg as T
+    } catch { return undefined }
   }
   try {
     const bytes = Buffer.from(stored, 'base64')
     const msg = proto.WebMessageInfo.decode(bytes)
+    if (messageIsExpired(msg.messageTimestamp, DATA_TTL * 1000, true)) return undefined
     // Return protobuf message instance (compatible at runtime with WAMessage usage)
     return msg as unknown as T
   } catch {
@@ -1671,6 +1685,7 @@ export const getMessageWithSecretAnySession = async <T>(id: string): Promise<T |
       } else {
         msg = proto.WebMessageInfo.decode(Buffer.from(stored, 'base64'))
       }
+      if (messageIsExpired(msg?.messageTimestamp, DATA_TTL * 1000, true)) continue
       if (msg?.message?.messageContextInfo?.messageSecret) return msg as T
       if (msg && !fallback) fallback = msg as T
     } catch {}
@@ -1913,11 +1928,26 @@ export const enrichJidMapFromAuthLidCache = async (session: string): Promise<voi
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const setMessage = async (phone: string, jid: string, id: string, value: any) => {
   const key = messageKey(phone, jid, id)
+  const now = Date.now()
+  const redis = await getRedis()
+  let timestamp = Math.min(messageTimestampMs(value?.messageTimestamp, true) ?? now, now)
+  // Existing copies may still have the old sliding TTL. Recover their original
+  // timestamp before rewriting, so edits cannot make old history look recent.
+  const previous = await redis.get(key)
+  if (previous) {
+    try {
+      const old = previous.trim().startsWith('{') ? JSON.parse(previous) : proto.WebMessageInfo.decode(Buffer.from(previous, 'base64'))
+      const original = messageTimestampMs(old?.messageTimestamp, true)
+      if (original !== undefined) timestamp = Math.min(timestamp, original)
+    } catch { /* Corrupt copies are replaced; Redis failures still propagate. */ }
+  }
+  value = { ...value, messageTimestamp: Math.floor(timestamp / 1000) }
+  let encoded: string
   // Prefer compact, robust protobuf encoding to avoid JSON Long/toObject pitfalls
   try {
     const bytes = proto.WebMessageInfo.encode(value as any).finish()
     const b64 = Buffer.from(bytes).toString('base64')
-    return redisSetAndExpire(key, b64, DATA_TTL)
+    encoded = b64
   } catch (e) {
     // Fallback: store a minimal JSON summary to avoid crashing
     try {
@@ -1932,11 +1962,12 @@ export const setMessage = async (phone: string, jid: string, id: string, value: 
         messageTimestamp: value?.messageTimestamp,
       }
       if (mt) lite.message = { [mt]: {} }
-      return redisSetAndExpire(key, JSON.stringify(lite), DATA_TTL)
+      encoded = JSON.stringify(lite)
     } catch {
-      return redisSetAndExpire(key, '{}', DATA_TTL)
+      encoded = '{}'
     }
   }
+  return redis.eval(SET_RETAINED_MESSAGE_LUA, { keys: [key], arguments: [String(now), String(messageRetentionMs(DATA_TTL * 1000)), String(timestamp), encoded] })
 }
 
 export const getProfilePicture = async (phone: string, jid: string) => {

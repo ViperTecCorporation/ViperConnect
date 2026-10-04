@@ -62,6 +62,7 @@ const startBrigde = async () => {
 
   logger.info('Unoapi Cloud version %s starting bridge...', version)
   await bindJob.startHistory()
+  if (workerEngine === 'zapo') await (await import('./services/mobile_primary/companion_history_runtime.js')).startCompanionHistoryConsumer()
 
   logger.info('Starting bind consumer')
   await amqpConsume(

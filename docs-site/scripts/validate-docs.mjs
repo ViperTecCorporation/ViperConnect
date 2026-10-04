@@ -126,6 +126,11 @@ for (const line of router.split(/\r?\n/)) {
   const match = line.match(/router\.(get|post|put|patch|delete)\('([^']+)'/)
   if (!match || ignoredRoute.test(match[2]) || unsupportedRoute.test(match[2])) continue
   const route = normalizeRoute(match[2])
+  if (route === '/{phone}/profile/{field}') {
+    const fields = match[1] === 'get' ? ['account_email', 'privacy'] : match[1] === 'put' ? ['name', 'about', 'username', 'business', 'picture', 'cover', 'account_email', 'privacy'] : ['username', 'picture', 'cover']
+    for (const field of fields) if (!spec.paths[`/{phone}/profile/${field}`]?.[match[1]]) missing.push(`${match[1].toUpperCase()} /{phone}/profile/${field}`)
+    continue
+  }
   if (!spec.paths[route]?.[match[1]]) missing.push(`${match[1].toUpperCase()} ${route}`)
 }
 if (missing.length) throw new Error(`Rotas dos controllers ausentes no OpenAPI:\n${missing.join('\n')}`)

@@ -78,6 +78,7 @@ export interface WaCallMediaSessionDelegate {
 }
 
 export interface WaCallMediaSessionOptions {
+    readonly preferWebRelayPort?: boolean
     readonly deps: WaVoipDeps
     readonly logger: Logger
     readonly info: CallInfo
@@ -88,6 +89,7 @@ export class WaCallMediaSession implements AudioSender {
     readonly info: CallInfo
 
     private readonly deps: WaVoipDeps
+    private readonly preferWebRelayPort: boolean
     private readonly logger: Logger
     private readonly delegate: WaCallMediaSessionDelegate
 
@@ -161,6 +163,7 @@ export class WaCallMediaSession implements AudioSender {
 
     constructor(options: WaCallMediaSessionOptions) {
         this.deps = options.deps
+        this.preferWebRelayPort = options.preferWebRelayPort === true
         this.logger = options.logger
         this.info = options.info
         this.delegate = options.delegate
@@ -1737,7 +1740,8 @@ export class WaCallMediaSession implements AudioSender {
 
         const candidates = orderMediaRelayCandidates(
             endpoints,
-            this.info.direction === CallDirection.Incoming
+            this.info.direction === CallDirection.Incoming,
+            { preferWebRelayPort: this.preferWebRelayPort }
         )
 
         if (candidates.length === 0) {

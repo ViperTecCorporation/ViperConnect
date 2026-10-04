@@ -4,6 +4,7 @@ import { PublishOption, amqpPublish } from '../amqp'
 import { UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_OUTGOING, UNOAPI_QUEUE_HISTORY_OUTGOING } from '../defaults'
 import { isHistoryQueue } from './history_queue_context'
 import { completeCloudApiWebHook } from './transformer'
+import { recordSessionWebhookStatuses } from './messages/session_message_status'
 
 export class OutgoingAmqp implements Outgoing {
   private getConfig: getConfig
@@ -19,6 +20,7 @@ export class OutgoingAmqp implements Outgoing {
 
   public async send(phone: string, payload: object) {
     const config = await this.getConfig(phone)
+    await recordSessionWebhookStatuses(phone, payload, config)
     const webhooks = config.webhooks.filter(isWebhookEnabled)
     await amqpPublish(
       UNOAPI_EXCHANGE_BROKER_NAME,

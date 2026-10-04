@@ -71,6 +71,16 @@ const onNewLogin = async (phone: string) => {
 }
 
 describe('service incoming baileys', () => {
+  test('own profile delegates to selected client or fails capability explicitly', async () => {
+    const client: any = { ownProfile: jest.fn().mockResolvedValue({ success: true }) }
+    const getClient = jest.fn().mockResolvedValue(client)
+    const incoming = new IncomingBaileys(mock<Listener>(), getConfigDefault, getClient, onNewLogin)
+    const command = { action: 'set' as const, field: 'name' as const, value: 'Nome' }
+    expect(await incoming.ownProfile('5511999999999', command)).toEqual({ success: true })
+    expect(client.ownProfile).toHaveBeenCalledWith(command)
+    delete client.ownProfile
+    await expect(incoming.ownProfile('5511999999999', command)).rejects.toThrow('own_profile_capability_unavailable')
+  })
   test('send', async () => {
     const phone = `${new Date().getTime()}`
     const service: Listener = mock<Listener>()

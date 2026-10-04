@@ -10,6 +10,26 @@ import {
 const rawToken = new Uint8Array([1, 2, 3])
 const rawAuthToken = new Uint8Array([4, 5, 6])
 
+for (const incoming of [false, true]) {
+    test(`web relay port opt-in preserves credentials and selection (incoming=${incoming})`, () => {
+        const endpoint = {
+            ip: '57.144.137.54', port: 3478, token: 'token', rawToken,
+            authToken: 'auth', rawAuthToken, key: 'key', relayId: 0,
+            tokenId: '1', authTokenId: '2', addressFamily: 4 as const
+        }
+        const endpoints = [endpoint, { ...endpoint, ip: '2001:db8::1', addressFamily: 6 as const, relayId: 1, isFna: true }]
+        const original = orderMediaRelayCandidates(endpoints, incoming)
+        const mobile = orderMediaRelayCandidates(endpoints, incoming, { preferWebRelayPort: true })
+        assert.deepEqual(mobile, original.map(relay => ({ ...relay, port: 3480 })))
+        assert.deepEqual(orderMediaRelayCandidates(endpoints, incoming, { preferWebRelayPort: false }), original)
+        assert.equal(endpoint.port, 3478)
+        assert.equal(mobile[0].rawToken, rawToken)
+        assert.equal(mobile[0].rawAuthToken, rawAuthToken)
+        assert.deepEqual(orderMediaRelayCandidates([{ ...endpoint, protocol: 1 }], incoming, { preferWebRelayPort: true }), [])
+        assert.equal(orderMediaRelayCandidates([{ ...endpoint, port: 3480 }, endpoint], incoming, { preferWebRelayPort: true }).length, 1)
+    })
+}
+
 test('adds the 3480 web-token relay variant for auth token zero', () => {
     const relays = normalizeRelayEndpoints([
         {

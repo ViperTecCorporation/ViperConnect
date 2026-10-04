@@ -18,6 +18,7 @@ import { ContactDummy } from './services/contact_dummy'
 import { Contact } from './services/contact'
 import { middlewareNext } from './services/middleware_next'
 import { UNOAPI_MESSAGES_JSON_LIMIT } from './defaults'
+import { defaultRequestJson } from './services/request_json'
 
 export class App {
   public readonly server: HttpServer
@@ -47,7 +48,7 @@ export class App {
       /^\/[^/]+\/[^/]+\/(?:messages|marketing_messages)(?:\/[^/]+\/recover_delivery|\/recover_delivery)?\/?$/,
       express.json({ limit: UNOAPI_MESSAGES_JSON_LIMIT }),
     )
-    this.app.use(express.json())
+    this.app.use(defaultRequestJson())
     this.app.use(express.urlencoded({ extended: true }))
     this.server = createServer(this.app)
     this.socket = new Server(this.server, {

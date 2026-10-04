@@ -12,6 +12,7 @@ dos sufixos opcionais `.delayed` e `.dead`.
 | `unoapi.incoming.<server>.zapo` | Envio de mensagens, atualização de status, gerenciamento de grupos e operações do provider | Worker da sessão |
 | `unoapi.listener.<server>.zapo` | Processamento dos eventos recebidos do WhatsApp | Worker da sessão |
 | `unoapi.history.<server>.zapo` | Processamento separado da sincronização do histórico | Worker: dois consumidores por processo |
+| `unoapi.mobile.companion.history.mobile_lab.zapo` | Histórico local do principal durante um novo vínculo: textos e referências de mídias comuns; não entrega webhooks | Worker Zapo do laboratório: um consumidor, prefetch 1 |
 | `unoapi.outgoing` | Entrega de webhooks de mensagens às aplicações | Broker |
 | `unoapi.outgoing.history` | Entrega dos webhooks do histórico | Broker: dois consumidores por processo |
 | `unoapi.transcribe` | Transcrição de áudio | Broker |
@@ -33,6 +34,18 @@ dos sufixos opcionais `.delayed` e `.dead`.
 | `unoapi.bulk.parser`, `unoapi.bulk.sender`, `unoapi.bulk.status`, `unoapi.bulk.report` | Preparação, envio, atualização de status e relatórios de lotes | Processo de lotes, quando utilizado |
 
 A existência de uma fila não comprova que a funcionalidade esteja habilitada.
+
+A fila experimental de companions transporta somente IDs da tarefa e do cadastro.
+O estado fica cifrado em `mobile-primary:{v1}:companion-history:<id>` por uma hora.
+O worker usa o socket existente, verifica o vínculo e a posse da sessão antes dos
+lotes e não repete tarefas já assumidas após falha incerta. Sem corte por idade
+ou quantidade total; leitura em páginas de 20 registros, lotes de até
+20 mensagens/96 KB antes da compressão. Registros acima de 64 KB ficam fora
+do piloto inline. Não baixa mídias: transfere referências
+de imagens, áudios, vídeos e documentos. Arquivos expirados podem não abrir.
+Mensagens temporárias e de visualização única são excluídas. `submitted` significa
+publicação pelo SDK, não confirmação de importação pelo dispositivo. Essa fila
+não usa as filas de histórico recebido, transcrição ou webhooks do ViperChat.
 Filas antigas podem permanecer no RabbitMQ. Confira a configuração e os consumidores
 antes de classificá-las como abandonadas. `unoapi.reload` é uma fila global válida,
 não uma fila legada apenas por não conter o nome do motor. A presença de um consumidor

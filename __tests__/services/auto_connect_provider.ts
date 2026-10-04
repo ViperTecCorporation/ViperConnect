@@ -5,6 +5,14 @@ import type { Listener } from '../../src/services/listener'
 import type { SessionStore } from '../../src/services/session_store'
 
 describe('autoConnect provider isolation', () => {
+  test('does not construct a suspended primary on worker startup', async () => {
+    const sessionStore = mockDeep<SessionStore>()
+    sessionStore.getPhones.mockResolvedValue(['mobile'])
+    const getClient = jest.fn()
+    await autoConnect(sessionStore, mockDeep<Listener>(), async () => ({ ...defaultConfig, provider: 'zapo', mobilePrimaryDraftId: 'draft', autoConnect: false }), getClient, jest.fn(), 'zapo')
+    expect(getClient).not.toHaveBeenCalled()
+    expect(sessionStore.setStatus).toHaveBeenCalledWith('mobile', 'offline')
+  })
   test('connects only sessions assigned to the current worker engine', async () => {
     const sessionStore = mockDeep<SessionStore>()
     sessionStore.getPhones.mockResolvedValue(['baileys-phone', 'zapo-phone'])

@@ -11,6 +11,14 @@ A UnoAPI separa a **captura** do histórico no WhatsApp do **encaminhamento** pa
 
 ## Configuração por sessão
 
+### Retenção física no Redis
+
+Mensagens no store Zapo/Redis e na cópia `unoapi-message` expiram pela idade original (padrão 30 dias), não pela última sincronização ou regravação. A janela de encaminhamento `historyMaxAgeDays` não amplia essa retenção: pedir 90 dias não recupera mensagens já expiradas. `DATA_TTL` controla a cópia em segundos e `ZAPO_REDIS_MESSAGES_TTL_MS` controla o store em milissegundos. A cópia usa 30 dias se `DATA_TTL` não for positivo; a configuração do store Zapo deve ser positiva. Sem timestamp válido, a primeira gravação ancora o prazo; datas futuras são limitadas ao momento da gravação. O prazo existente nunca é ampliado pelo mesmo ID.
+
+Nenhuma limpeza em massa é executada na implantação. Chaves antigas não tocadas ainda podem ocupar espaço até o TTL anterior terminar; leituras ignoram mensagens cuja data original já expirou. Índices removem referências por idade nas gravações da conversa. Credenciais e estado criptográfico não participam dessa política. SQLite permanece com o comportamento do provedor.
+
+`unoapi-message-status` não renova TTL a cada confirmação. Na atualização, o prazo é limitado à data/expiração da mensagem identificada, ao prazo existente do status e ao de seu alias UnoAPI/provedor. A resolução consulta diretamente no máximo três IDs e suas chaves conhecidas, sem SCAN. Agendamento/falha sem mensagem identificável usa uma janela fixa de `DATA_TTL` a partir do primeiro status ainda armazenado. Se mensagem, status e dados de identificação já expiraram, uma confirmação tardia pode iniciar uma nova janela de fallback: não há tombstone permanente. A expiração afeta somente o cache, não impede webhooks, nem migra em massa os status antigos.
+
 | Campo | Tipo | Padrão | Comportamento |
 |---|---:|---:|---|
 | `ignoreHistoryMessages` | boolean | `true` | Quando `false`, encaminha ao webhook o histórico recebido em uma sincronização. |

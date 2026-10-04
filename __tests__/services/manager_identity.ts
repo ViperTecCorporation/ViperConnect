@@ -99,6 +99,18 @@ describe('ManagerIdentity', () => {
   const login = (username = 'alice', ip = '127.0.0.1') => service.login(username, 'password-123', ip)
   beforeEach(() => { redis = new MemoryRedis(); service = new ManagerIdentity(async () => redis, stack) })
 
+  test('admin reauthentication checks password, rate limits and never issues another login token', async () => {
+    const principal = (await service.authenticate(stack))!
+    const logins = () => [...redis.strings.keys()].filter(key => key.includes(':login:')).length
+    await service.confirmAdminPassword(principal, stack, 'local-test')
+    expect(logins()).toBe(0)
+    await expect(service.confirmAdminPassword({ ...principal, role: 'user' }, stack, 'local-test')).rejects.toMatchObject({ status: 403 })
+    await expect(service.confirmAdminPassword({ ...principal, kind: 'api' }, stack, 'local-test')).rejects.toMatchObject({ status: 403 })
+    for (let i = 0; i < 9; i++) await expect(service.confirmAdminPassword(principal, 'wrong', 'local-test')).rejects.toMatchObject({ status: 401 })
+    await expect(service.confirmAdminPassword(principal, stack, 'local-test')).rejects.toMatchObject({ status: 429 })
+    expect(logins()).toBe(0)
+  })
+
   test('atomically enforces case-insensitive uniqueness and reserves admin', async () => {
     const results = await Promise.allSettled([create('Alice'), create('ALICE')])
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)

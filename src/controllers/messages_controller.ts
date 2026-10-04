@@ -45,6 +45,9 @@ import { sendGraphError } from '../services/graph_error'
 import { statusRecipients } from '../services/status/status_recipients'
 import type { getConfig } from '../services/config'
 import { outgoingMediaLogSummary, prepareOutgoingMediaInput } from '../services/messages/outgoing_media_input'
+import { normalizeOutgoingLocation } from '../services/messages/outgoing_location'
+import { outgoingViewOnce } from '../services/messages/outgoing_view_once'
+import { videoQuality } from '../services/video_profile'
 
 export class MessagesController {
   protected endpoint = 'messages'
@@ -92,6 +95,9 @@ export class MessagesController {
     const requestId = `${Array.isArray(requestIdHeader) ? requestIdHeader[0] : requestIdHeader || randomUUID()}`
     payload._requestId = requestId
     try {
+      outgoingViewOnce(payload)
+      if (payload?.type === 'video') videoQuality(payload.video?.quality)
+      if (payload?.type === 'location') payload.location = normalizeOutgoingLocation(payload.location)
       payload = (await prepareOutgoingMediaInput(sessionPhone, payload, this.getConfig)).payload
       const options: any = { endpoint: this.endpoint }
       options.requestId = requestId
@@ -187,6 +193,8 @@ export class MessagesController {
       useUserDevicesCache: false,
     }
     try {
+      outgoingViewOnce(payload)
+      if (payload?.type === 'location') payload.location = normalizeOutgoingLocation(payload.location)
       payload = (await prepareOutgoingMediaInput(sessionPhone, payload, this.getConfig)).payload
       res.setHeader('x-request-id', requestId)
       if (typeof this.incoming.recoverDelivery !== 'function') {

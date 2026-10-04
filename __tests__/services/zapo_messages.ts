@@ -11,11 +11,82 @@ const mockedFetch = fetch as unknown as jest.Mock
 const publishResult = { id: 'provider-id', attempts: 1, ackNode: {}, ack: { refreshLid: false } } as never
 
 describe('Zapo messages adapter', () => {
+  test('contact card resolves canonical PN from network on cache miss', async () => {
+    const client = mockDeep<WaClient>(), store = mockDeep<WaStoreSession>(), dataStore = mockDeep<DataStore>()
+    client.profile.getLidsByPhoneNumbers.mockResolvedValue([{ queriedJid: '5566999554300@s.whatsapp.net', phoneJid: '556699554300@s.whatsapp.net', exists: true, lidJid: '222@lid' }] as never)
+    store.contacts.upsertBatch.mockImplementation(async records => { store.contacts.getByJid.mockResolvedValue(records[0]) })
+    client.message.send.mockResolvedValue(publishResult)
+    await new ZapoMessages(client, dataStore, { store }).send({ to: '123@lid', type: 'contacts', contacts: [{ name: { formatted_name: 'José' }, phones: [{ phone: '+5566999554300' }] }] })
+    expect(client.profile.getLidsByPhoneNumbers).toHaveBeenCalledWith(['5566999554300@s.whatsapp.net'])
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.objectContaining({ contactMessage: expect.objectContaining({ vcard: expect.stringContaining('556699554300') }) }), expect.anything())
+  })
+  test.each([1, 2])('sends %i canonical contact cards using the session identity resolver', async count => {
+    const client = mockDeep<WaClient>(), store = mockDeep<WaStoreSession>(), dataStore = mockDeep<DataStore>()
+    const record = { jid: '222@lid', lid: '222@lid', phoneNumber: '556699554300' }
+    store.contacts.getByPhoneNumber.mockImplementation(async phone => phone === '556699554300' ? record as never : null)
+    store.contacts.getByJid.mockImplementation(async jid => jid === '222@lid' ? record as never : null)
+    client.message.send.mockResolvedValue(publishResult)
+    const messages = new ZapoMessages(client, dataStore, { store })
+    await messages.send({ to: '123@lid', type: 'contacts', contacts: Array.from({ length: count }, () => ({ name: { formatted_name: 'José' }, phones: [{ phone: '+5566999554300', wa_id: '5566999554300' }] })) })
+    expect(client.message.send).toHaveBeenCalledTimes(1)
+    const [target, content] = client.message.send.mock.calls[0] as any
+    expect(target).toBe('123@lid')
+    const cards = count === 1 ? [content.contactMessage] : content.contactsArrayMessage.contacts
+    expect(cards).toHaveLength(count)
+    for (const card of cards) {
+      expect(card.vcard).toContain('556699554300')
+      expect(card.vcard).not.toContain('5566999554300')
+    }
+    expect(client.profile.getLidsByPhoneNumbers).not.toHaveBeenCalled()
+  })
+  test.each(['image', 'video', 'audio'])('passes %s viewOnce to the actual SDK send call', async type => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    client.message.send.mockResolvedValue(publishResult)
+    const messages = new ZapoMessages(client, dataStore)
+    await messages.send({ to: '123@lid', type, [type]: { link: '/test/media', view_once: true } })
+    expect(client.message.send).toHaveBeenCalledTimes(1)
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.objectContaining({ type, media: '/test/media' }), expect.objectContaining({ viewOnce: true }))
+  })
+  test('sends static location with a resolved reply and retains the Uno/provider ID mapping', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    const key = { remoteJid: '123@lid', id: 'original-provider-id', fromMe: false }
+    dataStore.loadKey.mockResolvedValue(key)
+    dataStore.setUnoId.mockResolvedValue('uno-location')
+    client.message.send.mockResolvedValue(publishResult)
+    const messages = new ZapoMessages(client, dataStore)
+    const result = await messages.send({ to: '123@lid', type: 'location', location: { latitude: 0, longitude: 0 }, context: { message_id: 'uno-original' } })
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', { locationMessage: { degreesLatitude: 0, degreesLongitude: 0 } }, expect.objectContaining({ quote: key }))
+    expect(dataStore.setUnoId).toHaveBeenCalledWith('provider-id', expect.any(String))
+    expect(result).toMatchObject({ ok: { messages: [{ id: 'uno-location' }] } })
+  })
+  test('confirmed send archives wire content while preserving queued UnoID mapping; failed send does not archive', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>(), store = mockDeep<WaStoreSession>()
+    const messages = new ZapoMessages(client, dataStore, { store })
+    dataStore.setUnoId.mockResolvedValue('uno-queued')
+    client.message.send.mockImplementation(async () => {
+      messages.sentArchive.capture({ id: 'provider-id', to: '123@lid', message: { conversation: 'Oi' } })
+      return publishResult
+    })
+    const result = await messages.send({ to: '123@lid', type: 'text', text: { body: 'Oi' } }, { unoMessageId: 'uno-queued' })
+    expect(result).toMatchObject({ ok: { messages: [{ id: 'uno-queued' }] } })
+    expect(dataStore.setUnoId).toHaveBeenCalledWith('provider-id', 'uno-queued')
+    expect(dataStore.setKey).toHaveBeenCalledWith('uno-queued', { id: 'provider-id', remoteJid: '123@lid', fromMe: true })
+    expect(store.messages.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'provider-id', fromMe: true }))
+    store.messages.upsert.mockClear()
+    client.message.send.mockImplementation(async () => {
+      messages.sentArchive.capture({ id: 'failed', to: '123@lid', message: { conversation: 'not sent' } })
+      throw new Error('transport_failed')
+    })
+    await expect(messages.send({ to: '123@lid', type: 'text', text: { body: 'not sent' } })).rejects.toThrow()
+    expect(store.messages.upsert).not.toHaveBeenCalled()
+  })
+
   test('sends typed text, stores the provider key and returns the UnoAPI response contract', async () => {
     const client = mockDeep<WaClient>()
     const dataStore = mockDeep<DataStore>()
     client.message.send.mockResolvedValue(publishResult)
     const messages = new ZapoMessages(client, dataStore)
+    messages.sentArchive.capture({ id: 'provider-id', to: '556699999999@s.whatsapp.net', message: { conversation: 'Oi' } })
 
     await expect(messages.send({ to: '556699999999', type: 'text', text: { body: 'Oi' } })).resolves.toEqual({
       ok: {
@@ -38,7 +109,7 @@ describe('Zapo messages adapter', () => {
       '556699999999@s.whatsapp.net',
       expect.objectContaining({
         key: { remoteJid: '556699999999@s.whatsapp.net', id: 'provider-id', fromMe: true },
-        message: { type: 'text', text: 'Oi' },
+        message: expect.objectContaining({ conversation: 'Oi' }),
       }),
     )
   })

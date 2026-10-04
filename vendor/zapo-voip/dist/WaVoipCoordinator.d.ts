@@ -2,6 +2,8 @@ import { type LogLevel, type WaClientPluginContext } from 'zapo-js';
 import type { CallInfo } from './call/call-state.js';
 import type { CallManagerEvents, CallOfferOptions, EndCallReason } from './types.js';
 export interface WaVoipCoordinatorOptions {
+    /** Opt-in laboratory transport policy; default preserves advertised ports. */
+    readonly preferWebRelayPort?: boolean;
     /**
      * Maximum simultaneous non-ended calls (ringing, connecting, or active).
      * Default is `1`. Increase to enable parallel multi-call.

@@ -1,6 +1,29 @@
 import { createZapoProxyOptions } from '../../src/services/zapo/zapo_proxy'
 
 describe('zapo proxy', () => {
+  test.each(['ipv6first', 'ipv4first'])('mobile TCP omits the direct socket agent with %s while preserving HTTP channels', policy => {
+    const agent = { addRequest: jest.fn() }
+    const factory = jest.fn(() => agent as never)
+    const result = createZapoProxyOptions('', undefined, { network: policy }, factory, 'mobile-tcp')
+    expect(result).toEqual({ ws: undefined, mediaUpload: agent, mediaDownload: agent, linkPreview: agent })
+    expect(factory).toHaveBeenCalledTimes(1)
+  })
+
+  test('mobile TCP returns no proxy when only the chat channel has a family preference', () => {
+    const factory = jest.fn()
+    expect(createZapoProxyOptions(undefined, undefined, { chatSocket: 'ipv6first' }, factory, 'mobile-tcp')).toBeUndefined()
+    expect(factory).not.toHaveBeenCalled()
+  })
+
+  test('mobile TCP never bypasses an explicitly configured proxy', () => {
+    const agent = { addRequest: jest.fn() }
+    const factory = jest.fn(() => agent as never)
+    const familyFactory = jest.fn()
+    expect(createZapoProxyOptions('socks5://proxy.local:1080', factory, { network: 'ipv6first' }, familyFactory, 'mobile-tcp'))
+      .toEqual({ ws: agent, mediaUpload: agent, mediaDownload: agent, linkPreview: agent })
+    expect(familyFactory).not.toHaveBeenCalled()
+  })
+
   test('returns undefined when proxy is not configured', () => {
     expect(createZapoProxyOptions()).toBeUndefined()
     expect(createZapoProxyOptions('   ')).toBeUndefined()

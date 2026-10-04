@@ -17,6 +17,15 @@ jest.mock('../../src/services/redis', () => ({
 }))
 
 describe('provider logout isolation', () => {
+  test('stale destructive logout cannot clear a primary device', async () => {
+    const client = mockDeep<Client>(); clients.set('primary', client)
+    const storeFactory = jest.fn()
+    const logout = new LogoutBaileys(jest.fn(), async () => ({ ...defaultConfig, provider: 'zapo', mobilePrimaryDraftId: 'draft', getStore: storeFactory }), mockDeep<Listener>(), jest.fn())
+    await logout.run('primary')
+    expect(client.logout).not.toHaveBeenCalled()
+    expect(storeFactory).not.toHaveBeenCalled()
+    expect(redis.delConfig).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     clients.clear()
     jest.clearAllMocks()

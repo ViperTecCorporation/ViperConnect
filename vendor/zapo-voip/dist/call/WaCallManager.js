@@ -42,12 +42,14 @@ class WaCallManager extends node_events_1.EventEmitter {
     stores;
     logger;
     maxConcurrentCalls;
+    preferWebRelayPort;
     calls = new Map();
     pendingRelaylatency = new Map();
     constructor(config) {
         super();
         this.deps = config.deps;
         this.stores = config.stores;
+        this.preferWebRelayPort = config.preferWebRelayPort === true;
         this.logger = config.logger ?? (0, zapo_js_1.createNoopLogger)();
         this.maxConcurrentCalls = (0, util_1.resolvePositive)(config.maxConcurrentCalls, DEFAULT_MAX_CONCURRENT_CALLS, 'maxConcurrentCalls');
     }
@@ -417,6 +419,7 @@ class WaCallManager extends node_events_1.EventEmitter {
         }
         const sessionLogger = this.logger.child({ callId: info.callId });
         const session = new WaCallMediaSession_js_1.WaCallMediaSession({
+            preferWebRelayPort: this.preferWebRelayPort,
             deps: this.deps,
             logger: sessionLogger,
             info,

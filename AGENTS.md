@@ -1,9 +1,34 @@
 # AGENTS.md
 
+## Documentacao obrigatoria de recursos e rotas
+
+- Sempre que adicionar ou alterar um recurso, atualizar a documentacao do site
+  (`docs-site`), incluindo os guias PT/EN correspondentes. Explicar funcionamento,
+  permissoes, configuracoes necessarias, limites e pendencias reais.
+- Sempre que adicionar ou alterar uma rota ou contrato de API, atualizar tambem
+  `docs/openapi.yaml`, regenerar o OpenAPI JSON, a referencia do site e as colecoes
+  Postman. Documentar autenticacao, parametros, respostas e erros relevantes.
+- Executar os geradores aplicaveis e `node docs-site/scripts/validate-docs.mjs`
+  antes de concluir a entrega. Documentacao faz parte da implementacao, nao deve
+  ficar para uma tarefa futura sem informar explicitamente a pendencia.
+- Atualizar arquivos locais nao significa publicar o site: informar separadamente
+  o que foi documentado, validado e publicado. Nao publicar sem autorizacao.
+
 ## Temporarios de validacao e Nextcloud
 
 - A limpeza dos temporarios criados pelo agente faz parte de cada entrega, inclusive
   quando testes ou builds falham. Registre os caminhos e remova-os ao terminar.
+- O disco desta maquina tem espaco limitado. Ao compilar ou testar em copia
+  isolada, mantenha um inventario dos diretorios criados e execute a limpeza
+  em uma etapa final, inclusive em falhas ou interrupcoes. Nao deixe snapshots,
+  builds duplicados ou logs descartaveis para outra tarefa limpar.
+- Antes de criar uma copia grande, confira o espaco livre e copie apenas o
+  necessario. Nao duplique node_modules nem caches compartilhados. Se reutilizar
+  dependencias por junction/symlink, remova somente o link ao limpar a copia;
+  nunca percorra ou apague seu destino.
+- Preserve apenas os entregaveis necessarios fora do temporario. Se a limpeza
+  for bloqueada, informe imediatamente o caminho exato, o motivo e o tamanho
+  quando disponivel; nao declare a limpeza concluida nem contorne a restricao.
 - Prefira um diretorio unico por tarefa fora da arvore Nextcloud, no temporario
   do sistema. Evite acumular bin/Codex*, obj/Codex*, copias de build e logs grandes.
 - Antes de limpar, confirme caminho, origem, conteudo descartavel, ausencia de

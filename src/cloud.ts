@@ -4,6 +4,7 @@ dotenv.config()
 import logger from './services/logger'
 import { resolveCloudProcessRole, resolveVideoWorkerMode } from './services/providers/cloud_process_role'
 import { ensureRequiredRedis } from './services/redis_runtime'
+import { initializeManagedRegistrationKey } from './services/mobile_primary/managed_registration_key'
 import { disconnectActiveClients } from './services/graceful_shutdown'
 logger.info('Starting...')
 
@@ -27,6 +28,7 @@ process.once('SIGINT', () => shutdown('SIGINT'))
 
 const start = async () => {
   await ensureRequiredRedis()
+  if (role !== 'broker' && role !== 'video') await initializeManagedRegistrationKey()
   if (role === 'web') return import('./web.js')
   if (role === 'broker') return Promise.all([import('./broker.js'), import('./bulker.js')])
   if (role === 'worker') return import('./worker.js')

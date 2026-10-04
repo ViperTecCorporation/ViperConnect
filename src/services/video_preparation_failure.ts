@@ -15,7 +15,11 @@ export class VideoPreparationFailureReporter {
   async report(phone: string, data: VideoPreparationJobData, error: unknown) {
     const config = await this.getConfig(phone)
     const recipientId = normalizeUserOrGroupIdForWebhook(data.payload?.to || '')
-    const message = `${(error as any)?.message || error || 'Video preparation failed'}`.slice(0, 500)
+    // Do not expose ffmpeg stderr, file paths or signed source URLs in the webhook.
+    const oversized = `${(error as any)?.message || ''}`.startsWith('video_output_too_large:')
+    const message = oversized
+      ? 'VIDEO_OUTPUT_TOO_LARGE: Vídeo excede o teto de saída configurado. Escolha SD, corte o vídeo ou envie como documento quando suportado. A qualidade não foi reduzida automaticamente.'
+      : 'VIDEO_PREPARATION_FAILED: Não foi possível preparar o vídeo. Verifique o arquivo e os parâmetros recomendados na documentação.'
     const payload = {
       object: 'whatsapp_business_account',
       entry: [{

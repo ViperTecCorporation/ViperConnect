@@ -36,6 +36,7 @@ const portugueseTheme = {
         { text: 'Docker Swarm', link: '/guide/docker-swarm' },
         { text: 'Linux nativo', link: '/guide/install-native-linux' },
         { text: 'Rede IPv4 e IPv6', link: '/guide/network-ipv6' },
+        { text: 'Laboratório mobile-primary', link: '/guide/mobile-primary-local-lab' },
       ],
     },
     {
@@ -46,6 +47,7 @@ const portugueseTheme = {
         { text: 'Restaurar webhooks anteriores', link: '/guide/webhook-history' },
         { text: 'Status das sessões', link: '/guide/session-webhooks' },
         { text: 'Identidades e contatos', link: '/guide/contacts' },
+        { text: 'Perfil da sessão', link: '/guide/profile' },
       ],
     },
     {
@@ -127,6 +129,7 @@ const englishTheme = {
         { text: 'Restore previous webhooks', link: '/en/guide/webhook-history' },
         { text: 'Session status', link: '/en/guide/session-webhooks' },
         { text: 'Identities and contacts', link: '/en/guide/contacts' },
+        { text: 'Session profile', link: '/en/guide/profile' },
       ],
     },
     {

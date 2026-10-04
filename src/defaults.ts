@@ -148,10 +148,11 @@ export const UNOAPI_VIDEO_STAGE_TIMEOUT_MS = Math.max(
   30_000,
   parseInt(process.env.UNOAPI_VIDEO_STAGE_TIMEOUT_MS || `${5 * 60_000}`),
 )
-export const UNOAPI_VIDEO_TARGET_BYTES = Math.min(
-  15 * 1024 * 1024,
-  Math.max(1 * 1024 * 1024, parseInt(process.env.UNOAPI_VIDEO_TARGET_BYTES || `${15 * 1024 * 1024}`)),
-)
+// Operational Zapo output ceiling, not a universal WhatsApp limit or a compression target.
+export const UNOAPI_VIDEO_MAX_OUTPUT_BYTES = Number(process.env.UNOAPI_VIDEO_MAX_OUTPUT_BYTES || 256 * 1024 * 1024)
+if (!Number.isSafeInteger(UNOAPI_VIDEO_MAX_OUTPUT_BYTES) || UNOAPI_VIDEO_MAX_OUTPUT_BYTES < 1024 * 1024) {
+  throw new Error('invalid_UNOAPI_VIDEO_MAX_OUTPUT_BYTES')
+}
 export const UNOAPI_VIDEO_TRANSCODE_TIMEOUT_MS = Math.max(
   1_000,
   Math.min(
