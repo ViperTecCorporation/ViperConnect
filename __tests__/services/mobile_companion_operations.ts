@@ -1,7 +1,60 @@
 import { MobileCompanionOperations, validateCompanionCommand, startCompanionWorker } from '../../src/services/mobile_primary/companion_operations'
 import { RegistrationVault } from '../../src/services/mobile_primary/registration_vault'
+import * as trace from '../../src/services/mobile_primary/companion_trace'
+import { captureCompanionHistoryChoice } from '../../src/services/mobile_primary/companion_history_choice'
+import { installCompanionInventory } from '../../src/services/mobile_primary/companion_inventory'
+
+test.each(['qr', 'code'])('passes history opt-out through the %s linking lane', async action => {
+  const f = fixture(), key = Buffer.alloc(32, 7).toString('base64')
+  const method = action === 'qr' ? f.mobile.linkCompanion : f.mobile.linkCompanionByCode
+  method.mockImplementation(async () => {
+    expect(captureCompanionHistoryChoice(f.mobile)('target', 1)).toBe(false)
+    return { deviceJid: 'target', keyIndex: 1 }
+  })
+  await f.operations.submit({ action, value: action === 'qr' ? `ref,${key},${key},${key},1` : 'ABCD1234', confirm: true, sendHistory: false })
+  await f.operations.tick(f.mobile, fence, () => true)
+  expect(method).toHaveBeenCalledTimes(1)
+})
+test('history option defaults to enabled and rejects invalid types or unrelated actions', () => {
+  expect(validateCompanionCommand({ action: 'code', value: 'ABCD1234', confirm: true }).sendHistory).toBe(true)
+  for (const body of [{ action: 'list', sendHistory: false }, { action: 'code', value: 'ABCD1234', confirm: true, sendHistory: 'false' }]) expect(() => validateCompanionCommand(body)).toThrow('command_invalid')
+})
+
+test.each([true, false])('pairing-code structure trace follows the isolated PEM experiment (lab=%s)', async lab => {
+  const before = { lab: process.env.UNOAPI_MOBILE_PRIMARY_LAB, pem: process.env.UNOAPI_MOBILE_COMPANION_PEM_LAB, diagnostics: process.env.MOBILE_PRIMARY_DIAGNOSTICS }
+  const spy = jest.spyOn(trace, 'observeCompanionQuery')
+  try {
+    process.env.UNOAPI_MOBILE_PRIMARY_LAB = String(lab)
+    process.env.UNOAPI_MOBILE_COMPANION_PEM_LAB = 'true'
+    process.env.MOBILE_PRIMARY_DIAGNOSTICS = 'false'
+    const f = fixture()
+    await f.operations.submit({ action: 'code', value: 'ABCD1234', confirm: true })
+    await f.operations.tick(f.mobile, fence, () => true)
+    expect(spy).toHaveBeenCalledTimes(lab ? 1 : 0)
+    expect(f.mobile.linkCompanionByCode).toHaveBeenCalledWith('ABCD1234')
+  } finally {
+    for (const [key, value] of Object.entries({ UNOAPI_MOBILE_PRIMARY_LAB: before.lab, UNOAPI_MOBILE_COMPANION_PEM_LAB: before.pem, MOBILE_PRIMARY_DIAGNOSTICS: before.diagnostics })) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value
+    }
+    spy.mockRestore()
+  }
+})
 
 const draft = '00000000-0000-0000-0000-000000000001'
+test('list uses live server inventory even when epoch is empty', async () => {
+  const f = fixture()
+  f.mobile.listCompanions.mockResolvedValue([])
+  const dispose = installCompanionInventory(f.mobile, {
+    identity: () => ({ meJid: '999123456789@s.whatsapp.net' }), invalidate: jest.fn().mockResolvedValue(1),
+    sync: jest.fn().mockResolvedValue([{ jid: '999123456789@s.whatsapp.net', deviceJids: ['999123456789:2@s.whatsapp.net'] }]), current: () => true,
+  })
+  try {
+    const op = await f.operations.submit({ action: 'list' })
+    await f.operations.tick(f.mobile, fence, () => true)
+    expect((await f.operations.status(op.id)).result).toEqual(expect.objectContaining({ source: 'server_device_list',
+      companions: [{ deviceJid: '999123456789:2@s.whatsapp.net', canRevoke: false }] }))
+  } finally { dispose() }
+})
 const fence = { key: 'lease', token: 'owner' }
 function fixture() {
   let raw = '', lease = 'owner'
@@ -62,6 +115,27 @@ test.each(['code', 'qr', 'revoke'])('executes %s only through the existing mobil
   expect((await f.operations.status(op.id)).state).toBe('done')
   const method = action === 'code' ? f.mobile.linkCompanionByCode : action === 'qr' ? f.mobile.linkCompanion : f.mobile.revokeCompanion
   expect(method).toHaveBeenCalledWith(value)
+})
+test('wrapped QR is normalized before SDK linking without altering keys or exposing secrets', async () => {
+  const f = fixture()
+  const key = Buffer.alloc(32, 7).toString('base64')
+  const bare = `ref,with-comma,${key},${key},${key},1`
+  const wrapped = `https://wa.me/settings/linked_devices#${bare}`
+  expect(validateCompanionCommand({ action: 'qr', value: wrapped, confirm: true }).value).toBe(bare)
+  const op = await f.operations.submit({ action: 'qr', value: wrapped, confirm: true })
+  await f.operations.tick(f.mobile, fence, () => true)
+  expect(f.mobile.linkCompanion).toHaveBeenCalledWith(bare)
+  expect(JSON.stringify(await f.operations.status(op.id))).not.toContain(key)
+})
+test.each(['https://example.com/#', 'https://wa.me/other#', 'https://wa.me/settings/linked_devices?x#'])('rejects unrecognized URL QR envelope %s', prefix => {
+  const key = Buffer.alloc(32, 7).toString('base64')
+  expect(() => validateCompanionCommand({ action: 'qr', value: `${prefix}ref,${key},${key},${key},1`, confirm: true })).toThrow('mobile_companion_qr_invalid')
+})
+test('rejects empty reference and oversized wrapped QR', () => {
+  const key = Buffer.alloc(32, 7).toString('base64')
+  for (const ref of ['', 'x'.repeat(4096)]) {
+    expect(() => validateCompanionCommand({ action: 'qr', value: `https://wa.me/settings/linked_devices#${ref},${key},${key},${key},1`, confirm: true })).toThrow('mobile_companion_qr_invalid')
+  }
 })
 test('lost ownership and inactive sockets cannot claim commands', async () => {
   const f = fixture(), op = await f.operations.submit({ action: 'list' })

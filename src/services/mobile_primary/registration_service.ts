@@ -16,8 +16,9 @@ export interface RegistrationRedis {
   eval(script: string, args: { keys: string[]; arguments: string[] }): Promise<unknown>
 }
 export interface RegistrationResult { store?: any; error?: 'challenge_required' | 'rate_limited' | 'provider_failed'; diagnostic?: RegistrationDiagnostic }
-export type RegistrationProvider = (input: { action: 'prepare' | 'request' | 'verify'; draft: MobileDeviceDraft; store?: unknown; code?: string }) => Promise<RegistrationResult>
+export type RegistrationProvider = (input: { action: 'prepare' | 'request' | 'verify'; draft: MobileDeviceDraft; store?: unknown; code?: string; method?: 'sms' | 'voice' }) => Promise<RegistrationResult>
 interface RegistrationState {
+  method?: 'sms' | 'voice'
   status: 'requesting' | 'code_required' | 'verifying' | 'registered' | 'blocked' | 'uncertain'
   updatedAt: number
   store?: unknown
@@ -30,8 +31,16 @@ interface RegistrationState {
   requestAttempts?: number
 }
 
-function canResendSms(state: RegistrationState, now: number): boolean {
+function canResendSms(state: RegistrationState, now: number, method: 'sms' | 'voice' = 'sms'): boolean {
+  const diagnostic = sanitizeRegistrationDiagnostic(state.diagnostic)
+  const wait = method === 'voice' ? diagnostic?.voiceWaitSeconds : diagnostic?.smsWaitSeconds
+  if (wait !== undefined) state = { ...state, diagnostic: { ...diagnostic!, waitSeconds: wait } }
   if (!Number.isFinite(state.updatedAt)) return false
+  if (state.status === 'blocked' && state.error === 'provider_failed' && diagnostic?.stage === 'request' && diagnostic.providerReason === 'no_routes') {
+    const seconds = wait ?? diagnostic.waitSeconds
+    return !!state.store && !(state.store as any).registered && !diagnostic.providerPending &&
+      method !== (state.method || 'sms') && (seconds === undefined || now - state.updatedAt >= seconds * 1000)
+  }
   if (!(state.store as any)?.codePending || (state.store as any)?.registered) return false
   if (state.status === 'code_required') {
     const detail = sanitizeRegistrationDiagnostic(state.diagnostic)
@@ -39,6 +48,10 @@ function canResendSms(state: RegistrationState, now: number): boolean {
       (detail?.waitSeconds === undefined || now - state.updatedAt >= detail.waitSeconds * 1000)
   }
   if (state.status !== 'blocked') return false
+  if (['provider_failed', 'challenge_required'].includes(state.error || '') && diagnostic?.stage === 'verify' && diagnostic.providerReason === 'device_confirm_or_second_code') {
+    const seconds = wait ?? diagnostic.waitSeconds
+    return !diagnostic.providerPending && seconds !== undefined && now - state.updatedAt >= seconds * 1000
+  }
   // Only a known remote wait releases this refusal; no local timer or attempt ceiling.
   if (state.error === 'rate_limited') {
     const waitSeconds = sanitizeRegistrationDiagnostic(state.diagnostic)?.waitSeconds
@@ -46,8 +59,6 @@ function canResendSms(state: RegistrationState, now: number): boolean {
       !state.diagnostic.providerPending && waitSeconds !== undefined && now - state.updatedAt >= waitSeconds * 1000
   }
   if (state.error !== 'provider_failed' || now - state.updatedAt < 300000) return false
-  // Explicit lab experiment, not a claimed implementation of the second-code protocol.
-  if (state.diagnostic?.stage === 'verify' && state.diagnostic.providerReason === 'device_confirm_or_second_code') return (state.requestAttempts || 1) < 3
   if ((state.requestAttempts || 1) >= 2) return false
   return !state.diagnostic || (state.diagnostic.stage === 'verify' && state.diagnostic.reason === 'code_expired')
 }
@@ -82,17 +93,18 @@ export class MobileRegistrationService {
     const stale = ['requesting', 'verifying'].includes(state.status) && this.now() - state.updatedAt > 120000
     const additionalConfirmation = state.status === 'blocked' && state.diagnostic?.stage === 'verify' && state.diagnostic?.providerReason === 'device_confirm_or_second_code'
     const diagnostic = sanitizeRegistrationDiagnostic(state.diagnostic)
-    const retryAt = ((state.status === 'blocked' && state.error === 'rate_limited') || state.status === 'code_required') && Number.isFinite(state.updatedAt) && diagnostic?.waitSeconds !== undefined
-      ? state.updatedAt + diagnostic.waitSeconds * 1000 : undefined
-    return { retryAt, status: stale ? 'uncertain' : additionalConfirmation ? 'additional_confirmation_required' : state.status, canonicalPhone: state.canonicalPhone, error: stale ? 'interrupted_operation' : state.error,
+    const smsWait = diagnostic?.smsWaitSeconds ?? diagnostic?.waitSeconds
+    const retryAt = (additionalConfirmation || (state.status === 'blocked' && (state.error === 'rate_limited' || diagnostic?.providerReason === 'no_routes')) || state.status === 'code_required') && Number.isFinite(state.updatedAt) && smsWait !== undefined
+      ? state.updatedAt + smsWait * 1000 : undefined
+    return { method: state.method || 'sms', canResendVoice: canResendSms(state, this.now(), 'voice'), retryAtVoice: diagnostic?.voiceWaitSeconds !== undefined ? state.updatedAt + diagnostic.voiceWaitSeconds * 1000 : retryAt, retryAt, status: stale ? 'uncertain' : additionalConfirmation ? 'additional_confirmation_required' : state.status, canonicalPhone: state.canonicalPhone, error: stale ? 'interrupted_operation' : state.error,
       diagnostic: sanitizeRegistrationDiagnostic(state.diagnostic), canRetryVerification: canRecoverVerification(state, this.now()), canResendSms: canResendSms(state, this.now()) }
   }
   async execute(id: string, action: 'request' | 'verify', input: unknown) {
     this.assertEnabled()
     const body = input as any
-    const allowed = action === 'request' ? ['confirm', 'confirmResend'] : ['code', 'confirmRecovery']
+    const allowed = action === 'request' ? ['confirm', 'confirmResend', 'method'] : ['code', 'confirmRecovery']
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !allowed.includes(key)) ||
-      (action === 'request' ? body.confirm !== true || (body.confirmResend !== undefined && typeof body.confirmResend !== 'boolean') : typeof body.code !== 'string' || !/^\d{6}$/.test(body.code) || (body.confirmRecovery !== undefined && typeof body.confirmRecovery !== 'boolean'))) {
+      (action === 'request' ? body.confirm !== true || (body.method !== undefined && !['sms', 'voice'].includes(body.method)) || (body.confirmResend !== undefined && typeof body.confirmResend !== 'boolean') : typeof body.code !== 'string' || !/^\d{6}$/.test(body.code) || (body.confirmRecovery !== undefined && typeof body.confirmRecovery !== 'boolean'))) {
       throw new MobileDeviceError(400, 'mobile_registration_invalid_input')
     }
     const draft = await this.drafts.get(id)
@@ -103,14 +115,14 @@ export class MobileRegistrationService {
     const previous = raw ? vault.open<RegistrationState>(id, raw) : undefined
     // No automatic resends after failures/unknown outcomes. Never rotate registration keys.
     const recovery = action === 'verify' && previous && body.confirmRecovery === true && canRecoverVerification(previous, this.now())
-    const resend = action === 'request' && previous && body.confirmResend === true && canResendSms(previous, this.now())
+    const resend = action === 'request' && previous && body.confirmResend === true && canResendSms(previous, this.now(), body.method || 'sms')
     if (action === 'request' ? (!!previous && !resend) || (!previous && body.confirmResend === true) : previous?.status !== 'code_required' && !recovery) {
       throw new MobileDeviceError(409, 'mobile_registration_state_conflict')
     }
     const prepared = action === 'request' && !resend ? await this.provider({ action: 'prepare', draft }) : undefined
     if (action === 'request' && !resend && (!prepared?.store || prepared.error)) throw new MobileDeviceError(503, 'mobile_registration_disabled')
     const pending: RegistrationState = {
-      ...previous, status: action === 'request' ? 'requesting' : 'verifying', updatedAt: this.now(),
+      ...previous, method: action === 'request' ? body.method || 'sms' : previous?.method || 'sms', status: action === 'request' ? 'requesting' : 'verifying', updatedAt: this.now(),
       store: prepared?.store || previous?.store,
       advSecret: previous?.advSecret || randomBytes(32).toString('base64'),
       error: undefined, diagnostic: undefined,
@@ -125,7 +137,7 @@ export class MobileRegistrationService {
     if (Number(await save(raw || '', encrypted)) !== 1) throw new MobileDeviceError(409, 'mobile_registration_state_conflict')
     let result: RegistrationState
     try {
-      const response = await this.provider({ action, draft, store: pending.store, ...(action === 'verify' ? { code: body.code } : {}) })
+      const response = await this.provider({ action, draft, store: pending.store, ...(action === 'verify' ? { code: body.code } : { method: pending.method }) })
       if (response.store) {
         const before = pending.store as any
         if (['noiseKeyPair', 'identityKeyPair', 'signedPreKey', 'registrationId'].some(field => JSON.stringify(response.store[field]) !== JSON.stringify(before[field])) ||

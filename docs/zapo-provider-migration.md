@@ -151,6 +151,12 @@ as duas preferências mantêm `autoSelectFamily`, portanto IPv4 e IPv6 continuam
 disponíveis como fallback. O agente direto suporta HTTP, HTTPS e WSS e é
 reutilizado no processo por política efetiva.
 
+Exceção Mobile Primary: credenciais com `deviceInfo` selecionam TCP nativo na
+Zapo. Nesse transporte, sem proxy explícito, não passar o agente de família em
+`proxy.ws`: a Zapo o interpretaria como proxy CONNECT e rejeitaria a conexão.
+O chat mantém seleção de rede nativa; mídia e previews preservam suas políticas.
+Não contornar proxies explícitos: SOCKS continua incompatível com TCP mobile.
+
 Com `PROXY_URL`, o agente SOCKS existente continua prioritário e nunca é
 contornado por uma política de família. Em `socks5h`, DNS e família de saída são
 decididos pelo proxy remoto.

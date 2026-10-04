@@ -6,6 +6,8 @@ export interface RegistrationDiagnostic {
   providerReason?: string
   providerPending?: string
   waitSeconds?: number
+  smsWaitSeconds?: number
+  voiceWaitSeconds?: number
 }
 const reasons = ['unknown', 'code_expired', 'invalid_code', 'challenge_required', 'rate_limited', 'android_material', 'local_configuration', 'network', 'http_error', 'bad_token', 'old_version', 'bad_param', 'temporarily_unavailable', 'security_code', 'blocked', 'incorrect', 'mismatch', 'not_allowed']
 
@@ -13,7 +15,10 @@ const reasons = ['unknown', 'code_expired', 'invalid_code', 'challenge_required'
 export function sanitizeRegistrationDiagnostic(value: any): RegistrationDiagnostic | undefined {
   if (!value || !['prepare', 'request', 'verify'].includes(value.stage) || ![...reasons, 'provider_response'].includes(value.reason)) return undefined
   const result: RegistrationDiagnostic = { stage: value.stage, reason: value.reason, ...(Number.isInteger(value.httpStatus) && value.httpStatus >= 100 && value.httpStatus <= 599 ? { httpStatus: value.httpStatus } : {}) }
-  if (Number.isSafeInteger(value.waitSeconds) && value.waitSeconds > 0 && value.waitSeconds <= 2147483647) result.waitSeconds = value.waitSeconds
+  if (Number.isSafeInteger(value.waitSeconds) && value.waitSeconds >= 0 && value.waitSeconds <= 2147483647) result.waitSeconds = value.waitSeconds
+  for (const field of ['smsWaitSeconds', 'voiceWaitSeconds'] as const) {
+    if (Number.isSafeInteger(value[field]) && value[field] >= 0 && value[field] <= 2147483647) result[field] = value[field]
+  }
   for (const field of ['providerStatus', 'providerReason', 'providerPending'] as const) {
     if (typeof value[field] === 'string' && /^[a-z][a-z_]{1,47}$/.test(value[field])) result[field] = value[field]
   }

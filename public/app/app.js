@@ -1,28 +1,36 @@
-import { ApiClient, ApiError } from './core/api.js?v=4.0.32-1ab9d8f1';
-import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.32-1ab9d8f1';
-import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.32-1ab9d8f1';
-import { SocketBridge } from './core/socket.js?v=4.0.32-1ab9d8f1';
-import { renderLayout, renderLogin } from './components/layout.js?v=4.0.32-1ab9d8f1';
-import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.32-1ab9d8f1';
-import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.32-1ab9d8f1';
-import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.32-1ab9d8f1';
-import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.32-1ab9d8f1';
-import { sessionConfigPayload } from './features/session_config.js?v=4.0.32-1ab9d8f1';
-import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.32-1ab9d8f1';
-import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.32-1ab9d8f1';
-import { renderDashboard } from './pages/dashboard.js?v=4.0.32-1ab9d8f1';
-import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.32-1ab9d8f1';
-import { renderSessionPage } from './pages/session.js?v=4.0.32-1ab9d8f1';
-import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.32-1ab9d8f1';
-import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.32-1ab9d8f1';
-import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.32-1ab9d8f1';
-import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.32-1ab9d8f1';
-import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.32-1ab9d8f1';
-import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.32-1ab9d8f1';
-import { icon } from './components/icons.js?v=4.0.32-1ab9d8f1';
-import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.32-1ab9d8f1';
-import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.32-1ab9d8f1';
-import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.32-1ab9d8f1';
+import { ApiClient, ApiError } from './core/api.js?v=4.0.34-43ce0548';
+import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.34-43ce0548';
+import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.34-43ce0548';
+import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.34-43ce0548';
+import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.34-43ce0548';
+import { SocketBridge } from './core/socket.js?v=4.0.34-43ce0548';
+import { renderLayout, renderLogin } from './components/layout.js?v=4.0.34-43ce0548';
+import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.34-43ce0548';
+import { updateProfileHours } from './features/profile_hours.js?v=4.0.34-43ce0548';
+import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.34-43ce0548';
+import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.34-43ce0548';
+import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.34-43ce0548';
+import { OwnProfilePanel } from './features/own_profile.js?v=4.0.34-43ce0548';
+import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.34-43ce0548';
+import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.34-43ce0548';
+import { sessionConfigPayload } from './features/session_config.js?v=4.0.34-43ce0548';
+import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.34-43ce0548';
+import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.34-43ce0548';
+import { renderDashboard } from './pages/dashboard.js?v=4.0.34-43ce0548';
+import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.34-43ce0548';
+import { renderSessionPage } from './pages/session.js?v=4.0.34-43ce0548';
+import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.34-43ce0548';
+import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.34-43ce0548';
+import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.34-43ce0548';
+import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.34-43ce0548';
+import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.34-43ce0548';
+import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.34-43ce0548';
+import { icon } from './components/icons.js?v=4.0.34-43ce0548';
+import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.34-43ce0548';
+import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.34-43ce0548';
+import { SessionTransfersPanel } from './features/session_transfers.js?v=4.0.34-43ce0548';
+import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.34-43ce0548';
+import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.34-43ce0548';
 const TOKEN_KEY = 'whatsappApiToken';
 const THEME_KEY = 'viperconnect_theme';
 const SIDEBAR_KEY = 'viperconnect_sidebar_collapsed';
@@ -35,6 +43,7 @@ const QUEUE_MESSAGE_PAGE_SIZE = 20;
 const QUEUE_MESSAGE_MAX = 200;
 const VOIP_REFRESH_SECONDS = 15;
 const SAVE_FORM_NAMES = new Set([
+    'contact-name',
     'session-destination',
     'session-config',
     'webhook',
@@ -67,6 +76,7 @@ export class ViperConnectApp {
         this.query = '';
         this.statusFilter = 'all';
         this.contacts = emptyContactState();
+        this.contactCountRevision = 0;
         this.contactsQuery = '';
         this.contactsVisibleLimit = PAGE_SIZE;
         this.groups = [];
@@ -125,6 +135,11 @@ export class ViperConnectApp {
         this.versionStatus = emptyVersionStatus();
         this.api = api;
         this.manager = new ManagerPage(api, () => this.render());
+        this.mobileDevices = new MobileDevicesPanel(api, () => this.render());
+        this.sessionTransfers = new SessionTransfersPanel(api, () => this.render());
+        this.mobileCompanions = new MobileCompanionsPanel(api, () => this.render(), this.root);
+        this.ownProfile = new OwnProfilePanel(api, () => this.render(), this.root);
+        this.messages = new SessionMessagesPanel(api, this.root);
         this.socket = socket;
         this.contactPictures = new ContactPictureLoader((phone, pictureId) => this.api.profilePicture(phone, pictureId));
         setLocale(normalizeLocale(localStorage.getItem(LOCALE_KEY) || navigator.language));
@@ -169,12 +184,60 @@ export class ViperConnectApp {
         this.root.addEventListener('click', (event) => {
             void this.handleClick(event);
         });
+        for (const name of ['input', 'change'])
+            this.root.addEventListener(name, (event) => {
+                if (event.target.closest?.('.profile-editor'))
+                    this.ownProfile.markDirty();
+                const target = event.target;
+                if (name === 'change' && target.matches?.('input[data-profile-image]')) {
+                    const input = target;
+                    const file = input.files?.[0];
+                    const kind = input.dataset.profileImage;
+                    if (file && (kind === 'picture' || kind === 'cover')) {
+                        const data = new FormData();
+                        data.set('image', file);
+                        this.showToast('Enviando imagem…');
+                        void this.ownProfile.submit(kind, data).catch(e => this.showToast(this.messageFor(e), 'error'));
+                    }
+                    input.value = '';
+                }
+                if (name === 'change' && target.matches?.('[data-hours-control]')) {
+                    const form = target.closest('form');
+                    if (form)
+                        updateProfileHours(form);
+                }
+            });
         this.root.addEventListener('submit', (event) => {
             void this.handleSubmit(event);
         });
         this.root.addEventListener('input', (event) => this.handleFilter(event));
+        this.root.addEventListener('paste', (event) => {
+            const input = event.target;
+            if (!input.matches('[data-companion-code]') || !event.clipboardData)
+                return;
+            event.preventDefault();
+            const start = input.selectionStart ?? 0, end = input.selectionEnd ?? input.value.length;
+            input.value = formatCompanionCode(input.value.slice(0, start) + event.clipboardData.getData('text') + input.value.slice(end));
+            input.setSelectionRange(input.value.length, input.value.length);
+        });
         this.root.addEventListener('change', (event) => this.handleFilter(event));
         document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                this.root.querySelectorAll('.profile-image-menu:not([hidden])').forEach(menu => {
+                    menu.hidden = true;
+                    const button = menu.parentElement?.querySelector('[aria-expanded]');
+                    button?.setAttribute('aria-expanded', 'false');
+                    button?.focus();
+                });
+            }
+            if (event.key === 'Escape' && this.mobileDevices.modal) {
+                this.mobileDevices.action('mobile-close');
+                return;
+            }
+            if (event.key === 'Escape' && this.sessionTransfers.modal) {
+                void this.sessionTransfers.action('transfer-close', '');
+                return;
+            }
             if (event.key === 'Escape' && this.manager.pending && !this.manager.busy) {
                 this.manager.pending = undefined;
                 this.render();
@@ -203,6 +266,73 @@ export class ViperConnectApp {
         if (!actionElement)
             return;
         const action = actionElement.dataset.action || '';
+        this.root?.querySelectorAll?.('.profile-image-menu:not([hidden])').forEach(menu => {
+            if (!menu.parentElement?.contains(actionElement)) {
+                menu.hidden = true;
+                menu.parentElement?.querySelector('[aria-expanded]')?.setAttribute('aria-expanded', 'false');
+            }
+        });
+        if (action.startsWith('profile-')) {
+            if (action === 'profile-map-open') {
+                if (this.identity?.role === 'admin')
+                    await this.ownProfile.openMap();
+            }
+            else if (action === 'profile-maps-status' || action === 'profile-maps-remove') {
+                if (this.identity?.role !== 'admin')
+                    return;
+                if (action === 'profile-maps-remove' && !window.confirm('Remover a chave Google Maps de toda esta instância?'))
+                    return;
+                try {
+                    await this.ownProfile.mapsSettings(action === 'profile-maps-status' ? 'GET' : 'DELETE');
+                }
+                catch (e) {
+                    this.showToast(this.messageFor(e), 'error');
+                }
+            }
+            else if (action === 'profile-tab') {
+                this.ownProfile.selectTab(actionElement.dataset.profileTab || '');
+            }
+            else if (action === 'profile-edit-picture' || action === 'profile-edit-cover') {
+                this.ownProfile.markDirty();
+                const editor = document.getElementById(`profile-menu-${action.slice(13)}`);
+                if (editor) {
+                    editor.hidden = !editor.hidden;
+                    actionElement.setAttribute('aria-expanded', String(!editor.hidden));
+                    if (!editor.hidden)
+                        editor.querySelector('a, button:not([disabled])')?.focus();
+                }
+            }
+            else if (action === 'profile-upload-picture' || action === 'profile-upload-cover') {
+                const editor = document.getElementById(`profile-image-${action.slice(15)}`);
+                actionElement.closest('.profile-image-menu')?.setAttribute('hidden', '');
+                actionElement.closest('.profile-image-actions')?.querySelector('[aria-expanded]')?.setAttribute('aria-expanded', 'false');
+                if (editor instanceof HTMLInputElement) {
+                    editor.value = '';
+                    editor.click();
+                }
+            }
+            else if (action === 'profile-reload') {
+                if (window.confirm('Consultar novamente? Alterações não salvas serão descartadas.'))
+                    await this.ownProfile.open(this.selectedPhone, true);
+            }
+            else if (action.startsWith('profile-delete-') && window.confirm('Remover este dado do seu perfil no WhatsApp?')) {
+                const data = new FormData();
+                if (action === 'profile-delete-cover')
+                    data.set('value', actionElement.dataset.coverId || '');
+                try {
+                    await this.ownProfile.submit(action.slice(8), data);
+                }
+                catch (e) {
+                    this.showToast(this.messageFor(e), 'error');
+                }
+            }
+            return;
+        }
+        if (action.startsWith('companion-')) {
+            if (this.identity?.role === 'admin')
+                await this.mobileCompanions.action(action, actionElement.dataset.id || '');
+            return;
+        }
         const phone = actionElement.dataset.phone || '';
         if (this.identity?.role === 'user' && (/(redis|queue|session-webhook)/.test(action) || action === 'new-session' || action === 'open-users'))
             return;
@@ -252,14 +382,41 @@ export class ViperConnectApp {
             await this.manager.action(action, actionElement.dataset.id || '', this.identity.role === 'admin');
             return;
         }
-        if (action === 'open-users' || action === 'open-account') {
-            if (this.api.getToken().startsWith('mgr_key_'))
+        if (action.startsWith('transfer-')) {
+            if (this.identity?.role === 'admin') {
+                this.modal = undefined;
+                await this.sessionTransfers.action(action, actionElement.dataset.id || '');
+            }
+            return;
+        }
+        if (action.startsWith('mobile-')) {
+            if (this.identity?.role === 'admin')
+                this.mobileDevices.action(action, actionElement.dataset.id || '');
+            return;
+        }
+        if (action === 'open-google-maps') {
+            if (this.identity?.role !== 'admin')
                 return;
-            if (!this.identity || (action === 'open-users') !== (this.identity.role === 'admin'))
+            this.view = 'google-maps';
+            this.selectedPhone = '';
+            this.mobileOpen = false;
+            this.render();
+            try {
+                await this.ownProfile.mapsSettings('GET');
+            }
+            catch (e) {
+                this.showToast(this.messageFor(e), 'error');
+            }
+            return;
+        }
+        if (action === 'open-users' || action === 'open-settings' || action === 'open-account') {
+            if (!this.identity || (action !== 'open-account') !== (this.identity.role === 'admin'))
+                return;
+            if (this.api.getToken().startsWith('mgr_key_'))
                 return;
             this.manager.reset();
             this.manager.knownPhones = this.sessions.map(session => ({ phone: sessionPhone(session), label: sessionLabel(session) }));
-            this.view = action === 'open-users' ? 'users' : 'account';
+            this.view = action === 'open-account' ? 'account' : 'users';
             this.selectedPhone = '';
             this.mobileOpen = false;
             await this.manager.load(this.identity.role === 'admin');
@@ -589,6 +746,19 @@ export class ViperConnectApp {
             this.modal = { type: 'message', phone, recipient: actionElement.dataset.recipient };
             this.render();
         }
+        else if (action === 'add-contact') {
+            if (this.selectedPhone) {
+                this.modal = { type: 'contact-name', phone: this.selectedPhone };
+                this.render();
+            }
+        }
+        else if (action === 'edit-contact-name') {
+            const contact = this.contacts.items.find(item => item.user_id === actionElement.dataset.recipient);
+            if (contact?.phone_number && this.selectedPhone) {
+                this.modal = { type: 'contact-name', phone: this.selectedPhone, contact };
+                this.render();
+            }
+        }
         else if (action === 'deregister-session') {
             this.modal = { type: 'deregister', phone };
             this.render();
@@ -651,6 +821,51 @@ export class ViperConnectApp {
             return;
         event.preventDefault();
         const data = new FormData(form);
+        if (form.dataset.form === 'profile-maps-settings') {
+            if (this.identity?.role !== 'admin')
+                return;
+            try {
+                await this.ownProfile.mapsSettings('PUT', String(data.get('mapsApiKey') || ''));
+                this.showToast('Chave Google Maps salva.');
+            }
+            catch (e) {
+                this.showToast(this.messageFor(e), 'error');
+            }
+            return;
+        }
+        if (form.dataset.form.startsWith('profile-')) {
+            if (form.dataset.form === 'profile-delete-cover' && !window.confirm('Remover esta capa do WhatsApp?'))
+                return;
+            const editor = form.closest('fieldset');
+            if (editor)
+                editor.disabled = true;
+            try {
+                await this.ownProfile.submit(form.dataset.form.slice(8), data);
+            }
+            catch (e) {
+                this.showToast(this.messageFor(e), 'error');
+            }
+            finally {
+                if (editor)
+                    editor.disabled = false;
+            }
+            return;
+        }
+        if (form.dataset.form.startsWith('companion-')) {
+            if (this.identity?.role === 'admin')
+                await this.mobileCompanions.submit(form.dataset.form, data);
+            return;
+        }
+        if (form.dataset.form.startsWith('transfer-')) {
+            if (this.identity?.role === 'admin')
+                await this.sessionTransfers.submit(form.dataset.form, data);
+            return;
+        }
+        if (form.dataset.form.startsWith('mobile-')) {
+            if (this.identity?.role === 'admin')
+                await this.mobileDevices.submit(form.dataset.form, data);
+            return;
+        }
         if (form.dataset.form.startsWith('manager-')) {
             if (this.api.getToken().startsWith('mgr_key_'))
                 return;
@@ -679,7 +894,27 @@ export class ViperConnectApp {
         }
         const finishSubmitFeedback = SAVE_FORM_NAMES.has(form.dataset.form) ? this.beginSubmitFeedback(form) : undefined;
         try {
-            if (form.dataset.form === 'session-destination') {
+            if (form.dataset.form === 'contact-name') {
+                if (this.modal?.type !== 'contact-name')
+                    return;
+                const editing = this.modal;
+                try {
+                    await saveContactName(this.api, editing.phone, editing.contact || { phone_number: `${data.get('phone_number') || ''}` }, `${data.get('full_name') || ''}`);
+                }
+                catch (error) {
+                    this.showToast(this.messageFor(error), 'error');
+                    return;
+                }
+                if (this.modal === editing)
+                    this.modal = undefined;
+                if (this.selectedPhone === editing.phone) {
+                    if (!editing.contact)
+                        this.contactsQuery = '';
+                    await this.loadContacts(true);
+                }
+                this.showToast(t('Nome do contato salvo.'), 'success');
+            }
+            else if (form.dataset.form === 'session-destination') {
                 try {
                     await this.api.saveSessionDestination(sessionDestinationPayload(data), `${data.get('id') || ''}`);
                     this.editingSessionDestination = '';
@@ -949,7 +1184,26 @@ export class ViperConnectApp {
     }
     handleFilter(event) {
         const input = event.target;
-        if (input.dataset.filter === 'query') {
+        if (input.matches('[data-companion-history]')) {
+            this.mobileCompanions.setSendHistory(input.checked);
+            return;
+        }
+        if (input.matches('[data-companion-code]')) {
+            const field = input;
+            const position = formatCompanionCode(field.value.slice(0, field.selectionStart ?? field.value.length)).length;
+            field.value = formatCompanionCode(field.value);
+            field.setSelectionRange(position, position);
+            return;
+        }
+        if (input.dataset.filter === 'mobile-query') {
+            this.mobileDevices.query = input.value;
+            this.renderAndRestoreFilter('mobile-query');
+        }
+        else if (input.dataset.filter === 'mobile-status') {
+            this.mobileDevices.statusFilter = input.value;
+            this.render();
+        }
+        else if (input.dataset.filter === 'query') {
             this.query = input.value;
             this.sessionVisibleLimit = PAGE_SIZE;
             this.render();
@@ -1062,6 +1316,8 @@ export class ViperConnectApp {
         this.identity = null;
         this.manager.reset();
         this.contacts = emptyContactState();
+        this.mobileDevices?.reset();
+        this.sessionTransfers?.reset();
         this.groups = [];
         this.query = '';
         this.statusFilter = 'all';
@@ -1137,6 +1393,11 @@ export class ViperConnectApp {
             if (token !== this.api.getToken())
                 return;
             this.sessions = sessions;
+            await this.mobileDevices.load(this.identity?.role === 'admin');
+            if (this.identity?.role === 'admin')
+                await this.sessionTransfers.refresh();
+            if (token !== this.api.getToken())
+                return;
             this.refreshIn = REFRESH_SECONDS;
             this.loginError = '';
             if (this.selectedPhone) {
@@ -1159,14 +1420,14 @@ export class ViperConnectApp {
         }
         finally {
             this.loading = false;
-            if (shouldRenderBackgroundUpdate(!!this.modal))
+            if (shouldRenderBackgroundUpdate(this.tab === 'profile' || !!this.modal || !!this.mobileDevices?.modal || !!this.sessionTransfers?.modal || !!this.mobileCompanions?.isCapturing))
                 this.render();
         }
     }
     tickRefresh() {
-        if (!this.api.getToken() || this.modal || this.manager?.pending)
+        if (!this.api.getToken() || this.modal || this.manager?.pending || this.mobileDevices.modal || this.mobileDevices.busy || this.sessionTransfers.modal || this.sessionTransfers.busy)
             return;
-        if (this.view === 'documentation' || this.view === 'session-webhooks' || this.view === 'users' || this.view === 'account')
+        if (this.view === 'documentation' || this.view === 'session-webhooks' || this.view === 'users' || this.view === 'account' || this.view === 'google-maps')
             return;
         if (this.view === 'queues') {
             if (this.queuesLoading || this.queueMessagesLoading)
@@ -1218,10 +1479,13 @@ export class ViperConnectApp {
             label.textContent = `${this.refreshIn}s`;
     }
     async openSession(phone) {
+        this.mobileCompanions?.reset();
         const session = this.findSession(phone);
         if (!session)
             return;
         this.selectedPhone = phone;
+        this.overviewContactCount = undefined;
+        this.contactCountRevision = (this.contactCountRevision || 0) + 1;
         this.webhookHistoryRequest = (this.webhookHistoryRequest || 0) + 1;
         this.webhookHistorySnapshots = [];
         this.webhookHistoryError = '';
@@ -1239,6 +1503,7 @@ export class ViperConnectApp {
         this.render();
         if (isLegacySession(session))
             return;
+        void this.loadOverviewContactCount(phone, this.contactCountRevision);
         try {
             const detail = await this.api.session(phone);
             this.replaceSession(phone, {
@@ -1257,15 +1522,41 @@ export class ViperConnectApp {
         }
     }
     async openSessionTab(tab) {
+        this.messages?.close();
+        this.ownProfile?.reset();
+        this.mobileCompanions?.reset();
         this.tab = tab;
         this.sectionError = '';
         this.render();
+        if (tab === 'devices' && this.identity?.role === 'admin') {
+            const id = this.findSession(this.selectedPhone)?.mobilePrimaryDraftId;
+            if (id)
+                this.mobileCompanions.open(id);
+        }
+        if (tab === 'overview' && this.selectedPhone)
+            void this.loadOverviewContactCount(this.selectedPhone, ++this.contactCountRevision);
+        if (tab === 'profile')
+            await this.ownProfile.open(this.selectedPhone);
+        if (tab === 'messages')
+            await this.messages.open(this.selectedPhone);
         if (tab === 'contacts' && !this.contacts.items.length)
             await this.loadContacts(true);
         if (tab === 'groups' && !this.groups.length)
             await this.loadGroups(true);
         if (tab === 'webhooks')
             await this.loadWebhookHistory();
+    }
+    async loadOverviewContactCount(phone, revision) {
+        try {
+            const page = await this.api.contacts(phone, '0', 1, '');
+            if (phone !== this.selectedPhone || revision !== this.contactCountRevision)
+                return;
+            this.overviewContactCount = page.total_count;
+            if (this.view === 'dashboard' && this.tab === 'overview' && !this.modal)
+                this.render();
+        }
+        catch {
+        }
     }
     async loadWebhookHistory() {
         if (this.identity?.role === 'user')
@@ -1829,6 +2120,19 @@ export class ViperConnectApp {
         const session = this.findSession(phone);
         if (!session)
             return;
+        if (session.mobilePrimaryDraftId) {
+            if (this.identity?.role !== 'admin') {
+                this.showToast('Solicite ao administrador a conexão do dispositivo principal.');
+                return;
+            }
+            await this.mobileDevices.load(true);
+            if (!this.mobileDevices.devices.some(device => device.id === session.mobilePrimaryDraftId)) {
+                this.showToast('Cadastro do dispositivo indisponível. Atualize a lista.');
+                return;
+            }
+            this.mobileDevices.action('mobile-details', session.mobilePrimaryDraftId);
+            return;
+        }
         this.modal = { type: 'connection', phone };
         this.connectionEvent = undefined;
         this.connectionLoading = true;
@@ -1854,6 +2158,10 @@ export class ViperConnectApp {
         }
     }
     async requestConnection(phone) {
+        if (this.findSession(phone)?.mobilePrimaryDraftId) {
+            await this.openConnection(phone);
+            return;
+        }
         this.connectionLoading = true;
         this.connectionEvent = undefined;
         this.watchConnection(phone);
@@ -1900,86 +2208,103 @@ export class ViperConnectApp {
         this.render();
     }
     render() {
+        if (!this.api.getToken() || this.tab !== 'messages' || this.view !== 'dashboard' || !this.selectedPhone)
+            this.messages?.close();
+        if (!this.api.getToken() || this.tab !== 'profile' || this.view !== 'dashboard')
+            this.ownProfile?.reset();
+        if (this.view !== 'dashboard' || this.tab !== 'devices' || !this.selectedPhone || !this.api.getToken())
+            this.mobileCompanions?.reset();
         if (!this.api.getToken()) {
             this.root.innerHTML = renderLogin(escapeHtml(this.loginError));
             return;
         }
-        if (this.identity?.role === 'user' && ['queues', 'redis', 'session-webhooks', 'users'].includes(this.view))
+        if (this.identity?.role !== 'admin' && ['users', 'google-maps'].includes(this.view))
+            this.view = 'dashboard';
+        if (this.identity?.role === 'user' && ['queues', 'redis', 'session-webhooks'].includes(this.view))
             this.view = 'dashboard';
         const selected = this.findSession(this.selectedPhone);
-        const content = this.view === 'users' || this.view === 'account'
-            ? this.manager.renderPage(this.identity?.role === 'admin')
-            : this.view === 'session-webhooks'
-                ? renderSessionWebhooks(this.sessionDestinations, this.sessions, this.editingSessionDestination, this.sessionDestinationError, this.selectedPhone)
-                : this.view === 'documentation'
-                    ? renderDocumentationPage()
-                    : this.view === 'voip'
-                        ? this.identity?.role === 'user' ? renderScopedVoip(this.voip, this.voipLoading, this.voipError, this.voipRecordingUrls, this.sessions.map(sessionPhone)) : renderVoipPage(this.voip, this.voipLoading, this.voipError, {
-                            tab: this.voipTab,
-                            query: this.voipQueries[this.voipTab] || '',
-                            showOfflineAutomaticExtensions: this.showOfflineAutomaticExtensions,
-                            recordingUrls: this.voipRecordingUrls,
-                            transferAudioUrls: this.voipTransferAudioUrls,
-                            routerResult: this.voipRouterResult,
-                        })
-                        : this.view === 'redis'
-                            ? renderRedisPage({
-                                keys: this.redisKeys,
-                                tree: this.redisTree,
-                                expandedPrefixes: [...this.redisExpandedPrefixes],
-                                searchCollapsedPrefixes: [...this.redisSearchCollapsedPrefixes],
-                                sessions: this.sessions,
-                                sessionFilter: this.redisSession,
-                                query: this.redisQuery,
-                                selected: this.selectedRedisKey,
-                                queryResult: this.redisQueryResult,
-                                loading: this.redisLoading,
-                                refreshIn: this.redisRefreshIn,
-                                error: this.redisError,
-                            })
-                            : this.view === 'queues'
-                                ? renderQueuesPage({
-                                    queues: this.queues,
-                                    sessions: this.sessions,
-                                    sessionPhoneFilter: this.queueSession,
-                                    query: this.queueQuery,
-                                    loading: this.queuesLoading,
-                                    refreshIn: this.queueRefreshIn,
-                                    visibleLimit: this.queueVisibleLimit,
-                                    selectedQueue: this.selectedQueue,
-                                    messages: this.queueMessages,
-                                    messagesLoading: this.queueMessagesLoading,
-                                    messageLimit: this.queueMessageLimit,
-                                    messageOrder: this.queueMessageOrder,
-                                    metricFilter: this.queueMetricFilter,
-                                    error: this.queueError,
+        const content = this.view === 'google-maps' ? renderSettings('google-maps', renderGoogleMapsSettings())
+            : this.view === 'users' ? renderSettings('users', this.manager.renderPage(true))
+                : this.view === 'account'
+                    ? this.manager.renderPage(this.identity?.role === 'admin')
+                    : this.view === 'session-webhooks'
+                        ? renderSessionWebhooks(this.sessionDestinations, this.sessions, this.editingSessionDestination, this.sessionDestinationError, this.selectedPhone)
+                        : this.view === 'documentation'
+                            ? renderDocumentationPage()
+                            : this.view === 'voip'
+                                ? this.identity?.role === 'user' ? renderScopedVoip(this.voip, this.voipLoading, this.voipError, this.voipRecordingUrls, this.sessions.map(sessionPhone)) : renderVoipPage(this.voip, this.voipLoading, this.voipError, {
+                                    tab: this.voipTab,
+                                    query: this.voipQueries[this.voipTab] || '',
+                                    showOfflineAutomaticExtensions: this.showOfflineAutomaticExtensions,
+                                    recordingUrls: this.voipRecordingUrls,
+                                    transferAudioUrls: this.voipTransferAudioUrls,
+                                    routerResult: this.voipRouterResult,
                                 })
-                                : selected
-                                    ? renderSessionPage({
-                                        canManageUsers: this.identity?.role === 'admin',
-                                        restricted: this.identity?.role === 'user',
-                                        webhookHistoryHtml: this.identity?.role === 'user' ? '' : renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
-                                        session: selected,
-                                        tab: this.tab,
-                                        contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
-                                        contactsHasMore: this.contacts.hasMore || filterContacts(this.contacts.items, this.contactsQuery).length > this.contactsVisibleLimit,
-                                        contactCount: this.contacts.totalCount,
-                                        contactsQuery: this.contactsQuery,
-                                        groups: filterGroups(this.groups, this.groupsQuery),
-                                        groupsHasMore: this.groupsHasMore,
-                                        groupsQuery: this.groupsQuery,
-                                        loadingSection: this.loadingSection,
-                                        sectionError: this.sectionError,
-                                    })
-                                    : renderDashboard({
-                                        canCreate: this.identity?.role !== 'user',
+                                : this.view === 'redis'
+                                    ? renderRedisPage({
+                                        keys: this.redisKeys,
+                                        tree: this.redisTree,
+                                        expandedPrefixes: [...this.redisExpandedPrefixes],
+                                        searchCollapsedPrefixes: [...this.redisSearchCollapsedPrefixes],
                                         sessions: this.sessions,
-                                        query: this.query,
-                                        status: this.statusFilter,
-                                        loading: this.loading,
-                                        refreshIn: this.refreshIn,
-                                        visibleLimit: this.sessionVisibleLimit,
-                                    });
+                                        sessionFilter: this.redisSession,
+                                        query: this.redisQuery,
+                                        selected: this.selectedRedisKey,
+                                        queryResult: this.redisQueryResult,
+                                        loading: this.redisLoading,
+                                        refreshIn: this.redisRefreshIn,
+                                        error: this.redisError,
+                                    })
+                                    : this.view === 'queues'
+                                        ? renderQueuesPage({
+                                            queues: this.queues,
+                                            sessions: this.sessions,
+                                            sessionPhoneFilter: this.queueSession,
+                                            query: this.queueQuery,
+                                            loading: this.queuesLoading,
+                                            refreshIn: this.queueRefreshIn,
+                                            visibleLimit: this.queueVisibleLimit,
+                                            selectedQueue: this.selectedQueue,
+                                            messages: this.queueMessages,
+                                            messagesLoading: this.queueMessagesLoading,
+                                            messageLimit: this.queueMessageLimit,
+                                            messageOrder: this.queueMessageOrder,
+                                            metricFilter: this.queueMetricFilter,
+                                            error: this.queueError,
+                                        })
+                                        : selected
+                                            ? renderSessionPage({
+                                                canManageUsers: this.identity?.role === 'admin',
+                                                restricted: this.identity?.role === 'user',
+                                                webhookHistoryHtml: this.identity?.role === 'user' ? '' : renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
+                                                companionsHtml: this.tab === 'devices' ? this.mobileCompanions.html(selected, this.identity?.role !== 'admin') : '',
+                                                profileHtml: this.tab === 'profile' ? this.ownProfile.html(this.selectedPhone, this.identity?.role === 'admin') : '',
+                                                messagesHtml: this.tab === 'messages' ? this.messages.html() : '',
+                                                session: selected,
+                                                tab: this.tab,
+                                                contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
+                                                contactsHasMore: this.contacts.hasMore || filterContacts(this.contacts.items, this.contactsQuery).length > this.contactsVisibleLimit,
+                                                contactCount: this.overviewContactCount,
+                                                contactsQuery: this.contactsQuery,
+                                                groups: filterGroups(this.groups, this.groupsQuery),
+                                                groupsHasMore: this.groupsHasMore,
+                                                groupsQuery: this.groupsQuery,
+                                                loadingSection: this.loadingSection,
+                                                sectionError: this.sectionError,
+                                            })
+                                            : renderDashboard({
+                                                mobileButton: this.identity?.role === 'admin' ? this.mobileDevices.renderButton() : '',
+                                                mobileGrid: this.identity?.role === 'admin' ? this.mobileDevices.renderGrid(this.sessions) : '',
+                                                backupPanel: this.identity?.role === 'admin' ? this.sessionTransfers.html() : '',
+                                                mobileSessionPhones: this.identity?.role === 'admin' ? this.mobileDevices.listedSessionPhones(this.sessions) : [],
+                                                canCreate: this.identity?.role !== 'user',
+                                                sessions: this.sessions,
+                                                query: this.query,
+                                                status: this.statusFilter,
+                                                loading: this.loading,
+                                                refreshIn: this.refreshIn,
+                                                visibleLimit: this.sessionVisibleLimit,
+                                            });
         this.root.innerHTML =
             renderLayout({
                 identity: this.identity,
@@ -1992,7 +2317,13 @@ export class ViperConnectApp {
             }) +
                 this.renderModal() +
                 (this.manager?.renderConfirmation() || '') +
+                this.mobileDevices.renderDialog() +
+                this.sessionTransfers.dialog() +
                 this.renderToastHtml();
+        if (this.identity?.role === 'admin' && this.view === 'dashboard' && this.tab === 'profile')
+            this.ownProfile?.mountMap();
+        if (this.view === 'dashboard' && this.tab === 'messages')
+            this.messages?.mount();
     }
     canAccessScopedRecording(id) {
         return this.voip?.capabilities?.recordings === true && !!scopedRecording(this.voip, this.sessions.map(sessionPhone), id);
@@ -2018,6 +2349,8 @@ export class ViperConnectApp {
     renderModal() {
         if (!this.modal)
             return '';
+        if (this.modal.type === 'contact-name')
+            return renderContactEditor(this.modal.contact);
         if (this.modal.type === 'new-session')
             return renderNewSessionModal();
         if (this.modal.type === 'queue-purge')

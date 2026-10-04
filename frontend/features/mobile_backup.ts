@@ -3,7 +3,7 @@ import { ApiClient, ApiError } from '../core/api.js'
 export function renderMobileBackup(restore: boolean, busy: boolean): string {
   if (busy) return `<div class="stack" role="status" aria-live="polite" aria-busy="true"><h3>${restore ? 'Restaurando dispositivo…' : 'Gerando backup…'}</h3><p>${restore ? 'Aguarde a validação e a restauração do arquivo.' : 'Aguarde: suspendendo a origem, reunindo os dados e criptografando o arquivo. Isso pode levar alguns instantes.'}</p><p>Não feche esta janela nem atualize a página.</p><button class="btn" disabled>Aguarde…</button></div>`
   return `<form class="stack" data-form="mobile-${restore ? 'restore' : 'backup'}">
-    <p>${restore ? 'Restaure um arquivo .viperdevice em uma instância compatível. O dispositivo entra desconectado, sem webhooks. Cadastros existentes não são sobrescritos.' : 'O backup suspende a conexão e desativa a reconexão automática. Não inclui arquivos de mídia, webhooks ou senhas da infraestrutura.'}</p>
+    <p>${restore ? 'Restaure um arquivo .viperdevice em uma instância compatível. A conexão automática será habilitada no destino, sem webhooks. Cadastros existentes não são sobrescritos.' : 'O backup suspende a conexão e desativa a reconexão automática. Não inclui arquivos de mídia, webhooks ou senhas da infraestrutura.'}</p>
     ${restore ? '' : '<p>Após enviar, a geração continua em segundo plano. Você pode sair da página e voltar à lista de dispositivos para acompanhar. O arquivo criptografado ficará disponível para download por 24 horas após a conclusão; a senha não é armazenada.</p>'}
     ${restore ? '<label class="field"><span>Arquivo de backup</span><input type="file" name="archive" accept=".viperdevice" required></label>' : '<label class="field"><span>Conteúdo do backup</span><select name="mode"><option value="complete">Completo — credenciais, mensagens e contatos (sem arquivos de mídia)</option><option value="credentials">Somente credenciais e estado criptográfico</option></select></label><p class="muted">O completo inclui todos os tipos de mensagem armazenados, índices, IDs e status. Referências de mídias podem expirar ou depender do storage da origem. Limite: 16 MiB por arquivo e 10.000 registros; exceder gera erro, nunca corte silencioso.</p><p>Guarde o arquivo e a senha com segurança. Se voltar a usar a origem, gere outro backup antes de transferir. Não há recuperação da senha.</p>'}
     <label class="field"><span>Senha do backup</span><input type="password" name="password" minlength="12" maxlength="128" autocomplete="new-password" required></label>
@@ -33,8 +33,8 @@ export async function transferMobileBackup(api: ApiClient, restore: boolean, id:
   if (restore) {
     const file = data.get('archive')
     if (!(file instanceof Blob) || !file.size || file.size > 16 * 1024 * 1024) throw new Error('Escolha um backup .viperdevice de até 16 MiB.')
-    await api.request('/manager/mobile-devices/restore', { method: 'POST', body: JSON.stringify({ archive: await file.text(), password, confirmOriginOffline: true }) })
-    return undefined
+    const result = await api.request<{ restored: true; warning?: string }>('/manager/mobile-devices/restore', { method: 'POST', body: JSON.stringify({ archive: await file.text(), password, confirmOriginOffline: true }) })
+    return { restored: true as const, warning: result?.warning }
   }
   if (!id) throw new Error('Selecione um dispositivo.')
   if (password !== data.get('passwordConfirmation')) throw new Error('As senhas não coincidem.')

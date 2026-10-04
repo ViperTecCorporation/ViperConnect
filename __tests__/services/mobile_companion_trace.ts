@@ -1,4 +1,16 @@
-import { companionNodeShape, observeCompanionQuery, safeProviderReason } from '../../src/services/mobile_primary/companion_trace'
+import { companionNodeShape, companionQrShape, observeCompanionQuery, safeProviderReason } from '../../src/services/mobile_primary/companion_trace'
+
+test.each([32, 33])('QR shape counts %i-byte public keys without leaking fields', (size) => {
+  const publicKey = Buffer.alloc(size, 7).toString('base64')
+  const secret = Buffer.alloc(32, 8).toString('base64')
+  const output = companionQrShape(`SECRET,reference,${publicKey},${publicKey},${secret},PRIVATE_PLATFORM`)
+  expect(output).toEqual({ parts: 6, referenceBytes: 16, noiseKeyBytes: size, identityKeyBytes: size, advSecretBytes: 32, platformPresent: true })
+  for (const value of ['SECRET', publicKey, secret, 'PRIVATE_PLATFORM']) expect(JSON.stringify(output)).not.toContain(value)
+})
+
+test('QR shape tolerates missing fields', () => {
+  expect(companionQrShape('')).toEqual({ parts: 1, referenceBytes: 0, noiseKeyBytes: 0, identityKeyBytes: 0, advSecretBytes: 0, platformPresent: false })
+})
 
 test('structure never exposes QR, keys, attributes, or arbitrary error text', () => {
   const output = companionNodeShape({ tag: 'iq', attrs: { id: 'SECRET', SECRET: 'SECRET' }, content: [

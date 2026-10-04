@@ -94,6 +94,14 @@ ZAPO_LINK_PREVIEW_IP_FAMILY: ""
 
 `PROXY_URL` remains authoritative when configured.
 
+**Mobile Primary:** chat connects through Zapo's native TCP transport, not WebSocket.
+Neither `ZAPO_CHAT_SOCKET_IP_FAMILY` nor the global family preference injects an
+HTTP agent into that socket; chat retains native network selection. Upload,
+download and link previews still honor their family preferences. This also
+applies after backup restore: transport is detected from stored credentials.
+Explicit proxies are never bypassed; SOCKS is not supported by the current
+Zapo mobile TCP transport.
+
 ## 3. Publish the web container over IPv6
 
 The recommended topology is:

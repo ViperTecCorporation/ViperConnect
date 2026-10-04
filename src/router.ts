@@ -51,6 +51,9 @@ import { managerRouter } from './controllers/manager_controller'
 import { mobileDeviceRouter } from './controllers/mobile_device_controller'
 import { sessionTransferRouter } from './controllers/session_transfer_controller'
 import { managerAccess } from './services/manager_access'
+import { SessionMessagesController } from './controllers/session_messages_controller'
+import { SessionMessages } from './services/messages/session_messages'
+import { installSessionMessageSocket } from './services/messages/session_message_socket'
 
 export const router = (
   incoming: Incoming,
@@ -74,6 +77,11 @@ export const router = (
   router.use('/manager/session-transfers', sessionTransferRouter())
   router.use('/manager', managerRouter())
   router.use(managerAccess())
+  installSessionMessageSocket(socket, getConfig)
+  const sessionMessages = new SessionMessagesController(new SessionMessages(getConfig), getConfig)
+  router.get('/:version/:phone/conversations', middleware, sessionMessages.handle.bind(sessionMessages))
+  router.get('/:version/:phone/conversations/:conversationId/messages', middleware, sessionMessages.handle.bind(sessionMessages))
+  router.get('/:version/:phone/messages/:messageId/media', middleware, sessionMessages.handle.bind(sessionMessages))
   const mapsSettings = new GoogleMapsSettingsController()
   router.get('/admin/settings/google-maps', mapsSettings.handle.bind(mapsSettings))
   router.get('/admin/settings/google-maps/browser', mapsSettings.handle.bind(mapsSettings))

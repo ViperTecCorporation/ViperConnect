@@ -1,5 +1,74 @@
 # Messages
 
+## Messages tab in session management
+
+Group names in the sidebar/header come from the session's cached subject. Group bubbles and quotes display the contact name (`sender_name`), resolved by canonical LID/phone in the same session cache; `sender` preserves the original identity. Unknown names fall back to the identifier. Reads use bounded pipelines without scanning contacts, external queries or retention extension.
+
+Contact/group avatars use the authenticated stored-picture endpoint, at most four concurrent lookups and an icon when unavailable. Checks display the strongest historical/captured status: sent (✓), delivered (✓✓), read/played (blue ✓✓). Missing confirmation is not proof of sending or reading. A group's provider-reported status does not establish that every participant read it.
+
+Sending uses the regular messages POST and respects the session's webhook/echo policy. Known individual phone numbers are normalized (including Brazil's mobile ninth digit) and used as recipients while history remains keyed by LID. This lets ViperChat associate outgoing echoes. If no phone is known, LID is preserved and echo association depends on the receiving integration's identity support.
+
+Replies show a short original-message preview, respecting revocation and view-once protection. Clicking the quote scrolls to and highlights the original. If not loaded, `around=<ID>` loads a bounded window within the same conversation, not a full history scan. Expired originals display an unavailable warning and are not fetched from WhatsApp.
+
+Open **Manage → Messages**, next to Groups, to browse direct chats and groups from **Zapo/Redis**. Search names/phones (minimum 3 characters), filter chat type and load more pages. Bubbles show direction, time, group participants and edit/revoke/view-once notices. Contacts, locations and interactive messages have compact summaries; unknown formats show a fallback. Initial avatars use icons without automatic profile-photo lookups.
+
+The compact composer sends text, images, videos, audio files and documents, with cancelable attachments and replies through the original ID. It reuses the existing send route. **Accepted in queue is not delivered**; HTTP/worker failures are displayed and retry requires a user click. Worker video preparation remains active. No microphone recording or helpdesk workflow. Start direct chats using country/area-code phone or LID; select existing groups from the sidebar.
+
+- Default retention: **30 days from the original message date**, for both Zapo/Redis and the `unoapi-message` compatibility copy. Rewrites, edits, receipts and history synchronization do not renew it. `DATA_TTL` (seconds) controls the copy and `ZAPO_REDIS_MESSAGES_TTL_MS` (milliseconds) controls the store. The copy uses 30 days for nonpositive `DATA_TTL`; Zapo store configuration must be positive. Missing/invalid dates use a fixed first-write window; future dates are capped at write time. Panel summaries/overlays follow original age; conversation index writes prune old references. Reads do not fetch remote history or mark chats read. Existing `readOnReceipt`/`readOnReply` policies remain independent.
+- No bulk cleanup is performed: untouched old data physically retains its previous TTL, but message reads no longer return records whose original date has expired. Credentials, Signal, app-state and contacts are unaffected. This Redis policy does not change SQLite.
+- `unoapi-message-status` also has a fixed deadline: incoming statuses consider the located message date/expiry and existing UnoAPI/provider ID status deadlines without extending the earliest one. Scheduled sends, failures and IDs without identifiable message data use up to `DATA_TTL` from the first still-stored status; updates do not renew this window. A receipt arriving after all identifying data has expired may start a new fallback window because the original date is unavailable. Lookups are direct and bounded, with no Redis scan. Untouched old statuses retain their prior TTL; cache expiration does not suppress status webhooks.
+- HTTP, media and live updates require administrator, session token or existing Manager assignment. Socket.IO authorization is separate from QR broadcasts, revalidated before events and removed when leaving the tab.
+- First access builds auxiliary indexes in background under a per-session lock, batches up to 200. The sidebar can fill while indexing. Normal queries use sorted sets/pipelines, without per-view SCAN/KEYS. Search examines at most 200 summaries per page; an empty page can have a continuation.
+- Defaults 30 conversations/50 messages, API maximum 100. Browser limits: 300 conversations/500 messages in the active chat; reload for another window. Invalid/expired cursors return 400/409 and require reload.
+- Media loads **on click**, authenticated, from storage or official Zapo download/decrypt respecting proxy. Maximum 256 MiB/60s. Expired CDN media can fail. View-once/revoked media is never exposed. Blob URLs are released on exit; documents are not executed inline.
+- Only persisted data is available. This is not a full Chatwoot app; no Vue or extra ENV. Redis failures are explicit; SQLite is unsupported by this tab.
+
+```http
+GET /v15.0/5511999999999/conversations?limit=30&kind=all
+GET /v15.0/5511999999999/conversations/123456789%40lid/messages?limit=50
+GET /v15.0/5511999999999/messages/PROVIDER_MESSAGE_ID/media
+```
+
+Lists return `{ data, has_more, next_cursor }`; conversations also return `indexing`. Cursors are opaque. History is newest-first with timestamp ties preserved. Use `reply_id` in `context.message_id` when sending. `ids` (up to 100 comma-separated provider IDs) retrieves affected messages within the chat; `status_ids` recovers pending UnoAPI send statuses after reconnect.
+
+Socket.IO `/ws`: emit `messages:subscribe` with `{ phone, token }`, ACK `{ subscribed: true }` or `{ error }`. `messages:changed` contains only `{ phone, conversation_id, id? }` or compact `outgoing: { id, status, error? }`, never bodies/media. On reconnect reload the first page and active chat. Emit `messages:unsubscribe` on exit. Do not use public QR broadcasts for messages.
+
+Local/lab implementation; documentation updates are not publication or deployment.
+
+## WhatsApp WebView (Zapo)
+
+Use the authenticated `POST /v15.0/{phone}/messages` route with existing session send permissions. Optional fields live in `interactive.action.buttons[].url` and are forwarded in the `cta_url` button JSON. They also apply to carousel card buttons.
+
+`webview_presentation` only accepts `full`; `webview_interaction` accepts booleans, including `false`. Optional `merchant_url` defaults to `link`. Omitting WebView fields preserves previous behavior. Invalid values produce a worker send failure via webhook, not an opening confirmation.
+
+Validated in the lab on **2026-10-03**: an interactive message with `webview_presentation: "full"` and `webview_interaction: true` pointing to `https://vipertec.com.br`. The user confirmed in-app opening on **iPhone in a direct chat** (with `delivered` recorded by the worker) and **Android in tests sent to two groups**. App and operating system versions were not recorded; this does not validate every client, carousel or form interaction.
+
+An ACK or `delivered` alone does not confirm WebView rendering. This extension forwards client hints which may be ignored or open an external browser; validate the devices used by your application. No embedded HTML or form callback is provided; the page handles its own submissions. No extra environment variables. Avoid permanent tokens in URLs.
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "5511999999999",
+  "type": "interactive",
+  "interactive": {
+    "type": "button",
+    "body": { "text": "Abra o formulário pelo botão." },
+    "action": {
+      "buttons": [{
+        "type": "cta_url",
+        "url": {
+          "title": "Abrir formulário",
+          "link": "https://example.com/form",
+          "webview_presentation": "full",
+          "webview_interaction": true
+        }
+      }]
+    }
+  }
+}
+```
+
+
 ## Editor-prepared video: Zapo HD and SD
 
 Set `video.quality` to `hd` (default) or `sd`, alongside `video.link` or

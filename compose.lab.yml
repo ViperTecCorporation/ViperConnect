@@ -106,6 +106,7 @@ services:
     environment:
       <<: *environment
       UNOAPI_PROCESS_ROLE: worker
+      UNOAPI_MOBILE_COMPANION_PEM_LAB: "true"
       MOBILE_REGISTRATION_KEY: ${LAB_AUTH_TOKEN}
 
   video-worker:

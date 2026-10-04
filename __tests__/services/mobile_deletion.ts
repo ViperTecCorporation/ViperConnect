@@ -18,6 +18,14 @@ function fixture() {
 }
 
 describe('full mobile deletion', () => {
+  test('trims surrounding phone whitespace but never changes digits', async () => {
+    const s = fixture()
+    await s.service.remove(id, { ...confirmation, phone: `  ${phone}\n` })
+    expect(s.deps.clear).toHaveBeenCalledWith(phone, expect.anything())
+    const other = fixture()
+    await expect(other.service.remove(id, { ...confirmation, phone: ` ${phone}0 ` })).rejects.toMatchObject({ code: 'mobile_removal_phone_mismatch' })
+    expect(other.deps.clear).not.toHaveBeenCalled()
+  })
   test('migration removal requires completed backup and suspended source, without reload', async () => {
     const s = fixture()
     const completed = jest.fn(async () => true)

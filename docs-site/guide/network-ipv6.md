@@ -103,6 +103,14 @@ ZAPO_LINK_PREVIEW_IP_FAMILY: ""
 
 Se o IPv6 falhar, esses canais tentam IPv4. `PROXY_URL` continua prioritária.
 
+**Mobile Primary:** a conexão de chat usa TCP nativo da Zapo, não WebSocket.
+As preferências `ZAPO_CHAT_SOCKET_IP_FAMILY` e a preferência global não injetam
+um agente HTTP nesse socket; a seleção de rede do chat permanece nativa.
+Upload, download e previews continuam respeitando suas preferências de família.
+Isso também vale após restaurar um backup: o transporte é identificado pelas
+credenciais armazenadas. Um proxy explicitamente configurado nunca é ignorado;
+SOCKS não é suportado pelo transporte TCP mobile da versão atual da Zapo.
+
 ## 3. Publicar o container web em IPv6
 
 A arquitetura recomendada é:

@@ -4,6 +4,8 @@ import { RegistrationVault } from './registration_vault'
 import { companionOperations } from './companion_runtime'
 import { ZAPO_REDIS_KEY_PREFIX } from '../../defaults'
 import { installHistoryBootstrap } from './companion_history_bootstrap'
+import { captureCompanionHistoryChoice } from './companion_history_choice'
+import { installCompanionInventory } from './companion_inventory'
 import { MobileDeviceError } from '../mobile_device_service'
 import { streamCompanionHistory } from './companion_history_stream'
 import { prepareCompanionHistory } from './companion_history_prepare'
@@ -45,6 +47,12 @@ export async function startCompanionHistoryConsumer() {
 export function companionHistoryPlugin(device: string, phone: string, fence: HistoryRuntime['fence'], current: () => boolean) {
   return defineWaClientPlugin({ id: 'uno-companion-history', setup(ctx) {
     if (!enabled()) return
+    ctx.registerDispose(installCompanionInventory(ctx.client.mobile, {
+      identity: () => ctx.deps.authClient.getCurrentCredentials() || undefined,
+      invalidate: jid => ctx.stores.deviceList.deleteUserDevices(jid),
+      sync: jids => ctx.deps.signalDeviceSync.syncDeviceList(jids),
+      current,
+    }))
     // Approved history allowlist for every mobile-primary lab session.
     // Other message types remain archived and usable by normal messaging.
     const strategy = 'inline-text-video-only'
@@ -112,6 +120,19 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
       const job = await service.submit({ target, confirm: true }, payload => amqpPublish(EXCHANGE, COMPANION_HISTORY_QUEUE, '', payload, { type: 'direct', maxRetries: 0 }))
       logger.info({ device, jobId: job.id, strategy }, 'MOBILE_COMPANION_HISTORY_QUEUED_AFTER_KEYS')
       return waitHistorySubmission(() => service.status(job.id), () => runtime.current())
+    }, () => {
+      const choose = captureCompanionHistoryChoice(ctx.client.mobile)
+      return (target, keyIndex) => {
+        const sendHistory = choose(target, keyIndex)
+        if (!sendHistory) logger.info({ device, keyIndex, mandatoryBootstrap: true }, 'MOBILE_COMPANION_HISTORY_SKIPPED')
+        return sendHistory
+      }
+    }, async target => {
+      if (!await runtime.current()) throw new Error('mobile_history_not_connected')
+      await prepareCompanionHistory(() => ctx.deps.messageDispatch.syncSignalSession(target))
+      if (!await runtime.current()) throw new Error('mobile_history_not_connected')
+      // The SDK continues with shareAppStateSyncKeys after its native bootstrap.
+      // No archive job or early key sender is started for this branch.
     })
     ctx.registerDispose(() => { restore(); earlyKeys.dispose(); stopKeyTrace(); provisioned.clear(); if (runtimes.get(device) === runtime) runtimes.delete(device) })
   } })

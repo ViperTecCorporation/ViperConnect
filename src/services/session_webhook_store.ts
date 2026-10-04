@@ -17,6 +17,15 @@ local operation, phone = ARGV[1], ARGV[2]
 local event = cjson.decode(ARGV[3])
 local heartbeatObservation = event.event == 'session.heartbeat'
 local rawConfig = redis.call('GET', KEYS[5])
+-- Explicit local deletion differs from deregistration: keep audit, drop active assignment.
+if operation == 'remove' and ARGV[6] == 'remove_assignment' then
+  local owner = redis.call('HGET', KEYS[7], phone)
+  if owner then
+    redis.call('LPUSH', KEYS[8], cjson.encode({phone=phone,from=owner,to=cjson.null,at=event.occurred_at,actor='session-local-removal'}))
+    redis.call('LTRIM', KEYS[8], 0, 9999)
+    redis.call('HDEL', KEYS[7], phone)
+  end
+end
 if operation == 'save_config' then
   local isNew = not rawConfig
   rawConfig = ARGV[6]
@@ -133,11 +142,11 @@ export class SessionWebhookStore {
     return Object.values(await (await this.redis()).hGetAll(SESSION_WEBHOOK_KEYS.states)).map((row: string) => JSON.parse(row))
   }
 
-  async record(operation: 'observe' | 'register' | 'remove', event: SessionLifecycleEvent, expectedObservedAt = ''): Promise<void> {
+  async record(operation: 'observe' | 'register' | 'remove', event: SessionLifecycleEvent, expectedObservedAt = '', removeAssignment = false): Promise<void> {
     const { destinations, states, outbox, heartbeat } = SESSION_WEBHOOK_KEYS
     await (await this.redis()).eval(SESSION_EVENT_LUA, {
-      keys: [destinations, states, outbox, heartbeat, configKey(event.session.id), sessionPhoneIndexKey()],
-      arguments: [operation, event.session.id, JSON.stringify(event), expectedObservedAt, `${Date.parse(event.occurred_at)}`],
+      keys: [destinations, states, outbox, heartbeat, configKey(event.session.id), sessionPhoneIndexKey(), 'manager-identity:{v1}:assignments', 'manager-identity:{v1}:history'],
+      arguments: [operation, event.session.id, JSON.stringify(event), expectedObservedAt, `${Date.parse(event.occurred_at)}`, removeAssignment ? 'remove_assignment' : ''],
     })
   }
 

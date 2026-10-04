@@ -1,6 +1,7 @@
 export type AppLocale = 'pt-BR' | 'en'
 
 const english = {
+  'Mensagens': 'Messages',
   'Perfil': 'Profile',
   'Nome do contato': 'Contact name',
   'Cancelar': 'Cancel',

@@ -1,6 +1,6 @@
-import { icon } from './icons.js?v=4.0.32-1ab9d8f1';
-import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
-import { getLocale, t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
+import { icon } from './icons.js?v=4.0.34-43ce0548';
+import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
+import { getLocale, t } from '../core/i18n.js?v=4.0.34-43ce0548';
 const renderVersionStatus = (status) => {
     const installed = status.installed_version ? `v${status.installed_version.replace(/^v/i, '')}` : t('Versão');
     if (status.status === 'update_available') {
@@ -38,7 +38,7 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <button class="nav-item ${activeView === 'session-webhooks' ? 'nav-item--active' : ''}" type="button" data-action="open-session-webhooks" title="Webhook">
           ${icon('globe')}<span>Webhook</span>
         </button>` : ''}
-        ${identity?.role === 'admin' ? `<button class="nav-item ${activeView === 'users' ? 'nav-item--active' : ''}" type="button" data-action="open-users">${icon('users')}<span>Usuários</span></button>` : ''}
+        ${identity?.role === 'admin' ? `<button class="nav-item ${activeView === 'users' || activeView === 'google-maps' ? 'nav-item--active' : ''}" type="button" data-action="open-settings">${icon('settings')}<span>Configurações</span></button>` : ''}
         ${identity?.role === 'user' ? `<button class="nav-item ${activeView === 'voip' ? 'nav-item--active' : ''}" type="button" data-action="open-voip">${icon('phone')}<span>Telefonia</span></button>` : ''}
         ${identity?.role === 'user' && canManageAccount ? `<button class="nav-item ${activeView === 'account' ? 'nav-item--active' : ''}" type="button" data-action="open-account">${icon('settings')}<span>Minha conta / Chaves API</span></button>` : ''}
         <button class="nav-item ${activeView === 'documentation' ? 'nav-item--active' : ''}" type="button" data-action="open-documentation" title="${t('Documentação')}">

@@ -24,6 +24,41 @@ function setup(now = () => 1000000) {
   return { rows, vault, provider, enabled, drafts, redis, service }
 }
 describe('registration vault', () => {
+  test.each(['sms', 'voice'] as const)('no_routes for %s allows only alternate delivery', async method => {
+    const s = setup(); const store = await fixture(); const key = REGISTRATION_PREFIX + draft.id
+    const other = method === 'sms' ? 'voice' : 'sms'
+    const state = { status: 'blocked', error: 'provider_failed', method, updatedAt: 1000000, store, advSecret: 'ab'.repeat(32), diagnostic: { stage: 'request', reason: 'provider_response', providerReason: 'no_routes' } }
+    s.rows.set(key, s.vault.seal(draft.id, state))
+    expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: method === 'voice', canResendVoice: method === 'sms' })
+    await expect(s.service.execute(draft.id, 'request', { confirm: true, method: other })).rejects.toMatchObject({ status: 409 })
+    await expect(s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true, method })).rejects.toMatchObject({ status: 409 })
+    s.provider.mockResolvedValue({ store: { ...store, codePending: true } })
+    await s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true, method: other })
+    expect(s.provider).toHaveBeenCalledTimes(1)
+    expect(s.provider).toHaveBeenCalledWith(expect.objectContaining({ action: 'request', method: other, store }))
+    for (const diagnostic of [{ ...state.diagnostic, waitSeconds: 60 }, { ...state.diagnostic, providerPending: 'captcha' }]) {
+      s.rows.set(key, s.vault.seal(draft.id, { ...state, diagnostic }))
+      expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: false, canResendVoice: false })
+    }
+  })
+
+  test('additional confirmation obeys independent remote deadlines, not the old five-minute experiment', async () => {
+    let now = 1499999
+    const s = setup(() => now); const key = REGISTRATION_PREFIX + draft.id
+    const state = { status: 'blocked', error: 'provider_failed', updatedAt: 0, store: { codePending: true }, requestAttempts: 20, diagnostic: { stage: 'verify', reason: 'provider_response', providerReason: 'device_confirm_or_second_code', smsWaitSeconds: 1500, voiceWaitSeconds: 1800 } }
+    s.rows.set(key, s.vault.seal(draft.id, state))
+    expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: false, canResendVoice: false, retryAt: 1500000, retryAtVoice: 1800000 })
+    await expect(s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true })).rejects.toMatchObject({ status: 409 })
+    now = 1500000
+    expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: true, canResendVoice: false })
+    now = 1800000
+    expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: true, canResendVoice: true })
+    for (const diagnostic of [{ stage: 'verify', providerReason: 'device_confirm_or_second_code', reason: 'provider_response' }, { ...state.diagnostic, providerPending: 'captcha' }]) {
+      s.rows.set(key, s.vault.seal(draft.id, { ...state, diagnostic }))
+      expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: false, canResendVoice: false })
+    }
+    expect(s.provider).not.toHaveBeenCalled()
+  })
   test('round-trip, randomized ciphertext, and no plaintext secret', () => {
     const v = new RegistrationVault('aa'.repeat(32)); const data = { secret: 'sensitive' }
     const envelope = v.seal('one', data)
@@ -36,6 +71,21 @@ describe('registration vault', () => {
   test.each(['', 'secret', 'ff'.repeat(31)])('rejects malformed wrapping key', key => expect(() => new RegistrationVault(key)).toThrow())
 })
 describe('registration orchestration', () => {
+  test('first voice request persists method; switching methods respects independent remote waits', async () => {
+    let now = 1000000
+    const s = setup(() => now), store = await fixture()
+    s.provider.mockResolvedValueOnce({ store }).mockResolvedValueOnce({ store: { ...store, codePending: true }, diagnostic: { stage: 'request', reason: 'unknown', waitSeconds: 60, smsWaitSeconds: 0, voiceWaitSeconds: 60 } })
+    const result = await s.service.execute(draft.id, 'request', { confirm: true, method: 'voice' })
+    expect(result).toMatchObject({ method: 'voice', canResendSms: true, canResendVoice: false })
+    expect(s.provider).toHaveBeenLastCalledWith(expect.objectContaining({ method: 'voice' }))
+    await expect(s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true, method: 'voice' })).rejects.toMatchObject({ code: 'mobile_registration_state_conflict' })
+    now += 60000
+    expect(await s.service.status(draft.id)).toMatchObject({ canResendVoice: true })
+    s.provider.mockResolvedValue({ store: { ...store, codePending: true } })
+    await s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true, method: 'sms' })
+    expect(s.provider).toHaveBeenLastCalledWith(expect.objectContaining({ method: 'sms', store: expect.objectContaining({ noiseKeyPair: store.noiseKeyPair }) }))
+    await expect(s.service.execute(draft.id, 'request', { confirm: true, method: 'email' })).rejects.toMatchObject({ status: 400 })
+  })
   test.each([5, 20, undefined])('too_recent has no attempt ceiling for counter %s', async requestAttempts => {
     let now = 3810999
     const s = setup(() => now); const key = REGISTRATION_PREFIX + draft.id
@@ -82,7 +132,7 @@ describe('registration orchestration', () => {
     const results = await Promise.allSettled([1, 2].map(() => s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true })))
     expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1)
     expect(s.provider).toHaveBeenCalledTimes(1)
-    expect(s.provider).toHaveBeenCalledWith({ action: 'request', draft, store })
+    expect(s.provider).toHaveBeenCalledWith({ action: 'request', draft, store, method: 'sms' })
     expect(s.vault.open<any>(draft.id, s.rows.get(key)!)).toMatchObject({ status: 'code_required', store, advSecret: state.advSecret, requestAttempts: 4 })
   })
   test('renewed too_recent restarts the wait and other refusals remain blocked', async () => {
@@ -99,9 +149,9 @@ describe('registration orchestration', () => {
     expect(await s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true })).toMatchObject({ status: 'blocked', canResendSms: false })
     expect(s.vault.open<any>(draft.id, s.rows.get(key)!)).toMatchObject({ updatedAt: 7200000, requestAttempts: 4 })
   })
-  test('additional confirmation permits a bounded explicit SMS experiment without rotating keys', async () => {
+  test('additional confirmation permits explicit resend after remote wait without rotating keys', async () => {
     const s = setup(); const store = { ...await fixture(), codePending: true }; const key = REGISTRATION_PREFIX + draft.id
-    const state = { status: 'blocked', error: 'provider_failed', store, advSecret: 'ab'.repeat(32), updatedAt: 0, requestAttempts: 2, verificationAttempts: 3, diagnostic: { stage: 'verify', reason: 'provider_response', providerReason: 'device_confirm_or_second_code' } }
+    const state = { status: 'blocked', error: 'provider_failed', store, advSecret: 'ab'.repeat(32), updatedAt: 0, requestAttempts: 2, verificationAttempts: 3, diagnostic: { stage: 'verify', reason: 'provider_response', providerReason: 'device_confirm_or_second_code', waitSeconds: 300 } }
     s.rows.set(key, s.vault.seal(draft.id, state))
     expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: true })
     await expect(s.service.execute(draft.id, 'request', { confirm: true })).rejects.toMatchObject({ status: 409 })
@@ -110,7 +160,7 @@ describe('registration orchestration', () => {
     expect(s.provider).toHaveBeenCalledTimes(1)
     expect(s.vault.open<any>(draft.id, s.rows.get(key)!)).toMatchObject({ requestAttempts: 3, advSecret: state.advSecret, verificationAttempts: 3 })
     s.rows.set(key, s.vault.seal(draft.id, { ...state, requestAttempts: 3 }))
-    expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: false })
+    expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: true })
     s.rows.set(key, s.vault.seal(draft.id, { ...state, error: 'rate_limited' }))
     expect(await s.service.status(draft.id)).toMatchObject({ canResendSms: false })
   })
@@ -148,7 +198,7 @@ describe('registration orchestration', () => {
     await expect(s.service.execute(draft.id, 'request', { confirm: true })).rejects.toMatchObject({ status: 409 })
     s.provider.mockResolvedValueOnce({ error: 'rate_limited', diagnostic: { stage: 'request', reason: 'rate_limited', providerReason: 'too_recent', waitSeconds: 300 } })
     expect(await s.service.execute(draft.id, 'request', { confirm: true, confirmResend: true })).toMatchObject({ status: 'blocked', canResendSms: false, retryAt: 420000 })
-    expect(s.provider).toHaveBeenLastCalledWith({ action: 'request', draft, store: before.store })
+    expect(s.provider).toHaveBeenLastCalledWith({ action: 'request', draft, store: before.store, method: 'sms' })
     expect(s.vault.open<any>(draft.id, s.rows.get(key)!)).toMatchObject({ advSecret: before.advSecret, requestAttempts: 2 })
   })
   test('missing SMS without a remote wait permits explicit resend, never challenge or incomplete state', async () => {

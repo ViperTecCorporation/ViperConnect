@@ -1,4 +1,15 @@
 import { MobileCompanionsPanel, formatCompanionCode } from '../../frontend/features/mobile_companions_panel'
+
+test('server-only device is visible without invented date or unsupported revoke button', () => {
+  const panel = new MobileCompanionsPanel({} as any, jest.fn(), {} as any) as any
+  panel.rows = [{ deviceJid: '123:40@s.whatsapp.net', canRevoke: false }]
+  const html = panel.html({ mobilePrimaryDraftId: 'test' }, false)
+  expect(html).toContain('Dispositivo 40')
+  expect(html).toContain('Data não disponível')
+  expect(html).toContain('Sem registro local')
+  expect(html).not.toContain('data-action="companion-revoke"')
+  expect(html).not.toContain('Invalid Date')
+})
 import * as qrReader from '../../frontend/features/qr_reader'
 
 test.each([['abcd', 'ABCD'], ['abcd-efgh', 'ABCD-EFGH'], ['ab12 cd34', 'AB12-CD34'], ['ab!12_cd34xyz', 'AB12-CD34'], ['', '']])('formats pairing input %s', (input, expected) => {
@@ -32,11 +43,12 @@ test('renders enabled controls without claiming an empty list and hides admin co
   expect(panel.html(session, true)).not.toContain('companion-code')
 })
 
-test('only pairing code is exposed; all QR entry points are absent from the panel', () => {
+test('pairing code remains available alongside QR capture without a raw QR input', () => {
   const panel = new MobileCompanionsPanel({} as any, jest.fn(), {} as any)
   const html = panel.html({ mobilePrimaryDraftId: 'test' }, false)
   expect(html).toContain('data-form="companion-code"')
-  for (const marker of ['companion-qr', 'companion-image', 'companion-camera', 'companion-stop-camera', 'data-companion-video', 'QR Code']) expect(html).not.toContain(marker)
+  expect(html).not.toContain('data-form="companion-qr"')
+  for (const marker of ['companion-image', 'companion-camera', 'companion-stop-camera', 'data-companion-video', 'QR Code']) expect(html).toContain(marker)
   expect(html).toContain('Inclui somente textos e vídeos')
 })
 
@@ -65,6 +77,34 @@ test('pairing code keeps confirmation and normalization', async () => {
     await panel.submit('companion-code', data)
     expect(panel.command).toHaveBeenCalledWith('code', 'ABCDEFGH')
   } finally { (globalThis as any).window = previous }
+})
+
+test('QR image and camera controls are available when idle, disabled while pairing and hidden from restricted users', () => {
+  const panel = new MobileCompanionsPanel({} as any, jest.fn(), {} as any) as any
+  const session = { mobilePrimaryDraftId: 'test' } as any
+  const html = panel.html(session, false)
+  expect(html).toContain('data-form="companion-image"')
+  expect(html).toContain('data-action="companion-camera" >')
+  expect(html).toContain('data-companion-video')
+  panel.busy = true
+  expect(panel.html(session, false)).toContain('data-action="companion-camera" disabled')
+  expect(panel.html(session, true)).not.toContain('data-form="companion-image"')
+})
+
+test.each(['qr', 'code'])('history checkbox sends opt-out for %s and keeps it across rendering', async action => {
+  const api = { request: jest.fn().mockResolvedValueOnce({ id: 'op' }).mockResolvedValue({ state: 'done' }) }
+  const panel = new MobileCompanionsPanel(api as any, jest.fn(), {} as any) as any
+  panel.device = 'test'
+  expect(panel.html({ mobilePrimaryDraftId: 'test' }, false)).toContain('data-companion-history checked')
+  panel.setSendHistory(false)
+  expect(panel.html({ mobilePrimaryDraftId: 'test' }, false)).not.toContain('data-companion-history checked')
+  await panel.command(action, 'test-value')
+  await Promise.resolve()
+  expect(JSON.parse(api.request.mock.calls[0][1].body)).toEqual({ action, value: 'test-value', confirm: true, sendHistory: false })
+  panel.busy = true; panel.setSendHistory(true)
+  expect(panel.sendHistory).toBe(false)
+  panel.reset()
+  expect(panel.sendHistory).toBe(true)
 })
 
 describe('camera consent and lifetime', () => {

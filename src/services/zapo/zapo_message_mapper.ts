@@ -250,7 +250,16 @@ const nativeButton = (button: any) => {
   if (button?.type === 'url' || button?.type === 'cta_url' || button?.url) {
     const value = button.url || button
     const url = typeof value === 'string' ? value : value.link || value.url || ''
-    return { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: button.text || value.title || 'Abrir', url, merchant_url: url }) }
+    // Experimental client hints; forwarding them does not prove in-app rendering.
+    const presentation = value.webview_presentation
+    const interaction = value.webview_interaction
+    if (presentation !== undefined && presentation !== 'full') throw new SendError(400, 'webview_presentation_must_be_full')
+    if (interaction !== undefined && typeof interaction !== 'boolean') throw new SendError(400, 'webview_interaction_must_be_boolean')
+    return { name: 'cta_url', buttonParamsJson: JSON.stringify({
+      display_text: button.text || value.title || 'Abrir', url, merchant_url: value.merchant_url || url,
+      ...(presentation !== undefined ? { webview_presentation: presentation } : {}),
+      ...(interaction !== undefined ? { webview_interaction: interaction } : {}),
+    }) }
   }
   if (button?.type === 'call' || button?.type === 'cta_call' || button?.call) {
     const value = button.call || button

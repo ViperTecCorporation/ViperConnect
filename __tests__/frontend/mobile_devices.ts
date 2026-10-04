@@ -14,6 +14,18 @@ const form = (values: Record<string, string>) => {
   Object.entries(values).forEach(([key, value]) => data.set(key, value))
   return data
 }
+test('voice registration requires consent and explicitly sends voice without changing verification', async () => {
+  const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.selected = draft
+  panel.registration = { status: 'idle' }
+  expect(panel.renderRegistration()).toContain('Receber código por ligação')
+  await panel.submit('mobile-voice', form({})); expect(api.request).not.toHaveBeenCalled()
+  api.request.mockResolvedValue({ status: 'code_required', method: 'voice', canResendVoice: false })
+  await panel.submit('mobile-voice', form({ confirmSms: 'on' }))
+  expect(api.request).toHaveBeenLastCalledWith(expect.stringContaining('/registration/request'), { method: 'POST', body: '{"confirm":true,"method":"voice"}' })
+  expect(panel.renderRegistration()).toContain('Código recebido por SMS ou ligação')
+  api.request.mockClear()
+  await panel.submit('mobile-voice', form({ confirmSms: 'on' })); expect(api.request).not.toHaveBeenCalled()
+})
 describe('experimental mobile devices panel', () => {
   test('uses Novo dispositivo without experimental title or introductory notice', () => {
     const { panel } = setup()
@@ -50,7 +62,7 @@ describe('experimental mobile devices panel', () => {
     panel.registration = { status: 'code_required', canResendSms: true }
     const html = panel.renderDialog()
     expect(html).toContain('class="mobile-overview"')
-    expect(html).toContain('<label class="field"><span>Código recebido por SMS</span>')
+    expect(html).toContain('<label class="field"><span>Código recebido por SMS ou ligação</span>')
     expect(html).toContain('autocomplete="one-time-code"')
     expect(html).toContain('pattern="[0-9]{6}"')
     expect(html).toContain('class="mobile-overview__danger"')
@@ -72,7 +84,7 @@ describe('experimental mobile devices panel', () => {
     await panel.submit('mobile-transfer-delete', form({ confirm: 'on', phone: draft.phone }))
     expect(api.request).not.toHaveBeenCalled()
     api.request.mockResolvedValue({ devices: [], draftManagement: true })
-    await panel.submit('mobile-transfer-delete', form({ confirm: 'on', phone: draft.phone, backupValidated: 'on', password: 'sample' }))
+    await panel.submit('mobile-transfer-delete', form({ confirm: 'on', phone: ` ${draft.phone} `, backupValidated: 'on', password: 'sample' }))
     expect(api.request).toHaveBeenCalledWith(expect.stringContaining('/transfer-removal'), expect.objectContaining({ method: 'DELETE', body: JSON.stringify({ confirm: true, backupValidated: true, phone: draft.phone, password: 'sample' }) }))
     expect(JSON.stringify(panel)).not.toContain('sample')
   })
@@ -124,17 +136,17 @@ describe('experimental mobile devices panel', () => {
       if (original) Object.defineProperty(globalThis, 'document', original); else delete (globalThis as any).document
     }
   })
-  test('countdown performs one GET on expiry; SMS and verification require explicit submission', async () => {
+  test.each(['blocked', 'additional_confirmation_required'])('countdown in %s only refreshes eligibility', async status => {
     jest.useFakeTimers(); jest.setSystemTime(100000)
     const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.devices = [draft]
     try {
-      api.request.mockResolvedValueOnce({ status: 'blocked', retryAt: 102000, canResendSms: false, diagnostic: { stage: 'request', reason: 'rate_limited', providerReason: 'too_recent' } })
+      api.request.mockResolvedValueOnce({ status, retryAt: 102000, canResendSms: false, diagnostic: { stage: 'request', reason: 'rate_limited', providerReason: 'too_recent' } })
       panel.action('mobile-details', draft.id)
       await Promise.resolve(); await Promise.resolve()
       expect(panel.renderRegistration()).toContain('00:00:02')
       await panel.submit('mobile-sms', form({ confirmSms: 'on' }))
       expect(api.request).toHaveBeenCalledTimes(1)
-      api.request.mockResolvedValueOnce({ status: 'blocked', canResendSms: true })
+      api.request.mockResolvedValueOnce({ status, canResendSms: true, canResendVoice: true })
       await jest.advanceTimersByTimeAsync(2000)
       expect(api.request).toHaveBeenCalledTimes(2)
       expect(api.request.mock.calls.every(call => call.length === 1)).toBe(true)
@@ -188,10 +200,10 @@ describe('experimental mobile devices panel', () => {
     const { panel, api } = setup(); panel.smsRegistration = true
     panel.registration = { status: 'additional_confirmation_required' }
     const html = panel.renderRegistration()
-    expect(html).toContain('Confirmação adicional necessária')
-    expect(html.match(/disabled/g)).toHaveLength(3)
+    expect(html).toContain('Confirmação adicional solicitada')
+    expect(html).not.toContain('continuação indisponível')
     expect(html).not.toContain('data-form=')
-    expect(html).toContain('estado local')
+    expect(html).toContain('não informou prazo')
     expect(api.request).not.toHaveBeenCalled()
   })
   test('renders provider diagnostic codes with HTML escaping', () => {

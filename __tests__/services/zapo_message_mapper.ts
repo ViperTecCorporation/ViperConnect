@@ -19,6 +19,26 @@ import type { WaClient } from 'zapo-js'
 import fetch from 'node-fetch'
 
 describe('Zapo message mapper', () => {
+  test.each([true, false, undefined])('preserves optional WebView hints through protobuf: %s', async interaction => {
+    const url = { title: 'Abrir', link: 'https://example.com/form',
+      ...(interaction !== undefined ? { webview_presentation: 'full', webview_interaction: interaction } : {}) }
+    const mapped = await toZapoMessageContent(mockDeep<WaClient>(), {
+      type: 'interactive', interactive: { type: 'button', body: { text: 'Formulario' }, action: { buttons: [{ type: 'cta_url', url }] } },
+    })
+    const decoded = proto.Message.decode(proto.Message.encode(mapped.content as any).finish())
+    const button = decoded.interactiveMessage!.nativeFlowMessage!.buttons![0]
+    expect(button.name).toBe('cta_url')
+    expect(JSON.parse(button.buttonParamsJson!)).toEqual({ display_text: 'Abrir', url: url.link, merchant_url: url.link,
+      ...(interaction !== undefined ? { webview_presentation: 'full', webview_interaction: interaction } : {}) })
+  })
+  test.each([
+    [{ webview_interaction: 'true' }, 'webview_interaction_must_be_boolean'],
+    [{ webview_presentation: 'invalid' }, 'webview_presentation_must_be_full'],
+  ])('rejects invalid WebView hints %j', async (hints, error) => {
+    await expect(toZapoMessageContent(mockDeep<WaClient>(), {
+      type: 'interactive', interactive: { type: 'button', action: { buttons: [{ type: 'cta_url', url: { title: 'Abrir', link: 'https://example.com', ...hints as object } }] } },
+    })).rejects.toThrow(error as string)
+  })
   test.each(['image', 'video', 'audio'])('maps %s view_once to SDK send options, not media content', async type => {
     for (const view_once of [true, false, undefined]) {
       const mapped = await toZapoMessageContent(mockDeep<WaClient>(), {

@@ -26,6 +26,7 @@ interface SessionPageOptions {
   webhookHistoryHtml?: string
   companionsHtml?: string
   profileHtml?: string
+  messagesHtml?: string
 }
 
 const tabs: Array<[SessionTab, TranslationKey]> = [
@@ -34,6 +35,7 @@ const tabs: Array<[SessionTab, TranslationKey]> = [
   ['webhooks', 'Webhooks'],
   ['contacts', 'Contatos'],
   ['groups', 'Grupos'],
+  ['messages', 'Mensagens'],
 ]
 
 interface IntegrationIdentifier {
@@ -125,6 +127,7 @@ const renderGroups = (session: SessionConfig, groups: GroupSummary[], hasMore: b
 `
 
 const renderPanel = (options: SessionPageOptions): string => {
+  if (options.tab === 'messages') return options.messagesHtml || '<section class="section">Carregando mensagens…</section>'
   if (options.tab === 'profile') return options.profileHtml || '<section class="section">Consultando perfil…</section>'
   if (options.tab === 'devices' && options.session.mobilePrimaryDraftId) return options.companionsHtml || renderMobileCompanions(options.session, !!options.restricted)
   if (options.tab === 'config') return renderSessionConfig(options.session, options.restricted)
@@ -135,7 +138,7 @@ const renderPanel = (options: SessionPageOptions): string => {
   if (options.tab === 'groups') {
     return renderGroups(options.session, options.groups, options.groupsHasMore, options.loadingSection, options.sectionError, options.groupsQuery)
   }
-  return renderOverview(options.session, options.contactCount) + (options.canManageUsers && !options.session.mobilePrimaryDraftId && !isLegacySession(options.session) ? `<section class="section"><h2>Backup e migração</h2><p class="muted">Transfira as credenciais desta sessão Zapo para outra instância. O backup suspende a origem; não use as duas instâncias simultaneamente.</p><button type="button" class="btn" data-action="transfer-open" data-id="${escapeHtml(sessionPhone(options.session))}">Backup e migração da sessão</button></section>` : '')
+  return renderOverview(options.session, options.contactCount) + (options.canManageUsers && !options.session.mobilePrimaryDraftId && !isLegacySession(options.session) ? `<section class="section"><h2>Backup e migração</h2><p class="muted">Transfira as credenciais desta sessão Zapo para outra instância. O backup suspende a origem; não use as duas instâncias simultaneamente.</p><button type="button" class="btn" data-action="transfer-open" data-id="${escapeHtml(sessionPhone(options.session))}">Backup e migração da sessão</button></section><section class="mobile-overview__danger"><div><h3>Excluir sessão desta instância</h3><p>Após validar o backup no destino, remova somente o cadastro e as credenciais locais, sem logout remoto.</p></div><button type="button" class="btn btn--danger" data-action="transfer-remove" data-id="${escapeHtml(sessionPhone(options.session))}">Excluir desta instância</button></section>` : '')
 }
 
 export const renderSessionPage = (options: SessionPageOptions): string => {

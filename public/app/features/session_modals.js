@@ -1,9 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.32-1ab9d8f1';
-import { renderModal } from '../components/modal.js?v=4.0.32-1ab9d8f1';
-import { renderStatus } from '../components/status.js?v=4.0.32-1ab9d8f1';
-import { escapeHtml } from '../core/html.js?v=4.0.32-1ab9d8f1';
-import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.32-1ab9d8f1';
-import { t } from '../core/i18n.js?v=4.0.32-1ab9d8f1';
+import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
+import { renderModal } from '../components/modal.js?v=4.0.34-43ce0548';
+import { renderStatus } from '../components/status.js?v=4.0.34-43ce0548';
+import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
+import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.34-43ce0548';
+import { t } from '../core/i18n.js?v=4.0.34-43ce0548';
 export const renderNewSessionModal = () => renderModal('new-session', t('Nova sessão'), `
     <form class="stack" data-form="new-session">
       <p class="muted">${t('Novas sessões são registradas diretamente no motor Zapo.')}</p>
@@ -14,6 +14,7 @@ export const renderNewSessionModal = () => renderModal('new-session', t('Nova se
       </div>
       <div class="form-actions"><button class="btn" type="submit">${icon('plus')}${t('Registrar sessão')}</button></div>
     </form>
+    <hr><p class="muted">Já possui um backup criptografado desta sessão?</p><button type="button" class="btn btn--ghost" data-action="transfer-restore">Restaurar sessão de backup</button>
   `, { subtitle: t('Motor Zapo') });
 export const renderMessageModal = (session, recipient = '') => renderModal('message-test', t('Testar mensagem'), `
     <form class="stack" data-form="test-message">
@@ -60,8 +61,7 @@ export const renderConnectionModal = (session, broadcast, loading = false) => {
 };
 export const renderConfirmDeregisterModal = (session) => renderModal('deregister-session', t('Desconectar sessão'), `
     <div class="stack">
-      <p>${escapeHtml(t('Esta ação executa deregister em {session} e exigirá um novo pareamento.', { session: sessionLabel(session) }))}</p>
-      <p class="form-error">${icon('warning')}${t('As credenciais nativas da sessão serão removidas.')}</p>
+      ${session.mobilePrimaryDraftId ? `<p>${t('Esta ação suspende a conexão e desativa a reconexão automática. As credenciais do dispositivo principal serão preservadas.')}</p><p class="form-error">${icon('warning')}${t('Todos os webhooks ativos serão removidos, com arquivamento no histórico. Reconectar não restaura esses webhooks automaticamente.')}</p><p>${t('Para reativar, use Visão geral do dispositivo → Conectar à Zapo.')}</p>` : `<p>${escapeHtml(t('Esta ação executa deregister em {session} e exigirá um novo pareamento.', { session: sessionLabel(session) }))}</p><p class="form-error">${icon('warning')}${t('As credenciais nativas da sessão serão removidas.')}</p>`}
       <div class="form-actions">
         <button class="btn btn--danger" type="button" data-action="confirm-deregister" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}${t('Confirmar desconexão')}</button>
       </div>

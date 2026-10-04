@@ -41,6 +41,7 @@ export class MobileDeletionService {
     return !!(config?.mobilePrimaryDraftId === id && config?.mobilePrimaryImported === true && config?.autoConnect === false && await this.deps.backupCompleted?.(phone, id))
   }
   async remove(id: string, body: any, transferred = false) {
+    if (body && typeof body.phone === 'string') body = { ...body, phone: body.phone.trim() }
     const consent = transferred ? 'backupValidated' : 'acknowledgeNewSms'
     if (!body || body.confirm !== true || body[consent] !== true || typeof body.phone !== 'string' || Object.keys(body).some(key => !['confirm', consent, 'phone'].includes(key))) throw new MobileDeviceError(400, 'mobile_full_removal_confirmation_required')
     const draft = (await this.deps.list()).find(item => item.id === id)

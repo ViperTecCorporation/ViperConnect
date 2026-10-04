@@ -35,6 +35,7 @@ import { zapoUsernameIndex } from '../../src/services/zapo/zapo_username_index'
 import { decryptZapoPollVoteWithJidFallback } from '../../src/services/zapo/zapo_poll_addon_decrypt'
 import { registerZapoStatePreparation } from '../../src/services/zapo/zapo_persistent_state'
 import logger from '../../src/services/logger'
+import * as proxyOptions from '../../src/services/zapo/zapo_proxy'
 
 describe('ClientZapo', () => {
   const phone = '5566999999999'
@@ -121,6 +122,16 @@ describe('ClientZapo', () => {
     client.getState.mockReturnValue({ connected: true, registered: true, hasQr: false, hasPairingCode: false })
     await expect(service.ownProfile({ action: 'set', field: 'name', value: 'Perfil' })).resolves.toEqual({ success: true })
     expect(client.profile.setPushName).toHaveBeenCalledWith('Perfil')
+  })
+
+  test.each([false, true])('selects network transport from stored credentials (mobile=%s)', async mobile => {
+    session.auth.load.mockResolvedValue({ meJid: `${phone}@s.whatsapp.net`, ...(mobile ? { deviceInfo: { platform: 'ios' } } : {}) } as never)
+    const spy = jest.spyOn(proxyOptions, 'createZapoProxyOptions')
+    try {
+      await service.connect(1)
+      expect(spy).toHaveBeenCalledWith(config.proxyUrl, undefined, expect.any(Object), undefined, mobile ? 'mobile-tcp' : 'websocket')
+      expect(client.connect).toHaveBeenCalledTimes(1)
+    } finally { spy.mockRestore() }
   })
 
   test('waits for existing key persistence before loading auth or connecting', async () => {

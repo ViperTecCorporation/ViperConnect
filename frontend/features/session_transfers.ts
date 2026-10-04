@@ -55,6 +55,7 @@ export class SessionTransfersPanel {
   }
   async submit(form: string, data: FormData) {
     if (this.busy) return
+    if (typeof data.get('phone') === 'string') data.set('phone', String(data.get('phone')).trim())
     const generation = this.generation, phone = this.phone
     this.error = ''; this.busy = true; this.render()
     try {
@@ -67,7 +68,8 @@ export class SessionTransfersPanel {
         if (form === 'transfer-restore') {
           const file = data.get('archive')
           if (!(file instanceof Blob) || !file.size || file.size > 16 * 1024 * 1024) throw new Error('Selecione um arquivo .vipersession de até 16 MiB.')
-          await this.api.request(base + '/restore', { method: 'POST', body: JSON.stringify({ archive: await file.text(), password, confirmOriginOffline: true }) })
+          const result = await this.api.request<{ warning?: string }>(base + '/restore', { method: 'POST', body: JSON.stringify({ archive: await file.text(), password, confirmOriginOffline: true }) })
+          this.notice = result?.warning ? 'Sessão restaurada. Não foi possível solicitar a conexão ao worker; use Conectar. Não importe novamente.' : 'Sessão restaurada com conexão automática habilitada. Conexão solicitada ao worker.'
         } else {
           if (password !== data.get('passwordConfirmation')) throw new Error('As senhas não coincidem.')
           const task = await this.api.request<BackupTaskView>(`${base}/${encodeURIComponent(phone)}/backup-tasks`, { method: 'POST', body: JSON.stringify({ password, confirmSuspend: true, mode: String(data.get('mode') || 'complete') }) })
@@ -75,7 +77,7 @@ export class SessionTransfersPanel {
         }
       }
       if (generation !== this.generation) return
-      this.notice = form === 'transfer-restore' ? 'Sessão restaurada offline. Atualize a lista e conecte quando a origem estiver suspensa.' : form === 'transfer-remove' ? 'Sessão removida apenas desta instância. Nenhum logout remoto foi solicitado.' : 'Backup solicitado. Você pode sair da página; acompanhe o resultado abaixo.'
+      this.notice = form === 'transfer-restore' ? this.notice : form === 'transfer-remove' ? 'Sessão removida apenas desta instância. Nenhum logout remoto foi solicitado.' : 'Backup solicitado. Você pode sair da página; acompanhe o resultado abaixo.'
       this.modal = undefined; this.file = undefined
     } catch (error) { if (generation === this.generation) this.error = mobileBackupError(error) }
     finally { if (generation === this.generation) { this.busy = false; this.render() } }

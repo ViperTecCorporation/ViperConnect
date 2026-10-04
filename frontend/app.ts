@@ -11,6 +11,7 @@ import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js
 import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js'
 import { shouldRenderBackgroundUpdate } from './domain/render_policy.js'
 import { OwnProfilePanel } from './features/own_profile.js'
+import { SessionMessagesPanel } from './features/session_messages.js'
 import { ContactPictureLoader } from './domain/contact_picture_loader.js'
 import type {
   ContactDirectoryItem,
@@ -119,6 +120,7 @@ export class ViperConnectApp {
   private readonly sessionTransfers: SessionTransfersPanel
   private readonly mobileCompanions: MobileCompanionsPanel
   private readonly ownProfile: OwnProfilePanel
+  private readonly messages: SessionMessagesPanel
   private readonly api: ApiClient
   private readonly socket: SocketBridge
   private readonly contactPictures: ContactPictureLoader
@@ -209,6 +211,7 @@ export class ViperConnectApp {
     this.sessionTransfers = new SessionTransfersPanel(api, () => this.render())
     this.mobileCompanions = new MobileCompanionsPanel(api, () => this.render(), this.root)
     this.ownProfile = new OwnProfilePanel(api, () => this.render(), this.root)
+    this.messages = new SessionMessagesPanel(api, this.root)
     this.socket = socket
     this.contactPictures = new ContactPictureLoader((phone, pictureId) => this.api.profilePicture(phone, pictureId))
     setLocale(normalizeLocale(localStorage.getItem(LOCALE_KEY) || navigator.language))
@@ -1049,6 +1052,10 @@ export class ViperConnectApp {
 
   private handleFilter(event: Event): void {
     const input = event.target as HTMLInputElement | HTMLSelectElement
+    if (input.matches('[data-companion-history]')) {
+      this.mobileCompanions.setSendHistory((input as HTMLInputElement).checked)
+      return
+    }
     if (input.matches('[data-companion-code]')) {
       const field = input as HTMLInputElement
       const position = formatCompanionCode(field.value.slice(0, field.selectionStart ?? field.value.length)).length
@@ -1344,6 +1351,7 @@ export class ViperConnectApp {
   }
 
   private async openSessionTab(tab: SessionTab): Promise<void> {
+    this.messages?.close()
     this.ownProfile?.reset()
     this.mobileCompanions?.reset()
     this.tab = tab
@@ -1355,6 +1363,7 @@ export class ViperConnectApp {
     }
     if (tab === 'overview' && this.selectedPhone) void this.loadOverviewContactCount(this.selectedPhone, ++this.contactCountRevision)
     if (tab === 'profile') await this.ownProfile.open(this.selectedPhone)
+    if (tab === 'messages') await this.messages.open(this.selectedPhone)
     if (tab === 'contacts' && !this.contacts.items.length) await this.loadContacts(true)
     if (tab === 'groups' && !this.groups.length) await this.loadGroups(true)
     if (tab === 'webhooks') await this.loadWebhookHistory()
@@ -1955,6 +1964,7 @@ export class ViperConnectApp {
   }
 
   private render(): void {
+    if (!this.api.getToken() || this.tab !== 'messages' || this.view !== 'dashboard' || !this.selectedPhone) this.messages?.close()
     if (!this.api.getToken() || this.tab !== 'profile' || this.view !== 'dashboard') this.ownProfile?.reset()
     if (this.view !== 'dashboard' || this.tab !== 'devices' || !this.selectedPhone || !this.api.getToken()) this.mobileCompanions?.reset()
     if (!this.api.getToken()) {
@@ -2021,6 +2031,7 @@ export class ViperConnectApp {
                     webhookHistoryHtml: this.identity?.role === 'user' ? '' : renderWebhookHistory(this.webhookHistorySnapshots, this.webhookHistoryLoading, this.webhookHistoryError),
                     companionsHtml: this.tab === 'devices' ? this.mobileCompanions.html(selected, this.identity?.role !== 'admin') : '',
                     profileHtml: this.tab === 'profile' ? this.ownProfile.html(this.selectedPhone, this.identity?.role === 'admin') : '',
+                    messagesHtml: this.tab === 'messages' ? this.messages.html() : '',
                     session: selected,
                     tab: this.tab,
                     contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
@@ -2064,6 +2075,7 @@ export class ViperConnectApp {
       this.sessionTransfers.dialog() +
       this.renderToastHtml()
     if (this.identity?.role === 'admin' && this.view === 'dashboard' && this.tab === 'profile') this.ownProfile?.mountMap()
+    if (this.view === 'dashboard' && this.tab === 'messages') this.messages?.mount()
   }
 
   private canAccessScopedRecording(id: string): boolean {

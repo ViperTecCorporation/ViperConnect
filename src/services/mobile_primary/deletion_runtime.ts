@@ -26,7 +26,7 @@ export async function createMobileDeletionService() {
     clear: async (phone, config) => {
       const store = createZapoStore({ useRedis: config.useRedis, baseStore: config.baseStore, redisUrl: process.env.REDIS_URL, redisKeyPrefix: ZAPO_REDIS_KEY_PREFIX })
       try { await clearZapoSession(store.session(phone)) } finally { await store.destroy() }
-      await redis.delConfig(phone)
+      await redis.delConfig(phone, true)
       await redis.delSessionTransientKeys(phone)
       await redis.delSessionStatus(phone)
     },

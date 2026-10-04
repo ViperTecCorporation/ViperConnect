@@ -6,8 +6,9 @@ import { WaAuthRedisStore } from '@zapo-js/store-redis'
 import { MobileDeviceError } from '../mobile_device_service'
 import { MobileBackupTasks, BackupTask } from '../mobile_primary/backup_tasks'
 import { encryptMobileBackup, decryptMobileBackup, BACKUP_MAX_BYTES } from '../mobile_primary/backup_archive'
-import { BACKUP_DOMAINS, BACKUP_DATA_DOMAINS, BACKUP_UNO_DOMAINS, BackupMode, backupRecordKey, isMobileBackupKey } from '../mobile_primary/backup_manifest'
+import { BACKUP_MAX_RECORDS, BACKUP_DOMAINS, BACKUP_DATA_DOMAINS, BACKUP_UNO_DOMAINS, BackupMode, backupRecordKey, isMobileBackupKey } from '../mobile_primary/backup_manifest'
 import { SessionTransferManifest, validateSessionTransfer } from './manifest'
+import { requestRestoredConnection } from '../mobile_primary/restored_connection'
 
 export const SESSION_TASK_PREFIX = 'session-transfer:{v1}:task:'
 const checkpoint = (phone: string) => `session-transfer:{v1}:completed:${phone}`
@@ -54,7 +55,7 @@ export async function createSessionTransfer() {
       do {
         const page = await redis.scan(cursor, 'MATCH', base + ':*', 'COUNT', 200); cursor = page[0]
         for (const key of page[1]) if (isMobileBackupKey(key.slice(scope.base.length), phone, mode, scope.namespace)) result.add(key)
-        if (result.size > 10000) fail('mobile_backup_too_large', 413)
+        if (result.size > BACKUP_MAX_RECORDS) fail('mobile_backup_too_large', 413)
       } while (cursor !== '0')
     }
     return [...result].sort()
@@ -110,7 +111,7 @@ export async function createSessionTransfer() {
       const snapshot = await decryptMobileBackup(body.archive, body.password)
       validateSessionTransfer(snapshot, prefix)
       const phone = snapshot.phone
-      return owned(redis, phone, async (lease, token, renew) => {
+      const restored = await owned(redis, phone, async (lease, token, renew) => {
         if (await service.getConfig(phone) || await redis.hexists('mobile-primary:{v1}:drafts', phone) || (await keys(redis, phone, 'complete')).length) fail('mobile_restore_destination_exists')
         const stage = `session_transfer_stage:${randomUUID().replace(/-/g, '')}:`, staged: string[] = []
         try {
@@ -123,7 +124,7 @@ export async function createSessionTransfer() {
           const auth = await new WaAuthRedisStore({ redis, keyPrefix: stage + prefix, sessionId: phone }).load()
           if (!auth || auth.deviceInfo || auth.meJid !== snapshot.identityJid) fail('mobile_backup_identity_mismatch', 400)
           await renew()
-          const targetConfig = { provider: 'zapo', server: UNOAPI_SERVER_NAME, name: snapshot.name, useRedis: true, useS3: true, autoConnect: false, webhooks: [] }
+          const targetConfig = { provider: 'zapo', server: UNOAPI_SERVER_NAME, name: snapshot.name, useRedis: true, useS3: true, autoConnect: true, webhooks: [] }
           const expiry = Object.fromEntries(records.filter(r => r.expiresAt !== undefined).map(r => [backupRecordKey(r, prefix), r.expiresAt]))
           const targetKeys = [lease, service.configKey(phone), service.sessionPhoneIndexKey(), ...records.flatMap(r => [stage + backupRecordKey(r, prefix), backupRecordKey(r, prefix)])]
           const result = await redis.eval(`
@@ -135,11 +136,13 @@ export async function createSessionTransfer() {
             for i=4,#KEYS,2 do redis.call('RENAME',KEYS[i],KEYS[i+1]); if expiry[KEYS[i+1]] then redis.call('PEXPIREAT',KEYS[i+1],expiry[KEYS[i+1]]) else redis.call('PERSIST',KEYS[i+1]) end end
             redis.call('SET',KEYS[2],ARGV[2]); redis.call('SADD',KEYS[3],ARGV[3]); redis.call('PUBLISH','unoapi-config:update',ARGV[3]); return 1`, targetKeys.length, ...targetKeys, token, JSON.stringify(targetConfig), phone, JSON.stringify(expiry))
           if (Number(result) !== 1) fail('mobile_restore_destination_exists')
-          return { phone, status: 'disconnected', restored: true }
+          return { phone, restored: true }
         } finally { for (let i = 0; i < staged.length; i += 100) await redis.del(...staged.slice(i, i + 100)) }
       })
+      return { ...restored, ...await requestRestoredConnection(phone, phone => new ReloadAmqp(getConfigRedis).run(phone)) }
     }),
     remove: (phone: string, body: any) => run(async redis => {
+      if (body && typeof body.phone === 'string') body = { ...body, phone: body.phone.trim() }
       if (!body || body.phone !== phone || body.confirm !== true || body.backupValidated !== true || Object.keys(body).some(k => !['phone', 'confirm', 'backupValidated'].includes(k))) fail('mobile_removal_confirmation_required', 400)
       phoneCheck(phone)
       return owned(redis, phone, async (_lease, _token, renew) => {
@@ -157,7 +160,7 @@ export async function createSessionTransfer() {
         await renew()
         const store = createZapoStore({ useRedis: true, baseStore: current.baseStore, redisUrl: process.env.REDIS_URL, redisKeyPrefix: prefix })
         try { await clearZapoSession(store.session(phone)) } finally { await store.destroy() }
-        await service.delConfig(phone); await service.delSessionTransientKeys(phone); await service.delSessionStatus(phone)
+        await service.delConfig(phone, true); await service.delSessionTransientKeys(phone); await service.delSessionStatus(phone)
         await redis.del(checkpoint(phone))
       })
     }),

@@ -6,6 +6,14 @@ describe('isolated registration driver with offline provider responses', () => {
   afterAll(() => { if (original === undefined) delete process.env.MOBILE_REGISTRATION_MODULE; else process.env.MOBILE_REGISTRATION_MODULE = original })
   const deps = () => ({ store: { createNewStore: jest.fn(() => ({ phoneNumber: '999123456789' })), storeFromJson: (v: any) => ({ ...v }), storeToJson: (v: any) => v }, registration: { requestSmsCode: jest.fn(), verifyCode: jest.fn() } })
   const input = { action: 'request', draft: { phone: '999123456789', name: 'Lab' }, store: { phoneNumber: '999123456789' } }
+  test('voice is explicitly forwarded and tracks its own wait without fallback', async () => {
+    const d = deps(); d.registration.requestSmsCode.mockResolvedValue({ status: 'sent', sms_wait: 600, voice_wait: 30 })
+    const result = await operate({ ...input, method: 'voice' }, d)
+    expect(d.registration.requestSmsCode).toHaveBeenCalledWith(expect.anything(), 'voice')
+    expect(result.diagnostic).toMatchObject({ waitSeconds: 30, smsWaitSeconds: 600, voiceWaitSeconds: 30 })
+    expect(d.registration.requestSmsCode).toHaveBeenCalledTimes(1)
+    await expect(operate({ ...input, method: 'email' }, d)).rejects.toThrow('invalid_method')
+  })
   test('prepare generates state without network registration', async () => {
     const d = deps(); expect(await operate({ ...input, action: 'prepare' }, d)).toHaveProperty('store')
     expect(d.registration.requestSmsCode).not.toHaveBeenCalled()

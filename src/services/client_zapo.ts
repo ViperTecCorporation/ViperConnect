@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import QRCode from 'qrcode'
+import { companionLabOptions } from './mobile_primary/companion_lab_options'
 import { ZapoOwnProfile } from './zapo/zapo_own_profile'
 import { OwnProfileCover } from './own_profile_cover'
 import { PinoLogger, WaClient as ZapoWaClient, type WaClient as WaClientType, type WaStoreSession } from 'zapo-js'
@@ -70,6 +71,7 @@ import { BoundedTtlSet } from '../utils/bounded_ttl_cache'
 import { createYouTubeLinkPreviewResolverForTransport } from './messages/youtube_link_preview'
 import { zapoOperationDeadline } from './zapo/zapo_operation_deadline'
 import { companionDiagnosticLogger } from './mobile_primary/companion_diagnostic_logger'
+import { recordSessionMessageEvent } from './messages/session_message_events'
 
 type VoipCoordinator = ReturnType<ReturnType<typeof voipPlugin>['setup']>
 type ZapoClient = WaClientType & {
@@ -320,6 +322,7 @@ export class ClientZapo implements Client {
   }
 
   private async processAddonEvent(event: any) {
+    await recordSessionMessageEvent(this.phone, event, 'addon')
     if (event.key.id) this.decryptedAddonIds.add(event.key.id)
     const resolved = await resolveZapoPollVoteOptionNames(event, this.zapoSession)
     if (resolved.decrypted.kind === 'poll_vote' && !resolved.decrypted.selectedOptionNames?.length) {
@@ -576,6 +579,7 @@ export class ClientZapo implements Client {
       this.messages?.sentArchive.capture(event)
     })
     onCurrent('receipt', async (event) => {
+      await recordSessionMessageEvent(this.phone, event, 'receipt')
       const isGroup = `${event.chatJid || ''}`.endsWith('@g.us')
       const receiptLid = [event.participantJid, event.chatJid].map((value) => `${value || ''}`).find((value) => value.endsWith('@lid'))
       if (event.participantUsername && receiptLid) {
@@ -1006,7 +1010,8 @@ export class ClientZapo implements Client {
     this.zapoSession = zapoStore.session(this.phone)
     this.pairingCodeRequest = undefined
     this.pairingCodeIssued = false
-    const requiresPairing = !(await this.zapoSession.auth.load())?.meJid
+    const credentials = await this.zapoSession.auth.load()
+    const requiresPairing = !credentials?.meJid
     logger.info('Zapo session startup phone=%s mode=%s', this.phone, requiresPairing ? 'fresh-pairing' : 'stored-auth')
     if (this.config.useRedis) {
       await statusRecipients.loadOrBootstrap(this.phone).catch((error) => {
@@ -1020,7 +1025,7 @@ export class ClientZapo implements Client {
       mediaUpload: ZAPO_MEDIA_UPLOAD_IP_FAMILY,
       mediaDownload: ZAPO_MEDIA_DOWNLOAD_IP_FAMILY,
       linkPreview: ZAPO_LINK_PREVIEW_IP_FAMILY,
-    })
+    }, undefined, credentials?.deviceInfo ? 'mobile-tcp' : 'websocket')
     const youtubeLinkPreviewResolver = createYouTubeLinkPreviewResolverForTransport(proxy?.linkPreview)
     let companionRuntime: any
     let companionHost: any
@@ -1034,7 +1039,8 @@ export class ClientZapo implements Client {
       const fence = this.lease!.ownership()
       const { companionHistoryPlugin } = await import('./mobile_primary/companion_history_runtime.js')
       companionPlugins.push(companionHistoryPlugin(this.config.mobilePrimaryDraftId, this.phone, fence, () => this.socket === client && this.connected && !this.intentionalDisconnect))
-      companionHost = { persistence: new MobileCompanionPersistence(redis, vault, this.config.mobilePrimaryDraftId, this.phone, fence.token) }
+      companionHost = { persistence: new MobileCompanionPersistence(redis, vault, this.config.mobilePrimaryDraftId, this.phone, fence.token), ...companionLabOptions() }
+      if (companionHost.includePem) logger.info({ phone: this.phone, includePem: true }, 'MOBILE_COMPANION_PEM_LAB_ENABLED')
       companionRuntime = { startCompanionWorker, fence, operations: new MobileCompanionOperations(redis, vault, this.config.mobilePrimaryDraftId) }
     }
     const client = this.clientFactory({

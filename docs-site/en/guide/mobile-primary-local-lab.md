@@ -4,6 +4,62 @@ description: Isolated Docker Desktop development environment for the mobile-prim
 
 # Local mobile-primary lab
 
+## QR linking diagnostics
+
+When linking by QR image/camera or code, **Enviar histórico de mensagens** is
+checked by default. Unchecking sends `sendHistory:false`, skipping old Redis
+message export while keeping native bootstrap and mandatory keys. The admin-only
+API accepts this boolean only for `qr`/`code`; omission defaults to `true` for
+existing clients. It does not change existing links or cancel an ongoing export.
+`MOBILE_COMPANION_HISTORY_SKIPPED` logs the choice. No extra permission or ENV is
+required. This option does not guarantee that the phone completes initialization.
+The worker prepares the Signal session even when history is disabled, then runs
+the native bootstrap; the SDK continues with mandatory key sharing. Preparation
+failures before publication permit an SDK retry. Uncertain publication failures
+are not replayed automatically. `MOBILE_COMPANION_NATIVE_BOOTSTRAP_STARTED` and
+`MOBILE_COMPANION_NATIVE_BOOTSTRAP_SUBMITTED` distinguish start and submission;
+`MOBILE_COMPANION_HISTORY_ERROR` records the stage and sanitized diagnostics.
+Submission does not prove that the phone applied keys or finished initialization.
+
+The device list queries the account's server device inventory, independently of
+the local ADV epoch, with concurrent deduplication and a 15-second cache.
+The explicit **Atualizar vínculos** command bypasses completed cached results
+after a remote unlink; concurrent in-flight requests still share one query. It
+invalidates only this account's PN/LID device-list cache before a fresh query and
+before SDK reconciliation, avoiding pre-link cached snapshots. Query failures
+are not reported as an empty successful list. Server-only devices omit unknown
+`keyIndex`/`addedAtSeconds` and return `canRevoke:false`: revoke them in WhatsApp
+because the SDK requires their local epoch record. No cryptographic keys are
+reconstructed. `source=server_device_list` is not an online-presence indication.
+
+QR input accepts either the bare payload or the exact
+`https://wa.me/settings/linked_devices#` envelope. Only this prefix is removed
+before validation/queueing and SDK linking; it must not become part of `ref`.
+References and Base64 fields are not URL-decoded or rewritten. Other URL
+envelopes are rejected. The 4096-character limit includes the prefix.
+Provider acceptance still needs validation with a new lab QR.
+
+The lab worker opts into the SDK experimental `includePem` option using
+`UNOAPI_MOBILE_COMPANION_PEM_LAB=true`; the adapter also requires
+`UNOAPI_MOBILE_PRIMARY_LAB=true`. Both QR and code linking on this worker use it.
+The `MOBILE_COMPANION_PEM_LAB_ENABLED` log confirms configuration; request
+structure confirms the PEM node without logging its contents. This is not a
+confirmed fix. This experiment also enables structure-only tracing for code
+linking, allowing comparison under the same configuration without secret values.
+Production is unchanged without both flags. Roll back by disabling
+the option and recreating only the worker, preserving volumes and credentials.
+
+The **Dispositivos conectados** panel supports QR images and camera capture with
+confirmation before sending. Camera capture requires HTTPS or localhost and
+permission. Controls wait for any pending operation. QR linking is still under
+lab validation; enabling capture does not guarantee provider acceptance.
+
+QR attempts log `MOBILE_COMPANION_QR_INPUT` (field count and key lengths),
+`MOBILE_COMPANION_PAIR_REQUEST` and `MOBILE_COMPANION_PAIR_RESPONSE` (structure
+only). QR contents, references, attribute values and keys are never logged.
+Diagnostics do not modify SDK requests or retry linking. A remote `400`
+rejection does not prove expiry; reproduce with a freshly generated QR.
+
 ## Delete a device
 
 The **Excluir dispositivo** action is available on each card and in its overview. Enter the exact draft phone number and acknowledge permanent deletion and the need for a new SMS registration. `DELETE /manager/mobile-devices/{id}/full` requires an administrator and `{confirm:true, acknowledgeNewSms:true, phone:"..."}`.
@@ -53,7 +109,7 @@ automatic reconnection disabled, including when download fails.
 
 At the destination, use **Novo dispositivo principal → Restaurar dispositivo**,
 select the file, enter its password and confirm the source is offline. The restored
-device remains offline, without webhooks; connect it manually. Never run both copies.
+device enables `autoConnect=true`, without webhooks, and requests a worker connection after releasing the restore lock. Never run both copies.
 If the source is used again, create a fresh backup before transferring.
 
 Includes registration, auth, Signal/prekeys, group sender keys, app-state and privacy
@@ -62,10 +118,42 @@ Registration is re-encrypted with the destination's own vault key. Existing data
 never overwritten. Credentials revoked by WhatsApp may still require a new registration.
 
 Initial scope: `mobile_lab`, Redis, Zapo 1.9.0, store-redis 1.3.0, identical Redis
-prefix and compatible Redis DUMP format; up to 10,000 keys, 8 MiB internal content
+prefix and compatible Redis DUMP format; up to 50,000 keys, 8 MiB internal content
 and a 16 MiB archive. SQLite and QR companion backups are not supported.
 
+Linked-session `.vipersession` backups also accept up to **50,000 records** in
+credentials and complete modes, without truncation. The **8 MiB internal content**
+and **16 MiB encrypted archive** limits still apply; exceeding any limit rejects
+the entire backup. Record count alone does not guarantee that the archive fits.
+`POST /manager/session-transfers/restore` authenticates the administrator before
+reading JSON with a **17 MiB HTTP body limit**, like Mobile Primary restore.
+Other endpoints keep their own limits. Existing destination registrations or
+credentials are never overwritten. Restores enable automatic connection; `connection_requested` is not proof of being online. If dispatch fails, `restore_connection_dispatch_failed` means the restore succeeded: do not import again, use Connect.
+
+Linked-session overview exposes **Delete from this instance** to administrators. Completed backup, suspended source, destination validation and administrator password remain required; no remote logout is sent. Confirmation phone numbers trim surrounding whitespace only.
+
 ## Local VoIP overlay
+
+**Local deletion** removes configuration, session index membership and the active
+user assignment, retaining assignment audit history. The number no longer appears
+as a pending/disconnected placeholder. Ordinary disconnect/deregistration retains
+assignments. Migration removal never sends a remote logout.
+
+### Registration code by SMS or voice call
+
+Mobile Primary offers **Request SMS** and **Receive code by voice call**, useful
+for landlines. Both require explicit consent and use the same six-digit code
+verification field; QR-linked sessions are unchanged. Send
+`{"confirm":true,"method":"voice"}` to
+`POST /manager/mobile-devices/{id}/registration/request`; omitted method defaults
+to `sms`. Resends additionally require `confirmResend:true` and the corresponding
+`canResendVoice` or `canResendSms` permission. Existing keys are preserved.
+There is no automatic delivery-method fallback or automatic code request.
+`diagnostic.smsWaitSeconds` and `diagnostic.voiceWaitSeconds` retain independent
+remote waits, including zero; `retryAt` and `retryAtVoice` are Unix milliseconds.
+Pending challenges, in-flight operations and uncertain outcomes remain blocked.
+Refresh status after the voice deadline. Missing method-specific waits use the
+conservative provider wait; local availability does not guarantee a call.
 
 `compose.lab.voip.yml` runs the VPS VoIP/coturn images pinned by digest, with a
 separate local database and recording volume. Authorized credentials stay outside
@@ -81,3 +169,9 @@ recordings still require a real call. See the [VoIP lab guide](/guide/mobile-pri
 for setup and rollback instructions in Portuguese.
 
 An optional Zapo MCP could inspect library methods/events in a separate test runtime. It is not installed here and does not replace end-to-end tests of the application's queues, authorization or webhooks. Full operational details are maintained in the [Portuguese guide](/guide/mobile-primary-local-lab).
+
+
+After `device_confirm_or_second_code`, an ordinary resend is allowed after the provider's method-specific wait (SMS or voice), without a local attempt ceiling. The SMS countdown refreshes eligibility; for voice, refresh status after the displayed deadline. Explicit consent and a click are required; keys are preserved. Missing waits or another pending challenge keep resends blocked. This does not automatically continue device approval.
+
+
+After a `no_routes` request failure, explicitly try the other method (SMS/voice), preserving keys. Remote waits and pending challenges are respected; no delay is invented. The failed method is not retried and switching is never automatic.

@@ -18,6 +18,7 @@ import { ContactDummy } from './services/contact_dummy'
 import { Contact } from './services/contact'
 import { middlewareNext } from './services/middleware_next'
 import { UNOAPI_MESSAGES_JSON_LIMIT } from './defaults'
+import { defaultRequestJson } from './services/request_json'
 
 export class App {
   public readonly server: HttpServer
@@ -47,9 +48,7 @@ export class App {
       /^\/[^/]+\/[^/]+\/(?:messages|marketing_messages)(?:\/[^/]+\/recover_delivery|\/recover_delivery)?\/?$/,
       express.json({ limit: UNOAPI_MESSAGES_JSON_LIMIT }),
     )
-    const defaultJson = express.json()
-    // Large backups are parsed only after manager authentication, inside the mobile router.
-    this.app.use((req, res, next) => /^\/manager\/mobile-devices\/restore\/?$/.test(req.path) || /^\/\d{8,15}\/profile\/(picture|cover)\/?$/.test(req.path) ? next() : defaultJson(req, res, next))
+    this.app.use(defaultRequestJson())
     this.app.use(express.urlencoded({ extended: true }))
     this.server = createServer(this.app)
     this.socket = new Server(this.server, {

@@ -19,7 +19,7 @@ export class MobileDevicesPanel {
   enabled = false
   smsRegistration = false
   connection?: { status: string; phone: string; imported: boolean }
-  registration?: { status: string; canonicalPhone?: string; error?: string; canRetryVerification?: boolean; canResendSms?: boolean; retryAt?: number; diagnostic?: { stage: string; reason: string; httpStatus?: number; providerStatus?: string; providerReason?: string; providerPending?: string; waitSeconds?: number } }
+  registration?: { status: string; canonicalPhone?: string; error?: string; canRetryVerification?: boolean; canResendSms?: boolean; canResendVoice?: boolean; method?: 'sms' | 'voice'; retryAtVoice?: number; retryAt?: number; diagnostic?: { stage: string; reason: string; httpStatus?: number; providerStatus?: string; providerReason?: string; providerPending?: string; waitSeconds?: number } }
   devices: MobileDraft[] = []
   query = ''
   statusFilter = 'all'
@@ -145,12 +145,13 @@ export class MobileDevicesPanel {
 
   async submit(form: string, data: FormData): Promise<void> {
     if (!this.enabled || this.busy) return
+    if (typeof data.get('phone') === 'string') data.set('phone', String(data.get('phone')).trim())
     if (form === 'mobile-backup' || form === 'mobile-restore') { await this.transferBackup(form, data); return }
     if (form === 'mobile-connect') {
       if (data.get('confirmConnection') !== 'on') { this.error = 'Confirme a conexão deste dispositivo no laboratório.'; this.render(); return }
       await this.connectionOperation(true); return
     }
-    if (form === 'mobile-sms' || form === 'mobile-verify') { await this.submitRegistration(form, data); return }
+    if (form === 'mobile-sms' || form === 'mobile-voice' || form === 'mobile-verify') { await this.submitRegistration(form, data); return }
     if (form !== 'mobile-create' && form !== 'mobile-delete' && form !== 'mobile-transfer-delete') return
     if (form === 'mobile-create') this.values = {
       phone: `${data.get('phone') || ''}`, name: `${data.get('name') || ''}`,
@@ -192,7 +193,10 @@ export class MobileDevicesPanel {
     try {
       const result = await transferMobileBackup(this.api, form === 'mobile-restore', this.selected?.id, data, true)
       if (generation !== this.generation) return
-      if (result && 'status' in result) {
+      if (result && 'restored' in result) {
+        this.modal = undefined; this.busy = false; await this.load(true)
+        if (result.warning) this.error = 'Dispositivo restaurado. Não foi possível solicitar a conexão ao worker; use Conectar. Não importe novamente.'
+      } else if (result && 'status' in result) {
         this.backupTasks = [...this.backupTasks.filter(item => item.deviceId !== result.deviceId), result]
         this.modal = undefined; this.busy = false
       } else if (result) {
@@ -230,7 +234,7 @@ export class MobileDevicesPanel {
   private watchCooldown(): void {
     this.stopCooldown()
     const deadline = this.registration?.retryAt
-    if (this.modal !== 'details' || !this.selected || !['blocked', 'code_required'].includes(this.registration?.status || '') || this.registration?.canResendSms || !Number.isFinite(deadline) || this.checkedDeadline === deadline) return
+    if (this.modal !== 'details' || !this.selected || !['blocked', 'code_required', 'additional_confirmation_required'].includes(this.registration?.status || '') || this.registration?.canResendSms || !Number.isFinite(deadline) || this.checkedDeadline === deadline) return
     const id = this.selected.id; const generation = this.generation
     this.cooldownTimer = setInterval(() => {
       if (this.modal !== 'details' || this.selected?.id !== id || generation !== this.generation) { this.stopCooldown(); return }
@@ -266,8 +270,10 @@ export class MobileDevicesPanel {
 
   async submitRegistration(form: string, data: FormData): Promise<void> {
     if (!this.smsRegistration || !this.selected || this.busy) return
-    const request = form === 'mobile-sms'
-    if (request && this.registration?.status !== 'idle' && !this.registration?.canResendSms) {
+    const request = form === 'mobile-sms' || form === 'mobile-voice'
+    const voice = form === 'mobile-voice'
+    const canResend = voice ? this.registration?.canResendVoice : this.registration?.canResendSms
+    if (request && this.registration?.status !== 'idle' && !canResend) {
       this.error = 'O envio ainda não foi liberado. Consulte o andamento e aguarde o prazo informado.'; this.render(); return
     }
     const recovery = !request && this.registration?.canRetryVerification === true
@@ -275,14 +281,14 @@ export class MobileDevicesPanel {
       this.error = 'Confirme a nova tentativa de validação. Nenhum SMS será solicitado.'; this.render(); return
     }
     if (request ? data.get('confirmSms') !== 'on' : !/^\d{6}$/.test(String(data.get('code') || ''))) {
-      this.error = 'Confirme o envio do SMS ou informe o código de seis dígitos.'; this.render(); return
+      this.error = 'Confirme o envio do código por SMS ou ligação, ou informe os seis dígitos recebidos.'; this.render(); return
     }
     const generation = this.generation
     const id = this.selected.id
     this.busy = true; this.error = ''; this.render()
     try {
       const result = await this.api.request<any>(`/manager/mobile-devices/${encodeURIComponent(id)}/registration/${request ? 'request' : 'verify'}`, {
-        method: 'POST', body: JSON.stringify(request ? { confirm: true, ...(this.registration?.canResendSms ? { confirmResend: true } : {}) } : { code: String(data.get('code')), ...(recovery ? { confirmRecovery: true } : {}) }),
+        method: 'POST', body: JSON.stringify(request ? { confirm: true, ...(voice ? { method: 'voice' } : {}), ...(canResend ? { confirmResend: true } : {}) } : { code: String(data.get('code')), ...(recovery ? { confirmRecovery: true } : {}) }),
       })
       if (generation === this.generation && this.selected?.id === id) this.registration = result
     } catch {
@@ -297,23 +303,20 @@ export class MobileDevicesPanel {
     if (state === 'registered' && this.connection) labels.registered = 'Registro concluído'
     const waiting = state === 'blocked' && this.registration?.diagnostic?.providerReason === 'too_recent'
     if (waiting) labels.blocked = this.registration?.canResendSms ? 'Você já pode solicitar um novo SMS.' : 'Aguardando liberação para solicitar outro SMS.'
-    if (state === 'additional_confirmation_required') return `<p role="status">Confirmação adicional necessária no WhatsApp.</p>
-      <p>Verifique se o aparelho atual apresenta uma solicitação de transferência da conta. A resposta recebida foi <code>device_confirm_or_second_code</code>; ela não comprova que um segundo código foi enviado.</p>
-      <p>O componente atual ainda não oferece uma continuação validada para esta etapa. As ações abaixo estão indisponíveis; não solicite outro SMS para tentar substituir essa confirmação.</p>
-      <button type="button" class="btn" disabled>Já confirmei no aparelho — continuação indisponível</button>
-      <button type="button" class="btn" disabled>Não apareceu — solicitação do segundo código indisponível</button>
-      <button type="button" class="btn" disabled>Recebi outro código — validação adicional indisponível</button>
-      <p>As chaves permanecem preservadas. Consultar andamento lê somente o estado local, não verifica aprovação no WhatsApp.</p>${button('Consultar andamento', 'reg-status')}`
+    labels.additional_confirmation_required = 'Confirmação adicional solicitada pelo WhatsApp'
     let html = `<div class="mobile-overview__status"><p role="status">${e(state ? labels[state] || 'Estado desconhecido' : 'Consulte o andamento antes de iniciar.')}</p>${button('Consultar andamento', 'reg-status')}</div>`
+    if (state === 'additional_confirmation_required') html += '<p>Confirme a transferência no aparelho atual. Após o prazo informado pelo WhatsApp, você pode solicitar outro código por SMS ou ligação. Isso é um reenvio comum, não uma confirmação automática da transferência. As chaves são preservadas.</p>'
+    if (state === 'additional_confirmation_required' && !Number.isFinite(this.registration?.retryAt) && !Number.isFinite(this.registration?.retryAtVoice)) html += '<p>O provedor não informou prazo para reenvio; a solicitação permanece indisponível.</p>'
     if (state === 'registered') {
       const connectionLabels: Record<string, string> = { online: 'Conectado à Zapo', connecting: 'Conectando à Zapo', connection_requested: 'Conexão solicitada ao worker; aguarde e consulte o estado', disconnected: 'Desconectado', not_imported: 'Credenciais ainda não importadas' }
       html += `<p>Conexão: ${e(this.connection ? connectionLabels[this.connection.status] || this.connection.status : 'ainda não consultada')}</p>${button('Consultar conexão Zapo', 'connection-status')}<form data-form="mobile-connect"><label><input type="checkbox" name="confirmConnection" required>Autorizo conectar este dispositivo principal à Zapo no laboratório, preservando as chaves do registro.</label><button class="btn" ${this.busy ? 'disabled' : ''}>Conectar à Zapo</button></form>`
     }
     if (this.registration?.canonicalPhone) html += `<p>Número canônico: ${e(this.registration.canonicalPhone)}</p>`
-    if (state === 'code_required' || (state === 'blocked' && !waiting)) html += '<p>Se o WhatsApp atual solicitar autorização para transferir a conta, conclua essa confirmação no aparelho antes de prosseguir. Este painel ainda não detecta automaticamente essa aprovação. Não solicite outro SMS enquanto aguarda.</p>'
+    if (state === 'code_required' || (state === 'blocked' && !waiting && this.registration?.diagnostic?.stage === 'verify')) html += '<p>Se o WhatsApp atual solicitar autorização para transferir a conta, conclua essa confirmação no aparelho antes de prosseguir. Este painel ainda não detecta automaticamente essa aprovação. Não solicite outro SMS enquanto aguarda.</p>'
     const detail = this.registration?.diagnostic
     if (Number.isFinite(this.registration?.retryAt) && !this.registration?.canResendSms) html += `<p>Espera informada pelo provedor até: ${e(new Date(this.registration!.retryAt!).toLocaleString('pt-BR'))}.</p><p>Tempo restante: <strong data-mobile-countdown role="timer">${this.countdown()}</strong></p><p>Ao terminar, o painel consulta a liberação automaticamente. Nenhum SMS é enviado sem seu clique.</p><button type="button" class="btn" disabled>Solicitar novo SMS — aguardando liberação</button>`
     else if (detail?.reason === 'rate_limited' && !this.registration?.canResendSms && !Number.isFinite(this.registration?.retryAt)) html += '<p>Prazo não informado pelo provedor. Não há horário de liberação calculado; o reenvio permanece indisponível até revisão.</p>'
+    if (detail?.providerReason === 'no_routes') html += '<p>O provedor não encontrou rota para entregar o código pelo método solicitado. Tente o outro método quando liberado abaixo. Nenhuma troca é feita automaticamente.</p>'
     if (detail && state !== 'code_required') {
       const descriptions: Record<string, string> = { code_expired: 'Código expirado ou já utilizado.', invalid_code: 'Código não aceito. Confira os dígitos recebidos.', challenge_required: 'O provedor exige uma verificação adicional.', rate_limited: 'Limite de tentativas atingido. Não repita agora.', network: 'Falha de comunicação; o resultado remoto pode ser incerto.', android_material: 'Falha no material do aplicativo Android.', local_configuration: 'Falha na configuração local.', http_error: 'O serviço remoto retornou erro HTTP.', unknown: 'Motivo não reconhecido; requer análise.' }
       if (waiting) descriptions.rate_limited = this.registration?.canResendSms ? 'A espera terminou. O retorno abaixo pertence à tentativa anterior.' : 'O WhatsApp pediu uma espera antes de outra solicitação.'
@@ -323,8 +326,10 @@ export class MobileDevicesPanel {
       }
     }
     if (state === 'code_required') html += '<p>Não recebeu o código? Você pode solicitar outro SMS quando o reenvio estiver liberado. Isso não confirma o registro. Após reenviar, use somente o novo código recebido.</p>'
+    if (state === 'idle' || this.registration?.canResendVoice) html += `<form data-form="mobile-voice"><label><input type="checkbox" name="confirmSms" required>Autorizo receber uma ligação real com o código neste número, inclusive telefone fixo. O registro pode afetar o acesso no aparelho. Use somente o novo código recebido.</label><button class="btn" ${this.busy ? 'disabled' : ''}>Receber código por ligação</button></form>`
+    else if (Number.isFinite(this.registration?.retryAtVoice) && this.registration!.retryAtVoice! > Date.now()) html += `<p>Ligação disponível após a espera informada: ${e(new Date(this.registration!.retryAtVoice!).toLocaleString('pt-BR'))}. Consulte o andamento após esse horário.</p>`
     if (state === 'idle' || this.registration?.canResendSms) html += `<form data-form="mobile-sms"><label><input type="checkbox" name="confirmSms" required>Autorizo ${this.registration?.canResendSms ? 'solicitar um novo SMS, preservando as chaves existentes' : 'enviar um SMS real para este número de laboratório'}. O registro pode afetar o acesso no aparelho. Use somente o novo código recebido.</label><button class="btn" ${this.busy ? 'disabled' : ''}>${state === 'code_required' ? 'Não recebi o código — solicitar novo SMS' : this.registration?.canResendSms ? 'Solicitar novo SMS' : 'Solicitar SMS'}</button></form>`
-    if (state === 'code_required' || this.registration?.canRetryVerification) html += `<form class="mobile-overview__verify" data-form="mobile-verify">${this.registration?.canRetryVerification ? '<label><input type="checkbox" name="confirmRecovery" required>Autorizo uma nova tentativa de confirmação, preservando as chaves e sem solicitar outro SMS.</label>' : ''}<label class="field"><span>Código recebido por SMS</span><input name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required><small>Informe os seis dígitos do último SMS recebido.</small></label><button class="btn" ${this.busy ? 'disabled' : ''}>Confirmar código</button></form>`
+    if (state === 'code_required' || this.registration?.canRetryVerification) html += `<form class="mobile-overview__verify" data-form="mobile-verify">${this.registration?.canRetryVerification ? '<label><input type="checkbox" name="confirmRecovery" required>Autorizo uma nova tentativa de confirmação, preservando as chaves e sem solicitar outro SMS.</label>' : ''}<label class="field"><span>Código recebido por SMS ou ligação</span><input name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required><small>Informe os seis dígitos do último código recebido por SMS ou ligação.</small></label><button class="btn" ${this.busy ? 'disabled' : ''}>Confirmar código</button></form>`
     return html
   }
 

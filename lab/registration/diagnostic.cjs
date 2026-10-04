@@ -5,7 +5,7 @@ function protocolCode(value) {
   return typeof value === 'string' && /^[a-z][a-z_]{1,47}$/.test(value) ? value : undefined
 }
 
-function responseDiagnostic(value, stage) {
+function responseDiagnostic(value, stage, method = 'sms') {
   const detail = { stage: ['prepare', 'request', 'verify'].includes(stage) ? stage : 'prepare', reason: 'unknown' }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return detail
   for (const [source, target] of [['status', 'providerStatus'], ['reason', 'providerReason'], ['pending', 'providerPending']]) {
@@ -13,10 +13,14 @@ function responseDiagnostic(value, stage) {
     if (code) detail[target] = code
   }
   if (detail.providerReason || detail.providerPending) detail.reason = 'provider_response'
-  // Requests in this adapter use SMS only. Match the pinned provider's waitHint.
+  // Preserve explicit per-method waits, including zero (available immediately).
   const seconds = v => (typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) && Number.isSafeInteger(Number(v)) && Number(v) > 0 && Number(v) <= 2147483647 ? Number(v) : undefined
+  for (const [source, target] of [['sms_wait', 'smsWaitSeconds'], ['voice_wait', 'voiceWaitSeconds']]) {
+    if (value[source] === 0 || value[source] === '0') detail[target] = 0
+    else if (seconds(value[source]) !== undefined) detail[target] = seconds(value[source])
+  }
   const waits = ['sms_wait', 'voice_wait', 'wa_old_wait', 'flash_wait', 'email_otp_wait', 'send_sms_wait', 'silent_auth_wait'].map(k => seconds(value[k]) || 0)
-  const waitSeconds = seconds(value.sms_wait) || Math.max(...waits) || seconds(value.retry_after)
+  const waitSeconds = (method === 'voice' ? detail.voiceWaitSeconds : detail.smsWaitSeconds) ?? (Math.max(...waits) || seconds(value.retry_after))
   if (waitSeconds) detail.waitSeconds = waitSeconds
   return detail
 }

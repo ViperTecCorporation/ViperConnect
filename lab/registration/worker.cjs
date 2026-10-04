@@ -7,7 +7,7 @@ const { failure, responseDiagnostic } = require('./diagnostic.cjs')
 
 // Pinned-source compatibility shim: limit /code to one attempt and never switch
 // delivery methods. No challenge bypass, credential extraction or TLS weakening.
-function registrationModule(root, observe = () => {}) {
+function registrationModule(root, observe = () => {}, method = 'sms') {
   const filename = path.join(root, 'lib/Registration.js')
   let source = fs.readFileSync(filename, 'utf8').replace(/\r\n/g, '\n')
   if (crypto.createHash('sha256').update(source).digest('hex') !== 'be7b4d0737550c0270ac4c1d834a0c13143444aa5e006e8e4694bad359b5f71c') throw new Error('source_mismatch')
@@ -19,7 +19,7 @@ function registrationModule(root, observe = () => {}) {
   const mod = new Module(filename, module)
   mod.__observeRegistration = (endpoint, result) => {
     if (endpoint === '/code' || endpoint === '/register') {
-      observe(responseDiagnostic(result, endpoint === '/code' ? 'request' : 'verify'))
+      observe(responseDiagnostic(result, endpoint === '/code' ? 'request' : 'verify', method))
     }
   }
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename))
@@ -32,25 +32,27 @@ async function operate(input, dependencies) {
   if (!root || !path.isAbsolute(root)) throw new Error('module_required')
   const { createNewStore, storeFromJson, storeToJson } = dependencies?.store || require(path.join(root, 'lib/Store.js'))
   if (input.action === 'prepare') return { store: storeToJson(createNewStore(input.draft.phone, { name: input.draft.name })) }
+  const method = input.method || 'sms'
+  if (!['sms', 'voice'].includes(method)) throw new Error('invalid_method')
   const store = storeFromJson(input.store)
   let observed
-  const registration = dependencies?.registration || registrationModule(root, detail => { observed = detail })
+  const registration = dependencies?.registration || registrationModule(root, detail => { observed = detail }, method)
   try {
     if (input.action === 'request') {
-      const result = await registration.requestSmsCode(store, 'sms')
-      if (!['ok', 'sent'].includes(result?.status)) return { error: 'provider_failed', diagnostic: observed || responseDiagnostic(result, input.action) }
+      const result = await registration.requestSmsCode(store, method)
+      if (!['ok', 'sent'].includes(result?.status)) return { error: 'provider_failed', diagnostic: observed || responseDiagnostic(result, input.action, method) }
       store.codePending = true
-      return { store: storeToJson(store), diagnostic: observed || responseDiagnostic(result, input.action) }
+      return { store: storeToJson(store), diagnostic: observed || responseDiagnostic(result, input.action, method) }
     } else if (input.action === 'verify') {
       const result = await registration.verifyCode(store, input.code)
       // Never treat "sent", a pending challenge, or a local flag as registered.
-      if (!['ok', 'verified'].includes(result?.status) || result.pending || !/^[1-9]\d{7,14}$/.test(String(result.login || ''))) return { error: 'challenge_required', diagnostic: observed || responseDiagnostic(result, input.action) }
+      if (!['ok', 'verified'].includes(result?.status) || result.pending || !/^[1-9]\d{7,14}$/.test(String(result.login || ''))) return { error: 'challenge_required', diagnostic: observed || responseDiagnostic(result, input.action, method) }
       store.phoneNumber = String(result.login); store.registered = true; store.codePending = false
     } else throw new Error('invalid_action')
     return { store: storeToJson(store) }
   } catch (error) {
     const result = failure(error, input.action)
-    const detail = observed || (error?.raw ? responseDiagnostic(error.raw, input.action) : undefined)
+    const detail = observed || (error?.raw ? responseDiagnostic(error.raw, input.action, method) : undefined)
     if (detail) result.diagnostic = { ...detail, ...result.diagnostic, reason: result.diagnostic.reason === 'unknown' ? detail.reason : result.diagnostic.reason }
     return result
   }

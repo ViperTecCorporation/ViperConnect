@@ -181,9 +181,9 @@ A documentação usa VitePress em desenvolvimento. Markdown é montado do reposi
 
 ### Diagnóstico do registro e autorização no aparelho
 
-Exceção experimental autorizada no laboratório: após `device_confirm_or_second_code`, o endpoint de solicitação comum aceita `confirmResend=true` até o limite de três solicitações totais, com intervalo mínimo de cinco minutos. Preserva cadastro e chaves, sem zerar contadores. Isso testa um novo SMS comum; não representa suporte confirmado ao protocolo de segundo código. Qualquer recusa por limite interrompe o experimento. O painel mantém a continuação específica indisponível.
+Após `device_confirm_or_second_code`, o reenvio comum por SMS ou ligação exige prazo remoto conhecido e vencido para o método selecionado, sem teto local de solicitações. Preserva cadastro e chaves. Não implementa o protocolo específico de segundo código.
 
-O retorno `device_confirm_or_second_code` na etapa `verify` é apresentado como `additional_confirmation_required`, inclusive em cadastros já persistidos, sem alterar as chaves ou o registro original. O painel orienta verificar o aparelho e mostra as ações de continuação como indisponíveis. A versão fixada do componente não documenta uma continuação específica nem a solicitação do segundo código desse desafio. Não confundimos essa operação com reenvio comum de SMS. A consulta de andamento lê somente o Redis local; não consulta aprovação no WhatsApp. Não há endpoint novo ou afirmação de suporte a essa etapa até validar o protocolo correspondente.
+O retorno `device_confirm_or_second_code` aparece como `additional_confirmation_required`. O painel mostra a espera e permite reenvio manual com consentimento após liberação do backend. Não consulta aprovação no aparelho nem envia códigos automaticamente. Sem prazo conhecido ou com outra pendência, o reenvio permanece bloqueado.
 
 O reenvio é explícito: `POST /manager/mobile-devices/{id}/registration/request` com `{"confirm":true,"confirmResend":true}`, somente quando `canResendSms=true`. É permitido um único reenvio, após cinco minutos, para falha legada sem diagnóstico ou código expirado confirmado. Preserva as chaves, o segredo ADV e o cadastro; não reinicia a identidade. Estados incertos, operações em andamento e desafios impedem o reenvio. Se o provedor recusar por prazo ou limite, não há nova tentativa automática. Use somente o novo código recebido. O painel oferece a mesma ação com consentimento explícito.
 
@@ -247,7 +247,7 @@ o download ou conecte-a manualmente se desistir da transferência.
 
 No destino, abra **Novo dispositivo principal → Restaurar dispositivo**, selecione
 o arquivo, informe a senha e confirme que a origem está desligada. O cadastro
-restaurado entra desconectado e sem webhooks. Depois, conecte manualmente à Zapo.
+restaurado recebe `autoConnect=true`, sem webhooks. Após liberar a trava da restauração, solicita conexão ao worker. A confirmação da origem desligada continua obrigatória.
 Não use as mesmas credenciais simultaneamente em duas stacks. Se a origem voltou
 a enviar ou receber mensagens depois do backup, gere um arquivo novo.
 
@@ -258,11 +258,11 @@ infraestrutura. O registro é cifrado novamente com a chave local do destino.
 As chaves criptográficas restauradas ficam sem TTL, seguindo a política atual.
 
 Limites desta primeira versão: laboratório `mobile_lab`, Redis, Zapo 1.9.0,
-store-redis 1.3.0, mesmo prefixo Redis, formato DUMP compatível, até 10.000 chaves
+store-redis 1.3.0, mesmo prefixo Redis, formato DUMP compatível, até 50.000 chaves
 e arquivo de até 16 MiB (conteúdo interno limitado a 8 MiB). SQLite e backups
 de sessões companion/QR não são suportados. Cadastros ou credenciais existentes
 no destino causam recusa; não há sobrescrita. A importação usa chaves temporárias
-com expiração e publica os dados após validação, mantendo o dispositivo offline.
+com expiração e publica os dados após validação, habilitando a conexão automática no destino. A resposta `connection_requested` não garante conexão concluída; `restore_connection_dispatch_failed` indica backup restaurado, mas falha ao solicitar conexão: não importe novamente.
 
 Credenciais ainda válidas permitem reconectar sem novo SMS/QR. Revogação pelo
 WhatsApp ou novo registro em outro aparelho pode exigir registro novamente.
@@ -304,7 +304,63 @@ QR; não presumimos um prazo fixo nem garantimos que um print antigo será aceit
 Se o vínculo não for confirmado, atualize os vínculos antes de repetir e use
 o QR atual ou um novo print. O mesmo QR não é reenviado automaticamente.
 
+Diagnóstico de QR: o worker registra `MOBILE_COMPANION_QR_INPUT` (quantidade
+de campos e tamanhos das chaves), `MOBILE_COMPANION_PAIR_REQUEST` e
+`MOBILE_COMPANION_PAIR_RESPONSE` (somente estrutura). Nunca registra o QR,
+referência, valores de atributos ou conteúdo das chaves. Não altera o pedido
+da Zapo nem repete o vínculo. A rejeição remota `400` não comprova expiração.
+
+O QR aceita o conteúdo puro ou o envelope exato
+`https://wa.me/settings/linked_devices#`. Esse prefixo é removido antes de
+validar/enfileirar e antes de chamar a Zapo; não integra o campo `ref` do pedido.
+Referência e campos Base64 não são decodificados como URL nem reescritos.
+Outras URLs são rejeitadas. O limite de 4096 caracteres inclui o prefixo.
+A aceitação final pelo WhatsApp ainda exige teste com QR novo no lab.
+
+Teste isolado de `<pem>`: o worker deste Compose habilita
+`UNOAPI_MOBILE_COMPANION_PEM_LAB=true`. O adapter só repassa `includePem:true`
+se `UNOAPI_MOBILE_PRIMARY_LAB=true` também estiver ativo. Ambos os fluxos de
+vínculo deste worker (QR e código) usam essa opção oficial experimental da Zapo.
+Isso ainda não comprova correção do `400`. O log `MOBILE_COMPANION_PEM_LAB_ENABLED`
+confirma a configuração ao criar o cliente; a estrutura de `PAIR_REQUEST`
+confirma o bloco no pedido. Não altera credenciais nem registra o conteúdo PEM.
+Com esse experimento ativo, o diagnóstico estrutural observa também o pairing
+code, para comparar os pedidos finais sob a mesma configuração sem logar segredos.
+Para rollback, desative a opção no Compose e recrie somente o worker, preservando
+volumes e credenciais. Produção mantém o comportamento anterior sem essas flags.
+
 Contrato (OpenAPI interativo e Postman):
+
+No novo vínculo por QR (imagem/câmera) ou código, **Enviar histórico de mensagens**
+fica marcado por padrão. Desmarcar envia `sendHistory:false`: não consulta nem
+exporta mensagens antigas do Redis, mas mantém o bootstrap nativo e as chaves
+obrigatórias da Zapo. O log `MOBILE_COMPANION_HISTORY_SKIPPED` confirma essa escolha.
+Não cancela uma sincronização iniciada nem altera vínculos existentes. A API aceita
+o booleano apenas em `qr`/`code`; omissão mantém `true` para clientes anteriores.
+O acesso continua restrito ao administrador; não há nova permissão nem ENV.
+
+**Lista de dispositivos:** consulta os dispositivos da própria conta no WhatsApp,
+independentemente do epoch ADV local (`source=server_device_list`). Consultas
+simultâneas e repetidas compartilham um resultado por até 15 segundos. A consulta
+explícita **Atualizar vínculos** ignora esse resultado já concluído e consulta
+novamente o servidor, preservando a deduplicação de chamadas ainda em andamento.
+A consulta
+invalida somente o cache de dispositivos da identidade PN/LID da própria conta.
+O mesmo cache é invalidado antes da reconciliação SDK para não remover um vínculo
+novo com base numa lista anterior ao pareamento. Falha externa retorna resultado
+não confirmado, nunca uma lista vazia de sucesso. Não comprova presença online.
+Vínculos sem registro no epoch aparecem sem data/índice inventados e com
+`canRevoke=false`: revogação deve ser feita no WhatsApp, pois o SDK exige o
+registro local. Esta correção não recria chaves ADV perdidas.
+
+Mesmo sem histórico, o worker prepara a sessão Signal antes do bootstrap nativo;
+depois, a Zapo executa o compartilhamento obrigatório de chaves. Falhas nessa
+preparação, antes de publicar, permitem nova tentativa pelo SDK. Falhas de envio
+com resultado incerto não repetem o bootstrap automaticamente, evitando duplicação.
+`MOBILE_COMPANION_NATIVE_BOOTSTRAP_STARTED` e `..._SUBMITTED` distinguem início e
+retorno do envio; `MOBILE_COMPANION_HISTORY_ERROR` informa estágio e diagnóstico
+sanitizado. `HISTORY_SKIPPED` confirma só a escolha, e `SUBMITTED` não comprova
+que o celular aplicou as chaves ou terminou de sincronizar.
 
 - `POST /manager/mobile-devices/{id}/companions`: `{ "action": "list" }`, ou
   `{ "action": "code", "value": "ABCD1234", "confirm": true }`. As outras

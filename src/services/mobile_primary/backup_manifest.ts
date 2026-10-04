@@ -6,6 +6,8 @@ export const BACKUP_DOMAINS = ['auth', 'signal:reg', 'signal:spk', 'signal:meta'
 export const BACKUP_DATA_DOMAINS = ['msg', 'msg:idx', 'contact', 'contact_pn', 'thread'] as const
 export const BACKUP_UNO_DOMAINS = ['message', 'id', 'id_rev', 'key', 'message-status', 'jidmap', 'contact-name', 'contact-info', 'last-incoming'] as const
 export type BackupMode = 'credentials' | 'complete'
+// Shared export/import guard. Byte limits remain enforced by the archive layer.
+export const BACKUP_MAX_RECORDS = 50000
 export interface BackupRecord { key: string; dump: string; namespace?: 'uno'; expiresAt?: number }
 export interface MobileBackupManifest {
   version: 1 | 2; mode?: BackupMode; zapo: '1.9.0'; redisStore: '1.3.0'; prefix: string; createdAt: string
@@ -54,7 +56,7 @@ export function validateMobileBackup(value: any, prefix: string): asserts value 
 export function validateBackupRecords(records: BackupRecord[], phone: string, prefix: string, mode: BackupMode = 'credentials', version = 2): void {
   const fail = () => { throw new MobileDeviceError(400, 'mobile_backup_incompatible') }
   const value = { records, device: { phone }, mode, version }
-  if (!Array.isArray(value.records) || value.records.length < 9 || value.records.length > 10000) return fail()
+  if (!Array.isArray(value.records) || value.records.length < 9 || value.records.length > BACKUP_MAX_RECORDS) return fail()
   const keys = new Set<string>()
   for (const record of value.records) {
     if (!record || (record.namespace !== undefined && record.namespace !== 'uno') || (value.version === 1 && (record.namespace !== undefined || record.expiresAt !== undefined)) || !isMobileBackupKey(record.key, value.device.phone, value.mode, record.namespace) || typeof record.dump !== 'string' || record.dump.length > 2000000 || !record.dump.length || Buffer.from(record.dump, 'base64').toString('base64') !== record.dump) return fail()

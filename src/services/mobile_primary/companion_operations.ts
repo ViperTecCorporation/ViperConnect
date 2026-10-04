@@ -3,7 +3,11 @@ import { MobileDeviceError } from '../mobile_device_service'
 import { RegistrationVault } from './registration_vault'
 import logger from '../logger'
 import { companionDiagnostic } from './companion_diagnostic'
-import { observeCompanionQuery } from './companion_trace'
+import { companionQrShape, observeCompanionQuery } from './companion_trace'
+import { companionLabOptions } from './companion_lab_options'
+import { normalizeCompanionQr } from './companion_qr'
+import { withCompanionHistoryChoice } from './companion_history_choice'
+import { companionInventory } from './companion_inventory'
 
 export const companionOperationKey = (id: string) => `mobile-primary:{v1}:companion-operation:${id}`
 export const COMPANION_CAS = `
@@ -15,7 +19,7 @@ interface Redis {
   get(key: string): Promise<string | null>
   eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>
 }
-export type CompanionCommand = { action: 'list' | 'qr' | 'code' | 'revoke'; value?: string }
+export type CompanionCommand = { action: 'list' | 'qr' | 'code' | 'revoke'; value?: string; sendHistory?: boolean }
 interface Operation extends CompanionCommand {
   id: string; state: 'queued' | 'running' | 'done' | 'unknown' | 'expired'
   createdAt: number; result?: unknown
@@ -28,18 +32,20 @@ export interface CompanionMobile {
   revokeCompanion(jid: string): Promise<void>
 }
 export function validateCompanionCommand(body: any): CompanionCommand {
-  if (!body || !['list', 'qr', 'code', 'revoke'].includes(body.action) || Object.keys(body).some(k => !['action', 'value', 'confirm'].includes(k))) throw new MobileDeviceError(400, 'mobile_companion_command_invalid')
+  if (!body || !['list', 'qr', 'code', 'revoke'].includes(body.action) || Object.keys(body).some(k => !['action', 'value', 'confirm', 'sendHistory'].includes(k))) throw new MobileDeviceError(400, 'mobile_companion_command_invalid')
+  if (body.sendHistory !== undefined && (typeof body.sendHistory !== 'boolean' || !['qr', 'code'].includes(body.action))) throw new MobileDeviceError(400, 'mobile_companion_command_invalid')
   if (body.action !== 'list' && body.confirm !== true) throw new MobileDeviceError(400, 'mobile_companion_confirmation_required')
-  const value = typeof body.value === 'string' ? body.value.trim() : ''
+  const rawValue = typeof body.value === 'string' ? body.value.trim() : ''
+  const value = body.action === 'qr' ? normalizeCompanionQr(rawValue) : rawValue
   if (body.action === 'qr') {
     const parts = value.split(',')
     const keys = parts.slice(-4, -1)
-    if (!value || value.length > 4096 || parts.length < 5 || !parts.slice(0, -4).join(',') || !parts[parts.length - 1]
+    if (!value || rawValue.length > 4096 || /^https?:\/\//i.test(value) || parts.length < 5 || !parts.slice(0, -4).join(',') || !parts[parts.length - 1]
       || keys.some((key, index) => !/^[A-Za-z0-9+/_-]+={0,2}$/.test(key) || ![32, ...(index < 2 ? [33] : [])].includes(Buffer.from(key, 'base64').length))) throw new MobileDeviceError(400, 'mobile_companion_qr_invalid')
   }
   if (body.action === 'code' && !/^[A-Z0-9]{8}$/.test(value)) throw new MobileDeviceError(400, 'mobile_companion_code_invalid')
   if (body.action === 'revoke' && !/^\d+:\d+@s\.whatsapp\.net$/.test(value)) throw new MobileDeviceError(400, 'mobile_companion_jid_invalid')
-  return { action: body.action, ...(body.action === 'list' ? {} : { value }) }
+  return { action: body.action, ...(body.action === 'list' ? {} : { value }), ...(['qr', 'code'].includes(body.action) ? { sendHistory: body.sendHistory ?? true } : {}) }
 }
 
 /** One encrypted, expiring command per device. Never redeliver a claimed mutation.
@@ -92,18 +98,27 @@ export class MobileCompanionOperations {
     const startedAt = Date.now()
     logger.info({ operationId: operation.id, action: operation.action }, 'MOBILE_COMPANION_STARTED')
     let result: unknown, state: Operation['state'] = 'done'
-    const stopTrace = process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true' && ['qr', 'code'].includes(operation.action)
+    if (operation.action === 'qr') {
+      logger.info({ operationId: operation.id, structure: companionQrShape(normalizeCompanionQr(operation.value!)) }, 'MOBILE_COMPANION_QR_INPUT')
+    }
+    const stopTrace = (operation.action === 'qr' || ((process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true' || companionLabOptions().includePem) && operation.action === 'code'))
       ? observeCompanionQuery(mobile, (event, structure) => logger.info({ operationId: operation.id, structure }, event))
       : () => undefined
     try {
       if (!current()) throw new Error('worker_changed')
       if (operation.action === 'list') {
-        await mobile.reconcileCompanions()
+        const inventory = companionInventory(mobile)
+        if (inventory) {
+          result = { companions: await inventory(true), source: 'server_device_list', checkedAt: Date.now() }
+        } else {
+          await mobile.reconcileCompanions()
+          if (!current()) throw new Error('worker_changed')
+          result = { companions: (await mobile.listCompanions()).map(({ deviceJid, keyIndex, addedAtSeconds }) => ({ deviceJid, keyIndex, addedAtSeconds })), source: 'epoch_after_reconciliation', checkedAt: Date.now() }
+        }
         if (!current()) throw new Error('worker_changed')
-        result = { companions: (await mobile.listCompanions()).map(({ deviceJid, keyIndex, addedAtSeconds }) => ({ deviceJid, keyIndex, addedAtSeconds })), source: 'epoch_after_reconciliation', checkedAt: Date.now() }
       }
-      else if (operation.action === 'qr') result = await mobile.linkCompanion(operation.value!)
-      else if (operation.action === 'code') result = await mobile.linkCompanionByCode(operation.value!)
+      else if (operation.action === 'qr') result = await withCompanionHistoryChoice(mobile, operation.sendHistory !== false, () => mobile.linkCompanion(normalizeCompanionQr(operation.value!)))
+      else if (operation.action === 'code') result = await withCompanionHistoryChoice(mobile, operation.sendHistory !== false, () => mobile.linkCompanionByCode(operation.value!))
       else {
         if (!(await mobile.listCompanions()).some(item => item.deviceJid === operation.value)) throw new Error('not_linked')
         await mobile.revokeCompanion(operation.value!)

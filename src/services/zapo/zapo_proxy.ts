@@ -16,6 +16,7 @@ export const createZapoProxyOptions = (
   createAgent: ProxyAgentFactory = createSocksProxyAgent,
   ipFamilyEnvironment: ZapoIpFamilyEnvironment = {},
   createFamilyAgent: ZapoFamilyAgentFactory = createZapoFamilyAgent,
+  transport: 'websocket' | 'mobile-tcp' = 'websocket',
 ): WaClientProxyOptions | undefined => {
   const policies = resolveZapoIpFamilyPolicies(ipFamilyEnvironment)
   const url = `${proxyUrl || ''}`.trim()
@@ -40,7 +41,9 @@ export const createZapoProxyOptions = (
   }
 
   const result: WaClientProxyOptions = {
-    ws: agentFor(policies.ws),
+    // Mobile TCP treats any ws agent as a real CONNECT proxy, not a DNS agent.
+    // Keep its native direct transport; explicit proxies above are never bypassed.
+    ws: transport === 'mobile-tcp' ? undefined : agentFor(policies.ws),
     mediaUpload: agentFor(policies.mediaUpload),
     mediaDownload: agentFor(policies.mediaDownload),
     linkPreview: agentFor(policies.linkPreview),

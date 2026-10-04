@@ -14,7 +14,7 @@ describe('registration diagnostic allowlist', () => {
     expect(detail.waitSeconds).toBe(expected)
     expect(sanitizeRegistrationDiagnostic(detail)?.waitSeconds).toBe(expected)
   })
-  test.each([-1, 0, 1.5, Infinity, '7200', true, 2147483648])('rejects malformed IPC wait', waitSeconds => {
+  test.each([-1, 1.5, Infinity, '7200', true, 2147483648])('rejects malformed IPC wait', waitSeconds => {
     expect(sanitizeRegistrationDiagnostic({ stage: 'request', reason: 'rate_limited', waitSeconds })?.waitSeconds).toBeUndefined()
   })
   test('captures protocol codes without response payload or identity', () => {

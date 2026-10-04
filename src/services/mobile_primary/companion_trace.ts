@@ -2,6 +2,20 @@ const tags = new Set(['iq', 'pair-device', 'ref', 'pub-key', 'device-identity', 
 const attrs = new Set(['type', 'xmlns', 'to', 'id', 'jid', 'code', 'text', 'ts', 'ts_s', 'version', 'algorithm'])
 const reasons = new Set(['bad-request', 'bad request', 'not-authorized', 'forbidden', 'not-allowed', 'resource-constraint', 'conflict', 'item-not-found', 'gone', 'invalid', 'expired', 'unknown'])
 
+/** Match the SDK trailing-field parser; never expose QR contents or keys. */
+export function companionQrShape(qr: string) {
+  const parts = qr.split(',')
+  const keys = parts.slice(-4, -1)
+  return {
+    parts: parts.length,
+    referenceBytes: Buffer.byteLength(parts.slice(0, -4).join(',')),
+    noiseKeyBytes: keys[0] ? Buffer.from(keys[0], 'base64').length : 0,
+    identityKeyBytes: keys[1] ? Buffer.from(keys[1], 'base64').length : 0,
+    advSecretBytes: keys[2] ? Buffer.from(keys[2], 'base64').length : 0,
+    platformPresent: !!parts[parts.length - 1],
+  }
+}
+
 export function safeProviderReason(value: unknown): string {
   return typeof value === 'string' && reasons.has(value.toLowerCase()) ? value.toLowerCase() : 'redacted'
 }

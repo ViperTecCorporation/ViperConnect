@@ -1,5 +1,74 @@
 # Envio de mensagens
 
+## Aba Mensagens no painel da sessão
+
+O nome dos grupos na lista e no cabeçalho vem do assunto armazenado no cache da sessão. Bolhas de grupos e citações exibem o nome do contato (`sender_name`), resolvido por LID/telefone canônico no mesmo cache; `sender` mantém a identidade original. Sem nome conhecido, exibe o identificador. As consultas são paginadas e em pipelines limitados, sem varredura de contatos, consulta externa ou extensão da retenção.
+
+Fotos de contatos/grupos usam o endpoint autenticado de fotos já armazenadas, com até quatro consultas simultâneas e ícone quando indisponíveis. Os checks refletem o estado mais avançado encontrado no cache histórico ou nos eventos recentes: enviada (✓), entregue (✓✓), lida/reproduzida (✓✓ azul). Ausência de confirmação não significa enviada ou lida. Em grupos, o estado exibido é o recebido pelo provedor, não comprova leitura por todos os participantes.
+
+O envio usa o POST normal de mensagens e mantém as regras de webhook/echo da sessão. Quando a conversa individual tem telefone conhecido, o painel envia para o telefone normalizado (inclusive o nono dígito brasileiro), sem trocar o LID usado no histórico. Isso permite associar o echo à conversa do ViperChat. Sem telefone conhecido, o LID é preservado e a associação do echo depende da identificação suportada pelo integrador.
+
+Respostas mostram uma prévia curta da mensagem original, respeitando remoção e visualização única. Clicar na citação rola e destaca a original. Se não estiver na página, `around=<ID>` carrega uma janela limitada nessa mesma conversa, sem varrer todo o histórico. Originais expiradas retornam aviso de indisponibilidade; não são recuperadas do WhatsApp.
+
+Em **Gerenciar → Mensagens**, ao lado de Grupos, consulte conversas individuais e grupos do **store Zapo/Redis**. Busque nome/telefone (mínimo 3 caracteres), filtre o tipo e carregue mais páginas. As bolhas mostram direção, horário, participante de grupo e avisos de edição/remoção/visualização única. Contatos, localização e interativos têm prévia resumida; formatos desconhecidos exibem aviso. Avatares iniciais usam ícones, sem consultar fotos de perfil automaticamente.
+
+O editor envia texto, imagem, vídeo, áudio como arquivo e documento, com anexo cancelável e resposta pelo ID original. Reutiliza a rota existente. **“Aceita na fila” não significa entrega**. Falhas HTTP/worker são apresentadas; reenvio exige clique do usuário. Vídeos seguem a preparação configurada no worker. Não há gravação de áudio nem gestão de atendimento. Nova conversa aceita telefone com país/DDD ou LID; grupos são escolhidos na lista existente.
+
+- Retenção padrão **30 dias desde a data original da mensagem**, tanto no store Zapo/Redis quanto na cópia `unoapi-message`. Regravação, edição, confirmação ou sincronização não renovam o prazo. `DATA_TTL` (segundos) controla a cópia e `ZAPO_REDIS_MESSAGES_TTL_MS` (milissegundos) controla o store. A cópia usa 30 dias se `DATA_TTL` não for positivo; a configuração do store Zapo deve ser positiva. Sem data válida, a primeira gravação define a janela; datas futuras são limitadas ao momento da gravação. Resumos e estados do painel seguem a idade original; índices descartam referências antigas ao gravar na conversa. Abrir/paginar não solicita histórico externo e **não marca como lida**. `readOnReceipt`/`readOnReply` existentes permanecem independentes.
+- A mudança não executa limpeza em massa: dados antigos ainda não regravados mantêm fisicamente o TTL anterior, mas mensagens com data original expirada deixam de ser retornadas pelas consultas de mensagens. Credenciais, Signal, app-state e contatos não são alterados. SQLite não recebe esta política Redis.
+- `unoapi-message-status` também usa prazo fixo: ao receber um status, o cache considera a data/expiração da mensagem encontrada e os status existentes pelos IDs UnoAPI/provedor, sem prolongar o menor prazo. Agendamentos, falhas e IDs sem mensagem identificável usam até `DATA_TTL` desde o primeiro status ainda armazenado; atualizações não renovam essa janela. Uma confirmação posterior à expiração de todos os dados de identificação pode iniciar uma nova janela de fallback, pois não há data original recuperável. As consultas são diretas e limitadas, sem varrer o Redis. Status antigos não tocados aguardam o TTL anterior; nenhum webhook deixa de ser emitido por causa da expiração deste cache.
+- HTTP, mídia e atualização ao vivo exigem administrador, token da sessão ou atribuição Manager existente. Socket.IO tem autorização separada do QR, revalidada antes dos eventos; assinatura removida ao sair da aba.
+- Primeira abertura organiza índices em background, com lock por sessão e lotes de até 200. A lista pode crescer enquanto aparece “Organizando histórico”. Leituras normais usam sorted sets/pipelines, sem SCAN/KEYS por abertura. Busca examina no máximo 200 resumos por página; página vazia pode ter continuação.
+- Padrão 30 conversas/50 mensagens, máximo 100 na API. O navegador limita a lista a 300 e a conversa ativa a 500 mensagens; recarregue para outra janela. Cursor inválido/expirado retorna 400/409 e exige recarga.
+- Mídias carregam **ao clicar**, autenticadas, reutilizando storage ou download/decrypt oficial com proxy. Limite 256 MiB/60s; CDN expirado pode falhar. Mídias view_once/removidas não são expostas. URLs blob são liberadas ao sair; documentos não executam inline.
+- Apenas dados persistidos estão disponíveis. Não é um Chatwoot completo; sem Vue ou ENV adicional. Redis indisponível retorna erro explícito; SQLite não é suportado nesta aba.
+
+```http
+GET /v15.0/5511999999999/conversations?limit=30&kind=all
+GET /v15.0/5511999999999/conversations/123456789%40lid/messages?limit=50
+GET /v15.0/5511999999999/messages/PROVIDER_MESSAGE_ID/media
+```
+
+Listas retornam `{ data, has_more, next_cursor }`; conversas também incluem `indexing`. Trate cursors como opacos. Histórico vem do mais recente ao mais antigo, preservando empates; `reply_id` vai em `context.message_id` no POST. `ids` (até 100, separados por vírgula) consulta mensagens afetadas dentro da conversa; `status_ids` recupera status de IDs UnoAPI pendentes após reconexão.
+
+Socket.IO `/ws`: emitir `messages:subscribe` com `{ phone, token }`, ACK `{ subscribed: true }` ou `{ error }`. `messages:changed` contém somente `{ phone, conversation_id, id? }` ou status compacto `outgoing: { id, status, error? }`, nunca corpo/mídia. Ao reconectar, recarregue a primeira página e conversa ativa. Emitir `messages:unsubscribe` ao sair. Não usar broadcast público de QR para mensagens.
+
+Implementação local/lab; documentação atualizada não representa publicação ou deploy.
+
+## WebView no WhatsApp (Zapo)
+
+Use a rota autenticada `POST /v15.0/{phone}/messages`, com a permissao de envio da sessao existente. Os campos opcionais abaixo ficam em `interactive.action.buttons[].url` e sao repassados no JSON do botao `cta_url`. Tambem valem para botoes dos cards de carrossel.
+
+`webview_presentation` aceita somente `full`; `webview_interaction` aceita booleano, incluindo `false`. `merchant_url` e opcional e assume `link`. Sem os campos WebView, o comportamento anterior permanece. Valores invalidos geram falha de envio no worker pelo webhook, nao confirmacao de abertura.
+
+Validado no lab em **03/10/2026**: envio interativo com `webview_presentation: "full"` e `webview_interaction: true`, apontando para `https://vipertec.com.br`. O usuario confirmou a abertura dentro do WhatsApp no **iPhone em conversa individual** (com `delivered` registrado pelo worker) e no **Android em testes enviados a dois grupos**. As versoes dos aplicativos e dos sistemas nao foram registradas; a confirmacao nao abrange todos os clientes, carrosseis ou interacao de formularios.
+
+ACK ou `delivered` isoladamente nao confirmam WebView. A extensao transporta dicas para o cliente, que pode ignora-las ou abrir navegador externo; valide os aparelhos usados pela sua aplicacao. Nao envia HTML e nao cria callback de formulario; a pagina deve tratar seu proprio envio de dados. Nenhuma ENV adicional. Nao usar tokens permanentes em URLs.
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "5511999999999",
+  "type": "interactive",
+  "interactive": {
+    "type": "button",
+    "body": { "text": "Abra o formulário pelo botão." },
+    "action": {
+      "buttons": [{
+        "type": "cta_url",
+        "url": {
+          "title": "Abrir formulário",
+          "link": "https://example.com/form",
+          "webview_presentation": "full",
+          "webview_interaction": true
+        }
+      }]
+    }
+  }
+}
+```
+
+
 ## Vídeo preparado pelo editor: HD e SD (Zapo)
 
 Envie `video.quality: "hd"` (padrão) ou `"sd"` junto de `video.link` ou
