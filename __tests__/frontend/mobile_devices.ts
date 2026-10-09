@@ -14,6 +14,15 @@ const form = (values: Record<string, string>) => {
   Object.entries(values).forEach(([key, value]) => data.set(key, value))
   return data
 }
+test('device approval has an explicit remote check without requesting a code', async () => {
+  const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.selected = draft
+  panel.registration = { status: 'additional_confirmation_required' }
+  expect(panel.renderRegistration()).toContain('data-action="mobile-reg-check"')
+  api.request.mockResolvedValue({ status: 'registered', canonicalPhone: '551199999999' })
+  await panel.checkConfirmation()
+  expect(api.request).toHaveBeenCalledWith(expect.stringContaining('/registration/check'), { method: 'POST', body: '{"confirm":true}' })
+  expect(panel.registration?.status).toBe('registered')
+})
 test('voice registration requires consent and explicitly sends voice without changing verification', async () => {
   const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.selected = draft
   panel.registration = { status: 'idle' }
@@ -161,6 +170,25 @@ describe('experimental mobile devices panel', () => {
       expect(panel.renderRegistration()).not.toContain('name="code"')
     } finally { panel.reset(); jest.useRealTimers() }
   })
+  test('voice cooldown refreshes eligibility even when SMS is already available', async () => {
+    jest.useFakeTimers(); jest.setSystemTime(100000)
+    const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.devices = [draft]
+    try {
+      api.request.mockResolvedValueOnce({ status: 'blocked', canResendSms: true, canResendVoice: false, retryAt: 100000, retryAtVoice: 102000, diagnostic: { stage: 'request', reason: 'provider_response', providerReason: 'no_routes' } })
+      panel.action('mobile-details', draft.id); await Promise.resolve(); await Promise.resolve()
+      const html = panel.renderRegistration()
+      expect(html).toContain('data-form="mobile-sms"')
+      expect(html).toContain('Tempo restante para ligação')
+      expect(html).not.toContain('Tempo restante para SMS')
+      expect(html).toContain('nova tentativa manual disponível')
+      api.request.mockResolvedValueOnce({ status: 'blocked', canResendSms: true, canResendVoice: true })
+      await jest.advanceTimersByTimeAsync(2000)
+      expect(panel.renderRegistration()).toContain('data-form="mobile-voice"')
+      expect(api.request).toHaveBeenCalledTimes(2)
+      expect(api.request.mock.calls.every(call => call.length === 1)).toBe(true)
+      expect(jest.getTimerCount()).toBe(0)
+    } finally { panel.reset(); jest.useRealTimers() }
+  })
   test.each(['mobile-close', 'reset'])('countdown stops on %s', async action => {
     jest.useFakeTimers(); jest.setSystemTime(100000)
     const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.devices = [draft]
@@ -223,6 +251,18 @@ describe('experimental mobile devices panel', () => {
     await panel.submit('mobile-sms', form({ confirmSms: 'on' }))
     expect(api.request).toHaveBeenLastCalledWith(expect.stringContaining('/request'), expect.objectContaining({ body: '{"confirm":true,"confirmResend":true}' }))
     expect(panel.renderRegistration()).not.toContain('Solicitar novo SMS')
+  })
+  test.each(['mobile-sms', 'mobile-voice'])('blocked refusal exposes manual delivery and sends consent for %s', async action => {
+    const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.selected = draft
+    panel.registration = { status: 'blocked', canResendSms: true, canResendVoice: true, diagnostic: { stage: 'request', reason: 'provider_response', providerStatus: 'fail', providerReason: 'blocked' } }
+    const html = panel.renderRegistration()
+    expect(html).toContain('nova tentativa manual disponível')
+    expect(html).toContain('Solicitar novo SMS'); expect(html).toContain('Receber código por ligação')
+    await panel.submit(action, form({}))
+    expect(api.request).not.toHaveBeenCalled()
+    api.request.mockResolvedValueOnce({ status: 'code_required' })
+    await panel.submit(action, form({ confirmSms: 'on' }))
+    expect(api.request).toHaveBeenLastCalledWith(expect.stringContaining('/request'), expect.objectContaining({ body: action === 'mobile-voice' ? '{"confirm":true,"method":"voice","confirmResend":true}' : '{"confirm":true,"confirmResend":true}' }))
   })
   test('recovery requires consent and warns about authorization on the current phone', async () => {
     const { panel, api } = setup(); panel.enabled = true; panel.smsRegistration = true; panel.selected = draft

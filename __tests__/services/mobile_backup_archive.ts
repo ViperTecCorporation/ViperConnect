@@ -31,6 +31,13 @@ test('password and archive size limits reject before processing', async () => {
 })
 const phone = '999123456789'
 const manifest = () => ({ version: 1, zapo: '1.9.0', redisStore: '1.3.0', prefix: 'unoapi:zapo:', device: { phone, name: 'Synthetic', platform: 'android', accountType: 'personal' }, registration: { status: 'registered', canonicalPhone: phone }, records: ['', ':noise_pub_key', ':noise_priv_key', ':identity_pub_key', ':identity_priv_key', ':signed_prekey_pub_key', ':signed_prekey_priv_key', ':signed_prekey_signature', ':adv_secret_key'].map(suffix => ({ key: `auth:${phone}${suffix}`, dump: 'AQ==' })) })
+test('backup preserves nine-digit namespace separately from canonical auth identity', () => {
+  const original = manifest(), sessionPhone = '5566999554300', canonicalPhone = '556699554300'
+  const value = { ...original, device: { ...original.device, phone: sessionPhone }, registration: { status: 'registered', sessionPhone, canonicalPhone }, records: original.records.map(r => ({ ...r, key: r.key.replace(phone, sessionPhone) })) }
+  expect(() => validateMobileBackup(value, value.prefix)).not.toThrow()
+  expect(() => validateMobileBackup({ ...value, registration: { ...value.registration, canonicalPhone: '556688887777' } }, value.prefix)).toThrow()
+  expect(backupRegistration({ ...value.registration, store: {} }).sessionPhone).toBe(sessionPhone)
+})
 test('manifest requires complete auth and exact SDK versions/prefix', () => {
   expect(() => validateMobileBackup(manifest(), 'unoapi:zapo:')).not.toThrow()
   for (const [key, value] of [['zapo', '1.8.0'], ['redisStore', '2.0.0'], ['prefix', 'other:'], ['version', 2]]) {

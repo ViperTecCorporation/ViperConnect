@@ -14,6 +14,7 @@ export function renderMobileBackup(restore: boolean, busy: boolean): string {
 
 export function mobileBackupError(error: unknown): string {
   const messages: Record<string, string> = {
+    session_restore_rollback_pending: 'A restauração foi interrompida e precisa de revisão no destino. Não importe novamente nem exclua as chaves antes de verificar os lotes já aplicados.',
     mobile_registration_required: 'O registro deste dispositivo ainda não foi concluído. Confirme o código SMS e conecte à Zapo antes de gerar o backup.',
     mobile_backup_requires_imported_redis_device: 'Conecte este dispositivo à Zapo no laboratório antes de gerar o backup. As credenciais ainda não estão prontas para exportação.',
     mobile_backup_too_large: 'O backup excedeu o limite permitido. A origem pode ter permanecido suspensa; consulte a conexão antes de continuar.',
@@ -44,7 +45,7 @@ export async function transferMobileBackup(api: ApiClient, restore: boolean, id:
   return api.request<{ fileName: string; archive: string }>(`/manager/mobile-devices/${encodeURIComponent(id)}/backup`, { method: 'POST', body: JSON.stringify({ password, confirmSuspend: true, mode }) })
 }
 
-export function downloadMobileBackup(result: { archive: string; fileName: string }): void {
+export function downloadMobileBackup(result: { archive: string | Blob; fileName: string }): void {
   const url = URL.createObjectURL(new Blob([result.archive], { type: 'application/octet-stream' }))
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = result.fileName
   document.body.appendChild(anchor); anchor.click(); anchor.remove()

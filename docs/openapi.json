@@ -1989,7 +1989,7 @@
             "AdminToken": []
           }
         ],
-        "description": "Administrador autenticado. Suspende a origem e gera arquivo criptografado com senha, disponível por 24 horas. Até 50000 registros, 8 MiB de conteúdo interno e 16 MiB por arquivo, sem truncamento.",
+        "description": "Administrador autenticado. Suspende a origem e gera arquivo criptografado stream-v2 em blocos, disponível no storage por 24 horas. Sem teto global de registros ou bytes; depende da capacidade do Redis e storage. Blocos de até 4 MiB e DUMP base64 de até 2000000 caracteres por registro. Sem truncamento. Falha recupera autoConnect anterior se a tarefa ainda controlar a configuração; sucesso mantém origem suspensa.",
         "requestBody": {
           "$ref": "#/paths/~1manager~1mobile-devices~1{id}~1backup-tasks/post/requestBody"
         },
@@ -2032,16 +2032,437 @@
             "AdminToken": []
           }
         ],
-        "description": "Somente administrador; retorna arquivo criptografado sem senha, com Cache-Control no-store.",
+        "description": "Somente administrador, Cache-Control no-store. Arquivos stream-v2 retornam metadados fileName e streamed=true; baixar os bytes pelo endpoint download/file. Backups legados retornam archive inline.",
         "responses": {
           "200": {
-            "description": "JSON fileName e archive; somente administrador"
+            "description": "JSON fileName e streamed=true",
+            "ou fileName e archive para legado; somente administrador": null
           },
           "409": {
             "description": "Tarefa pendente ou substituída"
           },
           "410": {
             "description": "Arquivo expirado"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/{phone}/backup-tasks/{task}/download/file": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "phone",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "task",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Baixar bytes do backup criptografado em streaming",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente administrador. Cache-Control no-store e Content-Disposition attachment. Arquivo retido por 24 horas no storage.",
+        "responses": {
+          "200": {
+            "description": "Arquivo .vipersession criptografado",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Tarefa pendente ou substituída"
+          },
+          "410": {
+            "description": "Arquivo expirado"
+          },
+          "503": {
+            "description": "Storage indisponível"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/restore-uploads": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Iniciar upload em partes de backup stream-v2",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Administrador (login ou stack; chaves API recusadas). Cria UUID vinculado ao administrador autenticado, com retenção de 24h. Redis guarda somente metadados e recibos SHA-256; bytes cifrados ficam no media storage padrão da instalação. Em Swarm, todas as réplicas web e o broker devem compartilhar S3/MinIO ou volume local. Não recebe senha nesta etapa. Capacidade do storage limita o tamanho total.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "size"
+                ],
+                "properties": {
+                  "size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "Tamanho exato do arquivo em bytes"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload criado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "partSize": {
+                      "type": "integer",
+                      "enum": [
+                        8388608
+                      ]
+                    },
+                    "parts": {
+                      "type": "integer"
+                    },
+                    "expiresAt": {
+                      "type": "integer",
+                      "description": "Unix epoch em milissegundos"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "session_upload_invalid"
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "503": {
+            "description": "Redis ou storage indisponível"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/restore-uploads/{upload}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "upload",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar upload e resultado assíncrono da restauração",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente o administrador dono. Estados uploading, restoring, ready, failed e interrupted. Inclui received, parts, expiresAt e result ou error quando disponíveis. Interrupção de processo/trava não reinicia a importação; revisar staging e destino. HTTP 202 da finalização não significa restauração concluída. Resposta sem senha ou chaves internas de objetos.",
+        "responses": {
+          "200": {
+            "description": "Estado e resultado da tarefa"
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Upload pertence a outro administrador"
+          },
+          "410": {
+            "description": "Upload expirado"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Cancelar upload e limpar partes temporárias",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Somente dono. Não cancela tarefas restoring/interrupted, pois a importação pode ter promovido chaves. Partes incompletas expiram com remoção agendada no broker; exige broker ativo. Não apaga credenciais da sessão.",
+        "responses": {
+          "200": {
+            "description": "cancelled=true"
+          },
+          "404": {
+            "description": "Upload de outro administrador"
+          },
+          "409": {
+            "description": "session_upload_busy"
+          },
+          "410": {
+            "description": "Upload expirado"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/restore-uploads/{upload}/parts/{part}": {
+      "put": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Enviar parte binária de até 8 MiB",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Partes sequenciais, índice zero-based. Todas têm 8 MiB exceto a última, cujo tamanho restante deve ser exato. SHA-256 hexadecimal obrigatório; bytes e digest verificados antes do recibo. Repetição de uma parte confirmada só aceita bytes idênticos. Não é multipart/form-data de arquivo inteiro: cada parte é uma requisição separada, abaixo do limite padrão do Cloudflare. Respeitar limites menores configurados no proxy. Sem alteração de dados da sessão nesta fase.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "upload",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "part",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Part-SHA256",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Contadores received e parts confirmados"
+          },
+          "400": {
+            "description": "Índice inválido",
+            "tamanho incompleto ou SHA-256 divergente": null
+          },
+          "401": {
+            "description": "Autenticação obrigatória antes de consumir bytes"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Upload pertence a outro administrador"
+          },
+          "409": {
+            "description": "Ordem inválida",
+            "conflito de parte ou trava ocupada/perdida": null
+          },
+          "410": {
+            "description": "Upload expirado"
+          },
+          "413": {
+            "description": "Parte ultrapassa o tamanho esperado ou limite do proxy"
+          },
+          "415": {
+            "description": "application/octet-stream obrigatório"
+          },
+          "503": {
+            "description": "Storage indisponível"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/restore-uploads/{upload}/complete": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Finalizar upload e iniciar restauração em segundo plano",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Exige todas as partes confirmadas. Recebe senha somente nesta requisição; não a persiste. Reconstrói stream ordenado com no máximo 8 MiB por parte, verifica novamente os recibos e usa o importador autenticado stream-v2. Valida fechamento e identidade antes de ativar sessão, sem sobrescrever destino. Consulta GET para resultado; não reenviar backup por timeout HTTP. Processo reiniciado perde execução e retorna interrupted, exigindo revisão manual. Partes são limpas após resultado e possuem remoção agendada em 24h.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "upload",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "password",
+                  "confirmOriginOffline"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "minLength": 12,
+                    "maxLength": 128,
+                    "writeOnly": true
+                  },
+                  "confirmOriginOffline": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Solicitação aceita ou já registrada; consultar GET para resultado efetivo"
+          },
+          "400": {
+            "description": "Senha ou confirmação inválida"
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Upload pertence a outro administrador"
+          },
+          "409": {
+            "description": "Partes ausentes ou trava ocupada"
+          },
+          "410": {
+            "description": "Upload expirado"
+          }
+        }
+      }
+    },
+    "/manager/session-transfers/restore-stream": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Restaurar backup stream-v2 em lotes",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "description": "Administrador autenticado antes da leitura. Corpo binário começa com uma linha JSON contendo password e confirmOriginOffline=true, seguida de newline e dos bytes originais do arquivo stream-v2. Sem teto global; limites por bloco e registro. Valida arquivo inteiro e identidade antes de ativar a sessão. Promove lotes de 100 registros sem sobrescrever destino. Preserva TTL, configura autoConnect=true e webhooks vazios. Interrupção durante promoção exige revisão; não repetir importação cegamente.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Restaurada com autoConnect=true; conexão solicitada ou warning restore_connection_dispatch_failed"
+          },
+          "400": {
+            "description": "Arquivo",
+            "senha": null,
+            "integridade ou identidade inválidos": null
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "409": {
+            "description": "Destino ocupado ou session_restore_rollback_pending; revisar antes de repetir"
+          },
+          "413": {
+            "description": "Bloco ou registro individual acima do limite de segurança"
+          },
+          "415": {
+            "description": "Content-Type deve ser application/octet-stream"
+          },
+          "503": {
+            "description": "Redis ou storage indisponível"
           }
         }
       }
@@ -2057,7 +2478,7 @@
             "AdminToken": []
           }
         ],
-        "description": "Somente Zapo Redis compatível. Até 50000 registros, 8 MiB de conteúdo interno e 16 MiB por arquivo. JSON HTTP até 17 MiB, lido somente após autenticar o administrador. Webhooks vazios; autoConnect=true. Solicita conexão ao worker após liberar a trava de restauração. Confirmação obrigatória da origem offline.",
+        "description": "Compatibilidade com backups legados Zapo Redis. Até 50000 registros, 8 MiB internos e 16 MiB por arquivo legado. JSON HTTP até 17 MiB após autenticar administrador. Para stream-v2 usar restore-stream. Webhooks vazios; autoConnect=true. Solicita conexão ao worker após liberar a trava. Confirmação obrigatória da origem offline.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2806,13 +3227,91 @@
         }
       }
     },
+    "/manager/mobile-devices/{id}/registration/check": {
+      "post": {
+        "tags": [
+          "Manager"
+        ],
+        "summary": "Consultar confirmação feita no aparelho principal",
+        "description": "Consulta somente /exist com as mesmas chaves após device_confirm_or_second_code. Não solicita nem verifica código e não conecta automaticamente. Exige resposta ok, login canônico válido e ausência de pendência; valida identidade e grava por CAS. Intervalo mínimo de 15 segundos entre consultas. Falhas preservam credenciais e prazos de reenvio. A sessão mantém o número cadastrado; a autenticação usa o canônico confirmado pelo WhatsApp.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registro confirmado; conectar à Zapo pelo fluxo existente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRegistrationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação inválida"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Cadastro ausente"
+          },
+          "409": {
+            "description": "Estado incompatível",
+            "identidade divergente ou consulta recente": null
+          },
+          "503": {
+            "description": "Confirmação não comprovada ou consulta indisponível; nenhuma solicitação de código"
+          }
+        }
+      }
+    },
     "/manager/mobile-devices/{id}/registration/request": {
       "post": {
         "tags": [
           "Manager"
         ],
         "summary": "Solicitar código por SMS ou ligação de voz",
-        "description": "Administrador e consentimento explícito. method=sms (padrão) ou voice, inclusive telefone fixo. Uma tentativa por ação, sem troca automática de método. Persiste chaves antes da rede e preserva identidade nos reenvios. Nova solicitação exige confirmResend=true e canResendSms ou canResendVoice conforme o método. Respeita espera remota; desafios e resultados incertos continuam bloqueados. Não conecta automaticamente pela Zapo.",
+        "description": "Administrador e consentimento explícito. method=sms (padrão) ou voice, inclusive telefone fixo. Uma tentativa por ação, sem troca automática de método. Persiste chaves antes da rede e preserva identidade nos reenvios. Nova solicitação exige confirmResend=true e canResendSms ou canResendVoice conforme o método. fail/blocked na etapa request permite nova tentativa manual por qualquer método quando não há pendência ou prazo remoto ainda vigente; sem prazo, não impõe espera local. Respeita espera remota; desafios e resultados incertos continuam bloqueados. Não garante aceitação do provedor nem conecta automaticamente pela Zapo.",
         "security": [
           {
             "AdminToken": []
@@ -2857,7 +3356,7 @@
                   },
                   "confirmResend": {
                     "type": "boolean",
-                    "description": "Após no_routes na solicitação, permite apenas o método alternativo com consentimento, respeitando espera remota e pendências; sem espera informada, não impõe prazo local. Consentimento para reenvio quando canResendSms=true para sms ou canResendVoice=true para voice, incluindo código não recebido em code_required. Respeita a espera informada no envio aceito; sem prazo nesse sucesso, permite reenvio manual. device_confirm_or_second_code permite reenvio comum após prazo remoto conhecido para o método, sem outra pendência e sem teto local; não comprova suporte ao segundo código."
+                    "description": "Após no_routes, permite repetir o método recusado após espera explícita do provedor, inclusive zero; sem espera informada, permite apenas o método alternativo. Exige consentimento e respeita prazos independentes de SMS/ligação e pendências. Consentimento para reenvio quando canResendSms=true para sms ou canResendVoice=true para voice, incluindo código não recebido em code_required. Respeita a espera informada no envio aceito; sem prazo nesse sucesso, permite reenvio manual. device_confirm_or_second_code permite reenvio comum após prazo remoto conhecido para o método, sem outra pendência e sem teto local; não comprova suporte ao segundo código."
                   }
                 }
               }
@@ -2902,7 +3401,7 @@
           "Manager"
         ],
         "summary": "Confirmar código SMS do registro mobile experimental",
-        "description": "Código de seis dígitos como string. Aceito após code_required ou recuperação explícita com confirmRecovery=true quando canRetryVerification=true. Recuperação preserva chaves, não solicita SMS, exige intervalo de 60 segundos e limita a três confirmações totais. Falhas legadas sem diagnóstico permitem uma recuperação; erros conhecidos só permitem corrigir código inválido. Autorizações no aparelho devem ser concluídas manualmente; ainda não há detecção automática. PIN, CAPTCHA e outros desafios não são contornados. Nunca inicia socket Zapo.",
+        "description": "Código de seis dígitos como string. Aceito após code_required ou recuperação explícita com confirmRecovery=true quando canRetryVerification=true. Recuperação preserva chaves, não solicita SMS, exige intervalo de 60 segundos e limita a três confirmações totais. Autorizações no aparelho são concluídas manualmente e consultadas em registration/check sem novo código. A sessão preserva o número cadastrado e a autenticação usa o canônico retornado pelo WhatsApp. PIN, CAPTCHA e outros desafios não são contornados. Nunca inicia socket Zapo.",
         "security": [
           {
             "AdminToken": []
@@ -15327,7 +15826,8 @@
                 "enum": [
                   "prepare",
                   "request",
-                  "verify"
+                  "verify",
+                  "check"
                 ]
               },
               "reason": {

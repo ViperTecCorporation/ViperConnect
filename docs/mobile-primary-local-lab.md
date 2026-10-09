@@ -20,7 +20,7 @@ No laboratório, `server_1` enviado pelo ViperChat é aceito como alias de `mobi
 
 ## Conectar o registro concluído à Zapo
 
-Após `registered`, o administrador pode confirmar e clicar em “Conectar à Zapo”. `POST /manager/mobile-devices/{id}/connection` aceita apenas `{"confirm":true}`. A implementação é restrita ao laboratório `mobile_lab`. O registro cifrado original permanece intacto; o auth é convertido e salvo no store Zapo do número canônico, sob a mesma lease utilizada pelo worker. Configuração de outra sessão, identidade diferente e auth removido após uma importação são recusados. Reconexões não sobrescrevem chaves evoluídas pela Zapo.
+Após `registered`, o administrador pode confirmar e clicar em “Conectar à Zapo”. `POST /manager/mobile-devices/{id}/connection` aceita apenas `{"confirm":true}`. O registro cifrado original permanece intacto; o auth mantém o número canônico confirmado pelo WhatsApp, mas novos registros são salvos no store Zapo sob o número cadastrado (`sessionPhone`, incluindo o nono dígito), com a mesma lease utilizada pelo worker. Registros antigos sem esse campo mantêm o namespace existente até migração explícita. Configuração de outra sessão, identidade diferente e auth removido após uma importação são recusados. Reconexões não sobrescrevem chaves evoluídas pela Zapo.
 
 O serviço web apenas importa e publica o comando de conexão. O socket é aberto pelo worker Zapo existente, que reconhece `deviceInfo` nas credenciais e seleciona o transporte mobile conforme a biblioteca instalada. A sessão recebe `autoConnect=true` somente após importação; reinícios usam o mesmo auth. Mensagens continuam no pipeline existente. `202 connection_requested` confirma solicitação, não handshake. “Consultar conexão Zapo” usa `GET /manager/mobile-devices/{id}/connection` e mostra o estado persistido da sessão. O vínculo inverso e a compatibilidade VoIP mobile continuam fora desta etapa.
 
@@ -31,6 +31,11 @@ O serviço web apenas importa e publica o comando de conexão. O socket é abert
 Enquanto o estado for `code_required`, o painel mantém o campo de código e oferece “Não recebi o código — solicitar novo SMS”. Se a resposta de envio aceito trouxer uma espera, ela também é persistida e respeitada antes de liberar o reenvio. Sem prazo na resposta de sucesso, não é criado intervalo local: o usuário pode solicitar manualmente, com confirmação explícita. Essa regra não libera recusas sem prazo, desafios ou operações incertas. Registros antigos em `code_required` sem diagnóstico seguem a mesma regra; não é possível recuperar um prazo que não foi armazenado.
 
 O reenvio usa a rota existente com `confirm=true` e `confirmResend=true`, mantém identidade e segredo ADV e incrementa o contador apenas para diagnóstico. Uma recusa `too_recent` substitui o estado pelo bloqueio e prazo retornados. Solicitações concorrentes continuam protegidas por atualização atômica. Consultas de andamento preservam o código em digitação; uma solicitação de novo SMS limpa o campo, pois deve ser usado o código mais recente. Não há envio automático.
+Uma resposta `fail / blocked` na etapa `request` libera nova tentativa manual de
+SMS ou ligação com `confirmResend:true`, mantendo as chaves. Prazo por método ou
+desafio remoto continuam obrigatórios; sem prazo informado, não impõe espera
+local. Não libera resultados incertos, confirmação de código bloqueada ou
+registro já concluído, e não garante aceitação da próxima chamada pelo provedor.
 
 No painel, abrir a visão geral consulta o estado do registro. Durante a espera remota, um contador mostra horas, minutos e segundos, com o botão de SMS desabilitado. Ao chegar a zero, uma consulta GET à Uno verifica a liberação, sem chamar o WhatsApp. Somente após `canResendSms=true` é possível confirmar e clicar em “Solicitar novo SMS”. Se o envio retornar `code_required`, aparece o campo de seis dígitos e o botão “Confirmar código”. Nova recusa mostra o diagnóstico e eventual novo prazo. Fechar a janela encerra o contador; reabrir consulta novamente. Se a consulta falhar, use “Consultar andamento”; não há repetição automática de SMS nem armazenamento do código no painel. Registro confirmado ainda não significa conexão Zapo concluída.
 
@@ -189,9 +194,9 @@ O reenvio é explícito: `POST /manager/mobile-devices/{id}/registration/request
 
 Para a recusa exata `too_recent` na solicitação de SMS, com erro `rate_limited` e sem desafio pendente, uma nova tentativa manual fica disponível após o prazo remoto. O cadastro deve manter código pendente e não estar registrado. O contador é apenas diagnóstico nesse fluxo: cinco ou mais solicitações não impedem nova tentativa após a espera. As chaves e o segredo ADV são preservados. Outra recusa reinicia a espera; `too_many`, consentimento, verificação de idade e erros desconhecidos não são liberados por essa regra. Consultar o andamento não envia SMS. Solicitações simultâneas continuam protegidas por atualização atômica.
 
-O registro retorna `diagnostic` com etapa (`prepare`, `request`, `verify`), motivo de uma lista permitida e código HTTP quando disponível. Respostas brutas, códigos SMS e chaves não entram nesse diagnóstico. O estado `blocked` é uma proteção local, não uma afirmação de que o WhatsApp bloqueou a conta.
+O registro retorna `diagnostic` com etapa (`prepare`, `request`, `verify`, `check`), motivo de uma lista permitida e código HTTP quando disponível. Respostas brutas, códigos SMS e chaves não entram nesse diagnóstico. O estado `blocked` é uma proteção local, não uma afirmação de que o WhatsApp bloqueou a conta.
 
-Se o aparelho atual exibir o pedido para autorizar a transferência da conta, aguarde a decisão do titular antes de continuar. O componente fixado ainda não fornece um fluxo explícito para consultar essa aprovação; o painel não detecta automaticamente o toque em **Permitir** e não deve anunciar registro concluído com base apenas nessa ação. Não há polling de `/register` nem reenvio automático de SMS.
+Se o aparelho atual exibir o pedido para autorizar a transferência da conta, aguarde a decisão do titular e clique em **Já confirmei no aparelho — consultar confirmação**. `POST /manager/mobile-devices/{id}/registration/check` recebe `{"confirm":true}` e consulta somente `/exist` com as mesmas chaves. Exige resposta `ok`, login válido e ausência de pendência; valida a identidade antes de confirmar o registro local por CAS. A consulta não solicita SMS/ligação, não submete OTP e não abre a conexão Zapo. Falhas preservam os prazos e o desafio anterior; há intervalo mínimo de 15 segundos entre consultas. A conexão é liberada pelo botão existente após confirmação. Não há polling de `/register` nem reenvio automático de SMS.
 
 `canRetryVerification=true` permite uma confirmação manual com `confirmRecovery=true`, preservando as mesmas chaves. Há intervalo mínimo de 60 segundos e limite de três tentativas de confirmação no cadastro. Registros legados com falha genérica sem diagnóstico permitem uma recuperação explícita; falhas conhecidas permitem somente corrigir código inválido. Código expirado, desafios adicionais, limite do provedor e resultados incertos exigem análise, sem remover dados nem reiniciar o registro automaticamente.
 
@@ -268,6 +273,52 @@ Credenciais ainda válidas permitem reconectar sem novo SMS/QR. Revogação pelo
 WhatsApp ou novo registro em outro aparelho pode exigir registro novamente.
 A exclusão definitiva exige novo SMS quando não houver um backup válido.
 Trate arquivo e senha como credenciais de acesso; não envie ambos pelo mesmo canal.
+
+### Sessões vinculadas: backup completo em blocos
+
+Novos `.vipersession` usam `viperconnect-session-stream-v2`, sem teto total de
+chaves ou arquivo. SCAN paginado e deduplicação temporária evitam listas globais
+no processo. AES-256-GCM autentica frames e fechamento; o arquivo vai ao media
+storage por streaming, sem cópia integral no Redis. Disponibilidade e remoção
+agendada: 24 horas. Swarm exige S3/MinIO ou volume compartilhado. Senha permanece
+apenas na requisição/tarefa em execução.
+O número da sessão aceita somente a equivalência brasileira de celular com/sem
+nono dígito, com mesmo DDD e demais dígitos. O JID nativo é preservado e deve
+coincidir exatamente com as credenciais no staging da restauração.
+
+Download binário autenticado: `GET /manager/session-transfers/{phone}/backup-tasks/{task}/download/file`.
+O painel usa upload HTTP multipart em requisições separadas de 8 MiB (não um
+multipart/form-data contendo o arquivo inteiro): POST restore-uploads `{size}`,
+PUT restore-uploads/{upload}/parts/{part} com SHA-256 e octet-stream, POST complete
+com senha/confirmOriginOffline e GET por UUID para acompanhar. Finalização 202 é
+assíncrona; conclusão efetiva é `ready`, erro `failed`; queda de processo/trava
+gera `interrupted` e exige revisão. Partes são sequenciais, idempotentes somente
+para bytes idênticos; sem retomada automática no painel após reload. Redis guarda
+somente metadados/recibos por 24h, bytes no media storage padrão da instalação.
+Swarm exige storage compartilhado por web e broker; limpeza agendada em 24h
+depende de broker ativo. Senha não persistida. SHA-256 no navegador exige HTTPS
+ou localhost. Seleção não inicia envio; clique Restaurar sessão com confirmação.
+HTTP 413 pode ocorrer para proxy com limite inferior a 8 MiB por requisição.
+Upload direto compatível: `POST /manager/session-transfers/restore-stream`, application/octet-stream;
+primeira linha JSON com `password` e `confirmOriginOffline:true`, seguida do arquivo
+sem alteração. O painel detecta o formato e mantém o importador JSON antigo.
+Restauração valida a sequência completa, identidade e escopo antes de promover
+staging em lotes de 100 chaves; TTLs absolutos são preservados e cadastro só nasce
+ao final. Rollback limpa apenas dados próprios; perda da trava exige revisão
+(`session_restore_rollback_pending`). Não repetir importação nem apagar chaves
+de outra sessão manualmente. Interrupção do processo antes da ativação deixa
+staging temporário; uma promoção interrompida exige revisão do destino antes
+de nova importação. O journal contém apenas metadados, nunca DUMP; passa a ser
+durável antes da promoção e é removido após sucesso ou rollback comprovado.
+Se houver queda ou resposta Redis incerta, é preservado para revisão operacional.
+Capacidade de disco/Redis e timeouts de proxy continuam valendo.
+
+Frames: até 4 MiB/100 registros; DUMP Base64 por entrada: 2.000.000 caracteres.
+Sem corte silencioso. Falhas de exportação recuperam somente a configuração
+anterior de conexão e somente enquanto a tarefa ainda é dona da suspensão;
+sucesso mantém origem offline. `.viperdevice` e `.vipersession` legados preservam
+seus limites anteriores. Validar com `lab/validation/session_backup_stream.cjs`,
+somente dados sintéticos no lab, nunca em produção.
 
 Rotas administrativas documentadas no OpenAPI e na coleção Postman:
 
@@ -407,3 +458,27 @@ Não está instalado nem ativado neste Compose. Se adotado, usar autenticação/
 - O instalador de dependências da documentação informou 13 vulnerabilidades (6 baixas, 3 moderadas e 4 altas). Não houve atualização automática de dependências; a avaliação/correção dessas dependências é separada deste provisionamento. O servidor de desenvolvimento permanece restrito ao loopback.
 
 Não foram executados registro SMS, pareamento, envio de mensagens nem chamadas. Ainda é necessário escolher e autorizar o número de laboratório. O cadastro está disponível; o gate de registro e os demais fluxos do plano continuam pendentes. Produção apenas consultada para os cinco campos S3 necessários; nenhuma alteração de container, stack ou dados remotos.
+# Teste temporário de saída IPv6 do registro
+
+O relay `lab/registration/ipv6_relay.cjs` é exclusivo de diagnóstico local:
+Um IPv6 de origem pode ser fixado pelo primeiro argumento do script. Use somente
+um endereço já atribuído ao Windows e validado por conexão; isso não cria novos
+endereços, não faz rotação automática e não garante superar recusas por prefixo/IP.
+escuta `127.0.0.1:19877` no Windows por até 60 minutos e encaminha somente TCP
+para `v.whatsapp.net:443`, forçando IPv6. O TLS permanece entre o processo de
+registro e o WhatsApp, com SNI e certificado validados; não inspeciona códigos,
+credenciais ou payloads. Não altera a rede Docker, Zapo, VoIP ou produção.
+
+O teste só é ativado no container escolhido quando um administrador instala
+`/tmp/viperconnect-registration-ipv6-relay.json` com `enabled:true` e `expiresAt`
+UTC dentro de uma hora. O worker mantém a verificação do hash da biblioteca e
+limita cada solicitação a uma tentativa manual, sem troca automática SMS/voz.
+Sem o arquivo, usa o transporte normal. Arquivo inválido/expirado ou relay
+indisponível causa falha, sem fallback silencioso para IPv4. Apenas as chamadas
+de registro a `v.whatsapp.net` passam pelo relay; consultas de versão e push
+mantêm seu transporte anterior. Mudar o IP não garante resolver recusas do provedor.
+
+Após o teste, remova o arquivo de ativação do container e encerre o processo
+Windows identificado na implantação. O relay expira sozinho em 60 minutos;
+o arquivo precisa ser removido para retomar explicitamente o transporte normal.
+Não há rota pública, nova permissão de painel ou publicação automática.

@@ -1,10 +1,10 @@
-import { renderInfoTooltip } from '../components/form_controls.js?v=4.0.34-43ce0548';
-import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
-import { renderModal } from '../components/modal.js?v=4.0.34-43ce0548';
-import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
-import { formatNumber, t } from '../core/i18n.js?v=4.0.34-43ce0548';
-import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.34-43ce0548';
-import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js?v=4.0.34-43ce0548';
+import { renderInfoTooltip } from '../components/form_controls.js?v=4.0.35-a50438ad';
+import { icon } from '../components/icons.js?v=4.0.35-a50438ad';
+import { renderModal } from '../components/modal.js?v=4.0.35-a50438ad';
+import { escapeHtml } from '../core/html.js?v=4.0.35-a50438ad';
+import { formatNumber, t } from '../core/i18n.js?v=4.0.35-a50438ad';
+import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.35-a50438ad';
+import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js?v=4.0.35-a50438ad';
 export const queueDescriptionKey = (name) => {
     if (/^unoapi\.mobile\.companion\.history\.(?:v2\.)?[^.]+\.zapo(?:\.(?:dead|delayed))?$/.test(name))
         return 'Envia histórico local ao dispositivo secundário, sem webhooks. Inclui referências de mídias comuns; não baixa arquivos.';

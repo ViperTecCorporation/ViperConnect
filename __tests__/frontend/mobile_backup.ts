@@ -7,6 +7,7 @@ test('progress replaces empty fields and registration failure is readable', () =
   expect(renderMobileBackup(false, true)).toContain('Gerando backup…')
   expect(renderMobileBackup(false, true)).not.toContain('name="password"')
   expect(mobileBackupError(new ApiError(409, '', { error: 'mobile_registration_required' }))).toContain('Confirme o código SMS')
+  expect(mobileBackupError(new ApiError(409, '', { error: 'session_restore_rollback_pending' }))).toContain('Não importe novamente')
 })
 test('background export releases the modal and a returning admin can retrieve the notification', async () => {
   const task = { id: 'task', deviceId: 'device', status: 'running', expiresAt: Date.now() + 86400000 }

@@ -65,6 +65,7 @@ export function mobileDeviceRouter(
     res.sendStatus(204)
   }))
   router.get('/:id/registration', run(async (req, res) => res.json(await registration.status(req.params.id))))
+  router.post('/:id/registration/check', run(async (req, res) => res.json(await registration.checkConfirmation(req.params.id, req.body))))
   router.get('/:id/connection', run(async (req, res) => res.json(await (await connection()).status(req.params.id))))
   router.post('/:id/connection', run(async (req, res) => res.status(202).json(await (await connection()).connect(req.params.id, req.body))))
   router.post('/:id/registration/request', run(async (req, res) => res.json(await registration.execute(req.params.id, 'request', req.body))))

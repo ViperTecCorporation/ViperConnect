@@ -11,6 +11,16 @@ function fixture() {
   return { service: new MobileConnectionService(deps), deps, auth, lease }
 }
 describe('mobile primary import and worker dispatch', () => {
+  test('nine-digit session namespace keeps canonical eight-digit authentication', async () => {
+    const s = fixture()
+    s.deps.draft.mockResolvedValue({ id: 'draft', phone: '5566999554300', name: 'Lab' } as any)
+    s.deps.registration.mockResolvedValue({ status: 'registered', sessionPhone: '5566999554300', canonicalPhone: '556699554300', store: {}, advSecret: Buffer.alloc(32).toString('base64') } as any)
+    await s.service.connect('draft', { confirm: true })
+    expect(convertWhalibmobCredentials).toHaveBeenCalledWith({}, expect.objectContaining({ expectedCanonicalPhone: '556699554300' }))
+    expect(s.deps.auth).toHaveBeenCalledWith('5566999554300')
+    expect(s.deps.dispatch).toHaveBeenCalledWith('5566999554300')
+    expect(s.deps.saveConfig).toHaveBeenCalledWith('5566999554300', expect.objectContaining({ mobilePrimaryDraftId: 'draft' }))
+  })
   test('panel resumes without overwriting credentials or restoring removed webhooks', async () => {
     const s = fixture()
     s.deps.config.mockResolvedValue({ mobilePrimaryDraftId: 'draft', mobilePrimaryImported: true, autoConnect: false, provider: 'zapo', server: 'mobile_lab', webhooks: [{ id: 'remaining' }] })

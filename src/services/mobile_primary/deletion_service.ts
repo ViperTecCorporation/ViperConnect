@@ -17,7 +17,7 @@ return 1`
 interface Lease { acquire(): Promise<boolean>; renew(): Promise<boolean>; release(): Promise<unknown> }
 export interface MobileDeletionDependencies {
   list(): Promise<MobileDeviceDraft[]>
-  registration(id: string): Promise<{ canonicalPhone?: string } | undefined>
+  registration(id: string): Promise<{ canonicalPhone?: string; sessionPhone?: string } | undefined>
   config(phone: string): Promise<any>
   saveConfig(phone: string, value: any): Promise<unknown>
   dispatch(phone: string): Promise<void>
@@ -34,7 +34,8 @@ export class MobileDeletionService {
   async transferEligibility(id: string) {
     const draft = (await this.deps.list()).find(item => item.id === id)
     if (!draft) throw new MobileDeviceError(404, 'mobile_draft_not_found')
-    const phone = (await this.deps.registration(id))?.canonicalPhone || draft.phone
+    const registration = await this.deps.registration(id)
+    const phone = registration?.sessionPhone || registration?.canonicalPhone || draft.phone
     return { eligible: await this.transferReady(id, phone, await this.deps.config(phone)) }
   }
   private async transferReady(id: string, phone: string, config: any) {
@@ -53,7 +54,7 @@ export class MobileDeletionService {
     let acquired = false
     try {
       const registration = await this.deps.registration(id)
-      const phone = registration?.canonicalPhone || draft.phone
+      const phone = registration?.sessionPhone || registration?.canonicalPhone || draft.phone
       if (!/^[1-9]\d{7,14}$/.test(phone)) throw new MobileDeviceError(409, 'mobile_deletion_identity_invalid')
       const config = await this.deps.config(phone)
       if (config && config.mobilePrimaryDraftId !== id) throw new MobileDeviceError(409, 'mobile_session_conflict')

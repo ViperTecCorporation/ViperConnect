@@ -9,10 +9,11 @@ const RUN_MS = 10 * 60 * 1000
 export interface BackupTask {
   id: string; deviceId: string; status: 'running' | 'ready' | 'failed' | 'interrupted'
   createdAt: number; expiresAt: number; error?: string
+  updatedAt?: number
 }
 interface Dependencies {
   redis: { get(key: string): Promise<string | null>; eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown> }
-  export(id: string, body: any): Promise<{ archive: string; fileName: string }>
+  export(id: string, body: any, heartbeat?: () => Promise<void>): Promise<{ archive?: string; objectKey?: string; fileName: string }>
   exists(id: string): Promise<unknown>
 }
 
@@ -38,7 +39,13 @@ export class MobileBackupTasks {
   private async execute(task: BackupTask, body: any) {
     let file = ''
     try {
-      file = JSON.stringify({ taskId: task.id, result: await this.deps.export(task.deviceId, body) })
+      const heartbeat = async () => {
+        task.updatedAt = Date.now()
+        const result = await this.deps.redis.eval(`if redis.call('GET',KEYS[1]) ~= ARGV[1] then return 0 end; redis.call('PEXPIRE',KEYS[1],ARGV[3]); redis.call('SET',KEYS[2],ARGV[2],'EX',ARGV[4]); return 1`,
+          { keys: [LOCK, this.prefix + task.deviceId], arguments: [task.id, JSON.stringify(task), String(RUN_MS), String(RETENTION)] })
+        if (Number(result) !== 1) throw new MobileDeviceError(409, 'session_backup_task_lost')
+      }
+      file = JSON.stringify({ taskId: task.id, result: await this.deps.export(task.deviceId, body, heartbeat) })
       task.status = 'ready'
     } catch (error) {
       task.status = 'failed'
@@ -58,7 +65,7 @@ export class MobileBackupTasks {
     const raw = await this.deps.redis.get(this.prefix + deviceId)
     if (!raw) return undefined
     const task: BackupTask = JSON.parse(raw)
-    if (task.status === 'running' && Date.now() - task.createdAt >= RUN_MS) task.status = 'interrupted'
+    if (task.status === 'running' && Date.now() - (task.updatedAt || task.createdAt) >= RUN_MS) task.status = 'interrupted'
     return task
   }
   async download(deviceId: string, taskId: string) {
@@ -68,7 +75,7 @@ export class MobileBackupTasks {
     if (!raw) throw new MobileDeviceError(410, 'mobile_backup_expired')
     const file = JSON.parse(raw)
     if (file.taskId !== taskId) throw new MobileDeviceError(409, 'mobile_backup_not_ready')
-    return file.result as { archive: string; fileName: string }
+    return file.result as { archive?: string; objectKey?: string; fileName: string }
   }
 }
 

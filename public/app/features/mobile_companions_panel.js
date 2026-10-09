@@ -1,5 +1,5 @@
-import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
-import { createQrReader } from './qr_reader.js?v=4.0.34-43ce0548';
+import { escapeHtml } from '../core/html.js?v=4.0.35-a50438ad';
+import { createQrReader } from './qr_reader.js?v=4.0.35-a50438ad';
 export function formatCompanionCode(value) {
     const code = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
     return code.length > 4 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;

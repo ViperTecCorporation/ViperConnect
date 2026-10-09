@@ -50,7 +50,7 @@ import {
 import { icon } from './components/icons.js'
 import { ManagerPage, managerIdentity } from './features/manager.js'
 import { MobileDevicesPanel } from './features/mobile_devices.js'
-import { SessionTransfersPanel } from './features/session_transfers.js'
+import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js'
 import type { ManagerIdentity } from './domain/manager_types.js'
 import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js'
 import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js'
@@ -261,6 +261,15 @@ export class ViperConnectApp {
     for (const name of ['input', 'change']) this.root.addEventListener(name, (event) => {
       if ((event.target as HTMLElement).closest?.('.profile-editor')) this.ownProfile.markDirty()
       const target = event.target as HTMLElement
+      if (name === 'change' && target.matches?.('[data-session-backup-file]')) {
+        const input = target as HTMLInputElement, file = input.files?.[0]
+        const feedback = input.closest('form')?.querySelector<HTMLElement>('[data-session-backup-feedback]')
+        if (feedback && file) {
+          feedback.textContent = 'Identificando o formato do arquivo…'
+          void describeSessionBackup(file).then(message => { if (input.files?.[0] === file) feedback.textContent = message })
+            .catch(() => { if (input.files?.[0] === file) feedback.textContent = 'Não foi possível ler o cabeçalho do arquivo. Selecione novamente.' })
+        } else if (feedback) feedback.textContent = 'Selecione um arquivo .vipersession.'
+      }
       if (name === 'change' && target.matches?.('input[data-profile-image]')) {
         const input = target as HTMLInputElement
         const file = input.files?.[0]

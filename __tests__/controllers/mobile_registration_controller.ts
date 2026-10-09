@@ -4,7 +4,7 @@ import { mobileDeviceRouter } from '../../src/controllers/mobile_device_controll
 
 describe('experimental registration HTTP authorization and contract', () => {
   const identity = { authenticate: jest.fn() }
-  const reg: any = { enabled: () => true, status: jest.fn(), execute: jest.fn() }
+  const reg: any = { enabled: () => true, status: jest.fn(), execute: jest.fn(), checkConfirmation: jest.fn() }
   const app = express().use(express.json()).use('/manager/mobile-devices', mobileDeviceRouter(identity as any, {} as any, () => true, reg))
   beforeEach(() => { jest.clearAllMocks(); identity.authenticate.mockResolvedValue({ role: 'admin', kind: 'stack' }); reg.execute.mockResolvedValue({ status: 'code_required' }); reg.status.mockResolvedValue({ status: 'idle' }) })
   test('requires bearer admin on every endpoint', async () => {
@@ -26,5 +26,18 @@ describe('experimental registration HTTP authorization and contract', () => {
     reg.execute.mockRejectedValue(new Error('secret code=123456'))
     const response = await request(app).post('/manager/mobile-devices/id/registration/request').set('Authorization', 'Bearer secret').send({ confirm: true })
     expect(response.status).toBe(503); expect(response.text).not.toContain('123456')
+  })
+  test('confirmation check is admin-only and delegates explicitly without an OTP', async () => {
+    const path = '/manager/mobile-devices/id/registration/check'
+    expect((await request(app).post(path).send({ confirm: true })).status).toBe(401)
+    identity.authenticate.mockResolvedValue({ role: 'user', kind: 'login' })
+    expect((await request(app).post(path).set('Authorization', 'Bearer secret').send({ confirm: true })).status).toBe(403)
+    expect(reg.checkConfirmation).not.toHaveBeenCalled()
+    identity.authenticate.mockResolvedValue({ role: 'admin', kind: 'stack' })
+    reg.checkConfirmation.mockResolvedValue({ status: 'registered' })
+    const response = await request(app).post(path).set('Authorization', 'Bearer secret').send({ confirm: true })
+    expect(response.status).toBe(200); expect(response.headers['cache-control']).toBe('no-store')
+    expect(reg.checkConfirmation).toHaveBeenCalledWith('id', { confirm: true })
+    expect(reg.execute).not.toHaveBeenCalled()
   })
 })

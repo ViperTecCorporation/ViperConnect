@@ -1,4 +1,4 @@
-import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
+import { escapeHtml } from '../core/html.js?v=4.0.35-a50438ad';
 export function renderWebhookHistory(snapshots, loading, error) {
     return `<section class="section"><h2>Restaurar webhooks anteriores</h2>
     <p>Histórico exclusivo do administrador. A restauração mantém os IDs e deixa os webhooks desativados. Revise o destino antes de ativá-los; mensagens antigas não serão reenviadas.</p>

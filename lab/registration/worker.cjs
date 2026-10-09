@@ -10,7 +10,7 @@ const { failure, responseDiagnostic } = require('./diagnostic.cjs')
 function registrationModule(root, observe = () => {}, method = 'sms') {
   const filename = path.join(root, 'lib/Registration.js')
   let source = fs.readFileSync(filename, 'utf8').replace(/\r\n/g, '\n')
-  if (crypto.createHash('sha256').update(source).digest('hex') !== 'be7b4d0737550c0270ac4c1d834a0c13143444aa5e006e8e4694bad359b5f71c') throw new Error('source_mismatch')
+  if (crypto.createHash('sha256').update(source).digest('hex') !== 'd3b3886b73aff2d6eb9632f9fd3c1691216ef83d47048f78026e57ebd19eda48') throw new Error('source_mismatch')
   source = source.replace('const MAX_CODE_REQUEST_ATTEMPTS = 5;', 'const MAX_CODE_REQUEST_ATTEMPTS = 1;')
     .replace("if (result && result._noRoutes && !autoFallbackDone && method !== 'email')", 'if (false)')
   const responseLine = 'const result = await httpPost(path, body, waVersion, bodyAtt.authorizationHeader, device);'
@@ -18,8 +18,8 @@ function registrationModule(root, observe = () => {}, method = 'sms') {
   source = source.replace(responseLine, responseLine + '\n  module.__observeRegistration(path, result);')
   const mod = new Module(filename, module)
   mod.__observeRegistration = (endpoint, result) => {
-    if (endpoint === '/code' || endpoint === '/register') {
-      observe(responseDiagnostic(result, endpoint === '/code' ? 'request' : 'verify', method))
+    if (endpoint === '/code' || endpoint === '/register' || endpoint === '/exist') {
+      observe(responseDiagnostic(result, endpoint === '/exist' ? 'check' : endpoint === '/code' ? 'request' : 'verify', method))
     }
   }
   mod.filename = filename; mod.paths = Module._nodeModulePaths(path.dirname(filename))
@@ -35,14 +35,24 @@ async function operate(input, dependencies) {
   const method = input.method || 'sms'
   if (!['sms', 'voice'].includes(method)) throw new Error('invalid_method')
   const store = storeFromJson(input.store)
+  // Keep request-local metadata even on refusal, but never adopt changed keys,
+  // registration flags or a canonical phone from a failed operation.
+  const requestMetadata = () => input.action === 'request' ? {
+    store: { ...input.store, version: store.version, fcm: store.fcm || null, apns: store.apns || null }
+  } : {}
   let observed
   const registration = dependencies?.registration || registrationModule(root, detail => { observed = detail }, method)
   try {
     if (input.action === 'request') {
       const result = await registration.requestSmsCode(store, method)
-      if (!['ok', 'sent'].includes(result?.status)) return { error: 'provider_failed', diagnostic: observed || responseDiagnostic(result, input.action, method) }
+      if (!['ok', 'sent'].includes(result?.status)) return { ...requestMetadata(), error: 'provider_failed', diagnostic: observed || responseDiagnostic(result, input.action, method) }
       store.codePending = true
       return { store: storeToJson(store), diagnostic: observed || responseDiagnostic(result, input.action, method) }
+    } else if (input.action === 'check') {
+      const result = await registration.checkIfRegistered(store)
+      if (result?.status !== 'ok' || result.pending || result.reason || !/^[1-9]\d{7,14}$/.test(String(result.login || ''))) return { error: 'challenge_required', diagnostic: observed || responseDiagnostic(result, 'check', method) }
+      // Adoption is only permitted following an affirmative /exist response.
+      store.phoneNumber = String(result.login); store.registered = true; store.codePending = false
     } else if (input.action === 'verify') {
       const result = await registration.verifyCode(store, input.code)
       // Never treat "sent", a pending challenge, or a local flag as registered.
@@ -52,6 +62,7 @@ async function operate(input, dependencies) {
     return { store: storeToJson(store) }
   } catch (error) {
     const result = failure(error, input.action)
+    Object.assign(result, requestMetadata())
     const detail = observed || (error?.raw ? responseDiagnostic(error.raw, input.action, method) : undefined)
     if (detail) result.diagnostic = { ...detail, ...result.diagnostic, reason: result.diagnostic.reason === 'unknown' ? detail.reason : result.diagnostic.reason }
     return result

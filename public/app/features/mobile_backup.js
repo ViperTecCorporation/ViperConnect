@@ -1,4 +1,4 @@
-import { ApiError } from '../core/api.js?v=4.0.34-43ce0548';
+import { ApiError } from '../core/api.js?v=4.0.35-a50438ad';
 export function renderMobileBackup(restore, busy) {
     if (busy)
         return `<div class="stack" role="status" aria-live="polite" aria-busy="true"><h3>${restore ? 'Restaurando dispositivo…' : 'Gerando backup…'}</h3><p>${restore ? 'Aguarde a validação e a restauração do arquivo.' : 'Aguarde: suspendendo a origem, reunindo os dados e criptografando o arquivo. Isso pode levar alguns instantes.'}</p><p>Não feche esta janela nem atualize a página.</p><button class="btn" disabled>Aguarde…</button></div>`;
@@ -13,6 +13,7 @@ export function renderMobileBackup(restore, busy) {
 }
 export function mobileBackupError(error) {
     const messages = {
+        session_restore_rollback_pending: 'A restauração foi interrompida e precisa de revisão no destino. Não importe novamente nem exclua as chaves antes de verificar os lotes já aplicados.',
         mobile_registration_required: 'O registro deste dispositivo ainda não foi concluído. Confirme o código SMS e conecte à Zapo antes de gerar o backup.',
         mobile_backup_requires_imported_redis_device: 'Conecte este dispositivo à Zapo no laboratório antes de gerar o backup. As credenciais ainda não estão prontas para exportação.',
         mobile_backup_too_large: 'O backup excedeu o limite permitido. A origem pode ter permanecido suspensa; consulte a conexão antes de continuar.',

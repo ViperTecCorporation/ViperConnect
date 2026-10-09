@@ -1,10 +1,10 @@
-import { ApiError } from '../core/api.js?v=4.0.34-43ce0548';
-import { escapeHtml as e } from '../core/html.js?v=4.0.34-43ce0548';
-import { renderModal } from '../components/modal.js?v=4.0.34-43ce0548';
-import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
-import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js?v=4.0.34-43ce0548';
-import { sessionPhone } from '../domain/session.js?v=4.0.34-43ce0548';
-import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.34-43ce0548';
+import { ApiError } from '../core/api.js?v=4.0.35-a50438ad';
+import { escapeHtml as e } from '../core/html.js?v=4.0.35-a50438ad';
+import { renderModal } from '../components/modal.js?v=4.0.35-a50438ad';
+import { icon } from '../components/icons.js?v=4.0.35-a50438ad';
+import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js?v=4.0.35-a50438ad';
+import { sessionPhone } from '../domain/session.js?v=4.0.35-a50438ad';
+import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.35-a50438ad';
 const reason = 'O registro SMS exige habilitação; o cadastro não conecta automaticamente a Zapo nem altera sessões vinculadas.';
 const button = (label, action, id = '') => `<button type="button" class="btn btn--ghost" data-action="mobile-${action}" data-id="${e(id)}">${action === 'new' ? icon('devicePlus') : ''}${e(label)}</button>`;
 export class MobileDevicesPanel {
@@ -97,6 +97,10 @@ export class MobileDevicesPanel {
         this.backupDownload = undefined;
         if (action === 'mobile-reg-status') {
             void this.refreshRegistration();
+            return;
+        }
+        if (action === 'mobile-reg-check') {
+            void this.checkConfirmation();
             return;
         }
         if (action === 'mobile-connection-status') {
@@ -345,14 +349,16 @@ export class MobileDevicesPanel {
             clearInterval(this.cooldownTimer);
         this.cooldownTimer = undefined;
     }
-    countdown() {
-        const seconds = Math.max(0, Math.ceil(((this.registration?.retryAt || 0) - Date.now()) / 1000));
+    countdown(deadline = this.registration?.retryAt || 0) {
+        const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
         return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(value => String(value).padStart(2, '0')).join(':');
     }
     watchCooldown() {
         this.stopCooldown();
-        const deadline = this.registration?.retryAt;
-        if (this.modal !== 'details' || !this.selected || !['blocked', 'code_required', 'additional_confirmation_required'].includes(this.registration?.status || '') || this.registration?.canResendSms || !Number.isFinite(deadline) || this.checkedDeadline === deadline)
+        const deadlines = [!this.registration?.canResendSms ? this.registration?.retryAt : undefined, !this.registration?.canResendVoice ? this.registration?.retryAtVoice : undefined]
+            .filter((value) => Number.isFinite(value) && value !== this.checkedDeadline);
+        const deadline = deadlines.length ? Math.min(...deadlines) : undefined;
+        if (this.modal !== 'details' || !this.selected || !['blocked', 'code_required', 'additional_confirmation_required'].includes(this.registration?.status || '') || deadline === undefined)
             return;
         const id = this.selected.id;
         const generation = this.generation;
@@ -362,7 +368,7 @@ export class MobileDevicesPanel {
                 return;
             }
             if (typeof document !== 'undefined')
-                document.querySelectorAll('[data-mobile-countdown]').forEach(el => { el.textContent = this.countdown(); });
+                document.querySelectorAll('[data-mobile-countdown]').forEach(el => { el.textContent = this.countdown(el.getAttribute('data-mobile-countdown') === 'voice' ? this.registration?.retryAtVoice : this.registration?.retryAt); });
             if (Date.now() >= deadline && !this.busy) {
                 this.checkedDeadline = deadline;
                 this.stopCooldown();
@@ -403,6 +409,31 @@ export class MobileDevicesPanel {
                     if (input)
                         input.value = pendingCode;
                 }
+            }
+        }
+    }
+    async checkConfirmation() {
+        if (!this.smsRegistration || !this.selected || this.busy || this.registration?.status !== 'additional_confirmation_required')
+            return;
+        const generation = this.generation, id = this.selected.id;
+        this.stopCooldown();
+        this.busy = true;
+        this.error = '';
+        this.render();
+        try {
+            const result = await this.api.request(`/manager/mobile-devices/${encodeURIComponent(id)}/registration/check`, { method: 'POST', body: JSON.stringify({ confirm: true }) });
+            if (generation === this.generation && this.selected?.id === id)
+                this.registration = result;
+        }
+        catch {
+            if (generation === this.generation)
+                this.error = 'A confirmação ainda não pôde ser comprovada. As chaves e os prazos foram preservados; nenhum código foi solicitado. Aguarde antes de consultar novamente.';
+        }
+        finally {
+            if (generation === this.generation) {
+                this.busy = false;
+                this.render();
+                this.watchCooldown();
             }
         }
     }
@@ -464,10 +495,18 @@ export class MobileDevicesPanel {
         const waiting = state === 'blocked' && this.registration?.diagnostic?.providerReason === 'too_recent';
         if (waiting)
             labels.blocked = this.registration?.canResendSms ? 'Você já pode solicitar um novo SMS.' : 'Aguardando liberação para solicitar outro SMS.';
+        if (this.registration?.diagnostic?.reason === 'ipv6_relay_configuration')
+            labels.blocked = 'Falha local no teste IPv6; nenhuma solicitação enviada ao WhatsApp.';
+        if (state === 'blocked' && this.registration?.diagnostic?.providerReason === 'no_routes')
+            labels.blocked = this.registration.canResendSms || this.registration.canResendVoice ? 'Sem rota na tentativa anterior; nova tentativa manual disponível.' : 'Sem rota na tentativa anterior; aguardando liberação do método.';
+        if (state === 'blocked' && this.registration?.diagnostic?.stage === 'request' && this.registration.diagnostic.providerReason === 'blocked')
+            labels.blocked = this.registration.canResendSms || this.registration.canResendVoice ? 'Solicitação recusada pelo provedor; nova tentativa manual disponível.' : 'Solicitação recusada pelo provedor; aguardando prazo ou resolução de pendência.';
         labels.additional_confirmation_required = 'Confirmação adicional solicitada pelo WhatsApp';
         let html = `<div class="mobile-overview__status"><p role="status">${e(state ? labels[state] || 'Estado desconhecido' : 'Consulte o andamento antes de iniciar.')}</p>${button('Consultar andamento', 'reg-status')}</div>`;
+        if (state === 'blocked' && this.registration?.diagnostic?.reason === 'ipv6_relay_configuration')
+            html += '<p>O teste IPv6 expirou ou está inválido. A solicitação não chegou ao WhatsApp. Após corrigir a saída de rede, use os controles abaixo para tentar manualmente; as chaves foram preservadas.</p>';
         if (state === 'additional_confirmation_required')
-            html += '<p>Confirme a transferência no aparelho atual. Após o prazo informado pelo WhatsApp, você pode solicitar outro código por SMS ou ligação. Isso é um reenvio comum, não uma confirmação automática da transferência. As chaves são preservadas.</p>';
+            html += `<p>Confirme a transferência no aparelho atual e depois consulte a confirmação abaixo. A consulta usa as mesmas chaves e não envia SMS ou ligação. Se o WhatsApp confirmar o registro, o painel libera a conexão à Zapo.</p><button type="button" class="btn" data-action="mobile-reg-check" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Consultando confirmação…' : 'Já confirmei no aparelho — consultar confirmação'}</button>`;
         if (state === 'additional_confirmation_required' && !Number.isFinite(this.registration?.retryAt) && !Number.isFinite(this.registration?.retryAtVoice))
             html += '<p>O provedor não informou prazo para reenvio; a solicitação permanece indisponível.</p>';
         if (state === 'registered') {
@@ -480,11 +519,13 @@ export class MobileDevicesPanel {
             html += '<p>Se o WhatsApp atual solicitar autorização para transferir a conta, conclua essa confirmação no aparelho antes de prosseguir. Este painel ainda não detecta automaticamente essa aprovação. Não solicite outro SMS enquanto aguarda.</p>';
         const detail = this.registration?.diagnostic;
         if (Number.isFinite(this.registration?.retryAt) && !this.registration?.canResendSms)
-            html += `<p>Espera informada pelo provedor até: ${e(new Date(this.registration.retryAt).toLocaleString('pt-BR'))}.</p><p>Tempo restante: <strong data-mobile-countdown role="timer">${this.countdown()}</strong></p><p>Ao terminar, o painel consulta a liberação automaticamente. Nenhum SMS é enviado sem seu clique.</p><button type="button" class="btn" disabled>Solicitar novo SMS — aguardando liberação</button>`;
+            html += `<p>Espera de SMS informada pelo provedor até: ${e(new Date(this.registration.retryAt).toLocaleString('pt-BR'))}.</p><p>Tempo restante para SMS: <strong data-mobile-countdown="sms" role="timer">${this.countdown()}</strong></p><p>Ao terminar, o painel consulta a liberação automaticamente. Nenhum SMS é enviado sem seu clique.</p><button type="button" class="btn" disabled>Solicitar novo SMS — aguardando liberação</button>`;
         else if (detail?.reason === 'rate_limited' && !this.registration?.canResendSms && !Number.isFinite(this.registration?.retryAt))
             html += '<p>Prazo não informado pelo provedor. Não há horário de liberação calculado; o reenvio permanece indisponível até revisão.</p>';
         if (detail?.providerReason === 'no_routes')
-            html += '<p>O provedor não encontrou rota para entregar o código pelo método solicitado. Tente o outro método quando liberado abaixo. Nenhuma troca é feita automaticamente.</p>';
+            html += '<p>O provedor não encontrou rota para entregar o código pelo método solicitado. Com prazo explícito, o mesmo método permite nova tentativa manual após a espera, inclusive zero; sem prazo, somente o método alternativo pode ser liberado. Nenhuma solicitação é feita automaticamente.</p>';
+        if (detail?.stage === 'request' && detail.providerReason === 'blocked')
+            html += '<p>O provedor retornou blocked ao solicitar o código. Você pode tentar SMS ou ligação quando liberados abaixo, mantendo as mesmas chaves. Isso não garante aceitação nem confirma banimento da conta. Prazos e desafios informados pelo provedor continuam sendo respeitados; não há reenvio automático.</p>';
         if (detail && state !== 'code_required') {
             const descriptions = { code_expired: 'Código expirado ou já utilizado.', invalid_code: 'Código não aceito. Confira os dígitos recebidos.', challenge_required: 'O provedor exige uma verificação adicional.', rate_limited: 'Limite de tentativas atingido. Não repita agora.', network: 'Falha de comunicação; o resultado remoto pode ser incerto.', android_material: 'Falha no material do aplicativo Android.', local_configuration: 'Falha na configuração local.', http_error: 'O serviço remoto retornou erro HTTP.', unknown: 'Motivo não reconhecido; requer análise.' };
             if (waiting)
@@ -500,7 +541,7 @@ export class MobileDevicesPanel {
         if (state === 'idle' || this.registration?.canResendVoice)
             html += `<form data-form="mobile-voice"><label><input type="checkbox" name="confirmSms" required>Autorizo receber uma ligação real com o código neste número, inclusive telefone fixo. O registro pode afetar o acesso no aparelho. Use somente o novo código recebido.</label><button class="btn" ${this.busy ? 'disabled' : ''}>Receber código por ligação</button></form>`;
         else if (Number.isFinite(this.registration?.retryAtVoice) && this.registration.retryAtVoice > Date.now())
-            html += `<p>Ligação disponível após a espera informada: ${e(new Date(this.registration.retryAtVoice).toLocaleString('pt-BR'))}. Consulte o andamento após esse horário.</p>`;
+            html += `<p>Ligação disponível após a espera informada: ${e(new Date(this.registration.retryAtVoice).toLocaleString('pt-BR'))}.</p><p>Tempo restante para ligação: <strong data-mobile-countdown="voice" role="timer">${this.countdown(this.registration.retryAtVoice)}</strong>. Ao terminar, o painel consulta a liberação; não solicita o código automaticamente.</p>`;
         if (state === 'idle' || this.registration?.canResendSms)
             html += `<form data-form="mobile-sms"><label><input type="checkbox" name="confirmSms" required>Autorizo ${this.registration?.canResendSms ? 'solicitar um novo SMS, preservando as chaves existentes' : 'enviar um SMS real para este número de laboratório'}. O registro pode afetar o acesso no aparelho. Use somente o novo código recebido.</label><button class="btn" ${this.busy ? 'disabled' : ''}>${state === 'code_required' ? 'Não recebi o código — solicitar novo SMS' : this.registration?.canResendSms ? 'Solicitar novo SMS' : 'Solicitar SMS'}</button></form>`;
         if (state === 'code_required' || this.registration?.canRetryVerification)
