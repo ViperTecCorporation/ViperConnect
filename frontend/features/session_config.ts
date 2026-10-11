@@ -47,6 +47,12 @@ export const renderSessionConfig = (session: SessionConfig, restricted = false):
           </select>
           <small id="connection-type-hint">${t('Para trocar o método, execute deregister e registre a sessão novamente.')}</small>
         </div>
+        <div class="field">
+          <span class="field-label">${t('Perfil do WhatsApp')}</span>
+          <input type="hidden" name="zapoWebClientProfile" value="${escapeHtml(session.zapoWebClientProfile || 'default')}">
+          <input value="${escapeHtml(session.zapoWebClientProfile === 'wa_personal' ? t('WA Pessoal (Android)') : session.zapoWebClientProfile === 'wa_business' ? t('WA Business (Android)') : t('Default (padrão atual)'))}" disabled>
+          <small>${t('Para trocar o perfil, execute deregister e registre a sessão novamente.')}</small>
+        </div>
         <label class="field field--connection-peer">
           <span class="field-label">${t('Servidor')}</span>
           <input name="server" value="${escapeHtml(session.server || 'server_1')}">
@@ -143,6 +149,7 @@ export const sessionConfigPayload = (data: FormData, restricted = false): Record
   const payload: Record<string, unknown> = {
     label: `${data.get('label') || ''}`.trim(),
     connectionType: `${data.get('connectionType') || 'qrcode'}`,
+    zapoWebClientProfile: `${data.get('zapoWebClientProfile') || 'default'}`,
     server: `${data.get('server') || 'server_1'}`.trim(),
     proxyUrl: `${data.get('proxyUrl') || ''}`.trim(),
     authToken: `${data.get('authToken') || ''}`,

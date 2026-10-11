@@ -1,4 +1,4 @@
-import { ApiError } from '../core/api.js?v=4.0.35-a50438ad';
+import { ApiError } from '../core/api.js?v=4.0.35-316e3502';
 export function renderMobileBackup(restore, busy) {
     if (busy)
         return `<div class="stack" role="status" aria-live="polite" aria-busy="true"><h3>${restore ? 'Restaurando dispositivo…' : 'Gerando backup…'}</h3><p>${restore ? 'Aguarde a validação e a restauração do arquivo.' : 'Aguarde: suspendendo a origem, reunindo os dados e criptografando o arquivo. Isso pode levar alguns instantes.'}</p><p>Não feche esta janela nem atualize a página.</p><button class="btn" disabled>Aguarde…</button></div>`;
@@ -11,8 +11,15 @@ export function renderMobileBackup(restore, busy) {
     <label><input type="checkbox" name="confirm" required>${restore ? 'Confirmo que a origem está desconectada e não será reconectada após a transferência.' : 'Autorizo suspender a conexão para gerar o backup. Não usarei as mesmas credenciais simultaneamente em duas instâncias.'}</label>
     <button class="btn" ${busy ? 'disabled' : ''}>${restore ? 'Restaurar dispositivo' : 'Suspender e baixar backup'}</button></form>`;
 }
-export function mobileBackupError(error) {
+export function mobileBackupError(error, restore = false) {
     const messages = {
+        mobile_backup_invalid_or_wrong_password: 'O arquivo é inválido ou a senha do backup está incorreta.',
+        mobile_backup_password_required: 'Informe a senha do backup, com 12 a 128 caracteres.',
+        mobile_backup_incompatible: 'O backup não é compatível com esta instância. Confira a versão e o formato do arquivo.',
+        mobile_backup_identity_mismatch: 'A identidade das credenciais não corresponde ao dispositivo do backup. Não altere o arquivo.',
+        mobile_restore_destination_exists: 'Já existe um cadastro ou dados dessa sessão no destino. Verifique-os antes de restaurar; nada será sobrescrito.',
+        mobile_restore_confirmation_required: 'Confirme que a origem está desconectada antes de restaurar.',
+        mobile_store_unavailable: 'O servidor não conseguiu acessar ou processar os dados da transferência. Consulte o diagnóstico no log.',
         session_restore_rollback_pending: 'A restauração foi interrompida e precisa de revisão no destino. Não importe novamente nem exclua as chaves antes de verificar os lotes já aplicados.',
         mobile_registration_required: 'O registro deste dispositivo ainda não foi concluído. Confirme o código SMS e conecte à Zapo antes de gerar o backup.',
         mobile_backup_requires_imported_redis_device: 'Conecte este dispositivo à Zapo no laboratório antes de gerar o backup. As credenciais ainda não estão prontas para exportação.',
@@ -20,7 +27,14 @@ export function mobileBackupError(error) {
     };
     if (error instanceof ApiError) {
         const payload = error.payload;
-        return messages[payload?.error || ''] || 'Não foi possível concluir a transferência. Nenhum download foi confirmado. A origem pode estar suspensa; consulte a conexão antes de tentar novamente.';
+        const candidate = error.code || payload?.error;
+        const code = typeof candidate === 'string' && /^[a-z][a-z0-9_]{0,100}$/.test(candidate) ? candidate : 'resposta_sem_codigo';
+        const message = (restore && code === 'mobile_backup_too_large'
+            ? 'O servidor recusou o backup por um limite de tamanho ou quantidade de registros. Consulte o diagnóstico no log; isso não confirma alteração no destino.'
+            : messages[code]) || (restore
+            ? 'Não foi possível concluir a restauração. Consulte o diagnóstico antes de tentar novamente.'
+            : 'Não foi possível gerar ou baixar o backup. A origem pode estar suspensa; consulte a conexão antes de tentar novamente.');
+        return `${message} Diagnóstico: HTTP ${error.status} / ${code}.`;
     }
     return error instanceof Error ? error.message : 'Não foi possível concluir a transferência.';
 }

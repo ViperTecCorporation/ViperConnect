@@ -5,6 +5,7 @@ import { MobileDeviceService, MobileDeviceError, mobileCapabilities } from '../s
 import { createRegistrationService } from '../services/mobile_primary/registration_process'
 import { companionOperations } from '../services/mobile_primary/companion_runtime'
 import { mobilePrimaryReady } from '../services/mobile_primary/runtime_policy'
+import logger from '../services/logger'
 
 export function mobileDeviceRouter(
   identity: Pick<ManagerIdentity, 'authenticate'> & Partial<Pick<ManagerIdentity, 'confirmAdminPassword'>> = managerIdentity,
@@ -37,6 +38,19 @@ export function mobileDeviceRouter(
   })
   const run = (action: (req: any, res: any) => Promise<any>) => async (req: any, res: any) => {
     try { await action(req, res) } catch (error) {
+      if (req.path === '/restore' || /^\/[^/]+\/backup$/.test(req.path)) {
+        // Never serialize the exception, request, archive, password or registration keys.
+        const known = error instanceof MobileDeviceError
+        const diagnostic = {
+          operation: req.path === '/restore' ? 'restore' : 'backup',
+          status: known ? error.status : error instanceof ManagerError ? error.status : 503,
+          errorCode: known ? error.code : error instanceof ManagerError ? 'manager_password_confirmation_failed' : 'mobile_store_unavailable',
+          errorType: error instanceof TypeError ? 'TypeError' : known ? 'MobileDeviceError' : 'Error',
+          stackFrames: error instanceof Error ? (error.stack?.match(/(?:\/home\/u\/app\/|[A-Za-z]:\\)[^\s()]+:\d+:\d+/g) || []).slice(0, 5) : [],
+        }
+        if (known || error instanceof ManagerError) logger.warn(diagnostic, 'MOBILE_BACKUP_TRANSFER_FAILED')
+        else logger.error(diagnostic, 'MOBILE_BACKUP_TRANSFER_FAILED')
+      }
       if (error instanceof MobileDeviceError) return res.status(error.status).json({ error: error.code })
       if (error instanceof ManagerError) return res.status(error.status).json({ error: 'manager_password_confirmation_failed' })
       return res.status(503).json({ error: 'mobile_store_unavailable' })

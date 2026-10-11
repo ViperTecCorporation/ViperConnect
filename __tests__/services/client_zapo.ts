@@ -297,6 +297,19 @@ describe('ClientZapo', () => {
     expect(client.connect).toHaveBeenCalledTimes(1)
   })
 
+  test.each([
+    ['default', undefined, undefined],
+    ['wa_personal', 'android tablet', 'e'],
+    ['wa_business', 'ANDROID TABLET', 'e'],
+  ] as const)('maps persisted web profile %s into client identity options', async (profile, deviceBrowser, devicePlatform) => {
+    config.zapoWebClientProfile = profile
+    await service.connect(1)
+    const options = (service as any).clientFactory.mock.calls[0][0]
+    expect(options.deviceBrowser).toBe(deviceBrowser)
+    expect(options.devicePlatform).toBe(devicePlatform)
+    expect(client.connect).toHaveBeenCalledTimes(1)
+  })
+
   test('releases the socket when connection fails after the QR prompt was emitted', async () => {
     let rejectConnect: (error: Error) => void = () => undefined
     client.connect.mockReturnValue(new Promise<void>((_resolve, reject) => {

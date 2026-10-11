@@ -207,7 +207,7 @@ export class MobileDevicesPanel {
         // Keep the encrypted result in memory until the user closes this modal; no password is retained.
       } else { this.modal = undefined; this.busy = false; await this.load(true) }
     } catch (error) {
-      if (generation === this.generation) this.error = mobileBackupError(error)
+      if (generation === this.generation) this.error = mobileBackupError(error, form === 'mobile-restore')
     } finally { if (generation === this.generation) { this.busy = false; this.render() } }
   }
 

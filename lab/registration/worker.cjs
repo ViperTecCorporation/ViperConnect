@@ -4,10 +4,11 @@ const path = require('node:path')
 const crypto = require('node:crypto')
 const Module = require('node:module')
 const { failure, responseDiagnostic } = require('./diagnostic.cjs')
+const { requestTrace } = require('./request_trace.cjs')
 
 // Pinned-source compatibility shim: limit /code to one attempt and never switch
 // delivery methods. No challenge bypass, credential extraction or TLS weakening.
-function registrationModule(root, observe = () => {}, method = 'sms') {
+function registrationModule(root, observe = () => {}, method = 'sms', observeRequest = () => {}) {
   const filename = path.join(root, 'lib/Registration.js')
   let source = fs.readFileSync(filename, 'utf8').replace(/\r\n/g, '\n')
   if (crypto.createHash('sha256').update(source).digest('hex') !== 'd3b3886b73aff2d6eb9632f9fd3c1691216ef83d47048f78026e57ebd19eda48') throw new Error('source_mismatch')
@@ -15,8 +16,12 @@ function registrationModule(root, observe = () => {}, method = 'sms') {
     .replace("if (result && result._noRoutes && !autoFallbackDone && method !== 'email')", 'if (false)')
   const responseLine = 'const result = await httpPost(path, body, waVersion, bodyAtt.authorizationHeader, device);'
   if (source.split(responseLine).length !== 2) throw new Error('source_mismatch')
-  source = source.replace(responseLine, responseLine + '\n  module.__observeRegistration(path, result);')
+  source = source.replace(responseLine, 'module.__observeRequest(path, plaintext, device, waVersion, bodyAtt);\n  ' + responseLine + '\n  module.__observeRegistration(path, result);')
   const mod = new Module(filename, module)
+  mod.__observeRequest = (endpoint, plaintext, device, version, bodyAtt) => {
+    const detail = requestTrace(endpoint, plaintext, device, version, bodyAtt)
+    if (detail) observeRequest(detail)
+  }
   mod.__observeRegistration = (endpoint, result) => {
     if (endpoint === '/code' || endpoint === '/register' || endpoint === '/exist') {
       observe(responseDiagnostic(result, endpoint === '/exist' ? 'check' : endpoint === '/code' ? 'request' : 'verify', method))
@@ -41,7 +46,9 @@ async function operate(input, dependencies) {
     store: { ...input.store, version: store.version, fcm: store.fcm || null, apns: store.apns || null }
   } : {}
   let observed
-  const registration = dependencies?.registration || registrationModule(root, detail => { observed = detail }, method)
+  const registration = dependencies?.registration || registrationModule(root, detail => { observed = detail }, method, detail => {
+    if (process.send) process.send({ event: 'registration_request_trace', detail })
+  })
   try {
     if (input.action === 'request') {
       const result = await registration.requestSmsCode(store, method)

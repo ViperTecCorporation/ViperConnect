@@ -3,6 +3,7 @@ import { Level } from 'pino'
 import type { WhatsAppMessageKey, WhatsAppVersion } from './whatsapp_types'
 import { SessionProvider } from './providers/provider_types'
 import { webhookHasTarget } from './webhook_config'
+import type { ZapoWebClientProfile } from './zapo/zapo_web_client_profile'
 
 export const configs: Map<string, Config> = new Map()
 const LEGACY_FILE_STORE_MODULE = './store_file.js'
@@ -106,6 +107,7 @@ export type Config = {
   provider: SessionProvider | undefined
   server:  string | undefined
   connectionType: connectionType
+  zapoWebClientProfile: ZapoWebClientProfile
   baileysCountryCode: string
   useRedis: boolean
   useS3: boolean
@@ -206,6 +208,7 @@ export const defaultConfig: Config = {
   provider: undefined,
   server: undefined,
   connectionType: 'qrcode',
+  zapoWebClientProfile: 'default',
   baileysCountryCode: 'BR',
   useRedis: false,
   useS3: false,

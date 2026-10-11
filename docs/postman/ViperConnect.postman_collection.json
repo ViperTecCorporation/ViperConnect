@@ -23732,7 +23732,7 @@
             "description": "Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS enquanto o registro for válido. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"provider\": \"zapo\"\n}",
+              "raw": "{\n  \"provider\": \"zapo\",\n  \"zapoWebClientProfile\": \"default\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

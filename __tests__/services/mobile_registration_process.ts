@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events'
+jest.mock('../../src/services/logger', () => ({ __esModule: true, default: { info: jest.fn() } }))
+import logger from '../../src/services/logger'
 jest.mock('node:child_process', () => ({ fork: jest.fn() }))
 import { fork } from 'node:child_process'
 import { registrationProcess, registrationEnabled } from '../../src/services/mobile_primary/registration_process'
@@ -37,6 +39,16 @@ describe('bounded isolated registration child', () => {
     const expectation = expect(promise).rejects.toThrow('interrupted')
     jest.advanceTimersByTime(90000); await expectation
     expect(fork).toHaveBeenCalledTimes(1); expect(child.kill).toHaveBeenCalledTimes(1)
+  })
+  test('request traces are sanitized and do not complete or retry the operation', async () => {
+    const promise = registrationProcess(input)
+    child.emit('message', { event: 'registration_request_trace', detail: { endpoint: '/code', method: 'sms', token: 'SECRET' } })
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ event: 'MOBILE_REGISTRATION_REQUEST', endpoint: '/code', method: 'sms' }), expect.any(String))
+    expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toContain('SECRET')
+    expect(child.kill).not.toHaveBeenCalled()
+    child.emit('message', { error: 'provider_failed' })
+    await expect(promise).resolves.toEqual({ error: 'provider_failed' })
+    expect(fork).toHaveBeenCalledTimes(1)
   })
   test('caps concurrent children', async () => {
     const a = registrationProcess(input); const b = registrationProcess(input)

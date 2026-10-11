@@ -1,12 +1,12 @@
-import { icon } from '../components/icons.js?v=4.0.35-a50438ad';
-import { renderStatus } from '../components/status.js?v=4.0.35-a50438ad';
-import { escapeHtml } from '../core/html.js?v=4.0.35-a50438ad';
-import { isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.35-a50438ad';
-import { CONTACT_SEARCH_MIN_LENGTH, renderContactCards, renderGroupCards } from '../features/entities.js?v=4.0.35-a50438ad';
-import { renderSessionConfig } from '../features/session_config.js?v=4.0.35-a50438ad';
-import { renderWebhooks } from '../features/webhooks.js?v=4.0.35-a50438ad';
-import { formatNumber, t } from '../core/i18n.js?v=4.0.35-a50438ad';
-import { renderMobileCompanions } from '../features/mobile_companions.js?v=4.0.35-a50438ad';
+import { icon } from '../components/icons.js?v=4.0.35-316e3502';
+import { renderStatus } from '../components/status.js?v=4.0.35-316e3502';
+import { escapeHtml } from '../core/html.js?v=4.0.35-316e3502';
+import { isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.35-316e3502';
+import { CONTACT_SEARCH_MIN_LENGTH, renderContactCards, renderGroupCards } from '../features/entities.js?v=4.0.35-316e3502';
+import { renderSessionConfig } from '../features/session_config.js?v=4.0.35-316e3502';
+import { renderWebhooks } from '../features/webhooks.js?v=4.0.35-316e3502';
+import { formatNumber, t } from '../core/i18n.js?v=4.0.35-316e3502';
+import { renderMobileCompanions } from '../features/mobile_companions.js?v=4.0.35-316e3502';
 const tabs = [
     ['overview', 'Visão geral'],
     ['config', 'Configuração'],

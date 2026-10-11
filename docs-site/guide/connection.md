@@ -53,6 +53,7 @@ curl -X POST "https://api.exemplo.com/v15.0/5511999999999/register" \
   -d '{
     "provider": "zapo",
     "connectionType": "qrcode",
+    "zapoWebClientProfile": "default",
     "autoConnect": true,
     "useRedis": true,
     "sendNewMessages": true,
@@ -64,6 +65,22 @@ curl -X POST "https://api.exemplo.com/v15.0/5511999999999/register" \
     }]
   }'
 ```
+
+### Perfil do cliente no QR
+
+Em uma sessão nova por QR, `zapoWebClientProfile` aceita:
+
+- `default`: comportamento atual da Zapo, com UserAgent Web;
+- `wa_personal`: exibe **WA Pessoal** no painel e anuncia UserAgent `ANDROID`;
+- `wa_business`: exibe **WA Business** e anuncia `SMB_ANDROID`.
+
+Os dois perfis Android também usam `deviceBrowser: android tablet` e
+`devicePlatform: e`. A escolha é persistida no Redis junto à configuração da
+sessão e reaplicada nos próximos logins. É experimental e não transforma o
+transporte Web em Mobile Primary. Perfis Android exigem QR Code; não são aceitos
+com código de pareamento. Depois do primeiro registro, o perfil não pode ser
+alterado: execute `deregister` e crie um novo vínculo. O override usa contexto
+assíncrono por sessão para não alterar conexões `default` do mesmo worker.
 
 ## 3. Ou use código de pareamento
 

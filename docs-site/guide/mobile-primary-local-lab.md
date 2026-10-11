@@ -6,6 +6,24 @@ description: Ambiente isolado de desenvolvimento mobile-primary no Docker Deskto
 
 ## Revisão da biblioteca de registro
 
+### Diagnóstico seguro de vínculo adicional
+
+Os observadores internos registram a plataforma conhecida do QR (`e` ou IDs
+numéricos reconhecidos), tamanhos dos campos e flags protobuf de `client-props`.
+As consultas observadas de pareamento, primary-hello e publicação de índices
+incluem estrutura limitada, atributos protocolais permitidos, duração e falhas
+classificadas. Eventos do SDK distinguem vínculo aceito, provisionamento,
+submissão de chaves/bootstrap e reconciliação da lista. Submissão não comprova
+aplicação no aparelho. Não há chamadas extras, reenvios ou mudanças no protocolo.
+
+`DeviceProps` só é decodificado quando existir um nó explícito `device-props`
+visível; não é inferido de `client-props`, que contém flags do Primary. O handshake
+privado do aplicativo adicional com o WhatsApp não é capturado pelo Primary.
+Não há garantia de observar `userAgent` nem de habilitar visualização única.
+QR completo, referências, chaves, tokens, códigos e conteúdo de mensagens nunca
+entram nesses eventos. Valores desconhecidos são ocultados; árvores, atributos
+e protobufs têm limites de tamanho. Nenhum contrato de API foi alterado.
+
 ### Aprovação no aparelho e número da sessão
 
 Após `device_confirm_or_second_code`, confirme no aparelho e clique em **Já confirmei no aparelho — consultar confirmação**. O painel chama `POST /manager/mobile-devices/{id}/registration/check` com `{ "confirm": true }`: somente `/exist`, usando as mesmas chaves, sem SMS, ligação ou OTP. Uma resposta `ok` com login válido e sem pendência libera a conexão à Zapo pelo botão existente. Falhas não alteram os prazos de reenvio; consultas têm intervalo mínimo de 15 segundos.
@@ -20,7 +38,14 @@ sem atualizar o hash validado, impede o registro com erro de configuração loca
 
 Pedidos recusados preservam a versão e o estado de push FCM/APNs no registro
 criptografado, sem alterar chaves, identidade ou flags de código/registro.
-Esses dados não são devolvidos no status público nem registrados em logs.
+Os tokens não são devolvidos no status público nem registrados em logs.
+
+O evento interno `MOBILE_REGISTRATION_REQUEST` resume o formulário montado antes
+da submissão: método, país, quantidade de dígitos nacionais, plataforma/variante,
+versão, MCC/MNC e presença (sem valores) de token, push, certificado Business e
+atestação. Não registra telefone completo, código, chaves, tokens nem corpo da
+requisição. Esse evento não comprova entrega ou aceitação pelo provedor e não
+altera parâmetros, prazos ou tentativas. Não muda o contrato público da API.
 
 Esta revisão adiciona push APNs para iOS e leitura de código por chamada rápida;
 não é uma correção comprovada de `blocked`/`no_routes` para SMS ou voz Android.
@@ -65,6 +90,16 @@ por QR permanece em validação no lab; disponibilizar a leitura não garante qu
 WhatsApp aceite o pedido.
 
 ## Limites de backup e restauração de sessões vinculadas
+
+**Diagnóstico do dispositivo principal:** erros de backup e restore mostram o
+status HTTP e o código estável da API, mesmo quando a mensagem é traduzida.
+A restauração não mostra avisos de download. Consulte `MOBILE_BACKUP_TRANSFER_FAILED`
+no log do web: registra operação, status, código e posições da pilha, sem arquivo,
+senha, token ou credenciais. Um erro não comprova restauração nem autoriza apagar
+dados do destino; verifique o diagnóstico antes de repetir a importação.
+Na restauração, a verificação do Redis para no primeiro dado da sessão existente
+e retorna `mobile_restore_destination_exists`, sem aplicar o limite de registros
+do arquivo aos dados do destino. Remanescentes não são apagados automaticamente.
 
 **Exclusão local:** remove cadastro, índice de sessões e atribuição ativa ao usuário,
 preservando o histórico de atribuições. Assim, o número não reaparece como sessão
@@ -155,3 +190,37 @@ remoto, não impõe espera local; quando houver espera por método ou desafio
 pendente, continua respeitando a restrição. Não recria chaves nem faz reenvio
 automático. A permissão local não garante aceitação pelo provedor e o retorno
 `blocked` não comprova banimento da conta.
+
+## Experimento isolado de QR: Android tablet + e
+
+Execute `node lab/validation/qr_android_tablet.cjs` e abra
+`http://127.0.0.1:19879` na mesma máquina. O script usa a Zapo instalada,
+`deviceBrowser: 'android tablet'` e `devicePlatform: 'e'`, sem mudar o UserAgent
+Web. O campo `e` foi observado num QR de aparelho adicional; não é uma garantia
+de suporte oficial nem transforma esta conexão em aplicativo Android nativo.
+
+Não integra a lista de sessões do painel: credenciais somente em memória, sem
+Redis, histórico, webhooks ou plugin VoIP. Não pede SMS/ligação. Leia o QR pelo
+WhatsApp principal, depois envie uma mensagem normal e uma de visualização única.
+A página mostra apenas indicadores de tipo, wrapper e presença de descritor/chave
+de mídia; não baixa mídia nem registra conteúdo, telefone ou chaves nos logs.
+Um descritor presente não comprova que a mídia foi baixada ou pode ser aberta.
+
+Somente loopback, sem cache HTTP. Não compartilhe o QR nem exponha a porta por
+túnel. Encerra em 60 minutos ou com Ctrl+C, sem logout remoto; remova manualmente
+o dispositivo experimental no WhatsApp ao terminar. Reiniciar gera novas chaves
+e exige outro vínculo. Valide com `node --test lab/validation/qr_android_tablet.test.cjs`.
+
+Para comparar somente a plataforma do UserAgent, execute o mesmo script com
+`--smb-android`, encerrando o processo anterior e removendo o vínculo no telefone
+antes de ler o novo QR. O override atua apenas nos builders CommonJS em memória
+dos handshakes de registro/login; não altera arquivos da Zapo. Troca exclusivamente
+`UserAgent.platform` para `SMB_ANDROID` e mantém versão, WebInfo e demais campos.
+Portanto ainda é um handshake híbrido experimental, não um cliente mobile nativo.
+A página registra etapa e plataforma efetivamente codificada, sem payload bruto.
+Sem a flag, o comportamento anterior `WEB` permanece inalterado.
+
+Para uma conta WhatsApp comum, use `--android` em vez de `--smb-android`:
+o override será `ANDROID`, não Business. As flags são mutuamente exclusivas.
+Reinicie o teste e leia um novo QR após remover o vínculo anterior; os demais
+campos do handshake continuam inalterados, inclusive a versão Web experimental.

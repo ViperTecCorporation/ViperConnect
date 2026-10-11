@@ -6,6 +6,23 @@ description: Isolated Docker Desktop development environment for the mobile-prim
 
 ## Registration library revision
 
+### Safe companion-link diagnostics
+
+Internal observers record known QR platforms (`e` or recognized numeric IDs),
+field sizes and decoded `client-props` protobuf flags. Observed pairing,
+primary-hello and key-index queries include bounded structure, allowlisted
+protocol attributes, elapsed time and classified failures. SDK events distinguish
+link acceptance, provisioning, key/bootstrap submission and inventory reconciliation.
+Submission does not prove application on the phone. No extra requests, retries
+or protocol changes are introduced.
+
+`DeviceProps` is decoded only at an explicit visible `device-props` node, never
+inferred from `client-props` (the Primary's flags). The additional app's private
+handshake with WhatsApp is not captured by the Primary. Observing its `userAgent`
+or enabling view-once media is not guaranteed. Full QR data, references, keys,
+tokens, codes and message content never enter these events. Unknown values are
+redacted and trees, attributes and protobufs are size-bounded. API contracts are unchanged.
+
 ### Device approval and session phone
 
 After `device_confirm_or_second_code`, approve on the phone and click the explicit confirmation check. `POST /manager/mobile-devices/{id}/registration/check` with `{ "confirm": true }` calls only `/exist` with the existing keys, without SMS, calls or OTP submission. An `ok` response with a valid login and no pending challenge enables the existing Zapo connection action. Failed checks preserve resend deadlines; checks are throttled to 15 seconds.
@@ -19,7 +36,14 @@ fallback. Changing the dependency without its reviewed hash fails closed.
 
 Refused requests retain version and FCM/APNs push state in encrypted registration
 storage, without changing keys, identity or code/registration flags. These values
-are excluded from public status responses and logs.
+are excluded from public status responses; token values are never logged.
+
+The internal `MOBILE_REGISTRATION_REQUEST` event summarizes the assembled form
+before submission: method, country, national-number digit count, platform/variant,
+version, MCC/MNC and presence (not values) of tokens, push, Business certificate
+and attestation. Full phone numbers, codes, keys, tokens and request bodies are
+never logged. This event does not prove delivery or provider acceptance and does
+not alter parameters, cooldowns or attempts. The public API contract is unchanged.
 
 This revision adds iOS APNs push and flash-call code parsing, not a proven fix for
 Android SMS/voice `blocked` or `no_routes`. Our flow supplies no device attestation,
@@ -134,6 +158,16 @@ The compiler watches backend, frontend, public assets and scripts. Compiled file
 `./lab/lab.ps1 stop` stops the lab; `up` resumes it. `down` removes containers but preserves volumes. There is no automatic reset. Default media retention only affects the lab bucket. Do not run the same account in the worker and another client concurrently. A phone cannot access the desktop's localhost; LAN/HTTPS testing needs explicit configuration.
 
 ## Encrypted device backup
+
+Backup and restore errors display the HTTP status and stable API error code,
+including localized responses. Restore errors do not display download warnings.
+The web log event `MOBILE_BACKUP_TRANSFER_FAILED` contains operation, status, code
+and stack locations only, never archives, passwords, tokens or credentials.
+An error does not prove restoration or authorize deleting destination data;
+review the diagnostic before retrying the import.
+Restore checks stop at the first existing session key and return
+`mobile_restore_destination_exists`; archive record limits do not apply to this
+destination existence check. Leftover data is never deleted automatically.
 
 Open the device overview and choose **Baixar backup**. Set a separate password
 (12–128 characters) and confirm suspension. The browser downloads a `.viperdevice`
@@ -250,3 +284,38 @@ allowed, including the same method, with `confirmResend:true`. No local delay is
 invented when the provider supplies none; method-specific waits and pending
 challenges remain enforced. Keys are preserved and retries are never automatic.
 Local eligibility does not guarantee provider acceptance or prove an account ban.
+
+## Isolated QR experiment: Android tablet + e
+
+Run `node lab/validation/qr_android_tablet.cjs` and open
+`http://127.0.0.1:19879` on the same machine. This uses the installed Zapo with
+`deviceBrowser: 'android tablet'` and `devicePlatform: 'e'`, retaining the Web
+UserAgent. The `e` field was observed in a companion phone QR; it is not a promise
+of official support or a full native Android handshake.
+
+This is separate from the manager's session list: credentials are memory-only,
+with no Redis, history, webhooks or VoIP plugin. No SMS or voice registration.
+Scan using the primary WhatsApp, then send an ordinary and a view-once message.
+The local page shows only type, wrapper and media descriptor/key presence flags;
+it does not download media or log message contents, phones or keys. A descriptor
+does not prove successful media download or playback.
+
+Loopback only, with HTTP caching disabled. Never share the QR or tunnel this
+port. Stops after 60 minutes or Ctrl+C without remote logout; manually remove the
+experimental linked device in WhatsApp afterwards. Restarting loses credentials
+and requires a fresh link. Run tests with
+`node --test lab/validation/qr_android_tablet.test.cjs`.
+
+For a UserAgent-platform-only comparison, run the same script with
+`--smb-android`, stopping the previous process and removing its phone link before
+scanning a fresh QR. This overrides only the in-memory CommonJS registration/login
+builders; no Zapo files are changed. Only `UserAgent.platform` becomes
+`SMB_ANDROID`; version, WebInfo and all other fields stay unchanged. This remains
+an experimental hybrid handshake, not a native mobile client. The page reports
+the encoded stage and platform without raw payloads. Without the flag the original
+`WEB` behavior is unchanged.
+
+For a regular WhatsApp account, use `--android` instead of `--smb-android`:
+the override becomes `ANDROID`, not Business. These flags are mutually exclusive.
+Restart and scan a fresh QR after removing the previous link. All remaining
+handshake fields, including the experimental Web version, stay unchanged.

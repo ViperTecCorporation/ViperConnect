@@ -4,7 +4,7 @@ test.each([32, 33])('QR shape counts %i-byte public keys without leaking fields'
   const publicKey = Buffer.alloc(size, 7).toString('base64')
   const secret = Buffer.alloc(32, 8).toString('base64')
   const output = companionQrShape(`SECRET,reference,${publicKey},${publicKey},${secret},PRIVATE_PLATFORM`)
-  expect(output).toEqual({ parts: 6, referenceBytes: 16, noiseKeyBytes: size, identityKeyBytes: size, advSecretBytes: 32, platformPresent: true })
+  expect(output).toEqual({ parts: 6, referenceBytes: 16, noiseKeyBytes: size, identityKeyBytes: size, advSecretBytes: 32, platformPresent: true, platform: 'redacted' })
   for (const value of ['SECRET', publicKey, secret, 'PRIVATE_PLATFORM']) expect(JSON.stringify(output)).not.toContain(value)
 })
 

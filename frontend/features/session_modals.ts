@@ -14,6 +14,7 @@ export const renderNewSessionModal = (): string =>
         <label class="field"><span>${t('Telefone')}</span><input name="phone" inputmode="numeric" placeholder="${t('55 DDD número')}" required></label>
         <label class="field"><span>${t('Nome da sessão')}</span><input name="label" placeholder="${t('Ex.: Comercial · account 1')}"></label>
         <label class="field"><span>${t('Tipo de conexão')}</span><select name="connectionType"><option value="qrcode">QR Code</option><option value="pairing_code">${t('Código de pareamento')}</option></select></label>
+        <label class="field"><span>${t('Perfil do WhatsApp')}</span><select name="zapoWebClientProfile"><option value="default">${t('Default (padrão atual)')}</option><option value="wa_personal">${t('WA Pessoal (Android)')}</option><option value="wa_business">${t('WA Business (Android)')}</option></select><small>${t('WA Pessoal e WA Business são perfis experimentais exclusivos para QR Code.')}</small></label>
       </div>
       <div class="form-actions"><button class="btn" type="submit">${icon('plus')}${t('Registrar sessão')}</button></div>
     </form>
@@ -41,6 +42,7 @@ export const renderConnectionModal = (
     ? broadcast.content
     : loading ? t('Solicitando pareamento…') : t('Aguardando evento da sessão')
   const method = session.connectionType === 'pairing_code' ? t('Código de pareamento') : 'QR Code'
+  const profile = session.zapoWebClientProfile === 'wa_personal' ? t('WA Pessoal (Android)') : session.zapoWebClientProfile === 'wa_business' ? t('WA Business (Android)') : t('Default (padrão atual)')
   const pairingCode = broadcast?.type === 'qrcode' && broadcast.content && !broadcast.content.startsWith('data:image')
     ? broadcast.content
     : ''
@@ -59,6 +61,7 @@ export const renderConnectionModal = (
         <dl class="details-list">
           <div><dt>${t('Telefone')}</dt><dd>${escapeHtml(phone)}</dd></div>
           <div><dt>${t('Método da sessão')}</dt><dd>${escapeHtml(method)}</dd></div>
+          <div><dt>${t('Perfil do WhatsApp')}</dt><dd>${escapeHtml(profile)}</dd></div>
           <div><dt>${t('Servidor')}</dt><dd>${escapeHtml(session.server || 'server_1')}</dd></div>
         </dl>
         <p class="muted" aria-live="polite">${escapeHtml(statusText)}</p>

@@ -1,7 +1,7 @@
-import { renderAvatar } from '../components/avatar.js?v=4.0.35-a50438ad';
-import { icon } from '../components/icons.js?v=4.0.35-a50438ad';
-import { escapeHtml } from '../core/html.js?v=4.0.35-a50438ad';
-import { t } from '../core/i18n.js?v=4.0.35-a50438ad';
+import { renderAvatar } from '../components/avatar.js?v=4.0.35-316e3502';
+import { icon } from '../components/icons.js?v=4.0.35-316e3502';
+import { escapeHtml } from '../core/html.js?v=4.0.35-316e3502';
+import { t } from '../core/i18n.js?v=4.0.35-316e3502';
 export const CONTACT_SEARCH_MIN_LENGTH = 3;
 const contactUsername = (contact) => {
     const username = `${contact.username || ''}`.trim().replace(/^@/, '');

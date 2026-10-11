@@ -7,6 +7,7 @@ export const configLogSummary = (config: Partial<Config>) => {
     provider: config.provider || '<none>',
     server: config.server || '<none>',
     connection_type: config.connectionType || '<none>',
+    zapo_web_client_profile: config.zapoWebClientProfile || 'default',
     log_level: config.logLevel || '<none>',
     use_redis: config.useRedis === true,
     use_s3: config.useS3 === true,

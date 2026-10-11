@@ -17,8 +17,8 @@ test('local Docker publishes SIP and STUN UDP ports', { skip: process.env.LAB_VO
       const transaction = randomBytes(12)
       const data = port === 3478
         ? Buffer.concat([Buffer.from('000100002112a442', 'hex'), transaction])
-        : Buffer.from('OPTIONS sip:192.168.0.112 SIP/2.0\r\nVia: SIP/2.0/UDP 192.168.0.112;rport;branch=z9hG4bK-lab-smoke\r\nFrom: <sip:lab@192.168.0.112>;tag=smoke\r\nTo: <sip:lab@192.168.0.112>\r\nCall-ID: lab-smoke\r\nCSeq: 1 OPTIONS\r\nMax-Forwards: 70\r\nContent-Length: 0\r\n\r\n')
-      socket.send(data, port, '192.168.0.112')
+        : Buffer.from('OPTIONS sip:127.0.0.1 SIP/2.0\r\nVia: SIP/2.0/UDP 127.0.0.1;rport;branch=z9hG4bK-lab-smoke\r\nFrom: <sip:lab@127.0.0.1>;tag=smoke\r\nTo: <sip:lab@127.0.0.1>\r\nCall-ID: lab-smoke\r\nCSeq: 1 OPTIONS\r\nMax-Forwards: 70\r\nContent-Length: 0\r\n\r\n')
+      socket.send(data, port, '127.0.0.1')
       const received = await response
       if (port === 3478) {
         assert.equal(received.readUInt16BE(0), 0x0101)

@@ -11,6 +11,14 @@ test('disabled returns the original logger', () => {
   const original = base()
   expect(companionDiagnosticLogger(original, false, 'secret-session')).toBe(original)
 })
+test('link metadata exposes known platform and bounded counters only', () => {
+  const observed = companionDiagnosticLogger(base(), true, 'secret-session')
+  observed.info('linking companion', { platform: 'e', keyIndex: 39, token: 'secret-token', deviceProps: { secret: 'secret-key' } })
+  expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ event: 'LINK_STARTED', platform: 'e', keyIndex: 39 }), 'MOBILE_COMPANION_SDK_DIAGNOSTIC')
+  expect(JSON.stringify((logger.info as jest.Mock).mock.calls)).not.toContain('secret-')
+  observed.info('linking companion', { platform: 'secret-platform', keyIndex: -1 })
+  expect(logger.info).toHaveBeenLastCalledWith(expect.objectContaining({ platform: 'redacted' }), expect.any(String))
+})
 test('allowlist survives child loggers and exposes no names, errors, keys or raw identifiers', () => {
   const original = base()
   const observed = companionDiagnosticLogger(original, true, 'secret-session').child({ token: 'secret-token' })

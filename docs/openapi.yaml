@@ -8776,6 +8776,17 @@ components:
             permanece bloqueado no modo atual mesmo quando a sessão está
             offline. Para trocar o modo, execute deregister e registre a sessão
             novamente.
+        zapoWebClientProfile:
+          type: string
+          enum: [default, wa_personal, wa_business]
+          default: default
+          description: >-
+            Identidade Web usada no pareamento de uma nova sessão Zapo. default
+            preserva o comportamento atual da Zapo. wa_personal anuncia
+            ANDROID e wa_business anuncia SMB_ANDROID; ambos usam DeviceProps
+            ANDROID_TABLET e o campo de plataforma e no QR. Os perfis Android
+            são experimentais, aceitos somente com connectionType=qrcode e
+            ficam bloqueados após o primeiro registro até o deregister.
 
     SessionsList:
       type: object

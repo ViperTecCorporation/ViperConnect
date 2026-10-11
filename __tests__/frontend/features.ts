@@ -47,6 +47,7 @@ describe('frontend features', () => {
     const data = new FormData()
     data.set('label', 'Comercial')
     data.set('connectionType', 'qrcode')
+    data.set('zapoWebClientProfile', 'wa_personal')
     data.set('historyMaxAgeDays', '15')
     data.set('autoConnect', 'on')
     const payload = sessionConfigPayload(data)
@@ -54,6 +55,7 @@ describe('frontend features', () => {
     expect(payload).toMatchObject({
       label: 'Comercial',
       connectionType: 'qrcode',
+      zapoWebClientProfile: 'wa_personal',
       historyMaxAgeDays: 15,
       autoConnect: true,
       ignoreGroupMessages: false,
@@ -91,6 +93,10 @@ describe('frontend features', () => {
   test('renders every contextual session modal', () => {
     const session = { phone: '5566', label: 'Comercial', connectionType: 'qrcode' as const }
     expect(renderNewSessionModal()).toContain('Motor Zapo')
+    expect(renderNewSessionModal()).toContain('name="zapoWebClientProfile"')
+    expect(renderNewSessionModal()).toContain('value="default"')
+    expect(renderNewSessionModal()).toContain('value="wa_personal"')
+    expect(renderNewSessionModal()).toContain('value="wa_business"')
     expect(renderMessageModal(session, '123@lid')).toContain('name="to" value="123@lid"')
     expect(renderConnectionModal(session)).toContain('Sessão 5566')
     expect(renderConfirmDeregisterModal(session)).toContain('confirm-deregister')

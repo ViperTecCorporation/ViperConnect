@@ -1502,8 +1502,13 @@ export class ViperConnectApp {
       status: 'connecting',
       provider: 'zapo',
       connectionType: `${data.get('connectionType') || 'qrcode'}` as SessionConfig['connectionType'],
+      zapoWebClientProfile: `${data.get('zapoWebClientProfile') || 'default'}` as SessionConfig['zapoWebClientProfile'],
       server: 'server_1',
       webhooks: [],
+    }
+    if (pending.zapoWebClientProfile !== 'default' && pending.connectionType !== 'qrcode') {
+      this.showToast(t('WA Pessoal e WA Business exigem conexão por QR Code.'), 'error')
+      return
     }
     this.sessions = [...this.sessions.filter((session) => sessionPhone(session) !== phone), pending]
     this.modal = { type: 'connection', phone }
@@ -1516,6 +1521,8 @@ export class ViperConnectApp {
         provider: 'zapo',
         label: pending.label,
         connectionType: pending.connectionType,
+        zapoWebClientProfile: pending.zapoWebClientProfile,
+        autoConnect: true,
       })
       this.replaceSession(phone, { ...pending, ...created, phone })
       await this.loadSessions()
