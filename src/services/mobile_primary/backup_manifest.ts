@@ -1,5 +1,6 @@
 import { MobileDeviceError, validateMobileDraft } from '../mobile_device_service'
 import { deserializeCompanionEpoch } from './companion_persistence'
+import { sameRegistrationPhone } from './registration_identity'
 
 // Audited against @zapo-js/store-redis 1.3.0. Domain comes BEFORE the session ID.
 export const BACKUP_DOMAINS = ['auth', 'signal:reg', 'signal:spk', 'signal:meta', 'signal:pk', 'signal:pk:ids', 'signal:pk:avail', 'signal:sess', 'signal:ident', 'sk', 'sk:grp', 'skd', 'appstate:key', 'appstate:key:idx', 'appstate:col', 'appstate:idx', 'appstate:idx:set', 'privtoken'] as const
@@ -22,7 +23,7 @@ export function backupRegistration(state: any) {
   const source = state.store
   const pair = (value: any) => ({ private: value?.private, public: value?.public })
   return {
-    status: state.status, canonicalPhone: state.canonicalPhone, advSecret: state.advSecret,
+    status: state.status, canonicalPhone: state.canonicalPhone, ...(state.sessionPhone ? { sessionPhone: state.sessionPhone } : {}), advSecret: state.advSecret,
     store: {
       registered: source?.registered, codePending: source?.codePending, phoneNumber: source?.phoneNumber,
       registrationId: source?.registrationId, name: source?.name, version: source?.version,
@@ -49,7 +50,7 @@ export function validateMobileBackup(value: any, prefix: string): asserts value 
   if (value.version === 1 && value.mode !== undefined) return fail()
   if (value.companionEpoch !== undefined) { try { deserializeCompanionEpoch(value.companionEpoch) } catch { return fail() } }
   try { validateMobileDraft({ ...value.device, labConsent: true }) } catch { return fail() }
-  if (value.registration?.status !== 'registered' || value.registration.canonicalPhone !== value.device.phone || JSON.stringify(value.registration).length > 180000) return fail()
+  if (value.registration?.status !== 'registered' || (value.registration.sessionPhone || value.registration.canonicalPhone) !== value.device.phone || !sameRegistrationPhone(value.device.phone, value.registration.canonicalPhone) || JSON.stringify(value.registration).length > 180000) return fail()
   validateBackupRecords(value.records, value.device.phone, prefix, value.mode, value.version)
 }
 

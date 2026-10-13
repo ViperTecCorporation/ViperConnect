@@ -6,6 +6,17 @@ import {
 } from '../../frontend/pages/voip'
 
 describe('VoIP manager page', () => {
+  test('shows editable line defaults and per-field extension inheritance', () => {
+    const state = { accounts: [{ id: 'line', defaultDdi: '55', defaultDdd: '66' }], extensions: [{ id: '1001', defaultDdd: '11' }] }
+    const line = renderVoipResourceModal(state, 'accounts', 'line')
+    expect(line).toContain('name="defaultDdi"')
+    expect(line).toContain('value="55"')
+    expect(line).toContain('name="defaultDdd"')
+    expect(line).toContain('value="66"')
+    const extension = renderVoipResourceModal(state, 'extensions', '1001')
+    expect(extension).toContain('vazio herda da linha')
+    expect(extension).toContain('value="11"')
+  })
   test('renders native bridge and call controls without an iframe or internal token', () => {
     const html = renderVoipPage(
       {
@@ -43,8 +54,118 @@ describe('VoIP manager page', () => {
     const html = renderVoipResourceModal({ bridges: [], calls: [], companies: [{ id: 'company-1', label: 'Empresa' }], extensions: [] }, 'extensions')
     expect(html).toContain('data-form="voip-resource-fields"')
     expect(html).toContain('name="username"')
+    expect(html).toMatch(/name="id" type="text" value="[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}" required readonly/)
     expect(html).not.toContain('name="payload"')
     expect(html).not.toContain('<textarea')
+  })
+
+  test('prefills immutable UUIDs and uses searchable relationship pickers in every resource modal', () => {
+    const state = {
+      bridges: [],
+      calls: [],
+      companies: [{ id: 'company-1', label: 'Empresa' }],
+      accounts: [{ id: 'line-1', label: 'Linha', phoneNumber: '5566999554300', companyId: 'company-1' }],
+      lineGroups: [{ id: 'lines-1', label: 'Linhas', companyId: 'company-1' }],
+      extensionGroups: [{ id: 'group-1', label: 'Atendimento', companyId: 'company-1' }],
+      sessions: [],
+      extensions: [{ id: 'extension-1', displayName: 'Recepção', username: '1001', companyId: 'company-1' }],
+    }
+
+    for (const resource of ['companies', 'accounts', 'lineGroups', 'extensionGroups', 'sessions', 'extensions'] as const) {
+      const html = renderVoipResourceModal(state, resource)
+      expect(html).toMatch(/name="id" type="text" value="[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}" required readonly/)
+    }
+
+    const extension = renderVoipResourceModal(state, 'extensions')
+    expect(extension).toContain('data-searchable-dropdown')
+    expect(extension).toContain('name="extensionGroupIds"')
+    expect(extension).toContain('data-filter="voip-options"')
+    expect(extension).not.toContain('multiple size="5"')
+
+    const session = renderVoipResourceModal(state, 'sessions')
+    expect(session).toContain('name="accountId"')
+    expect(session).not.toContain('name="lineGroupIds"')
+    expect(session).not.toContain('name="inboundLineGroupIds"')
+    expect(session).not.toContain('name="outboundLineGroupIds"')
+    expect(session).toContain('name="extensions"')
+    expect(session).toContain('Ajustes específicos desta linha')
+    expect(session).not.toContain('multiple size="5"')
+  })
+
+  test('shows extension group membership regardless of which side stored the link', () => {
+    const state = {
+      bridges: [],
+      calls: [],
+      companies: [{ id: 'company-1', label: 'Empresa' }],
+      accounts: [],
+      sessions: [],
+      lineGroups: [],
+      extensionGroups: [{ id: 'group-1', label: 'Atendimento', companyId: 'company-1', extensionIds: ['automatic-1'] }],
+      extensions: [
+        { id: 'extension-1', displayName: 'Rodrigo', username: '1001', companyId: 'company-1', extensionGroupIds: ['group-1'], extensionGroupDistances: { 'group-1': 1 }, enabled: true },
+        { id: 'automatic-1', displayName: 'Atendimento Linha 5566999554300', username: '5566999554300', companyId: 'company-1', extensionGroupIds: ['group-1'], extensionGroupDistances: { 'group-1': 1 }, provisioningSource: 'zapo_auto', enabled: true },
+      ],
+    }
+
+    const page = renderVoipPage(state, false, '', { tab: 'extensions' })
+    expect(page).toMatch(/Atendimento[\s\S]*?<td>1<\/td>/)
+
+    const group = renderVoipResourceModal(state, 'extensionGroups', 'group-1')
+    expect(group).toContain('data-searchable-dropdown-label>1 selecionado</span>')
+    expect(group).toContain('name="extensionIds" value="extension-1" checked')
+    expect(group).toContain('name="extensionDistance:extension-1" value="1"')
+    expect(group).toContain('Linha Zapo → Grupo de linhas → Atendimento → Ramais')
+    expect(group).not.toContain('Atendimento Linha 5566999554300')
+    expect(group).not.toContain('value="automatic-1"')
+  })
+
+  test('keeps automatic extensions out of advanced direct routing and the router simulator', () => {
+    const state = {
+      bridges: [],
+      calls: [],
+      companies: [{ id: 'empresa-padrao', label: 'Empresa padrão' }, { id: 'company-1', label: 'Empresa' }, { id: 'company-2', label: 'Outra empresa' }],
+      accounts: [
+        { id: 'line-1', label: 'Linha manual', companyId: 'company-1', provisioningSource: 'manual' },
+        { id: 'auto-line-1', label: 'Linha automática', companyId: 'company-1', provisioningSource: 'zapo_auto' },
+        { id: 'default-auto-line', label: 'Linha automática padrão', companyId: 'empresa-padrao', provisioningSource: 'zapo_auto' },
+        { id: 'line-2', label: 'Linha de outra empresa', companyId: 'company-2', provisioningSource: 'manual' },
+        { id: 'line-without-company', label: 'Linha sem empresa', provisioningSource: 'manual' },
+      ],
+      lineGroups: [{ id: 'lines-1', label: 'Atendimento', companyId: 'company-1', inboundSessionIds: ['line-1'], outboundPrioritySessionIds: ['line-1'], targetExtensionGroupIds: [] }],
+      extensionGroups: [],
+      extensions: [
+        { id: 'automatic-1', displayName: 'Automático', username: '5566999554300', companyId: 'company-1', provisioningSource: 'zapo_auto' },
+        { id: 'advanced-1', displayName: 'Recepção', username: '1001', companyId: 'company-1', provisioningSource: 'manual' },
+      ],
+      sessions: [{ id: 'session-1', label: 'Sessão', unoSession: '5566999554300', companyId: 'company-1', accountId: 'line-1', lineGroupIds: [], inboundLineGroupIds: ['lines-1'], outboundLineGroupIds: ['lines-1'], routing: { extensions: ['automatic-1', 'advanced-1'] } }],
+    }
+
+    const session = renderVoipResourceModal(state, 'sessions', 'session-1')
+    expect(session).toContain('Ramais avançados diretos (opcional)')
+    expect(session).toContain('Entrada pelos grupos')
+    expect(session).toContain('Saída pelos grupos')
+    expect(session).toContain('Atendimento')
+    expect(session).not.toContain('name="inboundLineGroupIds"')
+    expect(session).toContain('value="advanced-1"')
+    expect(session).not.toContain('value="automatic-1"')
+
+    const lineGroup = renderVoipResourceModal(state, 'lineGroups', 'lines-1')
+    expect(lineGroup).toContain('Esta é a tela principal do roteamento avançado')
+    expect(lineGroup).toContain('Linhas que recebem chamadas')
+    expect(lineGroup).toContain('Linhas disponíveis para saída')
+    expect(lineGroup).toContain('Destino das chamadas de entrada')
+    expect(lineGroup).toContain('Linhas automáticas podem participar depois de serem movidas da Empresa padrão')
+    expect(lineGroup).toContain('data-voip-strict-company')
+    expect(lineGroup).toContain('value="line-1" checked')
+    expect(lineGroup).toContain('value="auto-line-1"')
+    expect(lineGroup).not.toContain('value="default-auto-line"')
+    expect(lineGroup).toMatch(/data-company-id="company-2"[^>]*hidden[^>]*><input type="checkbox" name="inboundSessionIds" value="line-2"/)
+    expect(lineGroup).toMatch(/data-company-id=""[^>]*hidden[^>]*><input type="checkbox" name="inboundSessionIds" value="line-without-company"/)
+
+    const routing = renderVoipPage(state, false, '', { tab: 'routing' })
+    expect(routing).toContain('Ramal avançado')
+    expect(routing).toContain('value="advanced-1"')
+    expect(routing).not.toContain('value="automatic-1"')
   })
 
   test('renders active extension registrations and disconnect controls', () => {
@@ -127,6 +248,9 @@ describe('VoIP manager page', () => {
 
     expect(html).toContain('name="id" type="text" value="company-1" required readonly')
     expect(html).toContain('name="aiSummaryEnabled"')
+    expect(html).toContain('name="aiTranscriptionProvider"')
+    expect(html).toContain('name="aiSummaryProvider"')
+    expect(html).toContain('value="openrouter"')
     expect(html).toContain('name="aiTranscriptionApiKey" type="password" value=""')
     expect(html).toContain('name="aiSummaryApiKey" type="password" value=""')
     expect(html).toContain('Chave configurada. Deixe o campo vazio para manter.')
@@ -399,7 +523,11 @@ describe('VoIP manager page', () => {
     }
 
     const account = renderVoipResourceModal(state, 'accounts', 'line-1')
-    expect(account).toContain('Empresa (gerenciada)')
+    expect(account).toContain('data-searchable-dropdown')
+    expect(account).toContain('data-searchable-dropdown-label>ViperTec</span>')
+    expect(account).toContain('name="companyId" value="company-1" data-voip-company-choice checked required')
+    expect(account).toContain('class="voip-option-picker__check"')
+    expect(account).toContain('a sessão e o ramal automático vinculados serão movidos juntos')
     expect(account).toContain('name="phoneNumber" type="text" value="5566999554300" required readonly')
     expect(account).not.toContain('data-action="delete-voip-resource"')
 
@@ -425,7 +553,7 @@ describe('VoIP manager page', () => {
       companies: [{ id: 'company-1', label: 'Empresa' }],
       accounts: [{ id: 'line-1', label: 'Linha', slots: [{ id: 'slot-1', label: 'Bridge', mode: 'bridge' }] }],
       lineGroups: [],
-      extensionGroups: [{ id: 'support', label: 'Suporte' }],
+      extensionGroups: [{ id: 'support', label: 'Suporte' }, { id: 'sales', label: 'Vendas' }],
       extensions: [{ id: 'ext-1', extensionGroupIds: ['support'], extensionGroupDistances: { support: 2 } }],
       sessions: [{ id: 'session-1', deviceSlotIds: ['slot-1'], routing: { extensions: [] } }],
     }
@@ -437,6 +565,10 @@ describe('VoIP manager page', () => {
     const extension = renderVoipResourceModal(state, 'extensions', 'ext-1')
     expect(extension).toContain('name="extensionGroupDistance:support"')
     expect(extension).toContain('value="2"')
+    expect(extension).toContain('Ordem de toque nos grupos')
+    expect(extension).not.toContain('Distância nos grupos')
+    expect(extension).toContain('data-group-id="sales" hidden')
+    expect(extension).toContain('name="extensionGroupDistance:sales" type="number" value="1" min="1" step="1" disabled')
   })
 
   test('renders history filters, correct recording sizes and format-aware downloads', () => {

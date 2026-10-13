@@ -1,11 +1,30 @@
-const { operate } = require('../../lab/registration/worker.cjs')
+const { operate, registrationModule } = require('../../lab/registration/worker.cjs')
 
 describe('isolated registration driver with offline provider responses', () => {
   const original = process.env.MOBILE_REGISTRATION_MODULE
   beforeEach(() => { process.env.MOBILE_REGISTRATION_MODULE = require('node:path').resolve('lab/registration') })
   afterAll(() => { if (original === undefined) delete process.env.MOBILE_REGISTRATION_MODULE; else process.env.MOBILE_REGISTRATION_MODULE = original })
-  const deps = () => ({ store: { createNewStore: jest.fn(() => ({ phoneNumber: '999123456789' })), storeFromJson: (v: any) => ({ ...v }), storeToJson: (v: any) => v }, registration: { requestSmsCode: jest.fn(), verifyCode: jest.fn() } })
+  const deps = () => ({ store: { createNewStore: jest.fn(() => ({ phoneNumber: '999123456789' })), storeFromJson: (v: any) => ({ ...v }), storeToJson: (v: any) => v }, registration: { requestSmsCode: jest.fn(), verifyCode: jest.fn(), checkIfRegistered: jest.fn() } })
   const input = { action: 'request', draft: { phone: '999123456789', name: 'Lab' }, store: { phoneNumber: '999123456789' } }
+  test('device confirmation uses exist only and adopts affirmative canonical identity', async () => {
+    const d = deps(); d.registration.checkIfRegistered.mockResolvedValue({ status: 'ok', login: '999123456789' })
+    expect(await operate({ ...input, action: 'check' }, d)).toMatchObject({ store: { registered: true, codePending: false, phoneNumber: '999123456789' } })
+    expect(d.registration.requestSmsCode).not.toHaveBeenCalled()
+    expect(d.registration.verifyCode).not.toHaveBeenCalled()
+  })
+  test.each([{ status: 'fail', login: '999123456789' }, { status: 'ok', pending: 'approval', login: '999123456789' }, { status: 'ok' }, { status: 'ok', reason: 'blocked', login: '999123456789' }])('exist does not adopt incomplete confirmation %j', async result => {
+    const d = deps(); d.registration.checkIfRegistered.mockResolvedValue(result)
+    expect(await operate({ ...input, action: 'check' }, d)).toMatchObject({ error: 'challenge_required' })
+    expect(d.registration.requestSmsCode).not.toHaveBeenCalled()
+  })
+  test('updated pinned source loads offline with supported delivery parameters', () => {
+    const root = require('node:path').resolve('lab/registration/node_modules/whalibmob')
+    const registration = registrationModule(root)
+    for (const method of ['sms', 'voice']) {
+      const pairs = registration._verify.getRequestVerificationCodeParameters({}, method, { mcc: '724', mnc: '06', lg: 'pt', lc: 'BR' }, { os: 'android', ram: '11.55' }, 1)
+      expect(pairs.slice(0, 6)).toEqual(['method', method, 'sim_mcc', '724', 'sim_mnc', '06'])
+    }
+  })
   test('voice is explicitly forwarded and tracks its own wait without fallback', async () => {
     const d = deps(); d.registration.requestSmsCode.mockResolvedValue({ status: 'sent', sms_wait: 600, voice_wait: 30 })
     const result = await operate({ ...input, method: 'voice' }, d)
@@ -24,7 +43,7 @@ describe('isolated registration driver with offline provider responses', () => {
   })
   test('records non-success responses rather than dropping them', async () => {
     const d = deps(); d.registration.requestSmsCode.mockResolvedValue({ status: 'fail', reason: 'no_routes', token: 'SECRET' })
-    expect(await operate(input, d)).toEqual({ error: 'provider_failed', diagnostic: { stage: 'request', reason: 'provider_response', providerStatus: 'fail', providerReason: 'no_routes' } })
+    expect(await operate(input, d)).toMatchObject({ error: 'provider_failed', diagnostic: { stage: 'request', reason: 'provider_response', providerStatus: 'fail', providerReason: 'no_routes' } })
   })
   test('retains remote wait through the error boundary without response secrets', async () => {
     const d = deps(); d.registration.requestSmsCode.mockRejectedValue(Object.assign(new Error('too_recent'), { raw: { status: 'fail', reason: 'too_recent', sms_wait: '7200', token: 'SECRET' } }))
@@ -36,6 +55,17 @@ describe('isolated registration driver with offline provider responses', () => {
     const d = deps(); d.registration.requestSmsCode.mockResolvedValue({ status: 'sent' })
     expect(await operate(input, d)).toMatchObject({ store: { codePending: true } })
     expect(d.registration.requestSmsCode).toHaveBeenCalledWith(expect.anything(), 'sms')
+  })
+  test.each([false, true])('refused request retains only version and push metadata (throw=%s)', async throws => {
+    const d = deps()
+    d.registration.requestSmsCode.mockImplementation(async (store: any) => {
+      Object.assign(store, { version: '2.26.38.73', fcm: { token: 'PUSH_SECRET' }, apns: { token: 'APPLE_SECRET' }, phoneNumber: 'changed', registered: true, codePending: true, noiseKeyPair: 'CHANGED_KEY' })
+      if (throws) throw new Error('too_recent')
+      return { status: 'fail', reason: 'no_routes' }
+    })
+    const result = await operate(input, d)
+    expect(result.store).toEqual({ ...input.store, version: '2.26.38.73', fcm: { token: 'PUSH_SECRET' }, apns: { token: 'APPLE_SECRET' } })
+    expect(JSON.stringify(result.diagnostic)).not.toMatch(/PUSH_SECRET|APPLE_SECRET|CHANGED_KEY/)
   })
   test('successful SMS response retains resend wait without exposing raw data', async () => {
     const d = deps(); d.registration.requestSmsCode.mockResolvedValue({ status: 'sent', sms_wait: '120', token: 'SECRET' })

@@ -11,6 +11,10 @@ function setup() {
         if (values.has(k[0])) return 0
         values.set(k[0], a[0]); values.set(k[1], a[1]); values.delete(k[2]); return 1
       }
+      if (script.includes("redis.call('PEXPIRE'")) {
+        if (values.get(k[0]) !== a[0]) return 0
+        values.set(k[1], a[1]); return 1
+      }
       if (values.get(k[0]) !== a[0] || JSON.parse(values.get(k[1]) || '{}').id !== a[0]) return 0
       if (a[2]) values.set(k[2], a[2])
       values.set(k[1], a[1]); values.delete(k[0]); return 1
@@ -22,6 +26,19 @@ function setup() {
   return { values, redis, exporter, deps, tasks: new MobileBackupTasks(deps), finish: (file: any) => finish(file), fail: (error: any) => fail(error) }
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() }
+
+test('heartbeat renews long exports without persisting password or archive; lost ownership is rejected', async () => {
+  const s = setup(), task = await s.tasks.start('device', body)
+  const heartbeat = (s.exporter.mock.calls[0] as any[])[2]
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(task.createdAt + 700000)
+  try {
+    await heartbeat()
+    expect((await s.tasks.status('device'))?.status).toBe('running')
+    expect(JSON.stringify([...s.values])).not.toContain(body.password)
+    s.values.set('mobile-primary:{v1}:backup-task:lock', 'successor')
+    await expect(heartbeat()).rejects.toMatchObject({ code: 'session_backup_task_lost' })
+  } finally { clock.mockRestore(); s.fail(new Error('synthetic')); await flush() }
+})
 
 test('returns before export and persists encrypted file for a new service instance, without password', async () => {
   const s = setup(), task = await s.tasks.start('device', body)

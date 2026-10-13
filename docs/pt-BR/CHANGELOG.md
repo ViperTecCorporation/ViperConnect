@@ -4,6 +4,25 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 
 O formato segue o Keep a Changelog e adota SemVer quando aplicável.
 
+## [4.0.36] - 2026-10-12
+
+- Release unificado com o pacote VoIP 0.1.66, fixado por revisao imutavel no build.
+- Transferencia entre ramais com audio de espera e cancelamento do toque pendente ao encerrar no WhatsApp.
+- Selecao manual de linha por prefixo e DDI/DDD herdados da linha, com sobrescrita pelo ramal.
+- OpenRouter para transcricao e resumo: seletores de provedor e modelos no console VoIP.
+- Correcoes de vinculos entre empresas, linhas e grupos; historico SQLite preserva chamadas ativas.
+- Relay WhatsApp: Default usa 3478; wa_personal, wa_business e mobile_primary usam 3480. Zapo atualizada para 1.10.0.
+- Guias PT/EN, OpenAPI, Postman e assets frontend atualizados. URA/agente de voz permanecem futuras melhorias.
+
+## [4.0.35] - 2026-10-08
+
+- Confirmação no aparelho: consulta explícita de `/exist` com as mesmas chaves, sem novo SMS/ligação, liberando a conexão após resposta afirmativa.
+- Preservação do nono dígito no identificador da sessão, API, Redis e webhooks; autenticação mantém o número canônico confirmado pelo WhatsApp. Backup, restore, exclusão e dispositivos vinculados respeitam a separação.
+- Correções de backup/restauração de sessões grandes, processamento em streaming, upload multipart e retorno de progresso/erros no painel.
+- Atualização fixada da biblioteca de registro e alinhamento do validador da imagem; preservação de metadados nas recusas e respeito aos prazos independentes de SMS/voz.
+- Guias PT/EN, OpenAPI, Postman e frontend atualizados. Experimento de túnel IPv6 e scripts locais não incluídos.
+- Atualize o destino antes de restaurar backups novos com números de sessão e autenticação diferentes. O alerta crítico da biblioteca mobile permanece sem correção conhecida.
+
 ## [Não lançado]
 
 - Correção: evita estouro de pilha (recursão) ao tratar `editedMessage` e updates device-sent em `fromBaileysMessageContent` (desembrulha e remove `update` antes de recursão).

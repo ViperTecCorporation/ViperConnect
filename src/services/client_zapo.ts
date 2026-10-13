@@ -72,6 +72,7 @@ import { createYouTubeLinkPreviewResolverForTransport } from './messages/youtube
 import { zapoOperationDeadline } from './zapo/zapo_operation_deadline'
 import { companionDiagnosticLogger } from './mobile_primary/companion_diagnostic_logger'
 import { recordSessionMessageEvent } from './messages/session_message_events'
+import { withZapoWebClientProfile, zapoWebClientDeviceOptions, zapoWebClientProfileLabel } from './zapo/zapo_web_client_profile'
 
 type VoipCoordinator = ReturnType<ReturnType<typeof voipPlugin>['setup']>
 type ZapoClient = WaClientType & {
@@ -1013,6 +1014,7 @@ export class ClientZapo implements Client {
     const credentials = await this.zapoSession.auth.load()
     const requiresPairing = !credentials?.meJid
     logger.info('Zapo session startup phone=%s mode=%s', this.phone, requiresPairing ? 'fresh-pairing' : 'stored-auth')
+    logger.info('Zapo web client profile phone=%s profile=%s user_agent=%s', this.phone, this.config.zapoWebClientProfile, zapoWebClientProfileLabel(this.config.zapoWebClientProfile))
     if (this.config.useRedis) {
       await statusRecipients.loadOrBootstrap(this.phone).catch((error) => {
         logger.warn(error as any, 'Zapo status recipient bootstrap failed for %s', this.phone)
@@ -1043,9 +1045,10 @@ export class ClientZapo implements Client {
       if (companionHost.includePem) logger.info({ phone: this.phone, includePem: true }, 'MOBILE_COMPANION_PEM_LAB_ENABLED')
       companionRuntime = { startCompanionWorker, fence, operations: new MobileCompanionOperations(redis, vault, this.config.mobilePrimaryDraftId) }
     }
-    const client = this.clientFactory({
+    const client = await withZapoWebClientProfile(this.config.zapoWebClientProfile, async () => this.clientFactory({
       store: zapoStore,
       sessionId: this.phone,
+      ...zapoWebClientDeviceOptions(this.config.zapoWebClientProfile),
       proxy,
       ...(companionHost ? { companionHost } : {}),
       markOnlineOnConnect: !!this.config.mobilePrimaryDraftId || this.config.markOnlineOnConnect,
@@ -1064,9 +1067,11 @@ export class ClientZapo implements Client {
       plugins: [...companionPlugins, voipPlugin({
         maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS,
         logLevel: 'debug',
-        preferWebRelayPort: !!this.config.mobilePrimaryDraftId,
+        preferWebRelayPort: !!this.config.mobilePrimaryDraftId
+          || this.config.zapoWebClientProfile === 'wa_personal'
+          || this.config.zapoWebClientProfile === 'wa_business',
       })],
-    })
+    }))
     const generation = ++this.connectionGeneration
     const voiceBridgeUrl = resolveZapoVoiceBridgeUrl(VOIP_SERVICE_URL, VOIP_BRIDGE_URL)
     this.voiceBridge =
@@ -1117,7 +1122,7 @@ export class ClientZapo implements Client {
       }
     })
     this.bindEvents(client, resolvePrompt, generation)
-    const socketConnect = client.connect().catch(async (error) => {
+    const socketConnect = withZapoWebClientProfile(this.config.zapoWebClientProfile, () => client.connect()).catch(async (error) => {
       await this.handleConnectionFailure(client, error)
       if (!promptResolved) throw error
     })

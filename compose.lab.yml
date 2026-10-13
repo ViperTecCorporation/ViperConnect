@@ -88,7 +88,7 @@ services:
       MOBILE_REGISTRATION_ENABLED: "true"
       MOBILE_REGISTRATION_KEY: ${LAB_AUTH_TOKEN}
       MOBILE_REGISTRATION_MODULE: /opt/mobile-registration/node_modules/whalibmob
-    ports: ["127.0.0.1:19876:9876", "192.168.0.112:19876:9876"]
+    ports: ["127.0.0.1:19876:9876"]
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:9876/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

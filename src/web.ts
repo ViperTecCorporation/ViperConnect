@@ -31,7 +31,7 @@ import { startContactSyncScheduler } from './jobs/contact_sync'
 import { ContactIncoming } from './services/contact_incoming'
 
 import * as Sentry from '@sentry/node'
-import { isTransientBaileysError } from './services/error_utils'
+import { isTransientBaileysError, isTransientExternalIoError } from './services/error_utils'
 import { ensureRequiredRedis } from './services/redis_runtime'
 if (process.env.SENTRY_DSN) {
   Sentry.init({
@@ -88,7 +88,7 @@ process.on('uncaughtException', (reason: any) => {
   if (process.env.SENTRY_DSN) {
     Sentry.captureException(reason)
   }
-  if (isTransientBaileysError(reason)) {
+  if (isTransientBaileysError(reason) || isTransientExternalIoError(reason)) {
     logger.warn('uncaughtException web (ignored transient): %s', (reason && (reason.message || reason)))
     return
   }
@@ -100,7 +100,7 @@ process.on('unhandledRejection', (reason: any, promise) => {
   if (process.env.SENTRY_DSN) {
     Sentry.captureException(reason)
   }
-  if (isTransientBaileysError(reason)) {
+  if (isTransientBaileysError(reason) || isTransientExternalIoError(reason)) {
     logger.warn('unhandledRejection web (ignored transient): %s', (reason && (reason.message || reason)))
     return
   }

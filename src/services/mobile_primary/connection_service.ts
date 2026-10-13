@@ -2,6 +2,7 @@ import type { WaAuthCredentials } from 'zapo-js/auth'
 import type { WaAuthStore } from 'zapo-js/store'
 import { MobileDeviceError, type MobileDeviceDraft } from '../mobile_device_service'
 import { convertWhalibmobCredentials } from './whalibmob_credentials'
+import { registrationSessionPhone } from './registration_identity'
 
 export interface MobileConnectionDependencies {
   enabled(): boolean
@@ -25,7 +26,7 @@ export class MobileConnectionService {
     const draft = await this.deps.draft(id)
     const state = await this.deps.registration(id)
     if (state?.status !== 'registered' || !/^[1-9]\d{7,14}$/.test(state.canonicalPhone || '')) throw new MobileDeviceError(409, 'mobile_registration_required')
-    return { draft, state, phone: state.canonicalPhone as string }
+    return { draft, state, phone: registrationSessionPhone(state, draft.phone) }
   }
 
   async status(id: string) {
@@ -39,7 +40,7 @@ export class MobileConnectionService {
     if (!input || input.confirm !== true || Object.keys(input).some(key => key !== 'confirm')) throw new MobileDeviceError(400, 'mobile_connection_confirmation_required')
     const { draft, state, phone } = await this.source(id)
     // Validate before taking ownership or creating a session configuration.
-    const converted = await convertWhalibmobCredentials(state.store, { expectedCanonicalPhone: phone, advSecretKey: Buffer.from(state.advSecret, 'base64') })
+    const converted = await convertWhalibmobCredentials(state.store, { expectedCanonicalPhone: state.canonicalPhone, advSecretKey: Buffer.from(state.advSecret, 'base64') })
     const lease = this.deps.lease(phone)
     if (!await lease.acquire()) {
       const current = await this.deps.config(phone)

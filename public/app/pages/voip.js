@@ -1,13 +1,14 @@
-import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
-import { renderModal } from '../components/modal.js?v=4.0.34-43ce0548';
-import { renderStatus } from '../components/status.js?v=4.0.34-43ce0548';
-import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
+import { icon } from '../components/icons.js?v=4.0.36-1527f181';
+import { renderModal } from '../components/modal.js?v=4.0.36-1527f181';
+import { renderStatus } from '../components/status.js?v=4.0.36-1527f181';
+import { escapeHtml } from '../core/html.js?v=4.0.36-1527f181';
+import { aiProviderOptions, inferAiProvider } from '../domain/ai_providers.js?v=4.0.36-1527f181';
 const labels = {
     companies: 'Empresas',
     accounts: 'Linhas Zapo',
     lineGroups: 'Grupos de linhas',
     extensionGroups: 'Grupos de ramais',
-    sessions: 'Sessões Zapo',
+    sessions: 'Ajustes por linha Zapo',
     extensions: 'Ramais',
 };
 const tabs = [
@@ -85,10 +86,11 @@ const tabSearch = (query, placeholder) => `<div class="filters voip-search" role
 </div>`;
 const emptyRow = (columns, text) => `<tr><td colspan="${columns}"><div class="empty-state">${escapeHtml(text)}</div></td></tr>`;
 const editButton = (resource, id) => `<button class="btn btn--ghost" type="button" data-action="edit-voip-resource" data-resource="${resource}" data-id="${escapeHtml(id)}">${icon('edit')}Editar</button>`;
-const resourceGrid = (state, resource, columns, extraActions, filteredItems) => {
+const resourceGrid = (state, resource, columns, extraActions, filteredItems, notice = '') => {
     const items = filteredItems ?? asItems(state[resource]);
     return `<section class="section">
     ${sectionHeading(labels[resource], `Gerencie ${labels[resource].toLowerCase()} sem editar JSON.`, `<button class="btn" type="button" data-action="new-voip-resource" data-resource="${resource}">${icon('plus')}Adicionar</button>`)}
+    ${notice ? `<p class="hint">${escapeHtml(notice)}</p>` : ''}
     <div class="table-wrap"><table><thead><tr>${columns.map(([label]) => `<th>${escapeHtml(label)}</th>`).join('')}<th class="table-actions">Ações</th></tr></thead><tbody>
       ${items.length ? items.map(item => `<tr>${columns.map(([, render]) => `<td>${render(item)}</td>`).join('')}<td class="table-actions"><div class="row-actions">${extraActions?.(item) || ''}${editButton(resource, `${item.id}`)}</div></td></tr>`).join('') : emptyRow(columns.length + 1, `Nenhum item em ${labels[resource].toLowerCase()}.`)}
     </tbody></table></div>
@@ -108,6 +110,14 @@ const sessionLinkedToLineGroup = (session, group) => {
         || includesAnyId(group.inboundSessionIds, sessionIds)
         || includesAnyId(group.outboundPrioritySessionIds, sessionIds);
 };
+const sessionLinkedToLineGroupDirection = (session, group, direction) => {
+    const sessionIds = [session.id, session.unoSession, session.accountId].filter(Boolean);
+    const directionalIds = direction === 'inbound' ? session.inboundLineGroupIds : session.outboundLineGroupIds;
+    const groupSessionIds = direction === 'inbound' ? group.inboundSessionIds : group.outboundPrioritySessionIds;
+    return includesAnyId(directionalIds, [group.id])
+        || includesAnyId(groupSessionIds, sessionIds)
+        || (!Array.isArray(directionalIds) || directionalIds.length === 0) && includesAnyId(session.lineGroupIds, [group.id]);
+};
 const extensionTransportTerms = (type) => {
     if (!type || type === 'both')
         return 'both sip sip/rtp webrtc';
@@ -118,6 +128,9 @@ const extensionTransportTerms = (type) => {
 const automaticLineForExtension = (state, extension) => (state.zapoLines || []).find(line => `${line.automatic?.extensionId || ''}` === `${extension.id || ''}`
     || (`${line.automatic?.username || ''}` && `${line.automatic?.username}` === `${extension.username || ''}`));
 const isAutomaticExtension = (state, extension) => extension.provisioningSource === 'zapo_auto' || Boolean(automaticLineForExtension(state, extension));
+const isAutomaticAccount = (state, account) => account.provisioningSource === 'zapo_auto'
+    || asItems(state.sessions).some(session => `${session.accountId || ''}` === `${account.id || ''}` && Boolean(session.automaticExtensionId));
+const isBasicOnlyAutomaticAccount = (state, account) => isAutomaticAccount(state, account) && `${account.companyId || ''}` === 'empresa-padrao';
 const automaticExtensionOffline = (state, extension) => {
     const automatic = automaticLineForExtension(state, extension)?.automatic;
     return automatic?.status === 'offline' || (!automatic && extension.status === 'offline');
@@ -171,14 +184,18 @@ const automaticRegistrationStatus = (line) => {
     const busy = automatic.busyRegistrationCount || 0;
     return `<div class="stack stack--compact"><span>${quantity(free, 'livre', 'livres')} · ${quantity(busy, 'ocupado', 'ocupados')} · ${automatic.registrationCount || 0} total</span><span class="muted">${escapeHtml(transports)}</span></div>`;
 };
+const accountForLine = (state, line) => asItems(state.accounts).find(account => `${account.id || ''}` === `${line.accountId || line.session || ''}`
+    || `${account.phoneNumber || ''}` === `${line.session || ''}`);
+const outboundPrefixForLine = (state, line) => `${accountForLine(state, line)?.outboundAccessPrefix || ''}`;
 const renderLines = (state, query = '') => {
-    const lines = (state.zapoLines || []).filter(line => matchesSearch(query, line.session, line.sourceId, line.workerId, line.serverId, line.companyId, line.companyLabel, line.accountId, line.sessionId, line.connected ? 'online conectada' : 'offline desconectada', line.automatic?.username, line.automatic?.status, line.automatic?.transports, line.automatic?.basicInboundEnabled === false ? 'básico desativado' : 'básico ativo', (line.advancedRoutingConfigured ?? line.routingConfigured) ? 'avançado' : 'sem avançado'));
+    const lines = (state.zapoLines || []).filter(line => matchesSearch(query, line.session, line.sourceId, line.workerId, line.serverId, line.companyId, line.companyLabel, line.accountId, line.sessionId, outboundPrefixForLine(state, line), line.connected ? 'online conectada' : 'offline desconectada', line.automatic?.username, line.automatic?.status, line.automatic?.transports, line.automatic?.basicInboundEnabled === false ? 'básico desativado' : 'básico ativo', (line.advancedRoutingConfigured ?? line.routingConfigured) ? 'avançado' : 'sem avançado'));
     return `<section class="section">${sectionHeading('Linhas Zapo', 'Empresa, linha, sessão e ramal são provisionados automaticamente pela bridge.')}
-    <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Status</th><th>Empresa</th><th>Ramal automático</th><th>Registros</th><th>Atendimento</th><th>Concorrência</th><th class="table-actions">Ações</th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Sessão</th><th>Status</th><th>Empresa</th><th>Prefixo de saída</th><th>Ramal automático</th><th>Registros</th><th>Atendimento</th><th>Concorrência</th><th class="table-actions">Ações</th></tr></thead><tbody>
       ${lines.length ? lines.map(line => `<tr>
         <td><strong>${escapeHtml(line.session)}</strong><br><span class="muted">${escapeHtml(line.workerId || line.serverId || 'Bridge Zapo')}</span></td>
         <td>${renderStatus(line.connected ? 'online' : 'offline')}</td>
         <td>${escapeHtml(line.companyLabel || line.companyId || 'Empresa padrão')}</td>
+        <td>${outboundPrefixForLine(state, line) ? `<code>${escapeHtml(outboundPrefixForLine(state, line))}</code>` : '<span class="muted">Automática</span>'}</td>
         <td>${line.automatic ? `<strong>${escapeHtml(line.automatic.username)}</strong><br>${badge(line.automatic.status === 'active' ? 'Automático ativo' : 'Automático offline', line.automatic.status === 'active' ? 'success' : 'muted')}` : '<span class="muted">Provisionando…</span>'}</td>
         <td>${automaticRegistrationStatus(line)}</td>
         <td><div class="stack stack--compact">${line.automatic?.basicInboundEnabled === false ? badge('Básico desativado', 'muted') : badge('Básico ativo', 'success')}${(line.advancedRoutingConfigured ?? line.routingConfigured) ? badge('Avançado', 'success') : badge('Sem avançado')}</div></td>
@@ -186,7 +203,7 @@ const renderLines = (state, query = '') => {
         <td class="table-actions"><div class="row-actions">
           ${editButton('accounts', line.accountId || line.session)}
         </div></td>
-      </tr>`).join('') : emptyRow(8, query ? 'Nenhuma linha encontrada para a busca.' : 'Nenhuma sessão Zapo foi descoberta.')}
+      </tr>`).join('') : emptyRow(9, query ? 'Nenhuma linha encontrada para a busca.' : 'Nenhuma sessão Zapo foi descoberta.')}
     </tbody></table></div>
   </section>`;
 };
@@ -218,6 +235,7 @@ const transferAudioActions = (item, urls) => {
 };
 const renderExtensions = (state, transferAudioUrls, showOfflineAutomatic = false, query = '') => {
     const extensions = asItems(state.extensions);
+    const advancedExtensions = extensions.filter(extension => !isAutomaticExtension(state, extension));
     const extensionsAllowedByVisibility = extensions.filter(item => showOfflineAutomatic || !isAutomaticExtension(state, item) || !automaticExtensionOffline(state, item));
     const hiddenOffline = extensions.length - extensionsAllowedByVisibility.length;
     const visibleExtensions = extensionsAllowedByVisibility.filter(item => {
@@ -227,7 +245,7 @@ const renderExtensions = (state, transferAudioUrls, showOfflineAutomatic = false
         return matchesSearch(query, item.id, item.username, item.displayName, extensionTransportTerms(item.type), companyName(state, item.companyId), automatic ? 'automático' : 'avançado', item.enabled ? 'ativo' : 'inativo', item.extensionGroupIds, groups.map(group => group.label || group.id), registrations.flatMap(registration => [registrationTransport(registration), registrationContact(registration), registration.userAgent]), registrations.length ? 'registrado' : 'sem registro');
     });
     const visibleExtensionIds = new Set(visibleExtensions.map(item => `${item.id}`));
-    const visibleExtensionGroups = asItems(state.extensionGroups).filter(group => matchesSearch(query, group.id, group.label, companyName(state, group.companyId), group.enabled ? 'ativo' : 'inativo', group.extensionIds, extensions.filter(extension => extensionLinkedToGroup(extension, group)).flatMap(extension => [extension.displayName, extension.username])) || extensions.some(extension => visibleExtensionIds.has(`${extension.id}`) && extensionLinkedToGroup(extension, group)));
+    const visibleExtensionGroups = asItems(state.extensionGroups).filter(group => matchesSearch(query, group.id, group.label, companyName(state, group.companyId), group.enabled ? 'ativo' : 'inativo', group.extensionIds, advancedExtensions.filter(extension => extensionLinkedToGroup(extension, group)).flatMap(extension => [extension.displayName, extension.username])) || advancedExtensions.some(extension => visibleExtensionIds.has(`${extension.id}`) && extensionLinkedToGroup(extension, group)));
     const toggleLabel = showOfflineAutomatic ? 'Ocultar automáticos offline' : `Mostrar automáticos offline${hiddenOffline ? ` (${hiddenOffline})` : ''}`;
     const grid = `<section class="section">
     ${sectionHeading('Ramais', 'Ramais automáticos e avançados no mesmo cadastro.', `<div class="row-actions"><button class="btn btn--ghost" type="button" data-action="toggle-voip-offline-automatic">${escapeHtml(toggleLabel)}</button><button class="btn" type="button" data-action="new-voip-resource" data-resource="extensions">${icon('plus')}Adicionar avançado</button></div>`)}
@@ -241,18 +259,19 @@ const renderExtensions = (state, transferAudioUrls, showOfflineAutomatic = false
     return grid + renderActiveRegistrations(state, query) + resourceGrid(state, 'extensionGroups', [
         ['Grupo', item => `<strong>${escapeHtml(item.label || item.id)}</strong>`],
         ['Empresa', item => escapeHtml(`${companyName(state, item.companyId)}`)],
-        ['Ramais', item => `${item.extensionIds?.length || 0}`],
+        ['Ramais', item => `${advancedExtensions.filter(extension => extensionLinkedToGroup(extension, item)).length}`],
         ['Áudio de transferência', item => item.transferAudioSource ? badge(item.transferAudioFilename || 'Configurado', 'success') : badge('Não configurado')],
         ['Status', item => item.enabled ? badge('Ativo', 'success') : badge('Inativo')],
     ], item => transferAudioActions(item, transferAudioUrls), visibleExtensionGroups);
 };
 const renderRouterSimulator = (state, result) => {
     const locks = asItems(state.router?.locks);
+    const advancedExtensions = asItems(state.extensions).filter(extension => !isAutomaticExtension(state, extension));
     return `<section class="section">
   ${sectionHeading('Simulador de roteamento', 'Valide entrada e saída usando a mesma regra aplicada às chamadas reais.')}
   <div class="voip-overview-grid">
     <form class="card form-grid" data-form="voip-router-inbound"><h3 class="wide">Entrada</h3>${selectField('sessionId', 'Sessão de roteamento', asItems(state.sessions), '', true)}<button class="btn" type="submit">Simular entrada</button></form>
-    <form class="card form-grid" data-form="voip-router-outbound"><h3 class="wide">Saída</h3>${selectField('extensionId', 'Ramal', asItems(state.extensions), '', true)}${field('target', 'Destino', '', 'text', true)}<button class="btn" type="submit">Simular saída</button></form>
+    <form class="card form-grid" data-form="voip-router-outbound"><h3 class="wide">Saída</h3>${selectField('extensionId', 'Ramal avançado', advancedExtensions, '', true)}${field('target', 'Destino', '', 'text', true)}<button class="btn" type="submit">Simular saída</button></form>
   </div>
   ${result ? `<div class="card stack"><h3>Resultado</h3><pre class="code-block"><code>${escapeHtml(JSON.stringify(result, null, 2))}</code></pre></div>` : ''}
   <div class="table-wrap"><table><thead><tr><th>Reserva</th><th>Escopo</th><th>Dono</th><th>Destino</th><th class="table-actions">Ações</th></tr></thead><tbody>${locks.length ? locks.map(lock => `<tr><td><code>${escapeHtml(lock.id || '—')}</code></td><td>${escapeHtml(lock.scope || '—')}</td><td>${escapeHtml(lock.extensionId || lock.owner || '—')}</td><td>${escapeHtml(lock.targetNumber || lock.accountId || '—')}</td><td class="table-actions"><button class="btn btn--danger" type="button" data-action="release-voip-router-lock" data-lock-id="${escapeHtml(lock.id || '')}">${icon('trash')}Liberar</button></td></tr>`).join('') : emptyRow(5, 'Nenhuma reserva ativa.')}</tbody></table></div>
@@ -267,7 +286,7 @@ const renderRouting = (state, routerResult, query = '') => {
         ['Entrada', item => quantity(item.inboundSessionIds?.length || 0, 'linha', 'linhas')],
         ['Saída', item => quantity(item.outboundPrioritySessionIds?.length || 0, 'linha', 'linhas')],
         ['Destinos', item => quantity(item.targetExtensionGroupIds?.length || 0, 'grupo', 'grupos')],
-    ], undefined, lineGroups) + resourceGrid(state, 'sessions', [
+    ], undefined, lineGroups, 'Ordem de configuração: crie primeiro um grupo de ramais. Depois, crie o grupo de linhas e selecione esse grupo de ramais como destino.') + resourceGrid(state, 'sessions', [
         ['Sessão', item => `<strong>${escapeHtml(item.label || item.id)}</strong><br><span class="muted">${escapeHtml(item.unoSession || item.id)}</span>`],
         ['Empresa', item => escapeHtml(`${companyName(state, item.companyId)}`)],
         ['Conta', item => escapeHtml(item.accountId || '—')],
@@ -344,20 +363,72 @@ export const renderVoipPage = (state, loading, error = '', renderOptions = {}) =
 const field = (name, label, value = '', type = 'text', required = false, readonly = false, attributes = '') => `<label class="field"><span>${escapeHtml(label)}</span><input name="${name}" type="${type}" value="${escapeHtml(`${value ?? ''}`)}" ${required ? 'required' : ''} ${readonly ? 'readonly' : ''} ${attributes}></label>`;
 const switchField = (name, label, value) => `<label class="voip-check"><input name="${name}" type="checkbox" ${checked(value)}> ${escapeHtml(label)}</label>`;
 const selectField = (name, label, items, current, required = false, multiple = false) => `<label class="field"><span>${escapeHtml(label)}</span><select name="${name}" ${required ? 'required' : ''} ${multiple ? 'multiple size="5"' : ''}>${multiple ? '' : '<option value="">Selecione</option>'}${options(items, current, multiple)}</select></label>`;
+const generatedResourceId = () => globalThis.crypto?.randomUUID?.()
+    || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+        const random = Math.floor(Math.random() * 16);
+        return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16);
+    });
+const searchableChecklistField = (name, label, items, current, companyId = '', wide = false, strictCompany = false) => {
+    let selectedCount = 0;
+    const renderedOptions = items.map(item => {
+        const optionLabel = `${item.label || item.displayName || item.username || item.phoneNumber || item.id}`;
+        const optionCompanyId = `${item.companyId || ''}`;
+        const companyMismatch = strictCompany
+            ? Boolean(companyId && optionCompanyId !== companyId)
+            : Boolean(companyId && optionCompanyId && optionCompanyId !== companyId);
+        const isSelected = selectedMany(current, item.id) && !companyMismatch;
+        if (isSelected)
+            selectedCount += 1;
+        return `<label class="voip-option-picker__option" data-voip-option data-company-id="${escapeHtml(optionCompanyId)}" data-search="${escapeHtml(normalizeSearch(`${optionLabel} ${item.id || ''}`))}" ${companyMismatch ? 'hidden' : ''}><input type="checkbox" name="${escapeHtml(name)}" value="${escapeHtml(`${item.id}`)}" ${isSelected ? 'checked' : ''}><span>${escapeHtml(optionLabel)}</span></label>`;
+    }).join('');
+    const selectedLabel = selectedCount === 0 ? 'Nenhum selecionado' : selectedCount === 1 ? '1 selecionado' : `${selectedCount} selecionados`;
+    return `<fieldset class="field voip-option-field${wide ? ' wide' : ''}"><legend>${escapeHtml(label)}</legend><details class="voip-searchable-dropdown" data-searchable-dropdown data-searchable-multiselect><summary><span data-searchable-dropdown-label>${selectedLabel}</span><span class="voip-searchable-dropdown__chevron" aria-hidden="true"></span></summary><div class="voip-searchable-dropdown__panel"><div class="voip-option-picker" data-voip-option-picker data-voip-company-dependent ${strictCompany ? 'data-voip-strict-company' : ''} data-selected-company-id="${escapeHtml(companyId)}"><input type="search" data-filter="voip-options" placeholder="Buscar ${escapeHtml(label.toLowerCase())}" aria-label="Buscar ${escapeHtml(label.toLowerCase())}" autocomplete="off"><div class="voip-option-picker__list">${renderedOptions || '<p class="muted">Nenhuma opção cadastrada.</p>'}<p class="muted voip-option-picker__empty" data-voip-options-empty hidden>Nenhuma opção encontrada para esta empresa.</p></div></div></div></details></fieldset>`;
+};
+const extensionMembershipField = (extensions, group, current, companyId = '') => {
+    let selectedCount = 0;
+    const renderedOptions = extensions.map(extension => {
+        const optionLabel = `${extension.displayName || extension.username || extension.id}`;
+        const username = `${extension.username || ''}`;
+        const optionCompanyId = `${extension.companyId || ''}`;
+        const companyMismatch = companyId && optionCompanyId && optionCompanyId !== companyId;
+        const isSelected = selectedMany(current, extension.id) && !companyMismatch;
+        const configuredDistance = Number(extension.extensionGroupDistances?.[group.id]);
+        const distance = Number.isFinite(configuredDistance) && configuredDistance > 0 ? Math.trunc(configuredDistance) : 1;
+        if (isSelected)
+            selectedCount += 1;
+        return `<div class="voip-option-picker__option voip-membership-option" data-voip-option data-voip-membership-row data-company-id="${escapeHtml(optionCompanyId)}" data-search="${escapeHtml(normalizeSearch(`${optionLabel} ${username} ${extension.id || ''}`))}" ${companyMismatch ? 'hidden' : ''}><label class="voip-membership-option__identity"><input type="checkbox" name="extensionIds" value="${escapeHtml(`${extension.id}`)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(optionLabel)}</strong>${username && username !== optionLabel ? `<small>Usuário SIP ${escapeHtml(username)}</small>` : ''}</span></label><label class="voip-membership-option__distance" data-voip-membership-distance ${isSelected ? '' : 'hidden'}><span>Ordem</span><input type="number" name="extensionDistance:${escapeHtml(`${extension.id}`)}" value="${distance}" min="1" step="1" ${isSelected ? '' : 'disabled'} aria-label="Ordem de toque de ${escapeHtml(optionLabel)}"></label></div>`;
+    }).join('');
+    const selectedLabel = selectedCount === 0 ? 'Nenhum selecionado' : selectedCount === 1 ? '1 selecionado' : `${selectedCount} selecionados`;
+    return `<fieldset class="field voip-option-field wide"><legend>Ramais e ordem de toque</legend><details class="voip-searchable-dropdown" data-searchable-dropdown data-searchable-multiselect><summary><span data-searchable-dropdown-label>${selectedLabel}</span><span class="voip-searchable-dropdown__chevron" aria-hidden="true"></span></summary><div class="voip-searchable-dropdown__panel voip-searchable-dropdown__panel--members"><div class="voip-option-picker" data-voip-option-picker data-voip-company-dependent data-selected-company-id="${escapeHtml(companyId)}"><input type="search" data-filter="voip-options" placeholder="Buscar ramal, usuário SIP ou ID" aria-label="Buscar ramal, usuário SIP ou ID" autocomplete="off"><div class="voip-option-picker__list">${renderedOptions || '<p class="muted">Nenhum ramal cadastrado.</p>'}<p class="muted voip-option-picker__empty" data-voip-options-empty hidden>Nenhum ramal encontrado para esta empresa.</p></div></div></div></details><small class="muted">Ordem 1 toca primeiro. Ramais com a mesma ordem tocam juntos.</small></fieldset>`;
+};
+const searchableRadioField = (name, label, items, current, required = false, companyChoice = false, companyDependent = false, companyId = '') => {
+    const currentItem = items.find(item => `${item.id ?? ''}` === `${current ?? ''}`);
+    const currentLabel = `${currentItem?.label || currentItem?.displayName || currentItem?.username || currentItem?.phoneNumber || currentItem?.id || 'Selecione'}`;
+    const renderedOptions = items.map(item => {
+        const optionLabel = `${item.label || item.displayName || item.username || item.phoneNumber || item.id}`;
+        const optionCompanyId = `${item.companyId || ''}`;
+        const companyMismatch = companyDependent && companyId && optionCompanyId && optionCompanyId !== companyId;
+        return `<label class="voip-option-picker__option" data-voip-option data-company-id="${escapeHtml(optionCompanyId)}" data-search="${escapeHtml(normalizeSearch(`${optionLabel} ${item.id || ''}`))}" ${companyMismatch ? 'hidden' : ''}><input type="radio" name="${escapeHtml(name)}" value="${escapeHtml(`${item.id}`)}" ${companyChoice ? 'data-voip-company-choice' : ''} ${`${current ?? ''}` === `${item.id ?? ''}` && !companyMismatch ? 'checked' : ''} ${required ? 'required' : ''}><span data-voip-option-label>${escapeHtml(optionLabel)}</span><span class="voip-option-picker__check" aria-hidden="true">✓</span></label>`;
+    }).join('');
+    const visibleCurrentLabel = currentItem && (!companyDependent || !companyId || !currentItem.companyId || `${currentItem.companyId}` === companyId) ? currentLabel : 'Selecione';
+    return `<fieldset class="field voip-option-field voip-option-field--single"><legend>${escapeHtml(label)}</legend><details class="voip-searchable-dropdown" data-searchable-dropdown><summary><span data-searchable-dropdown-label>${escapeHtml(visibleCurrentLabel)}</span><span class="voip-searchable-dropdown__chevron" aria-hidden="true"></span></summary><div class="voip-searchable-dropdown__panel"><div class="voip-option-picker" data-voip-option-picker ${companyDependent ? `data-voip-company-dependent data-selected-company-id="${escapeHtml(companyId)}"` : ''}><input type="search" data-filter="voip-options" placeholder="Buscar ${escapeHtml(label.toLowerCase())}" aria-label="Buscar ${escapeHtml(label.toLowerCase())}" autocomplete="off"><div class="voip-option-picker__list">${renderedOptions || '<p class="muted">Nenhuma opção cadastrada.</p>'}<p class="muted voip-option-picker__empty" data-voip-options-empty hidden>Nenhuma opção encontrada${companyDependent ? ' para esta empresa' : ''}.</p></div></div></div></details></fieldset>`;
+};
 const textareaField = (name, label, value = '') => `<label class="field wide"><span>${escapeHtml(label)}</span><textarea name="${name}" rows="6">${escapeHtml(`${value ?? ''}`)}</textarea></label>`;
 const configuredSecret = (configured) => configured ? '<p class="muted">Chave configurada. Deixe o campo vazio para manter.</p>' : '';
 const sipEndpointModeField = (value) => {
     const current = value === 'trunk' ? 'trunk' : 'extension';
     return `<fieldset class="voip-sip-mode wide"><legend>Modo de conexão SIP</legend><label class="voip-sip-mode__option"><input name="sipEndpointMode" type="radio" value="extension" ${checked(current === 'extension')}><span><strong>Ramal tradicional</strong><small>Uma chamada por dispositivo ou registro SIP.</small></span></label><label class="voip-sip-mode__option"><input name="sipEndpointMode" type="radio" value="trunk" ${checked(current === 'trunk')}><span><strong>Tronco SIP/PBX</strong><small>Permite várias chamadas simultâneas no mesmo registro, respeitando o limite da linha.</small></span></label></fieldset>`;
 };
-export const renderVoipResourceModal = (state, resource, id = '') => {
-    const item = asItems(state[resource]).find(value => `${value.id}` === id) || { enabled: true };
-    const isNew = !id;
+export const renderVoipResourceModal = (state, resource, id = '', creating = !id) => {
+    const resourceId = id || generatedResourceId();
+    const item = asItems(state[resource]).find(value => `${value.id}` === resourceId) || { id: resourceId, enabled: true };
+    const isNew = creating;
     const companies = asItems(state.companies);
     const accounts = asItems(state.accounts);
     const lineGroups = asItems(state.lineGroups);
     const extensionGroups = asItems(state.extensionGroups);
     const extensions = asItems(state.extensions);
+    const advancedExtensions = extensions.filter(extension => !isAutomaticExtension(state, extension));
     const managedAutomaticExtension = resource === 'extensions'
         && asItems(state.sessions).some(session => `${session.automaticExtensionId || ''}` === `${item.id || ''}`);
     const managedAutomaticAccount = resource === 'accounts'
@@ -368,42 +439,69 @@ export const renderVoipResourceModal = (state, resource, id = '') => {
     const managedEnabled = item.enabled === false
         ? '<p class="muted">Estado gerenciado automaticamente pela sessão Zapo.</p>'
         : '<input type="hidden" name="enabled" value="true"><p class="muted">Ativo · estado gerenciado automaticamente pela sessão Zapo.</p>';
-    let fields = `${field('id', 'ID', item.id, 'text', true, !isNew)}${managedAutomatic ? managedEnabled : switchField('enabled', 'Ativo', item.enabled)}`;
+    let fields = `${field('id', 'ID', item.id, 'text', true, true)}${managedAutomatic ? managedEnabled : switchField('enabled', 'Ativo', item.enabled)}`;
     if (resource === 'companies') {
         const ai = item.aiSummary || {};
+        fields += `${selectField('aiTranscriptionProvider', 'Provedor de transcrição', aiProviderOptions, ai.transcriptionProvider || inferAiProvider(ai.transcriptionBaseUrl))}${selectField('aiSummaryProvider', 'Provedor do resumo', aiProviderOptions, ai.summaryProvider || inferAiProvider(ai.summaryBaseUrl))}<p class="muted wide">OpenRouter: modelos carregados do catálogo atual, separados por transcrição e resumo. Ao trocar de provedor, informe a chave correspondente. Áudio e texto são enviados ao provedor escolhido. Não implementa agente de voz em tempo real.</p>`;
         fields += `${field('label', 'Nome da empresa', item.label, 'text', true)}${field('timeZone', 'Fuso horário', item.timeZone || 'America/Cuiaba', 'text', true)}<h3 class="wide">IA pós-chamada</h3>${switchField('aiSummaryEnabled', 'Gerar transcrição e resumo', ai.enabled === true)}${switchField('aiIncludeTranscript', 'Incluir transcrição junto ao resumo', ai.includeTranscript !== false)}${field('aiTranscriptionBaseUrl', 'URL da transcrição', ai.transcriptionBaseUrl || 'https://api.groq.com/openai/v1')}${field('aiTranscriptionApiKey', 'Chave da transcrição (deixe vazio para manter)', '', 'password')}${configuredSecret(ai.hasTranscriptionApiKey)}${field('aiTranscriptionModel', 'Modelo de transcrição', ai.transcriptionModel || 'whisper-large-v3')}${field('aiTranscriptionLanguage', 'Idioma', ai.transcriptionLanguage || 'pt')}${field('aiSummaryBaseUrl', 'URL do resumo', ai.summaryBaseUrl || 'https://api.groq.com/openai/v1')}${field('aiSummaryApiKey', 'Chave do resumo (deixe vazio para manter)', '', 'password')}${configuredSecret(ai.hasSummaryApiKey)}${field('aiSummaryModel', 'Modelo de resumo', ai.summaryModel || 'openai/gpt-oss-20b')}${textareaField('aiSummaryPrompt', 'Prompt do resumo', ai.summaryPrompt)}`;
     }
     if (resource === 'accounts') {
+        fields += `<h3 class="wide">Padrão de discagem</h3>${field('defaultDdi', 'DDI padrão da linha', item.defaultDdi, 'text', false, false, 'placeholder="55" inputmode="numeric" pattern="[1-9][0-9]{0,2}" maxlength="3"')}${field('defaultDdd', 'DDD padrão da linha', item.defaultDdd, 'text', false, false, 'placeholder="66" inputmode="numeric" pattern="[1-9][0-9]{1,3}" maxlength="4"')}<p class="muted wide">Sugerido pelo número brasileiro da linha e editável. Campos vazios não completam números locais. O ramal pode sobrescrever cada campo.</p>`;
         const companyField = managedAutomatic
-            ? `<input type="hidden" name="companyId" value="${escapeHtml(`${item.companyId || ''}`)}">${field('_companyLabel', 'Empresa (gerenciada)', companyName(state, item.companyId), 'text', false, true)}`
-            : selectField('companyId', 'Empresa', companies, item.companyId, true);
-        fields += `${field('label', 'Nome da linha', item.label, 'text', true)}${companyField}${field('phoneNumber', 'Número da sessão Zapo', item.phoneNumber, 'text', true, managedAutomatic)}${field('maxConcurrentCalls', 'Chamadas simultâneas', lineConcurrency(state, item), 'number', true, false, 'min="2" max="32" step="1"')}<p class="muted wide">A linha usa a sessão Zapo conectada. Configure entre 2 e 32 chamadas simultâneas.</p><h3 class="wide">Gravações no Chatwoot</h3>${field('chatwootBaseUrl', 'URL do Chatwoot', item.chatwootRecording?.baseUrl)}${field('chatwootAccountId', 'ID da conta no Chatwoot', item.chatwootRecording?.accountId)}${field('chatwootInboxId', 'ID da caixa de entrada no Chatwoot', item.chatwootRecording?.inboxId)}${field('chatwootApiAccessToken', 'Token do Chatwoot (deixe vazio para manter)', '', 'password')}${configuredSecret(item.chatwootRecording?.hasApiAccessToken)}${switchField('chatwootRecordingEnabled', 'Enviar gravações ao Chatwoot', item.chatwootRecording?.enabled === true)}${switchField('chatwootPrivateNote', 'Enviar como nota privada', item.chatwootRecording?.privateNote !== false)}`;
+            ? `${searchableRadioField('companyId', 'Empresa', companies, item.companyId, true, true)}<p class="muted wide">Ao mudar a empresa, a sessão e o ramal automático vinculados serão movidos juntos. Vínculos de roteamento incompatíveis com a nova empresa serão removidos.</p>`
+            : searchableRadioField('companyId', 'Empresa', companies, item.companyId || companies[0]?.id, true, true);
+        fields += `${field('label', 'Nome da linha', item.label, 'text', true)}${companyField}${field('phoneNumber', 'Número da sessão Zapo', item.phoneNumber, 'text', true, managedAutomatic)}${field('outboundAccessPrefix', 'Prefixo para seleção manual', item.outboundAccessPrefix, 'text', false, false, 'placeholder="*81*" pattern="\\*[0-9]{1,6}\\*" maxlength="8"')}<p class="muted wide">Opcional. Use o formato <code>*81*</code>. No MicroSIP ou WebRTC, disque <code>*81*número</code> para solicitar esta linha. O ramal ainda precisa ter acesso à linha pelo roteamento avançado.</p>${field('maxConcurrentCalls', 'Chamadas simultâneas', lineConcurrency(state, item), 'number', true, false, 'min="2" max="32" step="1"')}<p class="muted wide">A linha usa a sessão Zapo conectada. Configure entre 2 e 32 chamadas simultâneas.</p><h3 class="wide">Gravações no Chatwoot</h3>${field('chatwootBaseUrl', 'URL do Chatwoot', item.chatwootRecording?.baseUrl)}${field('chatwootAccountId', 'ID da conta no Chatwoot', item.chatwootRecording?.accountId)}${field('chatwootInboxId', 'ID da caixa de entrada no Chatwoot', item.chatwootRecording?.inboxId)}${field('chatwootApiAccessToken', 'Token do Chatwoot (deixe vazio para manter)', '', 'password')}${configuredSecret(item.chatwootRecording?.hasApiAccessToken)}${switchField('chatwootRecordingEnabled', 'Enviar gravações ao Chatwoot', item.chatwootRecording?.enabled === true)}${switchField('chatwootPrivateNote', 'Enviar como nota privada', item.chatwootRecording?.privateNote !== false)}`;
     }
-    if (resource === 'lineGroups')
-        fields += `${field('label', 'Nome do grupo', item.label, 'text', true)}${selectField('companyId', 'Empresa', companies, item.companyId, true)}${selectField('inboundSessionIds', 'Linhas de entrada', accounts, item.inboundSessionIds, false, true)}${selectField('outboundPrioritySessionIds', 'Prioridade de saída', accounts, item.outboundPrioritySessionIds, false, true)}${selectField('targetExtensionGroupIds', 'Grupos de ramais de destino', extensionGroups, item.targetExtensionGroupIds, false, true)}`;
-    if (resource === 'extensionGroups')
-        fields += `${field('label', 'Nome do grupo', item.label, 'text', true)}${selectField('companyId', 'Empresa', companies, item.companyId, true)}${selectField('extensionIds', 'Ramais', extensions, item.extensionIds, false, true)}<label class="field wide"><span>Áudio ao transferir (MP3 ou WAV)</span><input name="transferAudioFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"><small class="muted">${item.transferAudioSource ? `Atual: ${escapeHtml(item.transferAudioFilename || 'arquivo configurado')}. Selecione outro apenas para substituir.` : 'Opcional. É usado enquanto o destino da transferência atende.'}</small></label>`;
+    if (resource === 'lineGroups') {
+        const selectedCompanyId = `${item.companyId || companies[0]?.id || ''}`;
+        const advancedAccounts = accounts.filter(account => !isBasicOnlyAutomaticAccount(state, account));
+        fields += `<div class="voip-line-group-grid wide"><p class="hint wide"><strong>Esta é a tela principal do roteamento avançado.</strong> Escolha quais linhas recebem chamadas, quais podem ser usadas para saída e para quais grupos de ramais as chamadas de entrada serão enviadas. São exibidas somente linhas da empresa selecionada. Linhas automáticas podem participar depois de serem movidas da Empresa padrão para esta empresa.</p>${field('label', 'Nome do grupo', item.label, 'text', true)}${searchableRadioField('companyId', 'Empresa', companies, selectedCompanyId, true, true)}<div class="voip-routing-choice">${searchableChecklistField('inboundSessionIds', 'Linhas que recebem chamadas', advancedAccounts, item.inboundSessionIds, selectedCompanyId, false, true)}<p class="muted">Uma chamada recebida por qualquer linha marcada seguirá para os grupos de ramais selecionados abaixo.</p></div><div class="voip-routing-choice">${searchableChecklistField('outboundPrioritySessionIds', 'Linhas disponíveis para saída', advancedAccounts, item.outboundPrioritySessionIds, selectedCompanyId, false, true)}<p class="muted">As linhas marcadas ficam disponíveis para os ramais deste fluxo. A seleção manual por prefixo continua respeitando o acesso configurado.</p></div>${searchableChecklistField('targetExtensionGroupIds', 'Destino das chamadas de entrada', extensionGroups, item.targetExtensionGroupIds, selectedCompanyId, true)}</div>`;
+    }
+    if (resource === 'extensionGroups') {
+        const selectedCompanyId = `${item.companyId || companies[0]?.id || ''}`;
+        const linkedExtensionIds = advancedExtensions.filter(extension => extensionLinkedToGroup(extension, item)).map(extension => extension.id);
+        const usedByLineGroups = lineGroups.filter(group => group.targetExtensionGroupIds?.includes(item.id)).map(group => group.label || group.id);
+        const usage = usedByLineGroups.length > 0
+            ? `<strong>Usado como destino por:</strong> ${escapeHtml(usedByLineGroups.join(', '))}.`
+            : '<strong>Ainda não usado no roteamento.</strong> Depois, selecione este grupo como destino em um grupo de linhas.';
+        fields += `<p class="hint wide"><strong>Fluxo de atendimento:</strong> Linha Zapo → Grupo de linhas → ${escapeHtml(item.label || 'este grupo de ramais')} → Ramais. Use esta tela para administrar os membros e a ordem de toque em conjunto. Ramais provisionados automaticamente são exclusivos do atendimento básico e não aparecem aqui.</p>${field('label', 'Nome do grupo', item.label, 'text', true)}${searchableRadioField('companyId', 'Empresa', companies, selectedCompanyId, true, true)}<p class="muted wide">${usage}</p>${extensionMembershipField(advancedExtensions, item, linkedExtensionIds, selectedCompanyId)}<label class="field wide"><span>Áudio ao transferir (MP3 ou WAV)</span><input name="transferAudioFile" type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"><small class="muted">${item.transferAudioSource ? `Atual: ${escapeHtml(item.transferAudioFilename || 'arquivo configurado')}. Selecione outro apenas para substituir.` : 'Opcional. É usado enquanto o destino da transferência atende.'}</small></label>`;
+    }
     if (resource === 'sessions') {
+        const selectedCompanyId = `${item.companyId || companies[0]?.id || ''}`;
         const companyField = managedAutomatic
             ? `<input type="hidden" name="companyId" value="${escapeHtml(`${item.companyId || ''}`)}">${field('_companyLabel', 'Empresa (gerenciada)', companyName(state, item.companyId), 'text', false, true)}`
-            : selectField('companyId', 'Empresa', companies, item.companyId, true);
+            : searchableRadioField('companyId', 'Empresa', companies, selectedCompanyId, true, true);
         const accountField = managedAutomatic
             ? field('accountId', 'Linha Zapo (gerenciada)', item.accountId, 'text', true, true)
-            : selectField('accountId', 'Linha Zapo', accounts, item.accountId, true);
-        fields += `${field('label', 'Nome', item.label, 'text', true)}${field('unoSession', 'Sessão Zapo', item.unoSession, 'text', true, managedAutomatic)}${companyField}${accountField}${selectField('lineGroupIds', 'Grupos de linhas', lineGroups, item.lineGroupIds, false, true)}${selectField('inboundLineGroupIds', 'Grupos de entrada', lineGroups, item.inboundLineGroupIds, false, true)}${selectField('outboundLineGroupIds', 'Grupos de saída', lineGroups, item.outboundLineGroupIds, false, true)}${selectField('extensions', 'Ramais diretos', extensions, item.routing?.extensions, false, true)}${field('ringTimeoutSeconds', 'Tempo de toque (segundos)', item.routing?.ringTimeoutSeconds || 20, 'number', true, false, 'min="1"')}${switchField('disableBasicInbound', 'Desativar atendimento básico', item.routing?.basicInboundEnabled === false)}<p class="muted wide">Exige ao menos um destino avançado válido. Se o último destino for removido, o atendimento básico será reativado.</p>`;
+            : searchableRadioField('accountId', 'Linha Zapo', accounts, item.accountId, true, false, true, selectedCompanyId);
+        const inboundGroups = lineGroups.filter(group => sessionLinkedToLineGroupDirection(item, group, 'inbound')).map(group => group.label || group.id);
+        const outboundGroups = lineGroups.filter(group => sessionLinkedToLineGroupDirection(item, group, 'outbound')).map(group => group.label || group.id);
+        const groupSummary = `<section class="voip-routing-summary wide"><div><strong>Entrada pelos grupos</strong><span>${escapeHtml(inboundGroups.join(', ') || 'Nenhum grupo')}</span></div><div><strong>Saída pelos grupos</strong><span>${escapeHtml(outboundGroups.join(', ') || 'Nenhum grupo')}</span></div><p class="muted">Para incluir ou remover esta linha de um grupo, edite o <strong>Grupo de linhas</strong>. Os vínculos são mostrados aqui apenas para consulta.</p></section>`;
+        fields += `<p class="hint wide"><strong>Ajustes específicos desta linha.</strong> O vínculo de entrada e saída é administrado na modal <strong>Grupo de linhas</strong>. Aqui ficam somente identificação, exceções diretas, tempo de toque e atendimento básico.</p>${field('label', 'Nome', item.label, 'text', true)}${field('unoSession', 'Sessão Zapo', item.unoSession, 'text', true, managedAutomatic)}${companyField}${accountField}${groupSummary}<h3 class="wide">Exceções desta linha</h3>${searchableChecklistField('extensions', 'Ramais avançados diretos (opcional)', advancedExtensions, item.routing?.extensions, selectedCompanyId, true)}<p class="muted wide">Use somente quando esta linha precisar tocar diretamente em um ramal fora do fluxo definido nos grupos de linhas.</p>${field('ringTimeoutSeconds', 'Tempo de toque (segundos)', item.routing?.ringTimeoutSeconds || 20, 'number', true, false, 'min="1"')}${switchField('disableBasicInbound', 'Desativar atendimento básico', item.routing?.basicInboundEnabled === false)}<p class="muted wide">Ao desativar o básico, deve existir ao menos um destino avançado válido. Ramais automáticos são exclusivos do atendimento básico. Se o último destino avançado for removido, o atendimento básico será reativado.</p>`;
     }
     if (resource === 'extensions') {
-        const distanceFields = extensionGroups.map((group, index) => field(`extensionGroupDistance:${group.id}`, `Prioridade · ${group.label || group.id}`, item.extensionGroupDistances?.[group.id] || index + 1, 'number', false, false, 'min="1"')).join('');
+        fields += `<h3 class="wide">Padrão de discagem do ramal</h3>${field('defaultDdi', 'DDI (vazio herda da linha)', item.defaultDdi, 'text', false, false, 'inputmode="numeric" pattern="[1-9][0-9]{0,2}" maxlength="3"')}${field('defaultDdd', 'DDD (vazio herda da linha)', item.defaultDdd, 'text', false, false, 'inputmode="numeric" pattern="[1-9][0-9]{1,3}" maxlength="4"')}<p class="muted wide">Cada valor informado prevalece sobre a linha escolhida. Chamadas internas e números internacionais com + permanecem intactos.</p>`;
+        const selectedCompanyId = `${item.companyId || companies[0]?.id || ''}`;
+        const selectedGroupIds = new Set((item.extensionGroupIds || []).map((value) => `${value}`));
+        const distanceFields = extensionGroups.map(group => {
+            const selectedGroup = selectedGroupIds.has(`${group.id}`);
+            const configuredDistance = Number(item.extensionGroupDistances?.[group.id]);
+            const distance = Number.isFinite(configuredDistance) && configuredDistance > 0 ? Math.trunc(configuredDistance) : 1;
+            return `<label class="field voip-group-distance" data-voip-group-distance data-group-id="${escapeHtml(`${group.id}`)}" ${selectedGroup ? '' : 'hidden'}><span>Ordem de toque · ${escapeHtml(group.label || group.id)}</span><input name="extensionGroupDistance:${escapeHtml(`${group.id}`)}" type="number" value="${distance}" min="1" step="1" ${selectedGroup ? '' : 'disabled'}><small class="muted">1 toca primeiro; valores iguais tocam juntos.</small></label>`;
+        }).join('');
         const companyField = managedAutomatic
             ? `<input type="hidden" name="companyId" value="${escapeHtml(`${item.companyId || ''}`)}">${field('_companyLabel', 'Empresa (gerenciada)', companyName(state, item.companyId), 'text', false, true)}`
-            : selectField('companyId', 'Empresa', companies, item.companyId, true);
+            : searchableRadioField('companyId', 'Empresa', companies, selectedCompanyId, true, true);
         const typeField = managedAutomatic
             ? `<input type="hidden" name="type" value="both">${field('_typeLabel', 'Transportes (gerenciados)', 'SIP e WebRTC', 'text', false, true)}`
             : `<label class="field"><span>Tipo</span><select name="type"><option value="both" ${selected(item.type, 'both')}>SIP e WebRTC</option><option value="sip" ${selected(item.type, 'sip')}>SIP/RTP</option><option value="webrtc" ${selected(item.type, 'webrtc')}>WebRTC</option></select></label>`;
-        fields += `${field('displayName', 'Nome do ramal', item.displayName, 'text', true)}${field('username', 'Usuário SIP', item.username, 'text', true, managedAutomatic)}${field('password', isNew ? 'Senha SIP' : 'Nova senha SIP (opcional)', '', 'password', isNew)}${companyField}${typeField}${sipEndpointModeField(item.sipEndpointMode)}${selectField('extensionGroupIds', 'Grupos', extensionGroups, item.extensionGroupIds, false, true)}${distanceFields ? `<h3 class="wide">Distância nos grupos</h3>${distanceFields}<p class="muted wide">Menor número significa maior prioridade de toque dentro dos grupos selecionados.</p>` : ''}`;
+        fields += `<p class="hint wide"><strong>Configuração individual:</strong> vincule este ramal aos grupos em que ele deve tocar. Para administrar vários ramais de uma vez, edite o grupo de ramais.</p>${field('displayName', 'Nome do ramal', item.displayName, 'text', true)}${field('username', 'Usuário SIP', item.username, 'text', true, managedAutomatic)}${field('password', isNew ? 'Senha SIP' : 'Nova senha SIP (opcional)', '', 'password', isNew)}${companyField}${typeField}${sipEndpointModeField(item.sipEndpointMode)}${searchableChecklistField('extensionGroupIds', 'Grupos de ramais', extensionGroups, item.extensionGroupIds, selectedCompanyId, true)}${distanceFields ? `<h3 class="wide">Ordem de toque nos grupos</h3>${distanceFields}<p class="muted wide">Somente os grupos selecionados aparecem aqui. Ordem 1 toca primeiro; ramais com a mesma ordem tocam juntos.</p>` : ''}`;
     }
-    const content = `<form class="form-grid voip-editor-form" data-form="voip-resource-fields"><input type="hidden" name="resource" value="${resource}">${fields}<div class="form-actions wide">${!isNew && !managedAutomatic ? `<button class="btn btn--danger" type="button" data-action="delete-voip-resource" data-resource="${resource}" data-id="${escapeHtml(id)}">${icon('trash')}Excluir</button>` : ''}<button class="btn" type="submit">${icon('save')}Salvar</button></div></form>`;
-    return renderModal('voip-resource', `${isNew ? 'Adicionar' : 'Editar'} ${labels[resource].toLowerCase()}`, content, { subtitle: 'Telefonia', wide: true });
+    const content = `<form class="form-grid voip-editor-form" data-form="voip-resource-fields"><input type="hidden" name="resource" value="${resource}">${fields}<div class="form-actions wide">${!isNew && !managedAutomatic ? `<button class="btn btn--danger" type="button" data-action="delete-voip-resource" data-resource="${resource}" data-id="${escapeHtml(resourceId)}">${icon('trash')}Excluir</button>` : ''}<button class="btn" type="submit">${icon('save')}Salvar</button></div></form>`;
+    const modalTitle = resource === 'sessions'
+        ? `${isNew ? 'Adicionar' : 'Configurar'} linha Zapo`
+        : `${isNew ? 'Adicionar' : 'Editar'} ${labels[resource].toLowerCase()}`;
+    return renderModal('voip-resource', modalTitle, content, { subtitle: 'Telefonia', wide: true });
 };
 export const renderVoipRecordingSettingsModal = (state) => {
     const value = state.recording || {};

@@ -150,6 +150,82 @@ retorna `line_capacity_exhausted`, sem fallback. A variável
 `VOIP_MAX_CONCURRENT_CALLS` define a capacidade anunciada pelo worker; mantenha
 o valor igual ou acima do configurado nas linhas.
 
+### Seleção manual da linha de saída
+
+Cada linha pode receber um `outboundAccessPrefix` opcional no cadastro de
+**Linhas Zapo**. O formato aceito é asterisco, de um a seis dígitos e outro
+asterisco, por exemplo `*81*`. Prefixos não podem se repetir dentro da mesma
+empresa.
+
+Sem prefixo, o roteamento avançado mantém a ordem configurada nos grupos de
+linhas. Para solicitar uma linha específica em WebRTC, MicroSIP ou outro ramal
+SIP, coloque o prefixo antes do telefone:
+
+```text
+5566996269251       → seleção automática
+*81*5566996269251   → solicita a linha cadastrada com *81*
+```
+
+Os gateways SIP/UDP e WebRTC preservam o prefixo (inclusive `%2A`) até a
+validação do roteador. Uma discagem com prefixo não é tratada como ramal interno.
+O prefixo é removido antes de enviar o número ao WhatsApp. Ele não concede
+acesso adicional: a linha precisa pertencer às rotas de saída já autorizadas
+para o grupo do ramal e à mesma empresa. Prefixo desconhecido é recusado; linha
+fora da rota é recusada; linha escolhida offline ou sem capacidade também falha
+sem cair silenciosamente para outra linha. Chamadas internas entre ramais
+continuam sem linha externa quando não há prefixo.
+
+### IA pós-chamada: Groq, OpenAI e OpenRouter
+
+Em **Empresas → IA pós-chamada**, selecione separadamente o provedor de
+transcrição e o de resumo: Groq, OpenAI, OpenRouter ou compatível/personalizado.
+Os provedores conhecidos preenchem a URL; personalizado permite editá-la.
+Configurações antigas sem provedor explícito continuam usando a URL salva.
+
+Ao selecionar OpenRouter, o modelo vira um dropdown carregado do catálogo
+atual: transcrição consulta `output_modalities=transcription`; resumo lista
+modelos que recebem e produzem texto. O catálogo é público, não envia chave nem
+gravação e não garante crédito ou disponibilidade para a sua conta. Se falhar,
+a tela informa o erro e preserva o modelo salvo, sem selecionar outro silenciosamente.
+Para Groq/OpenAI/personalizado, o ID do modelo permanece editável.
+
+Informe a chave correspondente a cada provedor. Trocar a URL/provedor não
+reutiliza o segredo antigo; campo vazio mantém a chave somente no mesmo endpoint.
+A chave de transcrição pode servir ao resumo apenas quando ambos usam o mesmo
+endpoint. Chaves são ocultadas nas respostas e no painel. Somente administradores
+gerenciam essa configuração e consultam `GET /admin/voip/console/ai/models`.
+
+OpenRouter recebe o áudio MP3/WAV como JSON base64 em `/audio/transcriptions`
+e o texto em `/chat/completions`. Limite local conservador: 25 MiB por áudio.
+Chamadas longas podem exceder limites/tempo do provedor; não há divisão automática.
+Saldo insuficiente, modelo incompatível e outros erros seguem a fila/retry existente,
+sem fallback para outro provedor. Áudio e transcrição saem do servidor para o
+provedor escolhido: revise custos e política de dados antes de ativar.
+Este recurso é pós-chamada; URA/agente de voz em tempo real permanece melhoria futura.
+
+Referências: [transcrição OpenRouter](https://openrouter.ai/docs/guides/overview/multimodal/stt)
+e [catálogo de modelos](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties).
+
+### Completar DDI e DDD na saída
+
+No cadastro da linha, `defaultDdi` e `defaultDdd` são sugeridos pelo número
+brasileiro completo: `5566996269251` sugere `55` e `66`. Os valores são editáveis;
+apagar e salvar mantém os campos vazios, sem restaurar a sugestão. Não há inferência
+automática para outros países ou números incompletos.
+
+No ramal, cada campo preenchido prevalece sobre o correspondente da linha
+selecionada; vazio herda da linha. A seleção por prefixo ou pelo roteamento
+avançado ocorre antes do complemento e continua respeitando permissões e capacidade.
+Ramais internos não recebem complemento.
+
+Com DDI `55` e DDD `66`, `996269251` vira `5566996269251`; números locais de
+8 ou 9 dígitos exigem os dois padrões. Números de 10 ou 11 dígitos recebem apenas
+o DDI. Números completos de 12 ou mais dígitos e internacionais com `+` não
+recebem complemento. Para outros planos de numeração, disque o número completo
+com `+`; as regras de comprimento são brasileiras e não removem código de operadora.
+Os campos aceitam DDI de 1 a 3 dígitos e DDD de 2 a 4, sem zero inicial.
+O editor usa as mesmas permissões de edição da linha ou do ramal.
+
 Cada ramal também possui um **Modo de conexão SIP** independente da capacidade
 da linha. **Ramal tradicional** permite uma chamada por registro conectado.
 **Tronco SIP/PBX** permite vários diálogos pelo mesmo registro SIP/RTP, indicado
@@ -172,6 +248,25 @@ Todas as rotas abaixo passam pela Uno e usam a mesma autenticação
 administrativa da API. O navegador não recebe `VOIP_SERVICE_TOKEN`.
 
 ### Estado, chamadas e transferência
+
+Release unificado: ViperConnect `4.0.36` com VoIP `0.1.66`, revisão
+`75867d68afdb9be615413a8efd64948c309e30d6` fixada no workflow de imagem.
+
+O áudio MP3/WAV enviado no grupo de ramais é reproduzido para o participante
+WhatsApp enquanto o destino da transferência toca. Vale primeiro o grupo
+habilitado da origem com áudio; depois o grupo do destino, na mesma empresa.
+Entre vários grupos elegíveis, vale a ordem da configuração. O microfone da
+origem é suspenso apenas durante a reprodução; outras chamadas não são afetadas.
+O áudio repete até atender, recusar todos os destinos, atingir o timeout de
+30 segundos ou encerrar a chamada. O CANCEL SIP preserva o destino exato do
+INVITE, incluindo porta e parâmetros, para cancelar também o toque pendente.
+
+O upload exige a autorização VoIP e o escopo da empresa já usados no console.
+O worker precisa de ffmpeg e acesso ao arquivo persistido; falhas de decodificação
+geram aviso sem silenciar a chamada original. São decodificados até 300 segundos
+do arquivo. Isso não implementa URA, agente de voz ou transferência assistida.
+Após atualizar, valide no aparelho tanto a audição durante a espera quanto o
+fim do toque ao desligar no WhatsApp.
 
 - `GET /admin/voip/bootstrap`: retorna configuração, linhas Zapo, chamadas,
   reservas, registros SIP/WebRTC, histórico inicial e resumo de armazenamento;

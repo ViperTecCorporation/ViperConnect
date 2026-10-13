@@ -65,14 +65,20 @@ still required to confirm two-way audio.
 ## Experimental relay port
 
 The mobile-primary call endpoints completed DTLS/SCTP on port 3480, but not
-on advertised port 3478. `preferWebRelayPort` now changes only the dial port,
-preserving credentials, addresses and selection order. Uno enables it only
-for sessions with `mobilePrimaryDraftId` when `UNOAPI_MOBILE_PRIMARY_LAB=true`
-and `UNOAPI_SERVER_NAME=mobile_lab`. Conventional sessions retain advertised
-ports. This does not change SIP, TURN, firewall or production configuration.
+on advertised port 3478. On October 12, 2026, the same pattern was reproduced
+on a second conventional line: calls using port 3478 received no relay packets,
+while calls using port 3480 stayed active. After the `default` profile failed
+on port 3480, selection became session-specific: `wa_personal`, `wa_business`
+and mobile-primary enable `preferWebRelayPort` and dial 3480. Non-mobile-primary
+`default` sessions retain the advertised WhatsApp port (3478 in these tests).
+The global laboratory `VOIP_PREFER_WEB_RELAY_PORT` override was removed.
+The option changes only the dial port while
+preserving credentials, addresses and selection order. This does not change SIP,
+TURN, firewall or production configuration.
 On September 25, 2026, the user confirmed two-way audio over both 4G and Wi-Fi
 after applying this policy in the lab. This does not constitute production deployment.
-Rollback: disable the plugin option, recompile and recreate the lab worker
+The `wa_business` policy is covered by automated tests; a real call still needs
+validation. Rollback: restore the previous policy, recompile and recreate the lab worker
 without removing volumes or credentials.
 
 ## Reversible shutdown

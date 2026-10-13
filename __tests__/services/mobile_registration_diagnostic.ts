@@ -33,6 +33,8 @@ describe('registration diagnostic allowlist', () => {
   })
   test.each([
     ['Verification failed: code expired or already used.', 'code_expired'],
+    ['ipv6_relay_expired_or_invalid', 'ipv6_relay_configuration'],
+    ['ipv6_relay_invalid', 'ipv6_relay_configuration'],
     ['Verification failed: wrong code entered.', 'invalid_code'],
     ['Verification failed: bad_token', 'bad_token'],
     ['captcha SECRET', 'challenge_required'], ['too_many SECRET', 'rate_limited'],

@@ -60,6 +60,16 @@ export class ApiClient {
     return this.token
   }
 
+  async downloadBackup(path: string): Promise<Blob> {
+    const revision = this.authRevision
+    const response = await this.fetcher.call(globalThis, `${this.baseUrl}${path}`, { headers: { Authorization: `Bearer ${this.token}` } })
+    if (revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
+    if (!response.ok) throw new ApiError(response.status, 'Arquivo indisponível ou expirado.')
+    const blob = await response.blob()
+    if (revision !== this.authRevision) throw new ApiError(0, 'Sessão alterada. Requisição descartada.')
+    return blob
+  }
+
   async sessionMessageMedia(phone: string, id: string): Promise<Blob> {
     const revision = this.authRevision
     const response = await this.fetcher.call(globalThis, `${this.baseUrl}/v15.0/${encodeURIComponent(phone)}/messages/${encodeURIComponent(id)}/media`, { headers: { Authorization: `Bearer ${this.token}` } })

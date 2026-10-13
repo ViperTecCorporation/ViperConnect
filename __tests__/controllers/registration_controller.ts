@@ -24,6 +24,29 @@ const response = () => {
 describe('RegistrationController connection type policy', () => {
   beforeEach(() => jest.clearAllMocks())
 
+  test('assigns the current worker server to a new session when the client omits server', async () => {
+    storedConfigMock.mockResolvedValue(undefined)
+    const reload = mockDeep<Reload>()
+    const controller = new RegistrationController(
+      jest.fn().mockResolvedValue({ ...defaultConfig, provider: 'zapo' }),
+      reload,
+      mockDeep<Logout>(),
+    )
+    const res = response()
+
+    await controller.register({
+      params: { phone: '5566000000099' },
+      body: { provider: 'zapo', connectionType: 'qrcode', zapoWebClientProfile: 'wa_personal' },
+      headers: {},
+      query: {},
+    } as unknown as Request, res)
+
+    expect(setConfigMock).toHaveBeenCalledWith('5566000000099', expect.objectContaining({
+      server: 'server_1',
+      zapoWebClientProfile: 'wa_personal',
+    }))
+  })
+
   test('mobile deregister persists suspension before dispatch, never logs out', async () => {
     storedConfigMock.mockResolvedValue({ mobilePrimaryDraftId: 'lab-device', webhooks: [{ id: 'a', url: 'https://example.test/a' }, { id: 'b', url: 'https://example.test/b' }] })
     const reload = mockDeep<Reload>(); const logout = mockDeep<Logout>()
@@ -124,6 +147,8 @@ describe('RegistrationController connection type policy', () => {
 
     expect(setConfigMock).toHaveBeenCalledWith('5566000000001', {
       provider: 'zapo',
+      server: 'server_1',
+      zapoWebClientProfile: 'default',
       connectionType: 'qrcode',
     })
     expect(reload.run).toHaveBeenCalledWith('5566000000001')
@@ -133,6 +158,7 @@ describe('RegistrationController connection type policy', () => {
     const config = { ...defaultConfig, provider: 'zapo' as const, connectionType: 'pairing_code' as const }
     storedConfigMock.mockResolvedValue(undefined)
     const reload = mockDeep<Reload>()
+    reload.run.mockResolvedValue(undefined)
     const controller = new RegistrationController(jest.fn().mockResolvedValue(config), reload, mockDeep<Logout>())
     const req = { params: { phone: '5566000000002' }, body: { connectionType: 'pairing_code' }, method: 'POST', headers: {}, query: {} } as unknown as Request
 
@@ -140,6 +166,8 @@ describe('RegistrationController connection type policy', () => {
 
     expect(setConfigMock).toHaveBeenCalledWith('5566000000002', {
       provider: 'zapo',
+      server: 'server_1',
+      zapoWebClientProfile: 'default',
       connectionType: 'pairing_code',
     })
   })
@@ -165,10 +193,42 @@ describe('RegistrationController connection type policy', () => {
 
     expect(setConfigMock).toHaveBeenCalledWith('5566000000004', {
       provider: 'zapo',
+      server: 'server_1',
       label: 'Legacy client',
+      zapoWebClientProfile: 'default',
       connectionType: 'qrcode',
     })
     expect(reload.run).toHaveBeenCalledWith('5566000000004')
+  })
+
+  test.each(['wa_personal', 'wa_business'] as const)('persists a new QR web profile in Redis config (%s)', async (profile) => {
+    const config = { ...defaultConfig, provider: 'zapo' as const, connectionType: 'qrcode' as const, zapoWebClientProfile: profile }
+    storedConfigMock.mockResolvedValue(undefined)
+    const reload = mockDeep<Reload>()
+    reload.run.mockResolvedValue(undefined)
+    const controller = new RegistrationController(jest.fn().mockResolvedValue(config), reload, mockDeep<Logout>())
+    const res = response()
+    await controller.register({ params: { phone: profile === 'wa_personal' ? '5566000000011' : '5566000000012' }, body: { provider: 'zapo', connectionType: 'qrcode', zapoWebClientProfile: profile }, headers: {}, query: {} } as unknown as Request, res)
+    expect(setConfigMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ zapoWebClientProfile: profile, connectionType: 'qrcode' }))
+    expect(reload.run).toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(200)
+  })
+
+  test('rejects invalid, pairing-code and existing-session profile changes', async () => {
+    const controller = new RegistrationController(jest.fn().mockResolvedValue({ ...defaultConfig, provider: 'zapo' }), mockDeep<Reload>(), mockDeep<Logout>())
+    storedConfigMock.mockResolvedValue(undefined)
+    const invalid = response()
+    await controller.register({ params: { phone: '5566000000013' }, body: { zapoWebClientProfile: 'android' }, headers: {}, query: {} } as unknown as Request, invalid)
+    expect(invalid.status).toHaveBeenCalledWith(400)
+    expect(invalid.json).toHaveBeenCalledWith({ status: 'error', message: 'zapo_web_client_profile_invalid' })
+    const pairing = response()
+    await controller.register({ params: { phone: '5566000000014' }, body: { connectionType: 'pairing_code', zapoWebClientProfile: 'wa_personal' }, headers: {}, query: {} } as unknown as Request, pairing)
+    expect(pairing.status).toHaveBeenCalledWith(400)
+    storedConfigMock.mockResolvedValue({ provider: 'zapo', zapoWebClientProfile: 'default' })
+    const existing = response()
+    await controller.register({ params: { phone: '5566000000015' }, body: { zapoWebClientProfile: 'wa_business' }, headers: {}, query: {} } as unknown as Request, existing)
+    expect(existing.status).toHaveBeenCalledWith(409)
+    expect(setConfigMock).not.toHaveBeenCalled()
   })
 
   test('a persisted Baileys session must be deregistered instead of reconnecting', async () => {

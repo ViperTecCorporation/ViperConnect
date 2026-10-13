@@ -1,6 +1,7 @@
 export type SessionStatus = 'online' | 'offline' | 'disconnected' | 'connecting' | 'standby' | 'restart_required' | 'forwarder' | string
 
 export type ConnectionType = 'qrcode' | 'pairing_code'
+export type ZapoWebClientProfile = 'default' | 'wa_personal' | 'wa_business'
 
 export interface WebhookConfig {
   id: string
@@ -35,6 +36,7 @@ export interface SessionConfig {
   provider?: 'zapo' | 'baileys' | 'forwarder'
   server?: string
   connectionType?: ConnectionType | 'forward'
+  zapoWebClientProfile?: ZapoWebClientProfile
   authToken?: string
   proxyUrl?: string
   openaiApiKey?: string

@@ -70,6 +70,18 @@ describe('service media store s3', () => {
     expect(amqpPublishMock).toHaveBeenCalledTimes(1)
   })
 
+  test('backup streams disable only the total upload timer; normal uploads retain it', async () => {
+    const timer = jest.spyOn(global, 'setTimeout')
+    try {
+      const mediaStore = mediaStoreS3(phone, defaultConfig, getTestDataStore)
+      await mediaStore.saveMediaStream('synthetic-backup', Readable.from(['encrypted']), 'application/octet-stream', false, 0)
+      expect(timer).not.toHaveBeenCalled()
+      expect(amqpPublishMock).not.toHaveBeenCalled()
+      await mediaStore.saveMediaStream('synthetic-media', Readable.from(['media']), 'image/jpeg', false, 1000)
+      expect(timer).toHaveBeenCalledWith(expect.any(Function), 1000)
+    } finally { timer.mockRestore() }
+  })
+
   test('uploads staged outbound videos as streams and schedules cleanup', async () => {
     const mediaStore = mediaStoreS3(phone, defaultConfig, getTestDataStore)
     const stream = Readable.from(Buffer.from('streamed-video'))

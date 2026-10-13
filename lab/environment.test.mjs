@@ -55,7 +55,7 @@ test('compose isolates production, storage and host exposure', async () => {
   }
   for (const service of Object.values(compose.services)) {
     assert.equal(service.network_mode, undefined)
-    for (const port of service.ports || []) assert.ok(port.startsWith('127.0.0.1:') || (service === compose.services.web && port === '192.168.0.112:19876:9876'))
+    for (const port of service.ports || []) assert.ok(port.startsWith('127.0.0.1:'))
     for (const volume of service.volumes || []) assert.ok(!volume.startsWith('./:/'))
   }
   for (const volume of Object.values(compose.volumes)) assert.equal(volume.external, undefined)
@@ -72,7 +72,7 @@ test('optional VoIP overlay stays local with its own database and authenticated 
   assert.deepEqual(compose.services.voip.volumes, ['voip-data:/home/u/app/data'])
   for (const service of Object.values(compose.services)) {
     assert.equal(service.network_mode, undefined)
-    for (const port of service.ports || []) assert.match(port, /^(127\.0\.0\.1|192\.168\.0\.112):/)
+    for (const port of service.ports || []) assert.match(port, /^127\.0\.0\.1:/)
     for (const value of Object.values(service.environment || {})) assert.doesNotMatch(String(value), /192\.168\.0\.50|sip\.vipertec\.net|45\.224\.94\.232/)
   }
   assert.match(compose.services.coturn.command[0], /--lt-cred-mech/)

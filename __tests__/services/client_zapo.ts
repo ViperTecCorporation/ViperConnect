@@ -286,6 +286,24 @@ describe('ClientZapo', () => {
     })
   })
 
+  test.each([
+    ['default', false, false],
+    ['wa_personal', false, true],
+    ['wa_business', false, true],
+    ['default', true, true],
+    ['wa_personal', true, true],
+    ['wa_business', true, true],
+  ] as const)('selects relay port policy for profile=%s mobile-primary=%s', async (profile, mobile, preferWebRelayPort) => {
+    config.zapoWebClientProfile = profile
+    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
+
+    await service.connect(1)
+
+    expect(voipPlugin).toHaveBeenCalledWith(expect.objectContaining({
+      preferWebRelayPort,
+    }))
+  })
+
   test('reuses native Zapo credentials without requesting pairing history again', async () => {
     session.auth.load.mockResolvedValue({ meJid: `${phone}@s.whatsapp.net` } as never)
 
@@ -294,6 +312,19 @@ describe('ClientZapo', () => {
     expect((service as any).clientFactory).toHaveBeenCalledWith(expect.objectContaining({
       history: { enabled: true, requireFullSync: false },
     }))
+    expect(client.connect).toHaveBeenCalledTimes(1)
+  })
+
+  test.each([
+    ['default', undefined, undefined],
+    ['wa_personal', 'android tablet', 'e'],
+    ['wa_business', 'ANDROID TABLET', 'e'],
+  ] as const)('maps persisted web profile %s into client identity options', async (profile, deviceBrowser, devicePlatform) => {
+    config.zapoWebClientProfile = profile
+    await service.connect(1)
+    const options = (service as any).clientFactory.mock.calls[0][0]
+    expect(options.deviceBrowser).toBe(deviceBrowser)
+    expect(options.devicePlatform).toBe(devicePlatform)
     expect(client.connect).toHaveBeenCalledTimes(1)
   })
 

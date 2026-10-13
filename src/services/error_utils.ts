@@ -46,6 +46,30 @@ export const isTransientInfraError = (reason: any): boolean => {
   }
 }
 
+export const isTransientExternalIoError = (reason: any): boolean => {
+  try {
+    const err = reason || {}
+    const code = `${err.code || err.errno || ''}`.toUpperCase()
+    const name = `${err.name || ''}`.toLowerCase()
+    const msg = `${err.message || err.msg || err.toString?.() || ''}`.trim().toLowerCase()
+    const stack = `${err.stack || ''}`.toLowerCase()
+
+    if (['ECONNRESET', 'EPIPE', 'ETIMEDOUT'].includes(code)) return true
+    if (name === 'aborterror') return true
+
+    // Node's HTTPS client can surface a peer-closed response without a code.
+    // Restrict the generic "aborted" match to its client stack so unrelated
+    // application errors are still treated as fatal.
+    if (msg === 'aborted' && (stack.includes('node:_http_client') || stack.includes('socketcloselistener'))) {
+      return true
+    }
+
+    return false
+  } catch {
+    return false
+  }
+}
+
 const getBaileysErrorData = (reason: any) => {
   return reason?.data || reason?.output?.payload?.data || reason?.output?.data
 }

@@ -164,14 +164,14 @@ export const mediaStoreS3 = (phone: string, config: Config, getDataStore: getDat
     return true
   }
 
-  mediaStore.saveMediaStream = async (fileName: string, stream: Readable, contentType?: string, scheduleRemoval = true) => {
+  mediaStore.saveMediaStream = async (fileName: string, stream: Readable, contentType?: string, scheduleRemoval = true, timeoutMs = s3Config.timeoutMs) => {
     logger.debug('Uploading media stream %s to bucket %s', fileName, bucket)
     await uploadWithRetry({
       Bucket: bucket,
       Key: fileName,
       Body: stream,
       ...(contentType ? { ContentType: contentType } : {}),
-    }, s3Config.timeoutMs)
+    }, timeoutMs)
     if (scheduleRemoval) {
       await amqpPublish(
         UNOAPI_EXCHANGE_BROKER_NAME,

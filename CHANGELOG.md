@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and follows SemVer when applicable.
 
+## [4.0.35] - 2026-10-08
+
+- Restore device approval through an explicit `/exist` check with the existing keys, without requesting another SMS or call.
+- Preserve the entered session number (including Brazil's ninth digit) in API, Redis and webhooks while authenticating with WhatsApp's canonical identity. Update backup, restore, deletion and companion routing accordingly.
+- Harden large session backup/restore with bounded streaming, key inventory validation and multipart uploads; improve upload progress and error feedback in the panel.
+- Pin the validated mobile registration library revision and align image runtime validation; retain registration metadata on refused requests and respect method-specific provider cooldowns.
+- Update PT/EN guides, OpenAPI, Postman and frontend assets. Exclude the local IPv6 tunnel and experimental scripts from release artifacts.
+- Compatibility: update the destination before restoring new backups with distinct session and canonical numbers. The existing critical mobile-library advisory remains unresolved; pinning is not a security remediation.
+
 ## [Unreleased]
 
 - Adiciona destinos centralizados de eventos de sessão no core e painel, seleção

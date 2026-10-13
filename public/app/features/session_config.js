@@ -1,7 +1,7 @@
-import { escapeHtml } from '../core/html.js?v=4.0.34-43ce0548';
-import { icon } from '../components/icons.js?v=4.0.34-43ce0548';
-import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.34-43ce0548';
-import { t } from '../core/i18n.js?v=4.0.34-43ce0548';
+import { escapeHtml } from '../core/html.js?v=4.0.36-1527f181';
+import { icon } from '../components/icons.js?v=4.0.36-1527f181';
+import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.36-1527f181';
+import { t } from '../core/i18n.js?v=4.0.36-1527f181';
 export const booleanSessionFields = [
     ['autoConnect', 'Conectar automaticamente', 'Reconecta esta sessão quando o worker for iniciado.'],
     ['ignoreGroupMessages', 'Ignorar mensagens de grupos', 'Não encaminha mensagens recebidas em grupos aos webhooks.'],
@@ -43,6 +43,12 @@ export const renderSessionConfig = (session, restricted = false) => `
             <option value="pairing_code" ${session.connectionType === 'pairing_code' ? 'selected' : ''}>${t('Código de pareamento')}</option>
           </select>
           <small id="connection-type-hint">${t('Para trocar o método, execute deregister e registre a sessão novamente.')}</small>
+        </div>
+        <div class="field">
+          <span class="field-label">${t('Perfil do WhatsApp')}</span>
+          <input type="hidden" name="zapoWebClientProfile" value="${escapeHtml(session.zapoWebClientProfile || 'default')}">
+          <input value="${escapeHtml(session.zapoWebClientProfile === 'wa_personal' ? t('WA Pessoal (Android)') : session.zapoWebClientProfile === 'wa_business' ? t('WA Business (Android)') : t('Default (padrão atual)'))}" disabled>
+          <small>${t('Para trocar o perfil, execute deregister e registre a sessão novamente.')}</small>
         </div>
         <label class="field field--connection-peer">
           <span class="field-label">${t('Servidor')}</span>
@@ -138,6 +144,7 @@ export const sessionConfigPayload = (data, restricted = false) => {
     const payload = {
         label: `${data.get('label') || ''}`.trim(),
         connectionType: `${data.get('connectionType') || 'qrcode'}`,
+        zapoWebClientProfile: `${data.get('zapoWebClientProfile') || 'default'}`,
         server: `${data.get('server') || 'server_1'}`.trim(),
         proxyUrl: `${data.get('proxyUrl') || ''}`.trim(),
         authToken: `${data.get('authToken') || ''}`,

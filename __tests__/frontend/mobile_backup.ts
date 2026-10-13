@@ -7,6 +7,18 @@ test('progress replaces empty fields and registration failure is readable', () =
   expect(renderMobileBackup(false, true)).toContain('Gerando backup…')
   expect(renderMobileBackup(false, true)).not.toContain('name="password"')
   expect(mobileBackupError(new ApiError(409, '', { error: 'mobile_registration_required' }))).toContain('Confirme o código SMS')
+  expect(mobileBackupError(new ApiError(409, '', { error: 'session_restore_rollback_pending' }))).toContain('Não importe novamente')
+})
+test('restore errors retain localized API error codes and HTTP status without backup download wording', () => {
+  const message = mobileBackupError(new ApiError(409, '', { error: 'Mensagem traduzida', error_code: 'mobile_restore_destination_exists' }), true)
+  expect(message).toContain('Já existe um cadastro')
+  expect(message).toContain('HTTP 409 / mobile_restore_destination_exists')
+  expect(message).not.toContain('download')
+  const unknown = mobileBackupError(new ApiError(502, '', '<html>proxy</html>'), true)
+  expect(unknown).toContain('restauração')
+  expect(unknown).toContain('HTTP 502 / resposta_sem_codigo')
+  expect(unknown).not.toContain('<html>')
+  expect(mobileBackupError(new ApiError(400, '', { error: 'mobile_backup_invalid_or_wrong_password' }), true)).toContain('senha do backup')
 })
 test('background export releases the modal and a returning admin can retrieve the notification', async () => {
   const task = { id: 'task', deviceId: 'device', status: 'running', expiresAt: Date.now() + 86400000 }

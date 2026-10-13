@@ -1,6 +1,19 @@
 import { ApiClient, ApiError } from '../../frontend/core/api'
 
 describe('frontend API client', () => {
+  test('backup download authenticates, consumes binary and rejects stale login responses', async () => {
+    const blob = new Blob(['encrypted']), blobRead = jest.fn().mockResolvedValue(blob)
+    const fetcher = jest.fn().mockResolvedValue({ ok: true, blob: blobRead })
+    const api = new ApiClient('https://example.test', fetcher as any); api.setToken('synthetic')
+    expect(await api.downloadBackup('/backup')).toBe(blob)
+    expect(fetcher).toHaveBeenCalledWith('https://example.test/backup', { headers: { Authorization: 'Bearer synthetic' } })
+    fetcher.mockResolvedValueOnce({ ok: false, status: 410 })
+    await expect(api.downloadBackup('/expired')).rejects.toMatchObject({ status: 410 })
+    blobRead.mockImplementationOnce(async () => { api.setToken('other'); return blob })
+    await expect(api.downloadBackup('/backup')).rejects.toMatchObject({ status: 0 })
+    fetcher.mockImplementationOnce(async () => { api.setToken('next'); return { ok: true, blob: blobRead } })
+    await expect(api.downloadBackup('/backup')).rejects.toMatchObject({ status: 0 })
+  })
   test('reads symbolic codes separately from localized display text', () => {
     expect(new ApiError(409, 'Texto traduzido', { error_code: 'contact_directory_requires_zapo_provider' }).code).toBe('contact_directory_requires_zapo_provider')
     expect(new ApiError(404, 'Texto traduzido', { error: { error_code: 'message_not_found' } }).code).toBe('message_not_found')

@@ -1,10 +1,15 @@
 import { fork } from 'node:child_process'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import type { RegistrationProvider, RegistrationResult } from './registration_service'
 import { MobileRegistrationService } from './registration_service'
 import { RegistrationVault } from './registration_vault'
 import { MobileDeviceService } from '../mobile_device_service'
 import { mobilePrimaryReady } from './runtime_policy'
+import logger from '../logger'
+
+const loadRegistrationTrace = createRequire(__filename)
+const { sanitizeRequestTrace } = loadRegistrationTrace(path.resolve('lab/registration/request_trace.cjs'))
 
 export const registrationEnabled = mobilePrimaryReady
 let activeChildren = 0
@@ -34,7 +39,13 @@ export const registrationProcess: RegistrationProvider = input => new Promise((r
   const timer = setTimeout(() => finish(), 90000)
   child.once('error', () => finish())
   child.once('exit', () => finish())
-  child.once('message', (result: any) => {
+  child.on('message', (result: any) => {
+    if (settled) return
+    if (result?.event === 'registration_request_trace') {
+      const detail = sanitizeRequestTrace(result.detail)
+      if (detail) logger.info({ event: 'MOBILE_REGISTRATION_REQUEST', draftId: input.draft.id, action: input.action, ...detail }, 'Mobile registration request prepared for submission')
+      return
+    }
     if (!result || typeof result !== 'object' || !['challenge_required', 'rate_limited', 'provider_failed', undefined].includes(result.error)) return finish()
     finish(result)
   })

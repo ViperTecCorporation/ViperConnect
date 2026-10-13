@@ -11,6 +11,8 @@ import { isProviderRuntimeEnabled } from '../services/providers/provider_runtime
 import { isWebhookOnlyUpdate } from '../services/webhook_only_update'
 import { mergeMobileWebhooks } from '../services/mobile_primary/integration_policy'
 import { MobileDeviceError } from '../services/mobile_device_service'
+import { normalizeZapoWebClientProfile } from '../services/zapo/zapo_web_client_profile'
+import { UNOAPI_SERVER_NAME } from '../defaults'
 
 export class RegistrationController {
   private static readonly REGISTER_DEBOUNCE_MS = 15000
@@ -63,6 +65,24 @@ export class RegistrationController {
         previousConnectionType: previousConfig.connectionType,
         requestedConnectionType: req.body.connectionType as connectionType | undefined,
       })
+      let previousWebClientProfile
+      let requestedWebClientProfile
+      try {
+        previousWebClientProfile = normalizeZapoWebClientProfile(previousConfig.zapoWebClientProfile)
+        requestedWebClientProfile = normalizeZapoWebClientProfile(req.body.zapoWebClientProfile ?? previousWebClientProfile)
+      } catch {
+        return res.status(400).json({ status: 'error', message: 'zapo_web_client_profile_invalid' })
+      }
+      const effectiveConnectionType = connectionType.value ?? previousConfig.connectionType
+      if (storedConfig && requestedWebClientProfile !== previousWebClientProfile) {
+        return res.status(409).json({ status: 'error', message: 'zapo_web_client_profile_deregister_required' })
+      }
+      if (storedConfig?.mobilePrimaryDraftId && requestedWebClientProfile !== 'default') {
+        return res.status(409).json({ status: 'error', message: 'zapo_web_client_profile_mobile_primary_not_supported' })
+      }
+      if (requestedWebClientProfile !== 'default' && effectiveConnectionType !== 'qrcode') {
+        return res.status(400).json({ status: 'error', message: 'zapo_web_client_profile_requires_qrcode' })
+      }
       const requestedProvider = req.body.provider ?? previousConfig.provider
       const provider = !storedConfig && !isProviderRuntimeEnabled(requestedProvider)
         ? resolveSessionProvider(undefined)
@@ -77,12 +97,16 @@ export class RegistrationController {
       }
       const requestedConfig = {
         ...req.body,
+        ...(!storedConfig || (storedConfig.server === undefined && req.body.server === undefined)
+          ? { server: UNOAPI_SERVER_NAME }
+          : {}),
         ...(labServerAlias ? { server: previousConfig.server } : {}),
         ...(storedConfig?.mobilePrimaryDraftId ? { autoConnect: true } : {}),
         ...(storedConfig?.mobilePrimaryDraftId && req.body.webhooks !== undefined ? {
           webhooks: mergeMobileWebhooks(storedConfig.webhooks || [], req.body.webhooks), overrideWebhooks: true,
         } : {}),
         provider,
+        zapoWebClientProfile: requestedWebClientProfile,
         ...(connectionType.value ? { connectionType: connectionType.value } : {}),
       }
       if (connectionType.locked) {

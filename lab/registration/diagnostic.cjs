@@ -6,7 +6,7 @@ function protocolCode(value) {
 }
 
 function responseDiagnostic(value, stage, method = 'sms') {
-  const detail = { stage: ['prepare', 'request', 'verify'].includes(stage) ? stage : 'prepare', reason: 'unknown' }
+  const detail = { stage: ['prepare', 'request', 'verify', 'check'].includes(stage) ? stage : 'prepare', reason: 'unknown' }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return detail
   for (const [source, target] of [['status', 'providerStatus'], ['reason', 'providerReason'], ['pending', 'providerPending']]) {
     const code = protocolCode(value[source])
@@ -29,7 +29,8 @@ function responseDiagnostic(value, stage, method = 'sms') {
 function diagnostic(error, stage) {
   const message = String(error?.message || '')
   let reason = 'unknown'
-  if (/code expired or already used/i.test(message)) reason = 'code_expired'
+  if (['ipv6_relay_expired_or_invalid', 'ipv6_relay_invalid'].includes(message)) reason = 'ipv6_relay_configuration'
+  else if (/code expired or already used/i.test(message)) reason = 'code_expired'
   else if (/wrong code entered/i.test(message)) reason = 'invalid_code'
   else if (/captcha|two.factor|\bPIN\b|consent|app_store_age/i.test(message)) reason = 'challenge_required'
   else if (/too.many|too.recent|wait a few|already sent recently/i.test(message)) reason = 'rate_limited'
@@ -43,7 +44,7 @@ function diagnostic(error, stage) {
   const match = /^HTTP ([1-5]\d{2})\b/.exec(message)
   const httpStatus = match ? Number(match[1]) : undefined
   if (httpStatus && reason === 'unknown') reason = 'http_error'
-  return { stage: ['prepare', 'request', 'verify'].includes(stage) ? stage : 'prepare', reason, ...(httpStatus ? { httpStatus } : {}) }
+  return { stage: ['prepare', 'request', 'verify', 'check'].includes(stage) ? stage : 'prepare', reason, ...(httpStatus ? { httpStatus } : {}) }
 }
 
 function failure(error, stage) {

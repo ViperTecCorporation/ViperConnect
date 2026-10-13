@@ -6,7 +6,7 @@ on:
       voip_ref:
         description: Ref do código de telefonia incorporado na imagem única
         required: false
-        default: codex/zapo-uno-voice-bridge
+        default: v0.1.66
   push:
     branches:  [ main develop ]
     tags:
@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: ViperTecCorporation/viperconnect-voip-service
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.voip_ref || 'codex/zapo-uno-voice-bridge' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.voip_ref || '75867d68afdb9be615413a8efd64948c309e30d6' }}
           token: ${{ secrets.VOIP_REPOSITORY_TOKEN || github.token }}
           path: _build/voip-service
 

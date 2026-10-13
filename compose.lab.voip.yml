@@ -19,25 +19,26 @@ services:
       PORT: "3097"
       VOIP_SERVICE_TOKEN: ${LAB_VOIP_SERVICE_TOKEN}
       VOIP_BRIDGE_TOKEN: ${LAB_VOIP_BRIDGE_TOKEN}
-      VOIP_DOMAIN: "192.168.0.112"
-      VOIP_LAN_DOMAIN: "192.168.0.112"
-      VOIP_PUBLIC_WS_URL: ws://192.168.0.112:3097/sip/ws
-      VOIP_STUN_URL: stun:192.168.0.112:3478
-      VOIP_TURN_URL: turn:192.168.0.112:3478
+      VOIP_DOMAIN: "localhost"
+      VOIP_LAN_DOMAIN: ${VOIP_LAN_HOST_IP:-127.0.0.1}
+      VOIP_PUBLIC_WS_URL: ws://127.0.0.1:3097/sip/ws
+      VOIP_STUN_URL: stun:127.0.0.1:3478
+      VOIP_TURN_URL: turn:127.0.0.1:3478
       VOIP_TURN_USERNAME: ${LAB_TURN_USERNAME}
       VOIP_TURN_CREDENTIAL: ${LAB_TURN_CREDENTIAL}
       VOICE_CONFIG_STORAGE: sqlite
       VOIP_SQLITE_PATH: /home/u/app/data/voip.sqlite
       VOIP_CALL_RECORDING_ENABLED: "true"
+      VOIP_DTMF_DIAGNOSTICS_UNTIL: ${VOIP_DTMF_DIAGNOSTICS_UNTIL:-}
       VOIP_CALL_RECORDING_DIR: /home/u/app/data/recordings
       SIP_RTP_ENABLED: "true"
       SIP_RTP_BIND_HOST: "0.0.0.0"
       SIP_RTP_BIND_IPV4: "0.0.0.0"
       SIP_RTP_BIND_IPV6: "::"
-      SIP_RTP_PUBLIC_IPV4: "192.168.0.112"
-      SIP_RTP_PUBLIC_IP: "192.168.0.112"
-      SIP_RTP_PUBLIC_ADVERTISE_IP: "192.168.0.112"
-      SIP_RTP_LAN_IP: "192.168.0.112"
+      SIP_RTP_PUBLIC_IPV4: ${VOIP_LAN_HOST_IP:-127.0.0.1}
+      SIP_RTP_PUBLIC_IP: ${VOIP_LAN_HOST_IP:-127.0.0.1}
+      SIP_RTP_PUBLIC_ADVERTISE_IP: ${VOIP_LAN_HOST_IP:-127.0.0.1}
+      SIP_RTP_LAN_IP: ${VOIP_LAN_HOST_IP:-127.0.0.1}
       SIP_RTP_PORT: "5060"
       SIP_RTP_MEDIA_PORT_MIN: "12000"
       SIP_RTP_MEDIA_PORT_MAX: "12063"
@@ -47,10 +48,9 @@ services:
       SIP_REGISTER_EXPIRES_SECONDS: "60"
     ports:
       - "127.0.0.1:3097:3097"
-      - "192.168.0.112:3097:3097"
-      - "192.168.0.112:5060:5060/udp"
-      - "192.168.0.112:12000-12063:12000-12063/udp"
-      - "192.168.0.112:13001-13064:13001-13064/udp"
+      - "0.0.0.0:5060:5060/udp"
+      - "0.0.0.0:12000-12063:12000-12063/udp"
+      - "127.0.0.1:13001-13064:13001-13064/udp"
     volumes: ["voip-data:/home/u/app/data"]
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:3097/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -72,13 +72,13 @@ services:
         --realm=viperconnect-lab --server-name=viperconnect-lab
         --user="$${TURN_USERNAME}:$${TURN_CREDENTIAL}"
         --listening-ip=0.0.0.0 --relay-ip="$$relay_ip"
-        --external-ip="192.168.0.112/$$relay_ip" --listening-port=3478
+        --external-ip="127.0.0.1/$$relay_ip" --listening-port=3478
         --min-port=14001 --max-port=14064 --no-multicast-peers
         --no-tls --no-dtls --no-cli
     ports:
-      - "192.168.0.112:3478:3478/udp"
-      - "192.168.0.112:3478:3478/tcp"
-      - "192.168.0.112:14001-14064:14001-14064/udp"
+      - "127.0.0.1:3478:3478/udp"
+      - "127.0.0.1:3478:3478/tcp"
+      - "127.0.0.1:14001-14064:14001-14064/udp"
 
 volumes:
   voip-data: {}

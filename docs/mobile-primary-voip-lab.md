@@ -90,18 +90,23 @@ do áudio mobile-primary. A validação final ainda exige uma chamada real.
 ## Porta de relay experimental
 
 Os relays da chamada mobile-primary não completaram DTLS/SCTP na porta 3478,
-mas os mesmos IPs completaram o handshake na porta 3480. O worker do laboratório
-usa `preferWebRelayPort` apenas quando a sessão tem `mobilePrimaryDraftId`,
-`UNOAPI_MOBILE_PRIMARY_LAB=true` e `UNOAPI_SERVER_NAME=mobile_lab`.
+mas os mesmos IPs completaram o handshake na porta 3480. Em 12/10/2026, o mesmo
+padrão foi reproduzido numa segunda linha convencional: chamadas na porta 3478
+ficaram sem pacotes de relay, enquanto chamadas na porta 3480 permaneceram ativas.
+Após o teste com perfil `default` falhar em 3480, a seleção passou a ser por
+sessão: `wa_personal`, `wa_business` e mobile-primary habilitam
+`preferWebRelayPort` e discam 3480. O perfil `default`, quando não é
+mobile-primary, preserva a porta anunciada pelo WhatsApp (3478 nos testes).
+Foi removido o override global `VOIP_PREFER_WEB_RELAY_PORT` do laboratório.
 Essa opção preserva tokens, chaves, IPs e a ordem de seleção dos relays.
-Sessões convencionais continuam usando a porta anunciada pelo WhatsApp.
 Não modifica portas SIP, TURN ou firewall e não foi aplicada na VPS.
 
 Validação real em 25/09/2026: o usuário confirmou áudio nos dois sentidos,
 tanto em 4G quanto em Wi-Fi, após aplicar a política 3480 no laboratório.
 Essa validação é do cenário testado; não representa implantação na VPS.
-Para rollback, desative `preferWebRelayPort` no plugin e recompile/recrie somente
-o worker do laboratório, sem remover volumes ou credenciais.
+O perfil `wa_business` está coberto por teste automatizado; a chamada real com
+essa combinação ainda precisa ser validada. Para rollback, restaure a política
+anterior e recompile/recrie somente o worker, sem remover volumes ou credenciais.
 
 ## Desativação sem perda de dados
 

@@ -14,3 +14,11 @@ node_modules
 !docs-site/.vitepress
 !docs-site/.vitepress/**
 yarn-error.log
+.playwright-cli
+output/playwright
+lab/registration/ipv6_relay.cjs
+lab/registration/ipv6_transport.cjs
+__tests__/services/mobile_registration_ipv6.ts
+lab/validation/mobile_session_namespace.cjs
+lab/validation/session_backup_stream.cjs
+lab/validation/session_restore_multipart.cjs

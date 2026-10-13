@@ -11,6 +11,7 @@ import { BACKUP_MAX_RECORDS, BACKUP_DOMAINS, BACKUP_DATA_DOMAINS, BACKUP_UNO_DOM
 import { BACKUP_MAX_BYTES, decryptMobileBackup, encryptMobileBackup, validateBackupPassword } from './backup_archive'
 import { mobilePrimaryReady, mobilePrimaryServer } from './runtime_policy'
 import { requestRestoredConnection } from './restored_connection'
+import { mobileBackupDestinationHasKeys } from './backup_destination'
 
 export const COMMIT_MOBILE_BACKUP = `
 if redis.call('GET', KEYS[5]) ~= ARGV[5] then return 0 end
@@ -101,7 +102,7 @@ export async function createMobileBackupService() {
         const draft = await drafts.get(id)
         const raw = await redis.get(REGISTRATION_PREFIX + id)
         const state: any = raw && vault.open(id, raw)
-        const phone = state?.canonicalPhone
+        const phone = state?.sessionPhone || state?.canonicalPhone
         if (state?.status !== 'registered' || !/^[1-9]\d{7,14}$/.test(phone || '')) return fail('mobile_registration_required')
         const config = await redisService.getConfig(phone)
         if (!config?.mobilePrimaryImported || config.mobilePrimaryDraftId !== id || config.server !== mobilePrimaryServer() || config.provider !== 'zapo' || !config.useRedis || config.mobilePrimaryDeleting) return fail('mobile_backup_requires_imported_redis_device')
@@ -154,9 +155,9 @@ export async function createMobileBackupService() {
         const snapshot = await decryptMobileBackup(body.archive, body.password)
         validateMobileBackup(snapshot, prefix)
         const { phone } = snapshot.device
-        const credentials = await convertWhalibmobCredentials(snapshot.registration.store, { expectedCanonicalPhone: phone, advSecretKey: Buffer.from(snapshot.registration.advSecret, 'base64') })
+        const credentials = await convertWhalibmobCredentials(snapshot.registration.store, { expectedCanonicalPhone: snapshot.registration.canonicalPhone, advSecretKey: Buffer.from(snapshot.registration.advSecret, 'base64') })
         const restored = await lock(redis, phone, async (leaseKey, token, renew) => {
-          if (await redisService.getConfig(phone) || (await drafts.list()).some(d => d.phone === phone) || (await scopedKeys(redis, phone, 'complete')).length) return fail('mobile_restore_destination_exists')
+          if (await redisService.getConfig(phone) || (await drafts.list()).some(d => d.phone === phone) || await mobileBackupDestinationHasKeys(redis, prefix, phone, renew)) return fail('mobile_restore_destination_exists')
           const id = randomUUID(), stage = `mobile_backup_stage:${id.replace(/-/g, '')}:`, staged: string[] = []
           try {
             const records = snapshot.records.filter(record => record.expiresAt === undefined || record.expiresAt > Date.now())
