@@ -1259,6 +1259,257 @@ tbody tr:last-child td {
   grid-column: 1 / -1;
 }
 
+.voip-line-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px 18px;
+}
+
+.voip-line-group-grid > .wide {
+  grid-column: 1 / -1;
+}
+
+.voip-line-group-grid > .field,
+.voip-line-group-grid > .voip-option-field {
+  align-self: start;
+}
+
+.voip-routing-choice {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.voip-routing-choice > .muted {
+  margin: 0;
+  font-size: .85rem;
+}
+
+.voip-routing-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.voip-routing-summary > div {
+  display: grid;
+  gap: 4px;
+}
+
+.voip-routing-summary > div span {
+  color: var(--muted);
+}
+
+.voip-routing-summary > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.voip-option-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.voip-option-field legend {
+  margin-bottom: 6px;
+}
+
+.voip-option-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.voip-option-picker__list {
+  max-height: 190px;
+  overflow: auto;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.voip-option-field--single .voip-option-picker__list {
+  max-height: 128px;
+}
+
+.voip-searchable-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.voip-searchable-dropdown > summary {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+  list-style: none;
+}
+
+.voip-searchable-dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.voip-searchable-dropdown[open] > summary,
+.voip-searchable-dropdown > summary:focus-visible {
+  border-color: var(--brand);
+  outline: 3px solid color-mix(in srgb, var(--brand) 20%, transparent);
+}
+
+.voip-searchable-dropdown__chevron {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.voip-searchable-dropdown[open] .voip-searchable-dropdown__chevron {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.voip-searchable-dropdown__panel {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  padding: 8px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.voip-searchable-dropdown .voip-option-picker__list {
+  max-height: 210px;
+}
+
+.voip-searchable-dropdown .voip-option-picker__option input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.voip-option-picker__check {
+  margin-left: auto;
+  color: var(--brand);
+  font-size: 1rem;
+  font-weight: 800;
+  opacity: 0;
+}
+
+.voip-option-picker__option:has(input:checked) .voip-option-picker__check {
+  opacity: 1;
+}
+
+.voip-searchable-dropdown .voip-option-picker__option:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.voip-option-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--text);
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.voip-option-picker__option:last-of-type {
+  border-bottom: 0;
+}
+
+.voip-option-picker__option:hover {
+  background: var(--surface-muted);
+}
+
+.voip-option-picker__option:has(input:checked) {
+  background: color-mix(in srgb, var(--brand) 12%, var(--surface-raised));
+}
+
+.voip-option-picker__option input {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--brand);
+}
+
+.voip-option-picker__empty {
+  margin: 0;
+  padding: 12px;
+}
+
+.voip-searchable-dropdown__panel--members {
+  min-width: min(620px, calc(100vw - 64px));
+}
+
+.voip-membership-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  cursor: default;
+}
+
+.voip-membership-option__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+}
+
+.voip-membership-option__identity > span {
+  display: grid;
+  min-width: 0;
+}
+
+.voip-membership-option__identity small {
+  color: var(--muted);
+}
+
+.voip-membership-option__distance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.voip-membership-option__distance input {
+  width: 68px;
+  min-width: 68px;
+  height: 34px;
+  padding: 5px 8px;
+}
+
+.voip-group-distance[hidden],
+.voip-membership-option__distance[hidden] {
+  display: none;
+}
+
 .voip-check {
   display: flex;
   align-items: center;
@@ -1869,9 +2120,19 @@ select[multiple] {
   .integration-identifiers,
   .form-grid,
   .form-grid--three,
+  .voip-line-group-grid,
+  .voip-routing-summary,
   .switch-grid,
   .connection-layout {
     grid-template-columns: 1fr;
+  }
+
+  .voip-line-group-grid > .wide {
+    grid-column: auto;
+  }
+
+  .voip-routing-summary > p {
+    grid-column: auto;
   }
 
   .field--wide {

@@ -1,36 +1,38 @@
-import { ApiClient, ApiError } from './core/api.js?v=4.0.35-316e3502';
-import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.35-316e3502';
-import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.35-316e3502';
-import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.35-316e3502';
-import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.35-316e3502';
-import { SocketBridge } from './core/socket.js?v=4.0.35-316e3502';
-import { renderLayout, renderLogin } from './components/layout.js?v=4.0.35-316e3502';
-import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.35-316e3502';
-import { updateProfileHours } from './features/profile_hours.js?v=4.0.35-316e3502';
-import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.35-316e3502';
-import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.35-316e3502';
-import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.35-316e3502';
-import { OwnProfilePanel } from './features/own_profile.js?v=4.0.35-316e3502';
-import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.35-316e3502';
-import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.35-316e3502';
-import { sessionConfigPayload } from './features/session_config.js?v=4.0.35-316e3502';
-import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.35-316e3502';
-import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.35-316e3502';
-import { renderDashboard } from './pages/dashboard.js?v=4.0.35-316e3502';
-import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.35-316e3502';
-import { renderSessionPage } from './pages/session.js?v=4.0.35-316e3502';
-import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.35-316e3502';
-import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.35-316e3502';
-import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.35-316e3502';
-import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.35-316e3502';
-import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.35-316e3502';
-import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.35-316e3502';
-import { icon } from './components/icons.js?v=4.0.35-316e3502';
-import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.35-316e3502';
-import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.35-316e3502';
-import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js?v=4.0.35-316e3502';
-import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.35-316e3502';
-import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.35-316e3502';
+import { ApiClient, ApiError } from './core/api.js?v=4.0.36-1527f181';
+import { loadAiModels } from './domain/ai_providers.js?v=4.0.36-1527f181';
+import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js?v=4.0.36-1527f181';
+import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.36-1527f181';
+import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.36-1527f181';
+import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.36-1527f181';
+import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.36-1527f181';
+import { SocketBridge } from './core/socket.js?v=4.0.36-1527f181';
+import { renderLayout, renderLogin } from './components/layout.js?v=4.0.36-1527f181';
+import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.36-1527f181';
+import { updateProfileHours } from './features/profile_hours.js?v=4.0.36-1527f181';
+import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.36-1527f181';
+import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.36-1527f181';
+import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.36-1527f181';
+import { OwnProfilePanel } from './features/own_profile.js?v=4.0.36-1527f181';
+import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.36-1527f181';
+import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.36-1527f181';
+import { sessionConfigPayload } from './features/session_config.js?v=4.0.36-1527f181';
+import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.36-1527f181';
+import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.36-1527f181';
+import { renderDashboard } from './pages/dashboard.js?v=4.0.36-1527f181';
+import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.36-1527f181';
+import { renderSessionPage } from './pages/session.js?v=4.0.36-1527f181';
+import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.36-1527f181';
+import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.36-1527f181';
+import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.36-1527f181';
+import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.36-1527f181';
+import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.36-1527f181';
+import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.36-1527f181';
+import { icon } from './components/icons.js?v=4.0.36-1527f181';
+import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.36-1527f181';
+import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.36-1527f181';
+import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js?v=4.0.36-1527f181';
+import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.36-1527f181';
+import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.36-1527f181';
 const TOKEN_KEY = 'whatsappApiToken';
 const THEME_KEY = 'viperconnect_theme';
 const SIDEBAR_KEY = 'viperconnect_sidebar_collapsed';
@@ -66,6 +68,11 @@ const emptyVersionStatus = () => ({
     status: 'unknown',
     checked_at: '',
 });
+const generatedVoipResourceId = () => globalThis.crypto?.randomUUID?.()
+    || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+        const random = Math.floor(Math.random() * 16);
+        return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16);
+    });
 export class ViperConnectApp {
     constructor(root, baseUrl = window.location.origin, api = new ApiClient(baseUrl), socket = new SocketBridge(baseUrl)) {
         this.root = root;
@@ -528,7 +535,7 @@ export class ViperConnectApp {
             this.render();
         }
         else if (action === 'new-voip-resource') {
-            this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource, id: '' };
+            this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource, id: generatedVoipResourceId(), isNew: true };
             this.render();
         }
         else if (action === 'edit-voip-resource') {
@@ -1123,13 +1130,14 @@ export class ViperConnectApp {
             payload[name] = value(name);
         });
         if (resource === 'companies') {
-            putEditable('label', 'timeZone', 'aiTranscriptionBaseUrl', 'aiTranscriptionModel', 'aiTranscriptionLanguage', 'aiSummaryBaseUrl', 'aiSummaryModel', 'aiSummaryPrompt');
+            putEditable('label', 'timeZone', 'aiTranscriptionProvider', 'aiSummaryProvider', 'aiTranscriptionBaseUrl', 'aiTranscriptionModel', 'aiTranscriptionLanguage', 'aiSummaryBaseUrl', 'aiSummaryModel', 'aiSummaryPrompt');
             put('aiTranscriptionApiKey', 'aiSummaryApiKey');
             payload.aiSummaryEnabled = data.has('aiSummaryEnabled');
             payload.aiIncludeTranscript = data.has('aiIncludeTranscript');
         }
         if (resource === 'accounts') {
-            putEditable('label', 'companyId', 'phoneNumber', 'chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId');
+            putEditable('defaultDdi', 'defaultDdd');
+            putEditable('label', 'companyId', 'phoneNumber', 'outboundAccessPrefix', 'chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId');
             put('chatwootApiAccessToken');
             payload.maxConcurrentCalls = this.voipConcurrentCallLimit(data.get('maxConcurrentCalls'));
             payload.chatwootRecordingEnabled = data.has('chatwootRecordingEnabled');
@@ -1143,18 +1151,21 @@ export class ViperConnectApp {
         }
         if (resource === 'extensionGroups') {
             put('label', 'companyId');
-            payload.extensionIds = values('extensionIds');
+            const extensionIds = values('extensionIds');
+            payload.extensionIds = extensionIds;
+            payload.extensionDistances = Object.fromEntries(extensionIds.map(extensionId => {
+                const raw = Number(value(`extensionDistance:${extensionId}`));
+                return [extensionId, Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 1];
+            }));
         }
         if (resource === 'sessions') {
             put('label', 'unoSession', 'companyId', 'accountId');
-            payload.lineGroupIds = values('lineGroupIds');
-            payload.inboundLineGroupIds = values('inboundLineGroupIds');
-            payload.outboundLineGroupIds = values('outboundLineGroupIds');
             payload.extensions = values('extensions');
             payload.ringTimeoutSeconds = Number(value('ringTimeoutSeconds') || 20);
             payload.basicInboundEnabled = !data.has('disableBasicInbound');
         }
         if (resource === 'extensions') {
+            putEditable('defaultDdi', 'defaultDdd');
             put('displayName', 'username', 'password', 'companyId', 'type', 'sipEndpointMode');
             const groupIds = values('extensionGroupIds');
             const extensionId = this.modal?.type === 'voip-resource' && this.modal.resource === 'extensions' ? this.modal.id : value('id');
@@ -1197,6 +1208,24 @@ export class ViperConnectApp {
     }
     handleFilter(event) {
         const input = event.target;
+        const dialingForm = input.closest('form[data-form="voip-resource-fields"]');
+        if (dialingForm && ['aiTranscriptionProvider', 'aiSummaryProvider'].includes(input.name)) {
+            void loadAiModels(dialingForm, input.name === 'aiTranscriptionProvider' ? 'Transcription' : 'Summary', path => this.api.voipConsole(path), true);
+            return;
+        }
+        if (dialingForm && (input.name === 'defaultDdi' || input.name === 'defaultDdd')) {
+            input.dataset.manuallyEdited = 'true';
+        }
+        if (dialingForm && input.name === 'phoneNumber') {
+            const defaults = inferBrazilianDialingDefaults(input.value);
+            for (const name of ['defaultDdi', 'defaultDdd']) {
+                const field = dialingForm.querySelector(`[name="${name}"]`);
+                if (field && !field.dataset.manuallyEdited && (!field.value || field.dataset.suggested)) {
+                    field.value = defaults[name];
+                    field.dataset.suggested = 'true';
+                }
+            }
+        }
         if (input.matches('[data-companion-history]')) {
             this.mobileCompanions.setSendHistory(input.checked);
             return;
@@ -1206,6 +1235,76 @@ export class ViperConnectApp {
             const position = formatCompanionCode(field.value.slice(0, field.selectionStart ?? field.value.length)).length;
             field.value = formatCompanionCode(field.value);
             field.setSelectionRange(position, position);
+            return;
+        }
+        if (input.dataset.filter === 'voip-options') {
+            const picker = input.closest('[data-voip-option-picker]');
+            const query = input.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            const selectedCompanyId = input.closest('form')?.querySelector('[data-voip-company-choice]:checked')?.value || picker?.dataset.selectedCompanyId || '';
+            let visible = 0;
+            picker?.querySelectorAll('[data-voip-option]').forEach(option => {
+                const companyId = option.dataset.companyId || '';
+                const strictCompany = picker.hasAttribute('data-voip-strict-company');
+                const companyMatches = !picker.hasAttribute('data-voip-company-dependent')
+                    || !selectedCompanyId
+                    || (strictCompany ? companyId === selectedCompanyId : !companyId || companyId === selectedCompanyId);
+                const matches = companyMatches && (!query || `${option.dataset.search || ''}`.includes(query));
+                option.hidden = !matches;
+                if (matches)
+                    visible += 1;
+            });
+            const empty = picker?.querySelector('[data-voip-options-empty]');
+            if (empty)
+                empty.hidden = visible > 0;
+            return;
+        }
+        if (input.matches('[data-voip-company-choice]')) {
+            const form = input.closest('form');
+            const selectedCompanyId = input.value;
+            const dropdown = input.closest('[data-searchable-dropdown]');
+            const dropdownLabel = dropdown?.querySelector('[data-searchable-dropdown-label]');
+            const optionLabel = input.closest('[data-voip-option]')?.querySelector('[data-voip-option-label]');
+            if (dropdownLabel && optionLabel)
+                dropdownLabel.textContent = optionLabel.textContent || 'Selecione';
+            if (dropdown)
+                dropdown.open = false;
+            form?.querySelectorAll('[data-voip-company-dependent]').forEach(picker => {
+                picker.dataset.selectedCompanyId = selectedCompanyId;
+                const search = picker.querySelector('[data-filter="voip-options"]');
+                if (search)
+                    search.value = '';
+                let visible = 0;
+                picker.querySelectorAll('[data-voip-option]').forEach(option => {
+                    const companyId = option.dataset.companyId || '';
+                    const matches = picker.hasAttribute('data-voip-strict-company')
+                        ? companyId === selectedCompanyId
+                        : !companyId || companyId === selectedCompanyId;
+                    option.hidden = !matches;
+                    const choice = option.querySelector('input[type="checkbox"], input[type="radio"]');
+                    if (!matches && choice?.checked) {
+                        choice.checked = false;
+                        if (choice.type === 'checkbox')
+                            this.refreshVoipMembershipDistance(choice);
+                        const dependentDropdown = choice.closest('[data-searchable-dropdown]');
+                        const dependentLabel = dependentDropdown?.querySelector('[data-searchable-dropdown-label]');
+                        if (dependentLabel)
+                            dependentLabel.textContent = 'Selecione';
+                    }
+                    if (matches)
+                        visible += 1;
+                });
+                const empty = picker.querySelector('[data-voip-options-empty]');
+                if (empty)
+                    empty.hidden = visible > 0;
+                this.refreshVoipMultiSelectLabel(picker);
+            });
+            this.refreshVoipGroupDistanceFields(form);
+            return;
+        }
+        if (input.matches('[data-searchable-multiselect] input[type="checkbox"]')) {
+            this.refreshVoipMultiSelectLabel(input);
+            this.refreshVoipMembershipDistance(input);
+            this.refreshVoipGroupDistanceFields(input.closest('form'));
             return;
         }
         if (input.dataset.filter === 'mobile-query') {
@@ -1289,6 +1388,35 @@ export class ViperConnectApp {
             this.redisSearchCollapsedPrefixes.clear();
             void this.loadRedisKeys();
         }
+    }
+    refreshVoipMultiSelectLabel(container) {
+        const dropdown = container.closest('[data-searchable-multiselect]');
+        const label = dropdown?.querySelector('[data-searchable-dropdown-label]');
+        if (!dropdown || !label)
+            return;
+        const count = dropdown.querySelectorAll('input[type="checkbox"]:checked').length;
+        label.textContent = count === 0 ? 'Nenhum selecionado' : count === 1 ? '1 selecionado' : `${count} selecionados`;
+    }
+    refreshVoipMembershipDistance(input) {
+        const row = input.closest('[data-voip-membership-row]');
+        const distance = row?.querySelector('[data-voip-membership-distance]');
+        const distanceInput = distance?.querySelector('input');
+        if (!row || !distance || !distanceInput)
+            return;
+        distance.hidden = !input.checked;
+        distanceInput.disabled = !input.checked;
+    }
+    refreshVoipGroupDistanceFields(form) {
+        form?.querySelectorAll('[data-voip-group-distance]').forEach(field => {
+            const groupId = field.dataset.groupId || '';
+            const choice = Array.from(form.querySelectorAll('input[name="extensionGroupIds"]'))
+                .find(input => input.value === groupId);
+            const distanceInput = field.querySelector('input');
+            const visible = choice?.checked === true;
+            field.hidden = !visible;
+            if (distanceInput)
+                distanceInput.disabled = !visible;
+        });
     }
     async loginWithPassword(username, password) {
         this.loginError = '';
@@ -2344,6 +2472,13 @@ export class ViperConnectApp {
             this.ownProfile?.mountMap();
         if (this.view === 'dashboard' && this.tab === 'messages')
             this.messages?.mount();
+        if (this.modal?.type === 'voip-resource' && this.modal.resource === 'companies') {
+            const form = this.root.querySelector('form[data-form="voip-resource-fields"]');
+            if (form)
+                for (const purpose of ['Transcription', 'Summary']) {
+                    void loadAiModels(form, purpose, path => this.api.voipConsole(path));
+                }
+        }
     }
     canAccessScopedRecording(id) {
         return this.voip?.capabilities?.recordings === true && !!scopedRecording(this.voip, this.sessions.map(sessionPhone), id);
@@ -2382,7 +2517,7 @@ export class ViperConnectApp {
         if (this.modal.type === 'redis-delete-prefix')
             return renderRedisDeleteModal(this.modal.prefix, true);
         if (this.modal.type === 'voip-resource')
-            return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id);
+            return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id, this.modal.isNew === true);
         if (this.modal.type === 'voip-recording-settings')
             return renderVoipRecordingSettingsModal(this.voip);
         if (this.modal.type === 'voip-credentials')

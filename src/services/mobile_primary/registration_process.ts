@@ -1,4 +1,5 @@
 import { fork } from 'node:child_process'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import type { RegistrationProvider, RegistrationResult } from './registration_service'
 import { MobileRegistrationService } from './registration_service'
@@ -7,7 +8,8 @@ import { MobileDeviceService } from '../mobile_device_service'
 import { mobilePrimaryReady } from './runtime_policy'
 import logger from '../logger'
 
-const { sanitizeRequestTrace } = require(path.resolve('lab/registration/request_trace.cjs'))
+const loadRegistrationTrace = createRequire(__filename)
+const { sanitizeRequestTrace } = loadRegistrationTrace(path.resolve('lab/registration/request_trace.cjs'))
 
 export const registrationEnabled = mobilePrimaryReady
 let activeChildren = 0

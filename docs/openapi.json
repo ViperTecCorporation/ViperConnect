@@ -4135,6 +4135,80 @@
         "x-destructive": true
       }
     },
+    "/admin/voip/console/ai/models": {
+      "get": {
+        "tags": [
+          "VoIP"
+        ],
+        "summary": "Listar modelos atuais do OpenRouter para IA pós-chamada",
+        "description": "Catálogo público consultado pelo worker, sem enviar chave ou áudio. Somente administradores. Não valida crédito nem acesso da chave ao modelo.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "openrouter"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "transcription",
+                "summary"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Modelos compatíveis com a finalidade solicitada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Provedor ou finalidade inválidos"
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "502": {
+            "description": "Catálogo indisponível ou inválido"
+          }
+        }
+      }
+    },
     "/admin/voip/console/bootstrap": {
       "get": {
         "tags": [
@@ -16939,6 +17013,24 @@
             "type": "boolean",
             "default": false
           },
+          "transcriptionProvider": {
+            "type": "string",
+            "enum": [
+              "groq",
+              "openai",
+              "openrouter",
+              "custom"
+            ]
+          },
+          "summaryProvider": {
+            "type": "string",
+            "enum": [
+              "groq",
+              "openai",
+              "openrouter",
+              "custom"
+            ]
+          },
           "transcriptionBaseUrl": {
             "type": "string",
             "format": "uri"
@@ -17061,6 +17153,25 @@
           "phoneNumber": {
             "type": "string",
             "example": "5566999554300"
+          },
+          "outboundAccessPrefix": {
+            "type": "string",
+            "default": "",
+            "pattern": "^\\*[0-9]{1,6}\\*$|^$",
+            "example": "*81*",
+            "description": "Prefixo opcional para solicitar esta linha na discagem SIP/WebRTC. A linha continua sujeita ao roteamento avançado e o prefixo deve ser único na empresa."
+          },
+          "defaultDdi": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,2}$|^$",
+            "example": "55",
+            "description": "DDI sugerido pelo número brasileiro da linha quando ausente; editável. Vazio desativa o complemento deste campo."
+          },
+          "defaultDdd": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{1,3}$|^$",
+            "example": "66",
+            "description": "DDD sugerido pelo número brasileiro da linha quando ausente; editável. Usado para números locais de 8 ou 9 dígitos."
           },
           "maxConcurrentCalls": {
             "type": "integer",
@@ -17253,6 +17364,16 @@
           "username"
         ],
         "properties": {
+          "defaultDdi": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{0,2}$|^$",
+            "description": "Sobrescreve o DDI da linha escolhida. Vazio ou ausente herda da linha."
+          },
+          "defaultDdd": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{1,3}$|^$",
+            "description": "Sobrescreve o DDD da linha escolhida. Vazio ou ausente herda da linha."
+          },
           "id": {
             "type": "string",
             "readOnly": true

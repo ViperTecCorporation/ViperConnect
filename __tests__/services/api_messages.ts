@@ -36,6 +36,27 @@ describe('public error language', () => {
     expect(apiMessage('unknown')).toBe('unknown')
     expect(replyWithoutQuoteWarning().code).toBe('REPLY_SENT_WITHOUT_QUOTE')
   })
+  it('explains VoIP company conflicts and preserves the machine-readable reason', () => {
+    expect(localizeApiError({ error: 'line_group_target_company_mismatch' })).toEqual({
+      error_code: 'line_group_target_company_mismatch',
+      error: 'O grupo de ramais de destino pertence a outra empresa. Selecione um grupo de ramais da mesma empresa do grupo de linhas.',
+    })
+    expect(apiMessage('line_group_account_company_mismatch', 'pt-BR'))
+      .toBe('Uma das linhas selecionadas pertence a outra empresa. Selecione somente linhas da empresa escolhida.')
+    expect(apiMessage('extension_group_company_mismatch', 'pt-BR'))
+      .toBe('Um dos ramais pertence a outra empresa. Selecione somente ramais da mesma empresa do grupo de ramais.')
+  })
+
+  it('explains that automatic extensions are exclusive to basic routing', () => {
+    expect(localizeApiError({ error: 'automatic_extension_advanced_routing_forbidden' })).toEqual({
+      error_code: 'automatic_extension_advanced_routing_forbidden',
+      error: 'Ramais provisionados automaticamente são exclusivos do atendimento básico e não podem participar do roteamento avançado. Selecione um ramal avançado criado manualmente.',
+    })
+    expect(localizeApiError({ error: 'automatic_line_advanced_routing_forbidden' })).toEqual({
+      error_code: 'automatic_line_advanced_routing_forbidden',
+      error: 'Enquanto estiver na Empresa padrão, a linha automática é exclusiva do atendimento básico. Mova a linha para outra empresa antes de incluí-la no roteamento avançado.',
+    })
+  })
   it('localizes JSON/send-object HTTP failures once and leaves success content unchanged', async () => {
     const app = express()
     app.use(apiErrorLocalization)

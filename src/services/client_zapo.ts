@@ -1067,7 +1067,9 @@ export class ClientZapo implements Client {
       plugins: [...companionPlugins, voipPlugin({
         maxConcurrentCalls: VOIP_MAX_CONCURRENT_CALLS,
         logLevel: 'debug',
-        preferWebRelayPort: !!this.config.mobilePrimaryDraftId,
+        preferWebRelayPort: !!this.config.mobilePrimaryDraftId
+          || this.config.zapoWebClientProfile === 'wa_personal'
+          || this.config.zapoWebClientProfile === 'wa_business',
       })],
     }))
     const generation = ++this.connectionGeneration

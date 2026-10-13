@@ -218,6 +218,16 @@
       "type": "string"
     },
     {
+      "key": "provider",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "purpose",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "queue",
       "value": "",
       "type": "string"
@@ -7368,6 +7378,112 @@
                 }
               ],
               "body": "{\n  \"error\": \"invalid_credentials\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "VoIP",
+      "item": [
+        {
+          "name": "Listar modelos atuais do OpenRouter para IA pós-chamada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/voip/console/ai/models?provider={{provider}}&purpose={{purpose}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "voip",
+                "console",
+                "ai",
+                "models"
+              ],
+              "query": [
+                {
+                  "key": "provider",
+                  "value": "{{provider}}",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "purpose",
+                  "value": "{{purpose}}",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Catálogo público consultado pelo worker, sem enviar chave ou áudio. Somente administradores. Não valida crédito nem acesso da chave ao modelo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Modelos compatíveis com a finalidade solicitada",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/voip/console/ai/models?provider={{provider}}&purpose={{purpose}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "voip",
+                    "console",
+                    "ai",
+                    "models"
+                  ],
+                  "query": [
+                    {
+                      "key": "provider",
+                      "value": "{{provider}}",
+                      "description": "",
+                      "disabled": false
+                    },
+                    {
+                      "key": "purpose",
+                      "value": "{{purpose}}",
+                      "description": "",
+                      "disabled": false
+                    }
+                  ]
+                },
+                "description": "Catálogo público consultado pelo worker, sem enviar chave ou áudio. Somente administradores. Não valida crédito nem acesso da chave ao modelo.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Modelos compatíveis com a finalidade solicitada",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
             }
           ]
         }

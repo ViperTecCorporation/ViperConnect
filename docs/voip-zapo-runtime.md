@@ -1,6 +1,6 @@
 # Runtime VoIP Zapo: dependencias, protocolo e solucao de midia
 
-Estado consolidado em 2026-08-28. Este documento e a fonte canonica para
+Estado consolidado em 2026-10-12. Este documento e a fonte canonica para
 entender onde cada parte da telefonia executa, quais dependencias pertencem a
 cada processo e quais correcoes estabilizaram o audio 1:1.
 
@@ -63,10 +63,15 @@ no label `io.vipertec.viperconnect.voip.revision` e em
 em `voip_ref`; usar apenas uma branch movel nao e suficiente para reproduzir uma
 imagem antiga.
 
+O release unificado `v4.0.36` fixa VoIP `v0.1.66`, revisao
+`75867d68afdb9be615413a8efd64948c309e30d6`, no checkout do workflow. O build por
+tag nao depende mais da ponta de uma branch movel. O disparo manual permite
+sobrescrever `voip_ref` explicitamente, com padrao `v0.1.66`.
+
 Tags `v*` do repositório VoIP validam o código e geram os pacotes nativos, mas
 não disparam a imagem unificada. Para publicar a imagem, primeiro envie a branch
-VoIP `codex/zapo-uno-voice-bridge` e depois publique a tag correspondente neste
-repositório. O workflow do ViperConnect resolve a branch para um SHA imutável,
+VoIP `codex/zapo-uno-voice-bridge` e sua tag, atualize a revisao fixada e depois
+publique a tag correspondente neste repositório. O workflow resolve o checkout para um SHA imutável,
 executa os testes do VoIP e publica as tags semânticas e `latest`. O workflow
 atual não usa `repository_dispatch` nem `UNIFIED_IMAGE_DISPATCH_TOKEN`. Se o
 repositório VoIP for privado, configure `VOIP_REPOSITORY_TOKEN` no ViperConnect

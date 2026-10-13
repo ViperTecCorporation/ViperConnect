@@ -1,4 +1,6 @@
 import { ApiClient, ApiError } from './core/api.js'
+import { loadAiModels } from './domain/ai_providers.js'
+import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js'
 import { renderContactEditor, saveContactName } from './features/contact_editor.js'
 import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js'
 import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js'
@@ -95,7 +97,7 @@ type ModalState =
   | { type: 'redis-editor' }
   | { type: 'redis-delete'; key: string }
   | { type: 'redis-delete-prefix'; prefix: string }
-  | { type: 'voip-resource'; resource: VoipResourceName; id: string }
+  | { type: 'voip-resource'; resource: VoipResourceName; id: string; isNew?: boolean }
   | { type: 'voip-recording-settings' }
   | { type: 'voip-credentials'; value: Record<string, any> }
 
@@ -112,6 +114,12 @@ const emptyVersionStatus = (): VersionStatus => ({
   status: 'unknown',
   checked_at: '',
 })
+
+const generatedVoipResourceId = () => globalThis.crypto?.randomUUID?.()
+  || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+    const random = Math.floor(Math.random() * 16)
+    return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16)
+  })
 
 export class ViperConnectApp {
   public identity: ManagerIdentity | null = null
@@ -506,7 +514,7 @@ export class ViperConnectApp {
       this.voipTab = actionElement.dataset.tab as VoipTab
       this.render()
     } else if (action === 'new-voip-resource') {
-      this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource as VoipResourceName, id: '' }
+      this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource as VoipResourceName, id: generatedVoipResourceId(), isNew: true }
       this.render()
     } else if (action === 'edit-voip-resource') {
       this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource as VoipResourceName, id: actionElement.dataset.id || '' }
@@ -977,6 +985,8 @@ export class ViperConnectApp {
       putEditable(
         'label',
         'timeZone',
+        'aiTranscriptionProvider',
+        'aiSummaryProvider',
         'aiTranscriptionBaseUrl',
         'aiTranscriptionModel',
         'aiTranscriptionLanguage',
@@ -989,7 +999,8 @@ export class ViperConnectApp {
       payload.aiIncludeTranscript = data.has('aiIncludeTranscript')
     }
     if (resource === 'accounts') {
-      putEditable('label', 'companyId', 'phoneNumber', 'chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId')
+      putEditable('defaultDdi', 'defaultDdd')
+      putEditable('label', 'companyId', 'phoneNumber', 'outboundAccessPrefix', 'chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId')
       put('chatwootApiAccessToken')
       payload.maxConcurrentCalls = this.voipConcurrentCallLimit(data.get('maxConcurrentCalls'))
       payload.chatwootRecordingEnabled = data.has('chatwootRecordingEnabled')
@@ -1003,18 +1014,21 @@ export class ViperConnectApp {
     }
     if (resource === 'extensionGroups') {
       put('label', 'companyId')
-      payload.extensionIds = values('extensionIds')
+      const extensionIds = values('extensionIds')
+      payload.extensionIds = extensionIds
+      payload.extensionDistances = Object.fromEntries(extensionIds.map(extensionId => {
+        const raw = Number(value(`extensionDistance:${extensionId}`))
+        return [extensionId, Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 1]
+      }))
     }
     if (resource === 'sessions') {
       put('label', 'unoSession', 'companyId', 'accountId')
-      payload.lineGroupIds = values('lineGroupIds')
-      payload.inboundLineGroupIds = values('inboundLineGroupIds')
-      payload.outboundLineGroupIds = values('outboundLineGroupIds')
       payload.extensions = values('extensions')
       payload.ringTimeoutSeconds = Number(value('ringTimeoutSeconds') || 20)
       payload.basicInboundEnabled = !data.has('disableBasicInbound')
     }
     if (resource === 'extensions') {
+      putEditable('defaultDdi', 'defaultDdd')
       put('displayName', 'username', 'password', 'companyId', 'type', 'sipEndpointMode')
       const groupIds = values('extensionGroupIds')
       const extensionId = this.modal?.type === 'voip-resource' && this.modal.resource === 'extensions' ? this.modal.id : value('id')
@@ -1061,6 +1075,24 @@ export class ViperConnectApp {
 
   private handleFilter(event: Event): void {
     const input = event.target as HTMLInputElement | HTMLSelectElement
+    const dialingForm = input.closest<HTMLFormElement>('form[data-form="voip-resource-fields"]')
+    if (dialingForm && ['aiTranscriptionProvider', 'aiSummaryProvider'].includes(input.name)) {
+      void loadAiModels(dialingForm, input.name === 'aiTranscriptionProvider' ? 'Transcription' : 'Summary', path => this.api.voipConsole(path), true)
+      return
+    }
+    if (dialingForm && (input.name === 'defaultDdi' || input.name === 'defaultDdd')) {
+      input.dataset.manuallyEdited = 'true'
+    }
+    if (dialingForm && input.name === 'phoneNumber') {
+      const defaults = inferBrazilianDialingDefaults(input.value)
+      for (const name of ['defaultDdi', 'defaultDdd'] as const) {
+        const field = dialingForm.querySelector<HTMLInputElement>(`[name="${name}"]`)
+        if (field && !field.dataset.manuallyEdited && (!field.value || field.dataset.suggested)) {
+          field.value = defaults[name]
+          field.dataset.suggested = 'true'
+        }
+      }
+    }
     if (input.matches('[data-companion-history]')) {
       this.mobileCompanions.setSendHistory((input as HTMLInputElement).checked)
       return
@@ -1070,6 +1102,67 @@ export class ViperConnectApp {
       const position = formatCompanionCode(field.value.slice(0, field.selectionStart ?? field.value.length)).length
       field.value = formatCompanionCode(field.value)
       field.setSelectionRange(position, position)
+      return
+    }
+    if (input.dataset.filter === 'voip-options') {
+      const picker = input.closest<HTMLElement>('[data-voip-option-picker]')
+      const query = input.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+      const selectedCompanyId = input.closest('form')?.querySelector<HTMLInputElement>('[data-voip-company-choice]:checked')?.value || picker?.dataset.selectedCompanyId || ''
+      let visible = 0
+      picker?.querySelectorAll<HTMLElement>('[data-voip-option]').forEach(option => {
+        const companyId = option.dataset.companyId || ''
+        const strictCompany = picker.hasAttribute('data-voip-strict-company')
+        const companyMatches = !picker.hasAttribute('data-voip-company-dependent')
+          || !selectedCompanyId
+          || (strictCompany ? companyId === selectedCompanyId : !companyId || companyId === selectedCompanyId)
+        const matches = companyMatches && (!query || `${option.dataset.search || ''}`.includes(query))
+        option.hidden = !matches
+        if (matches) visible += 1
+      })
+      const empty = picker?.querySelector<HTMLElement>('[data-voip-options-empty]')
+      if (empty) empty.hidden = visible > 0
+      return
+    }
+    if (input.matches('[data-voip-company-choice]')) {
+      const form = input.closest('form')
+      const selectedCompanyId = input.value
+      const dropdown = input.closest<HTMLDetailsElement>('[data-searchable-dropdown]')
+      const dropdownLabel = dropdown?.querySelector<HTMLElement>('[data-searchable-dropdown-label]')
+      const optionLabel = input.closest<HTMLElement>('[data-voip-option]')?.querySelector<HTMLElement>('[data-voip-option-label]')
+      if (dropdownLabel && optionLabel) dropdownLabel.textContent = optionLabel.textContent || 'Selecione'
+      if (dropdown) dropdown.open = false
+      form?.querySelectorAll<HTMLElement>('[data-voip-company-dependent]').forEach(picker => {
+        picker.dataset.selectedCompanyId = selectedCompanyId
+        const search = picker.querySelector<HTMLInputElement>('[data-filter="voip-options"]')
+        if (search) search.value = ''
+        let visible = 0
+        picker.querySelectorAll<HTMLElement>('[data-voip-option]').forEach(option => {
+          const companyId = option.dataset.companyId || ''
+          const matches = picker.hasAttribute('data-voip-strict-company')
+            ? companyId === selectedCompanyId
+            : !companyId || companyId === selectedCompanyId
+          option.hidden = !matches
+          const choice = option.querySelector<HTMLInputElement>('input[type="checkbox"], input[type="radio"]')
+          if (!matches && choice?.checked) {
+            choice.checked = false
+            if (choice.type === 'checkbox') this.refreshVoipMembershipDistance(choice)
+            const dependentDropdown = choice.closest<HTMLDetailsElement>('[data-searchable-dropdown]')
+            const dependentLabel = dependentDropdown?.querySelector<HTMLElement>('[data-searchable-dropdown-label]')
+            if (dependentLabel) dependentLabel.textContent = 'Selecione'
+          }
+          if (matches) visible += 1
+        })
+        const empty = picker.querySelector<HTMLElement>('[data-voip-options-empty]')
+        if (empty) empty.hidden = visible > 0
+        this.refreshVoipMultiSelectLabel(picker)
+      })
+      this.refreshVoipGroupDistanceFields(form)
+      return
+    }
+    if (input.matches('[data-searchable-multiselect] input[type="checkbox"]')) {
+      this.refreshVoipMultiSelectLabel(input)
+      this.refreshVoipMembershipDistance(input as HTMLInputElement)
+      this.refreshVoipGroupDistanceFields(input.closest('form'))
       return
     }
     if (input.dataset.filter === 'mobile-query') {
@@ -1136,6 +1229,35 @@ export class ViperConnectApp {
       this.redisSearchCollapsedPrefixes.clear()
       void this.loadRedisKeys()
     }
+  }
+
+  private refreshVoipMultiSelectLabel(container: Element): void {
+    const dropdown = container.closest<HTMLElement>('[data-searchable-multiselect]')
+    const label = dropdown?.querySelector<HTMLElement>('[data-searchable-dropdown-label]')
+    if (!dropdown || !label) return
+    const count = dropdown.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked').length
+    label.textContent = count === 0 ? 'Nenhum selecionado' : count === 1 ? '1 selecionado' : `${count} selecionados`
+  }
+
+  private refreshVoipMembershipDistance(input: HTMLInputElement): void {
+    const row = input.closest<HTMLElement>('[data-voip-membership-row]')
+    const distance = row?.querySelector<HTMLElement>('[data-voip-membership-distance]')
+    const distanceInput = distance?.querySelector<HTMLInputElement>('input')
+    if (!row || !distance || !distanceInput) return
+    distance.hidden = !input.checked
+    distanceInput.disabled = !input.checked
+  }
+
+  private refreshVoipGroupDistanceFields(form: Element | null): void {
+    form?.querySelectorAll<HTMLElement>('[data-voip-group-distance]').forEach(field => {
+      const groupId = field.dataset.groupId || ''
+      const choice = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="extensionGroupIds"]'))
+        .find(input => input.value === groupId)
+      const distanceInput = field.querySelector<HTMLInputElement>('input')
+      const visible = choice?.checked === true
+      field.hidden = !visible
+      if (distanceInput) distanceInput.disabled = !visible
+    })
   }
 
   private async loginWithPassword(username: string, password: string): Promise<void> {
@@ -2092,6 +2214,12 @@ export class ViperConnectApp {
       this.renderToastHtml()
     if (this.identity?.role === 'admin' && this.view === 'dashboard' && this.tab === 'profile') this.ownProfile?.mountMap()
     if (this.view === 'dashboard' && this.tab === 'messages') this.messages?.mount()
+    if (this.modal?.type === 'voip-resource' && this.modal.resource === 'companies') {
+      const form = this.root.querySelector<HTMLFormElement>('form[data-form="voip-resource-fields"]')
+      if (form) for (const purpose of ['Transcription', 'Summary'] as const) {
+        void loadAiModels(form, purpose, path => this.api.voipConsole(path))
+      }
+    }
   }
 
   private canAccessScopedRecording(id: string): boolean {
@@ -2124,7 +2252,7 @@ export class ViperConnectApp {
     if (this.modal.type === 'redis-editor') return renderRedisEditorModal(this.selectedRedisKey)
     if (this.modal.type === 'redis-delete') return renderRedisDeleteModal(this.modal.key)
     if (this.modal.type === 'redis-delete-prefix') return renderRedisDeleteModal(this.modal.prefix, true)
-    if (this.modal.type === 'voip-resource') return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id)
+    if (this.modal.type === 'voip-resource') return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id, this.modal.isNew === true)
     if (this.modal.type === 'voip-recording-settings') return renderVoipRecordingSettingsModal(this.voip)
     if (this.modal.type === 'voip-credentials') return renderVoipCredentialsModal(this.modal.value, this.identity?.role === 'user', this.canEditScopedSipMode(`${this.modal.value.extensionId || ''}`))
     const session = this.findSession(this.modal.phone)

@@ -286,6 +286,24 @@ describe('ClientZapo', () => {
     })
   })
 
+  test.each([
+    ['default', false, false],
+    ['wa_personal', false, true],
+    ['wa_business', false, true],
+    ['default', true, true],
+    ['wa_personal', true, true],
+    ['wa_business', true, true],
+  ] as const)('selects relay port policy for profile=%s mobile-primary=%s', async (profile, mobile, preferWebRelayPort) => {
+    config.zapoWebClientProfile = profile
+    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
+
+    await service.connect(1)
+
+    expect(voipPlugin).toHaveBeenCalledWith(expect.objectContaining({
+      preferWebRelayPort,
+    }))
+  })
+
   test('reuses native Zapo credentials without requesting pairing history again', async () => {
     session.auth.load.mockResolvedValue({ meJid: `${phone}@s.whatsapp.net` } as never)
 
