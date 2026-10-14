@@ -243,6 +243,20 @@ user assignment, retaining assignment audit history. The number no longer appear
 as a pending/disconnected placeholder. Ordinary disconnect/deregistration retains
 assignments. Migration removal never sends a remote logout.
 
+When configuration is already missing, full deletion atomically creates a
+minimal suspended configuration (`autoConnect=false`, `mobilePrimaryDeleting=true`)
+for that draft and requests worker disconnection. This releases an orphan QR
+session before cleanup. Concurrently created configuration is never overwritten:
+the operation returns a conflict. Administrative confirmation and the exact
+phone are still required.
+
+Cleanup requires exclusive session ownership. If the worker does not release
+its lease within roughly 10 seconds, `mobile_deletion_waiting_disconnect` retains
+the `deleting` draft for another full-deletion request; there is no automatic
+background job implied by this state. Never manually delete the lease. Orphan
+routing uses the administrative instance's configured server; an old owner on
+another server must be disconnected correctly before deletion can proceed.
+
 ### Registration code by SMS or voice call
 
 Mobile Primary offers **Request SMS** and **Receive code by voice call**, useful

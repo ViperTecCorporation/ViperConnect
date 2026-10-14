@@ -249,8 +249,22 @@ administrativa da API. O navegador não recebe `VOIP_SERVICE_TOKEN`.
 
 ### Estado, chamadas e transferência
 
-Release unificado: ViperConnect `4.0.36` com VoIP `0.1.66`, revisão
-`75867d68afdb9be615413a8efd64948c309e30d6` fixada no workflow de imagem.
+**Correção integrada à 4.0.37 / VoIP 0.1.67:** quando o REFER chega de
+outro IP por mudança de caminho NAT, as tags do diálogo não bastam: o servidor
+solicita autenticação Digest (`401` / `WWW-Authenticate`) do ramal de origem.
+O cliente precisa reenviar o REFER autenticado, com Request-URI/realm corretos,
+nonce válido e contador não reutilizado. Só então o peer do diálogo é atualizado.
+Origem desabilitada, senha de outro ramal e tags inválidas continuam bloqueadas.
+Mudança apenas de porta no mesmo IP mantém o comportamento anterior.
+Não há liberação por subnet, Via ou Contact informado. Clientes sem suporte a
+Digest no REFER não transferem por esse caminho. A correção está incorporada
+ao código-fonte; em 2026-10-13 o usuário validou a transferência 1001 → 1010
+na VPS com o hotfix temporário, no cenário de destino registrado com IPv6.
+Publicar a tag aciona o build; não atualiza a VPS. Na atualização, retirar o host path
+temporário para não sobrepor o código da imagem.
+
+Release unificado: ViperConnect `4.0.37` com VoIP `0.1.67`, revisão
+`9615a6f78582fb84a9f10647f98744cc41e1befe` fixada no workflow de imagem.
 
 O áudio MP3/WAV enviado no grupo de ramais é reproduzido para o participante
 WhatsApp enquanto o destino da transferência toca. Vale primeiro o grupo

@@ -79,6 +79,7 @@ describe('ClientZapo', () => {
       return client
     }) as never)
     client.connect.mockResolvedValue(undefined)
+    client.getState.mockReturnValue({ connected: true, registered: true, hasQr: false, hasPairingCode: false })
     client.message.send.mockResolvedValue({ id: 'zapo-message-1' } as never)
     client.profile.getLidsByPhoneNumbers.mockResolvedValue([
       {
@@ -318,7 +319,7 @@ describe('ClientZapo', () => {
   test.each([
     ['default', undefined, undefined],
     ['wa_personal', 'android tablet', 'e'],
-    ['wa_business', 'ANDROID TABLET', 'e'],
+    ['wa_business', 'IPAD', 'e'],
   ] as const)('maps persisted web profile %s into client identity options', async (profile, deviceBrowser, devicePlatform) => {
     config.zapoWebClientProfile = profile
     await service.connect(1)
@@ -1246,6 +1247,59 @@ describe('ClientZapo', () => {
     await expect(service.send({ to: '5566111', type: 'text', text: { body: 'oi' } }, {}))
       .rejects.toThrow('zapo_client_not_connected')
     expect(client.message.send).not.toHaveBeenCalled()
+  })
+
+  test('reconciles silent transport drops and rebuilds after the grace period without logout', async () => {
+    jest.useFakeTimers()
+    await service.connect(1)
+    await handlers.connection({ status: 'open', isNewLogin: false })
+    client.getState.mockReturnValue({ connected: false, registered: true, hasQr: false, hasPairingCode: false })
+    await jest.advanceTimersByTimeAsync(15_000)
+    expect(sessionStore.setStatus).toHaveBeenLastCalledWith(phone, 'offline')
+    await expect(service.send({ to: '5566111', type: 'text', text: { body: 'oi' } }, {})).rejects.toThrow('zapo_client_not_connected')
+    expect(client.disconnect).not.toHaveBeenCalled()
+    await jest.advanceTimersByTimeAsync(60_000)
+    expect(client.disconnect).toHaveBeenCalledTimes(1)
+    expect(client.logout).not.toHaveBeenCalled()
+    expect((service as any).reconnectTimer).toBeDefined()
+  })
+
+  test('does not rebuild when internal resume recovers during the grace period', async () => {
+    jest.useFakeTimers()
+    await service.connect(1)
+    await handlers.connection({ status: 'open', isNewLogin: false })
+    client.getState.mockReturnValue({ connected: false, registered: true, hasQr: false, hasPairingCode: false })
+    await jest.advanceTimersByTimeAsync(15_000)
+    client.getState.mockReturnValue({ connected: true, registered: true, hasQr: false, hasPairingCode: false })
+    await jest.advanceTimersByTimeAsync(15_000)
+    expect(sessionStore.setStatus).toHaveBeenLastCalledWith(phone, 'online')
+    expect(client.disconnect).not.toHaveBeenCalled()
+    expect((service as any).connected).toBe(true)
+  })
+
+  test('three consecutive IQ timeouts recover transport but preserve the original send error', async () => {
+    await service.connect(1)
+    await handlers.connection({ status: 'open', isNewLogin: false })
+    const error = new Error('query timeout (test) after 10000ms')
+    client.message.send.mockRejectedValue(error)
+    const payload = { to: '5566111', type: 'text', text: { body: 'oi' } }
+    for (let i = 0; i < 3; i++) await expect(service.send(payload, {})).rejects.toBe(error)
+    expect(client.disconnect).toHaveBeenCalledTimes(1)
+    expect(client.message.send).toHaveBeenCalledTimes(3)
+    expect(client.logout).not.toHaveBeenCalled()
+  })
+
+  test('manual disconnect wins while transport recovery cleanup is pending', async () => {
+    await service.connect(1)
+    await handlers.connection({ status: 'open', isNewLogin: false })
+    let finish!: () => void
+    client.disconnect.mockReturnValue(new Promise<void>(resolve => { finish = resolve }))
+    const recovering = (service as any).recoverTransport(client, 'test')
+    await service.disconnect()
+    finish()
+    await recovering
+    expect((service as any).reconnectTimer).toBeUndefined()
+    expect((service as any).intentionalDisconnect).toBe(true)
   })
 
   test('releases ownership and rebuilds the socket after an unexpected close', async () => {

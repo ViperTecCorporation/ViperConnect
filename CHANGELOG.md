@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and follows SemVer when applicable.
 
+## [4.0.37] - 2026-10-14
+
+- Standardize WA Business QR on iPad + SMB_IOS, retaining QR marker e and VoIP relay 3480. Pairing, messages and media validated by the user in local dev.
+- Recover stalled Zapo transports without deleting credentials; detect offline state and consecutive query timeouts.
+- Fence orphan Mobile Primary deletion and dispatch worker cleanup without overwriting a concurrent registration.
+- Integrate VoIP 0.1.67: authenticated SIP REFER across NAT IP changes, including IPv4/IPv6.
+- Add bounded, opt-in Business diagnostics; update PT/EN documentation and pin the integrated VoIP revision.
+- Deployment is separate: remove the previous REFER hostpath overlay when upgrading the VPS. No production restart is performed by this release.
+
+## [4.0.36] - 2026-10-12
+
+- Unified VoIP 0.1.66 release with transfer hold audio, line prefixes, inherited dialing codes and OpenRouter support.
+- Default relay uses 3478; personal, Business and Mobile Primary use 3480. Zapo 1.10.0.
+
 ## [4.0.35] - 2026-10-08
 
 - Restore device approval through an explicit `/exist` check with the existing keys, without requesting another SMS or call.

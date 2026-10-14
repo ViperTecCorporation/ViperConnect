@@ -72,17 +72,39 @@ Em uma sessão nova por QR, `zapoWebClientProfile` aceita:
 
 - `default`: comportamento atual da Zapo, com UserAgent Web;
 - `wa_personal`: exibe **WA Pessoal** no painel e anuncia UserAgent `ANDROID`;
-- `wa_business`: exibe **WA Business** e anuncia `SMB_ANDROID`.
+- `wa_business`: exibe **WA Business** e anuncia `SMB_IOS`.
 
-Os dois perfis Android também usam `deviceBrowser: android tablet` e
-`devicePlatform: e`. A escolha é persistida no Redis junto à configuração da
-sessão e reaplicada nos próximos logins. É experimental e não transforma o
-transporte Web em Mobile Primary. Perfis Android exigem QR Code; não são aceitos
-com código de pareamento. Depois do primeiro registro, o perfil não pode ser
-alterado: execute `deregister` e crie um novo vínculo. O override usa contexto
-assíncrono por sessão para não alterar conexões `default` do mesmo worker.
+O pessoal preserva Android Tablet e QR `e`. A partir da 4.0.37, o Business
+usa iPad (DeviceProps `IPAD`), agente `SMB_IOS`, WebInfo e QR `e` como padrao.
+O usuario validou vinculo, mensagens e midia no dev em 14/10/2026, sem o 401
+observado com SMB_ANDROID. Isso nao garante todos os aparelhos ou redes.
+Versao Web, chaves, historico e porta VoIP 3480 permanecem; nao e Mobile Primary.
+Default e pessoal nao mudam. A publicacao nao atualiza a VPS automaticamente.
+
+O perfil e persistido no Redis e reaplicado nos logins, inclusive fora do
+contexto assincrono inicial. Perfis pessoal/Business exigem QR, nao codigo de
+pareamento. Para trocar um perfil registrado, execute deregister e gere novo
+vinculo. Nao remova credenciais de outras sessoes.
 
 ## 3. Ou use código de pareamento
+
+### Diagnóstico temporário do perfil Business
+
+Um administrador do servidor pode ativar diagnóstico para **uma única sessão**
+Business pelo arquivo `zapo_business_diagnostics.json` ao lado do módulo
+compilado `zapo_business_diagnostics.js`, com `phone` (somente dígitos) e
+`expiresAt` (ISO UTC, no máximo 30 minutos no futuro). Exige reiniciar o worker;
+não altera o perfil pessoal, mas o reinício reconecta suas sessões brevemente.
+Por padrão não há diagnóstico. Configuração ausente, inválida ou expirada não
+ativa a coleta. Remova o arquivo de ativação ao encerrar o teste.
+
+O log `ZAPO_BUSINESS_DIAGNOSTIC` registra somente enums do registro/login,
+etapas de validação da identidade e tipos de nós enviados/recebidos. Não inclui
+QR, bytes, chaves, assinaturas, tokens, IDs de mensagens, destinatários ou
+conteúdo. Há limite de 200 registros por instância e expiração automática.
+Não desativa verificação criptográfica, não reenvia eventos nem modifica o
+handshake. Os hooks internos são compatíveis com a Zapo fixada e devem ser
+revalidados antes de atualizar a biblioteca. Não substituem validação real.
 
 Registre com `"connectionType": "pairing_code"` e solicite:
 

@@ -106,6 +106,21 @@ preservando o histórico de atribuições. Assim, o número não reaparece como 
 pendente/desconectada. Desconectar ou desregistrar continua preservando a atribuição.
 Não há logout remoto durante a remoção após migração.
 
+Se a configuração já foi removida, a exclusão integral cria atomicamente uma
+configuração mínima suspensa (`autoConnect=false`, `mobilePrimaryDeleting=true`)
+para o cadastro correspondente e solicita a desconexão do worker. Isso permite
+liberar uma sessão QR órfã antes de limpar seus dados. Uma configuração criada
+concorrentemente nunca é sobrescrita: retorna conflito. A operação continua
+exigindo confirmação administrativa e o telefone exato.
+
+A limpeza só ocorre após adquirir a propriedade exclusiva da sessão. Se o
+worker não liberar o bloqueio em cerca de 10 segundos, retorna
+`mobile_deletion_waiting_disconnect` e mantém o cadastro em `deleting` para uma
+nova tentativa de exclusão integral; esse estado não indica um job automático
+em execução. Não apague o bloqueio manualmente. O roteamento da sessão órfã usa
+o servidor configurado na instância administrativa; se o antigo worker pertence
+a outro servidor, a operação permanece bloqueada até a desconexão correta.
+
 ### Código de registro por SMS ou ligação
 
 No cadastro Mobile Primary, escolha **Solicitar SMS** ou **Receber código por

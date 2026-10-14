@@ -63,10 +63,10 @@ no label `io.vipertec.viperconnect.voip.revision` e em
 em `voip_ref`; usar apenas uma branch movel nao e suficiente para reproduzir uma
 imagem antiga.
 
-O release unificado `v4.0.36` fixa VoIP `v0.1.66`, revisao
-`75867d68afdb9be615413a8efd64948c309e30d6`, no checkout do workflow. O build por
+O release unificado `v4.0.37` fixa VoIP `v0.1.67`, revisao
+`9615a6f78582fb84a9f10647f98744cc41e1befe`, no checkout do workflow. O build por
 tag nao depende mais da ponta de uma branch movel. O disparo manual permite
-sobrescrever `voip_ref` explicitamente, com padrao `v0.1.66`.
+sobrescrever `voip_ref` explicitamente, com padrao `v0.1.67`.
 
 Tags `v*` do repositório VoIP validam o código e geram os pacotes nativos, mas
 não disparam a imagem unificada. Para publicar a imagem, primeiro envie a branch
@@ -345,6 +345,16 @@ administrativas omitem os segredos; campos secretos vazios preservam os valores
 ja salvos.
 
 ## Evidencia de validacao
+
+Correcao integrada a 4.0.37 / VoIP 0.1.67 (implantacao separada): REFER com mudanca de
+IP exige tags do dialogo e Digest do ramal origem, validando Request-URI/realm,
+nonce e contador. O peer so muda depois da prova; Via, Contact e subnet nao
+liberam o remetente. Troca apenas de porta no mesmo IP mantem a regra anterior.
+O cliente precisa responder ao 401 no REFER. Testes sinteticos de NAT IPv4 e
+troca para IPv6 nao substituem chamada real. Em 2026-10-13, o usuario confirmou
+a transferencia 1001 -> 1010 na VPS com o hotfix temporario, no cenario reportado
+de destino registrado com IPv6. Retirar o overlay host path ao implantar a nova
+imagem com a correcao, evitando sobrepor o codigo atualizado.
 
 Em 2026-08-21, a revisao 09 foi validada em duas entradas consecutivas na mesma
 sessao e ramal, sem reiniciar o processo VoIP:

@@ -18,6 +18,7 @@ import { SendError } from './send_error'
 import { zapoStoreRegistry, type ZapoStoreRegistry } from './zapo/zapo_store_registry'
 import { ZapoGroups } from './zapo/zapo_groups'
 import { ZapoPresenceHeartbeat } from './zapo/zapo_presence_heartbeat'
+import { ZapoTransportWatchdog } from './zapo/zapo_transport_watchdog'
 import { SessionLifecycleObserver } from './session_lifecycle_observer'
 import { prepareZapoState } from './zapo/zapo_persistent_state'
 import { normalizeZapoPhoneJid, resolveZapoPhoneJid } from './zapo/zapo_contact_resolver'
@@ -130,6 +131,8 @@ export class ClientZapo implements Client {
   private voiceBridge?: ZapoVoiceBridgeClient
   private readonly presenceHeartbeat: ZapoPresenceHeartbeat
   private readonly lifecycleObserver = new SessionLifecycleObserver()
+  private readonly transportWatchdog = new ZapoTransportWatchdog()
+  private transportRecovery?: Promise<void>
 
   constructor(
     private readonly phone: string,
@@ -455,6 +458,18 @@ export class ClientZapo implements Client {
         }
         clients.set(this.phone, this)
         this.connected = true
+        this.transportWatchdog.start(
+          () => client.getState().connected,
+          () => isCurrent() && !this.intentionalDisconnect,
+          async online => {
+            if (!isCurrent() || this.intentionalDisconnect) return
+            this.connected = online
+            if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, online, { reason: 'transport_watchdog', reconnect_expected: !online })
+            logger.warn({ phone: this.phone, online }, 'ZAPO_TRANSPORT_STATE_CHANGED')
+            await this.unoStore?.sessionStore.setStatus(this.phone, online ? 'online' : 'offline')
+          },
+          () => this.recoverTransport(client, 'transport_offline_timeout'),
+        )
         if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, true, { is_logout: false, requires_pairing: false })
         this.presenceHeartbeat.start(client, !!this.config.mobilePrimaryDraftId || this.config.markOnlineOnConnect, () => isCurrent() && this.connected)
         this.voiceBridge?.start()
@@ -904,6 +919,7 @@ export class ClientZapo implements Client {
 
   private async handleRuntimeOwnershipLoss(reason: string, error?: unknown) {
     if (!this.lease) return
+    this.transportWatchdog.stop()
     this.presenceHeartbeat.stop()
     logger.error(error as any, 'Zapo session ownership lost for %s (%s); disconnecting socket', this.phone, reason)
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
@@ -927,6 +943,7 @@ export class ClientZapo implements Client {
   }
 
   private async releaseRuntimeOwnership() {
+    this.transportWatchdog.stop()
     this.stopCompanionWorker?.()
     this.stopCompanionWorker = undefined
     this.lifecycleObserver.stop()
@@ -1142,7 +1159,12 @@ export class ClientZapo implements Client {
   }
 
   async disconnect() {
-    if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, { intentional: true, reconnect_expected: false }, false)
+    return this.disconnectTransport()
+  }
+
+  private async disconnectTransport(recoveryReason?: string) {
+    this.transportWatchdog.stop()
+    if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, { intentional: !recoveryReason, reconnect_expected: !!recoveryReason, ...(recoveryReason ? { reason: recoveryReason } : {}) }, false)
     this.presenceHeartbeat.stop()
     this.intentionalDisconnect = true
     this.socketAbort.abort()
@@ -1151,7 +1173,7 @@ export class ClientZapo implements Client {
     this.reconnectTimer = undefined
     this.reconnectAttempts = 0
     this.connected = false
-    this.voiceBridge?.stop('intentional_disconnect')
+    this.voiceBridge?.stop(recoveryReason || 'intentional_disconnect')
     this.voiceBridge = undefined
     this.pendingPasskey?.reject(new SendError(409, 'zapo_passkey_connection_disconnected'))
     const socket = this.socket
@@ -1196,7 +1218,37 @@ export class ClientZapo implements Client {
 
   async send(payload: any, options: any) {
     if (!this.messages || !this.connected) throw new SendError(409, 'zapo_client_not_connected')
-    return this.messages.send(payload, options)
+    const socket = this.socket
+    try {
+      const result = await this.messages.send(payload, options)
+      if (socket === this.socket) this.transportWatchdog.succeeded()
+      return result
+    } catch (error) {
+      if (socket && socket === this.socket && this.transportWatchdog.failed(error)) {
+        await this.recoverTransport(socket, 'consecutive_query_timeouts')
+      }
+      throw error
+    }
+  }
+
+  private async recoverTransport(socket: ZapoClient, reason: string) {
+    if (this.transportRecovery) return this.transportRecovery
+    if (this.socket !== socket || this.intentionalDisconnect) return
+    logger.warn({ phone: this.phone, reason }, 'ZAPO_TRANSPORT_RECOVERY')
+    const expectedGeneration = this.connectionGeneration + 1
+    const task = (async () => {
+      try { await this.disconnectTransport(reason) } catch (error) {
+        logger.warn(error as any, 'Zapo transport cleanup failed for %s', this.phone)
+      }
+      // A manual disconnect/logout while cleanup was pending takes precedence.
+      if (this.connectionGeneration !== expectedGeneration) return
+      this.intentionalDisconnect = false
+      this.scheduleReconnect()
+    })()
+    this.transportRecovery = task
+    try { await task } finally {
+      if (this.transportRecovery === task) this.transportRecovery = undefined
+    }
   }
 
   async recoverDelivery(payload: any, options: any = {}) {
