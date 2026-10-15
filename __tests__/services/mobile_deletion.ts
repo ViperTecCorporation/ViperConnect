@@ -10,7 +10,7 @@ function fixture() {
     list: jest.fn(async (): Promise<any[]> => [{ id, phone, state: 'draft' }]),
     registration: jest.fn(async (): Promise<any> => ({ canonicalPhone: phone })),
     config: jest.fn(async (): Promise<any> => ({ mobilePrimaryDraftId: id })),
-    saveConfig: jest.fn(), dispatch: jest.fn(), clear: jest.fn(),
+    saveConfig: jest.fn(), dispatch: jest.fn(), clear: jest.fn(), suspendOrphan: jest.fn(async () => true),
     eval: jest.fn(async () => 1), pause: jest.fn(),
     lease: (name: string) => name.startsWith('mobile-delete:') ? operation : ownership,
   }
@@ -74,7 +74,8 @@ describe('full mobile deletion', () => {
   test('removes abandoned registration with no imported session', async () => {
     const s = fixture(); s.deps.registration.mockResolvedValue(undefined); s.deps.config.mockResolvedValue(undefined)
     await s.service.remove(id, confirmation)
-    expect(s.deps.dispatch).not.toHaveBeenCalled()
+    expect(s.deps.suspendOrphan).toHaveBeenCalledWith(phone, id)
+    expect(s.deps.dispatch).toHaveBeenCalledWith(phone)
     expect(s.deps.clear).not.toHaveBeenCalled()
     expect(s.deps.eval).toHaveBeenCalledTimes(2)
   })
@@ -84,6 +85,25 @@ describe('full mobile deletion', () => {
     expect(s.deps.eval).not.toHaveBeenCalled()
     s.deps.list.mockResolvedValue([])
     await expect(s.service.remove(id, confirmation)).rejects.toMatchObject({ status: 404 })
+  })
+  test('missing config fences and disconnects an orphan before acquiring ownership', async () => {
+    const s = fixture()
+    s.deps.config.mockResolvedValueOnce(undefined).mockResolvedValue({ mobilePrimaryDraftId: id, mobilePrimaryDeleting: true, autoConnect: false })
+    s.ownership.acquire.mockResolvedValueOnce(false)
+    await s.service.remove(id, confirmation)
+    expect(s.deps.suspendOrphan).toHaveBeenCalledWith(phone, id)
+    expect(s.deps.suspendOrphan.mock.invocationCallOrder[0]).toBeLessThan(s.deps.dispatch.mock.invocationCallOrder[0])
+    expect(s.deps.dispatch.mock.invocationCallOrder[0]).toBeLessThan(s.ownership.acquire.mock.invocationCallOrder[0])
+    expect(s.deps.clear).toHaveBeenCalledTimes(1)
+  })
+  test('orphan fencing refuses concurrent config creation without dispatch or cleanup', async () => {
+    const s = fixture()
+    s.deps.config.mockResolvedValue(undefined)
+    s.deps.suspendOrphan.mockResolvedValue(false)
+    await expect(s.service.remove(id, confirmation)).rejects.toMatchObject({ code: 'mobile_session_conflict' })
+    expect(s.deps.dispatch).not.toHaveBeenCalled()
+    expect(s.deps.clear).not.toHaveBeenCalled()
+    expect(s.operation.release).toHaveBeenCalled()
   })
   test('cannot delete while worker retains ownership or lock renewal fails', async () => {
     const s = fixture(); s.ownership.acquire.mockResolvedValue(false)

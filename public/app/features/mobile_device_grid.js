@@ -1,7 +1,7 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.36-1527f181';
-import { icon } from '../components/icons.js?v=4.0.36-1527f181';
-import { renderStatus } from '../components/status.js?v=4.0.36-1527f181';
-import { isOnlineStatus, sessionPhone } from '../domain/session.js?v=4.0.36-1527f181';
+import { escapeHtml as e } from '../core/html.js?v=4.0.37-1527f181';
+import { icon } from '../components/icons.js?v=4.0.37-1527f181';
+import { renderStatus } from '../components/status.js?v=4.0.37-1527f181';
+import { isOnlineStatus, sessionPhone } from '../domain/session.js?v=4.0.37-1527f181';
 export function mobileGridSession(device, sessions) {
     return sessions.find(session => session.mobilePrimaryDraftId === device.id);
 }

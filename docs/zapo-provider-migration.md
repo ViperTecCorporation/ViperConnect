@@ -1,5 +1,29 @@
 # Transicao incremental Baileys -> Zapo
 
+## Recuperacao automatica do transporte
+
+- `ZapoTransportWatchdog` consulta `getState().connected` local a cada 15s apos
+  conectar, sem IQ/ping extra. Queda observada marca offline; retorno restaura online.
+- Apos 60s desconectado desde a primeira observacao, recria somente a sessao
+  afetada pelo fluxo normal de reconexao/lease, preservando auth e sem logout.
+- Tres timeouts IQ consecutivos de envio tambem acionam recuperacao. Sucesso ou
+  erro diferente zera a contagem; HTTP 403 de midia nao conta. O erro original
+  segue para a entrega existente, sem reenvio silencioso pelo watchdog.
+- Limpeza e recuperacao sao deduplicadas; callbacks antigos e desconexao manual
+  nao podem reativar a sessao. Logs: `ZAPO_TRANSPORT_STATE_CHANGED` e
+  `ZAPO_TRANSPORT_RECOVERY`. Online nao comprova entrega ponta a ponta.
+- Exige nova imagem/atualizacao do worker; reinicio da imagem antiga nao aplica.
+
+## Perfil QR Business
+
+`wa_business` usa iPad (`IPAD`) + `SMB_IOS`, WebInfo e QR `e` como padrao
+na 4.0.37. Vinculo, mensagens e midia validados pelo usuario no dev em
+14/10/2026; SMB_ANDROID/Tablet apresentou 401. Default/pessoal e Mobile
+Primary nao mudam. Versao Web, chaves e historico permanecem; nao ha garantia
+para todos os aparelhos. Publicar nao atualiza a VPS automaticamente.
+Diagnostico Business continua opt-in, limitado por sessao/tempo/orcamento,
+sem QR, tokens, chaves ou conteudo das mensagens.
+
 ## Objetivo
 
 Adicionar a Zapo como segundo motor do ViperConnect sem alterar o contrato HTTP da UnoAPI. A escolha e feita por sessao. Ao selecionar Zapo sem credenciais nativas, a sessao exige novo pareamento por QR; o motor Zapo nunca importa nem consulta o auth Baileys. Quando a matriz Zapo atingir 100% dos recursos usados pelo produto, a Baileys podera ser removida.

@@ -3,15 +3,16 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import path from 'node:path'
 import { proto } from 'zapo-js'
 import logger from '../logger'
+import { installConfiguredBusinessDiagnostics, observeBusinessPayload } from './zapo_business_diagnostics'
 
 export type ZapoWebClientProfile = 'default' | 'wa_personal' | 'wa_business'
-type ZapoUserAgentPlatform = 'ANDROID' | 'SMB_ANDROID'
+type ZapoUserAgentPlatform = 'ANDROID' | 'SMB_IOS'
 type PayloadBuilderName = 'buildRegistrationPayload' | 'buildLoginPayload'
 type PayloadBuilders = Record<PayloadBuilderName, (...args: any[]) => Uint8Array>
 
 const USER_AGENT_PLATFORM: Record<Exclude<ZapoWebClientProfile, 'default'>, ZapoUserAgentPlatform> = {
   wa_personal: 'ANDROID',
-  wa_business: 'SMB_ANDROID',
+  wa_business: 'SMB_IOS',
 }
 
 const profileContext = new AsyncLocalStorage<ZapoUserAgentPlatform>()
@@ -26,17 +27,20 @@ export const normalizeZapoWebClientProfile = (value: unknown): ZapoWebClientProf
 export const zapoWebClientDeviceOptions = (value: unknown) => {
   const profile = normalizeZapoWebClientProfile(value)
   return profile === 'default' ? {} : {
-    // Zapo normalizes both values to ANDROID_TABLET. Keeping a distinct case
-    // gives the deferred Noise payload builder a per-client profile marker
+    // A distinct browser marker gives the deferred Noise payload builder
+    // a per-client profile marker (Business uses the experimental iPad type)
     // after connect() has returned, without process-global mutable state.
-    deviceBrowser: profile === 'wa_business' ? 'ANDROID TABLET' : 'android tablet',
+    deviceBrowser: profile === 'wa_business' ? 'IPAD' : 'android tablet',
+    // Companion platform IDs are strings, distinct from DeviceProps enums.
+    // Keep the QR marker accepted by the phone; Chrome (1) failed before
+    // pair-success in the Business experiment. Do not change personal.
     devicePlatform: 'e',
   }
 }
 
 const platformFromPayloadConfig = (config: any): ZapoUserAgentPlatform | undefined => {
   if (`${config?.deviceBrowser || ''}` === 'android tablet') return 'ANDROID'
-  if (`${config?.deviceBrowser || ''}` === 'ANDROID TABLET') return 'SMB_ANDROID'
+  if (`${config?.deviceBrowser || ''}` === 'IPAD') return 'SMB_IOS'
   return undefined
 }
 
@@ -58,7 +62,17 @@ export const installScopedZapoPayloadOverride = (
       const payload = protocol.ClientPayload.decode(encoded)
       if (!payload.userAgent) throw new Error('zapo_web_client_profile_missing_user_agent')
       payload.userAgent.platform = protocol.ClientPayload.UserAgent.Platform[platform]
+      if (platform === 'SMB_IOS') {
+        // Business companion identity requires WebInfo alongside SMB_IOS.
+        // Keep the upstream version and cryptographic pairing fields intact.
+        payload.webInfo ??= {
+          webSubPlatform: protocol.ClientPayload.WebInfo.WebSubPlatform.WEB_BROWSER,
+        }
+        // Preserve upstream companion DeviceProps; SMB_IOS must not force
+        // the QR companion to advertise itself as a Mobile Primary phone.
+      }
       logger.info('Zapo web profile payload override builder=%s user_agent=%s', name, platform)
+      observeBusinessPayload(args[0], payload, name)
       return protocol.ClientPayload.encode(payload).finish()
     }
   }
@@ -69,6 +83,7 @@ export const installScopedZapoPayloadOverride = (
 
 const ensureRuntimeOverride = () => {
   if (runtimeOverrideInstalled) return
+  installConfiguredBusinessDiagnostics()
   const zapoEntry = require.resolve('zapo-js')
   const builders = module.require(path.join(path.dirname(zapoEntry), 'transport/noise/WaClientPayload.js')) as PayloadBuilders
   installScopedZapoPayloadOverride(builders, profileContext)
@@ -84,5 +99,5 @@ export const withZapoWebClientProfile = async <T>(value: unknown, operation: () 
 
 export const zapoWebClientProfileLabel = (value: unknown) => {
   const profile = normalizeZapoWebClientProfile(value)
-  return profile === 'wa_personal' ? 'ANDROID' : profile === 'wa_business' ? 'SMB_ANDROID' : 'WEB'
+  return profile === 'wa_personal' ? 'ANDROID' : profile === 'wa_business' ? 'SMB_IOS' : 'WEB'
 }

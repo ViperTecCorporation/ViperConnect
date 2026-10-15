@@ -14,21 +14,42 @@ curl -X POST "https://api.yourdomain.com/v15.0/15551234567/register" \
 
 For a new QR session, `zapoWebClientProfile` accepts `default` (the existing Web
 behavior), `wa_personal` (panel label **Personal WhatsApp**, UserAgent `ANDROID`)
-or `wa_business` (**WhatsApp Business**, `SMB_ANDROID`). Both Android profiles
-also advertise `android tablet` DeviceProps and QR platform `e`.
+or `wa_business` (**WhatsApp Business**, `SMB_IOS`). Personal keeps Android
+Tablet and QR marker `e`. Starting with 4.0.37, Business defaults to iPad
+(DeviceProps `IPAD`), `SMB_IOS`, WebInfo and QR `e`.
+The user validated pairing, messages and media in local dev on 2026-10-14,
+without the 401 seen with SMB_ANDROID. This does not guarantee every device
+or network. Web version, keys, history and VoIP port 3480 are unchanged;
+this is not Mobile Primary. Default/personal are unaffected. Publishing does
+not automatically upgrade the VPS.
 
-The selection is stored with the session configuration in Redis and reapplied
-on login. It remains an experimental Web transport profile, not Mobile Primary.
-Android profiles require QR pairing and cannot use a pairing code. Once the
-session is registered, changing the profile requires deregistration and a new
-link. The override is scoped to the session's asynchronous connection context,
-so `default` sessions in the same worker keep the original payload.
+The profile is stored in Redis and reapplied on login, including deferred
+payload construction. Personal/Business require QR, not pairing codes.
+Changing a registered profile requires deregistration and a new link.
+Do not remove other sessions' credentials.
 
 Use `pairing_code` instead of `qrcode` when the phone must type a generated
 code. Connection updates are also delivered through Socket.IO. Wait for the
 connected status before sending traffic.
 
 ## Safe reconnection
+
+### Temporary Business profile diagnostics
+
+A server administrator can enable diagnostics for **one Business session** with
+`zapo_business_diagnostics.json` beside the compiled `zapo_business_diagnostics.js`
+module. Set `phone` (digits only) and `expiresAt` (UTC ISO, at most 30 minutes
+ahead), then restart the worker. Personal settings remain unchanged, although
+the restart briefly reconnects its sessions. Diagnostics are disabled by default;
+missing, invalid or expired configuration enables no collection. Remove the
+activation file after testing.
+
+`ZAPO_BUSINESS_DIAGNOSTIC` only reports registration/login enums, identity
+validation stages and inbound/outbound node types. It excludes QR, bytes, keys,
+signatures, tokens, message IDs, recipients and content. Output expires and is
+limited to 200 records per instance. Hooks do not bypass cryptographic checks,
+resend events or modify the handshake. They depend on the pinned Zapo internals
+and require revalidation before library upgrades; real acceptance remains unproven.
 
 - A normal disconnect should reconnect automatically when `autoConnect` is on.
 - Deregistration removes the native credentials and requires a new pairing.

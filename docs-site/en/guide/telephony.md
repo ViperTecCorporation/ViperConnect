@@ -116,8 +116,22 @@ and [model catalog](https://openrouter.ai/docs/api/api-reference/models/list-all
 
 ## Transfer hold audio
 
-Unified release: ViperConnect `4.0.36` includes VoIP `0.1.66`, pinned to
-revision `75867d68afdb9be615413a8efd64948c309e30d6` in the image workflow.
+Unified release: ViperConnect `4.0.37` includes VoIP `0.1.67`, pinned to
+revision `9615a6f78582fb84a9f10647f98744cc41e1befe` in the image workflow.
+
+**Fix integrated in 4.0.37 / VoIP 0.1.67:** when NAT path changes deliver REFER from
+a different IP, matching dialog tags alone are insufficient. The server requests
+Digest authentication (`401` / `WWW-Authenticate`) for the originating extension.
+The client must resend authenticated REFER with the correct Request-URI/realm,
+a valid nonce and a non-replayed nonce count before the dialog peer changes.
+Disabled sources, another extension's password and invalid tags remain blocked.
+Port-only changes on the same IP retain the existing behavior. Subnets and
+client-declared Via/Contact do not grant trust. Clients without REFER Digest
+support cannot transfer through this path. The fix is incorporated into the
+source code. On 2026-10-13 the user validated the real 1001 → 1010 transfer on
+the VPS with the temporary hotfix, in the reported IPv6-registered destination
+scenario. Tag publication triggers the build, not VPS deployment. Remove the temporary host-path
+override when upgrading so it does not shadow the new image's code.
 
 The MP3/WAV uploaded to an extension group plays to the WhatsApp participant
 while the transfer destination rings. The enabled source group with audio has

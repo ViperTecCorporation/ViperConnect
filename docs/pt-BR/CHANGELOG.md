@@ -4,6 +4,15 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 
 O formato segue o Keep a Changelog e adota SemVer quando aplicável.
 
+## [4.0.37] - 2026-10-14
+
+- WA Business por QR padronizado em iPad + SMB_IOS, preservando QR e e relay 3480. Vinculo, mensagens e midia validados pelo usuario no dev local.
+- Recuperacao de transporte Zapo travado sem apagar credenciais, com verificacao local de conexao e timeouts IQ consecutivos.
+- Exclusao Mobile Primary sem configuracao cria bloqueio atomico e solicita limpeza do worker, preservando registro concorrente.
+- VoIP 0.1.67 integrado: REFER autenticado com mudanca de IP/NAT, incluindo IPv4/IPv6.
+- Diagnostico Business opcional, limitado e sem credenciais; guias PT/EN e referencia VoIP atualizados.
+- Publicacao nao implanta na VPS. Ao atualizar, remover o hostpath REFER antigo para nao sobrepor a nova imagem.
+
 ## [4.0.36] - 2026-10-12
 
 - Release unificado com o pacote VoIP 0.1.66, fixado por revisao imutavel no build.

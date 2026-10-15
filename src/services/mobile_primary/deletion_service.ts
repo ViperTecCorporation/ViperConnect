@@ -20,6 +20,7 @@ export interface MobileDeletionDependencies {
   registration(id: string): Promise<{ canonicalPhone?: string; sessionPhone?: string } | undefined>
   config(phone: string): Promise<any>
   saveConfig(phone: string, value: any): Promise<unknown>
+  suspendOrphan(phone: string, id: string): Promise<boolean>
   dispatch(phone: string): Promise<void>
   clear(phone: string, config: any): Promise<void>
   eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>
@@ -65,8 +66,11 @@ export class MobileDeletionService {
       // The changed draft blocks new registration/import and invalidates pending SMS CAS.
       if (config) {
         await this.deps.saveConfig(phone, { autoConnect: false, mobilePrimaryDeleting: true })
-        if (!transferred) await this.deps.dispatch(phone)
+      } else if (!await this.deps.suspendOrphan(phone, id)) {
+        // Never replace a session created concurrently after the config check.
+        throw new MobileDeviceError(409, 'mobile_session_conflict')
       }
+      if (!transferred) await this.deps.dispatch(phone)
       ownership = this.deps.lease(`zapo-session:${phone}`)
       for (let attempt = 0; attempt < 50; attempt++) {
         acquired = await ownership.acquire()

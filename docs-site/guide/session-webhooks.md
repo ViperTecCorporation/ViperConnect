@@ -4,6 +4,26 @@ O menu **Webhooks de sessões** do painel configura destinos centralizados para
 monitorar sessões Zapo. Este contrato é separado dos webhooks de mensagens e não
 altera `webhooks[]`, `sendConnectionStatus`, presença WhatsApp ou VoIP.
 
+## Recuperação do transporte Zapo
+
+Após conectar, o worker verifica o estado local oficial do transporte a cada
+15 segundos, sem pings adicionais ao WhatsApp. Uma queda observada marca a
+sessão como `offline`; o retorno do transporte restaura `online`. Se continuar
+desconectado por 60 segundos desde a primeira observação, recria apenas essa
+sessão, preservando credenciais e usando a reconexão e exclusividade existentes.
+Não executa logout nem exige novo QR. Uma desconexão manual durante a limpeza
+impede a reconexão automática.
+
+Três timeouts IQ consecutivos no envio também acionam a recuperação. Um envio
+bem-sucedido ou outro erro zera a contagem. Erros HTTP 403 de mídia não acionam
+esse mecanismo. Não há reenvio silencioso: o erro original continua para o
+fluxo de entrega existente.
+
+Os logs `ZAPO_TRANSPORT_STATE_CHANGED` e `ZAPO_TRANSPORT_RECOVERY` identificam
+transições e motivos. `online` não comprova entrega ponta a ponta. É necessário
+publicar a nova imagem e atualizar o worker; reiniciar a imagem antiga não
+incorpora a alteração.
+
 ## Configurar um destino
 
 Use o token administrativo global em `Authorization: Bearer ...`:

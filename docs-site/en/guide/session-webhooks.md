@@ -4,6 +4,26 @@ The **Webhooks de sessões** dashboard page manages centralized destinations for
 Redis-backed Zapo sessions. These events are independent from message webhooks,
 `sendConnectionStatus`, WhatsApp presence and VoIP forwarding.
 
+## Zapo transport recovery
+
+After connection, the worker checks the official local transport state every
+15 seconds without additional WhatsApp pings. An observed disconnection marks
+the session `offline`; a recovered transport restores `online`. After 60 seconds
+disconnected since the first observation, only that session is rebuilt using
+existing credentials, reconnect and runtime ownership handling. This does not
+log out or require a new QR code. A manual disconnect during cleanup prevents
+automatic reconnection.
+
+Three consecutive send IQ timeouts also trigger recovery. A successful send or
+a different error resets the counter. HTTP 403 media errors do not trigger this
+mechanism. No silent resend is performed: the original error continues through
+the existing delivery flow.
+
+`ZAPO_TRANSPORT_STATE_CHANGED` and `ZAPO_TRANSPORT_RECOVERY` logs identify state
+transitions and recovery reasons. `online` does not prove end-to-end delivery.
+Publish a new image and update the worker to apply this change; restarting the
+old image does not incorporate it.
+
 ## Management API
 
 All operations require the global `UNOAPI_AUTH_TOKEN` as `Authorization: Bearer ...`.
