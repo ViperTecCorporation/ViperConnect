@@ -21515,6 +21515,53 @@
           }
         }
       },
+      "ProviderMessageId": {
+        "type": "string",
+        "example": "A5E5870B16922B5CA6CA6B6A71721286",
+        "description": "ID original opaco do transporte Zapo, opcional e somente para correlação. Não substitui o ID público UnoAPI, IDs de mídia ou referências operacionais. Omitido quando indisponível e em webhooks marcados Typebot, inclusive referências e status; não prefixar com wamid."
+      },
+      "WebhookMessageIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "UUID_UNOAPI_DO_EVENTO"
+          },
+          "provider_message_id": {
+            "$ref": "#/components/schemas/ProviderMessageId"
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "example": "UUID_UNOAPI_ORIGINAL"
+              },
+              "message_id": {
+                "type": "string",
+                "example": "UUID_UNOAPI_ORIGINAL"
+              },
+              "provider_message_id": {
+                "$ref": "#/components/schemas/ProviderMessageId"
+              }
+            }
+          },
+          "reaction": {
+            "type": "object",
+            "properties": {
+              "message_id": {
+                "type": "string"
+              },
+              "emoji": {
+                "type": "string"
+              },
+              "provider_message_id": {
+                "$ref": "#/components/schemas/ProviderMessageId"
+              }
+            }
+          }
+        }
+      },
       "WebhookInbound": {
         "description": "Mensagens recebidas no envelope Cloud API, com extensões ViperConnect como message_type=view_once.",
         "type": "object",
@@ -21555,6 +21602,13 @@
                               "type": "object"
                             }
                           },
+                          "message_echoes": {
+                            "type": "array",
+                            "description": "Echo para destinatários Chatwoot/ViperChat; preserva os IDs públicos e inclui identidade original opcional, assim como messages.",
+                            "items": {
+                              "$ref": "#/components/schemas/WebhookMessageIdentity"
+                            }
+                          },
                           "messages": {
                             "type": "array",
                             "items": {
@@ -21565,6 +21619,15 @@
                                 },
                                 "id": {
                                   "type": "string"
+                                },
+                                "provider_message_id": {
+                                  "$ref": "#/components/schemas/ProviderMessageId"
+                                },
+                                "context": {
+                                  "$ref": "#/components/schemas/WebhookMessageIdentity/properties/context"
+                                },
+                                "reaction": {
+                                  "$ref": "#/components/schemas/WebhookMessageIdentity/properties/reaction"
                                 },
                                 "timestamp": {
                                   "type": "string"
@@ -21653,6 +21716,7 @@
                       {
                         "from": "5566999999999",
                         "id": "MESSAGE_ID",
+                        "provider_message_id": "A5E5870B16922B5CA6CA6B6A71721286",
                         "timestamp": "1784900000",
                         "type": "interactive",
                         "interactive": {
@@ -21673,7 +21737,7 @@
         }
       },
       "WebhookAck": {
-        "description": "Status de mensagens enviadas (sent/delivered/read/deleted). Avisos opcionais devem ser mesclados por ID e código, mesmo em status já processados.",
+        "description": "Status de mensagens enviadas (sent/delivered/read/deleted). provider_message_id opcional identifica a mensagem afetada, inclusive em deleted, não o evento de exclusão. Avisos opcionais devem ser mesclados por ID e código, mesmo em status já processados.",
         "type": "object",
         "properties": {
           "object": {
@@ -21712,6 +21776,9 @@
                                 },
                                 "recipient_id": {
                                   "type": "string"
+                                },
+                                "provider_message_id": {
+                                  "$ref": "#/components/schemas/ProviderMessageId"
                                 },
                                 "status": {
                                   "type": "string",

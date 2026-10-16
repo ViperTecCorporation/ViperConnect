@@ -15,6 +15,7 @@ import {
   normalizeMessageContent,
 } from './transformer'
 import { resolveUnoMessageId } from './message_id_map'
+import { addProviderMessageIds } from './messages/provider_message_identity'
 import { getPollState, setPollState } from './redis'
 import {
   normalizePollAggregateState,
@@ -102,11 +103,12 @@ export class ListenerZapo implements Listener {
     return now - previous < this.dedupWindowMs
   }
 
-  private async mapReferencedIds(dataStore: any, message: any) {
+  private async mapReferencedIds(dataStore: any, message: any, identities: Map<string, string>) {
     const map = async (container: any, property: string) => {
       const id = `${container?.[property] || ''}`.trim()
       if (!id) return
       const mapped = await resolveUnoMessageId(dataStore, id)
+      identities.set(mapped || id, `${container[property]}`)
       if (mapped) container[property] = mapped
     }
     const content = getBinMessage(message as any)?.message
@@ -116,16 +118,22 @@ export class ListenerZapo implements Listener {
     await map(message?.message?.pollUpdateMessage?.pollCreationMessageKey, 'id')
     await map(message?.message?.protocolMessage?.key, 'id')
     await map(message?.update?.message?.protocolMessage?.key, 'id')
+    // Wrapped edits historically keep their reference unchanged. Capture it only.
+    for (const protocol of [message?.message?.editedMessage?.message?.protocolMessage,
+      message?.update?.message?.editedMessage?.message?.protocolMessage]) {
+      if (protocol?.key?.id) identities.set(protocol.key.id, protocol.key.id)
+    }
   }
 
-  private async normalizeMessageId(phone: string, store: any, message: any, messageType?: string) {
+  private async normalizeMessageId(phone: string, store: any, message: any, identities: Map<string, string>, messageType?: string) {
     const providerId = `${message?.key?.id || ''}`.trim()
     if (!providerId) return message
 
     if (messageType === 'update' || messageType === 'receipt' || message?.update) {
       const mapped = await resolveUnoMessageId(store.dataStore, providerId)
+      identities.set(mapped || providerId, `${message.key.id}`)
       if (mapped) message.key.id = mapped
-      await this.mapReferencedIds(store.dataStore, message)
+      await this.mapReferencedIds(store.dataStore, message, identities)
       return message
     }
 
@@ -133,11 +141,12 @@ export class ListenerZapo implements Listener {
     let unoId = await resolveUnoMessageId(store.dataStore, providerId) || uuid()
     const providerKey = { ...normalized.key, id: providerId }
     unoId = await store.dataStore.setUnoId(providerId, unoId) || unoId
+    identities.set(unoId, `${message.key.id}`)
     await store.dataStore.setKey(providerId, providerKey)
     await store.dataStore.setKey(unoId, providerKey)
     await store.dataStore.setMessage(providerKey.remoteJid, { ...normalized, key: providerKey })
     normalized.key.id = unoId
-    await this.mapReferencedIds(store.dataStore, normalized)
+    await this.mapReferencedIds(store.dataStore, normalized, identities)
     if (isSaveMedia(normalized)) {
       const downloaded = normalized.__unoapiMediaBytes
       if (downloaded && store.mediaStore.saveDownloadedMedia) {
@@ -265,7 +274,10 @@ export class ListenerZapo implements Listener {
     if (this.isDuplicate(phone, message, messageType)) return
     const config = await this.getConfig(phone)
     const store = await config.getStore(phone, config)
-    const normalized = await this.normalizeMessageId(phone, store, message, messageType)
+    const identities = new Map<string, string>()
+    const normalized = await this.normalizeMessageId(phone, store, message, identities, messageType)
+    // Call notices have a locally generated UUID, not a protocol message ID.
+    if (skipTypebot) identities.delete(normalized?.key?.id)
     await this.savePollCreation(phone, normalized, messageType)
 
     if (normalized?.key?.id && normalized?.key?.remoteJid && !normalized?.key?.fromMe) {
@@ -279,6 +291,7 @@ export class ListenerZapo implements Listener {
 
     const [payload] = fromBaileysMessageContent(phone, normalized, config)
     if (!payload || !(await this.shouldForwardStatus(store, payload))) return
+    addProviderMessageIds(payload, identities)
     if (messageType === 'pollUpdateMessage') await this.enrichPollUpdate(phone, store, normalized, payload)
     if (skipTypebot) (payload as any).__unoapiSkipTypebot = true
     await this.outgoing.send(phone, payload)

@@ -105,6 +105,41 @@ describe('service outgoing whatsapp cloud api', () => {
     }
   })
 
+  test.each(['http://example.com', 'https://chatwoot.example.com/webhooks/whatsapp/5511888888888'])(
+    'preserves optional protocol identity through JSON queue roundtrip and HTTP adaptation to %s', async urlAbsolute => {
+      mockFetch.mockReset()
+      mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
+      const message = { id: 'uno-message', provider_message_id: '3EB0Message', from: '5511999999999',
+        type: 'text', text: { body: 'reply' }, context: { id: 'uno-target', provider_message_id: '3EB0Target' } }
+      outgoingPayload.entry[0].changes[0].value.messages = [message]
+      const serialized = JSON.stringify(outgoingPayload)
+      await service.sendHttp(phone!, { ...webhook, urlAbsolute }, JSON.parse(serialized), {})
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      const delivered = JSON.parse((mockFetch.mock.calls[0][1] as any).body)
+      expect(delivered.entry[0].changes[0].value.messages[0]).toMatchObject(message)
+      expect(JSON.stringify(outgoingPayload)).toBe(serialized)
+    },
+  )
+
+  test('strips protocol IDs only for Typebot, including statuses and references, without mutating shared payload', async () => {
+    mockFetch.mockReset()
+    mockFetch.mockResolvedValue({ ok: true, status: 200, text: async () => 'ok' } as any)
+    const value = outgoingPayload.entry[0].changes[0].value
+    value.messages = [{ from: wa_id, id: 'uno', provider_message_id: 'protocol', type: 'text', text: { body: 'test' },
+      context: { id: 'target', provider_message_id: 'protocol-target' }, reaction: { message_id: 'target', provider_message_id: 'protocol-target' } }]
+    value.statuses = [{ id: 'uno', provider_message_id: 'protocol', status: 'read', timestamp: '123' }]
+    const original = JSON.stringify(outgoingPayload)
+    await service.sendHttp(phone!, { ...webhook, typebot: true }, outgoingPayload, {})
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as any).body)
+    expect(JSON.stringify(body)).not.toContain('provider_message_id')
+    expect(body.entry[0].changes[0].value.messages[0].context.id).toBe('target')
+    expect(body.entry[0].changes[0].value.statuses[0].id).toBe('uno')
+    expect(JSON.stringify(outgoingPayload)).toBe(original)
+    await service.sendHttp(phone!, { ...webhook, typebot: false }, outgoingPayload, {})
+    expect((mockFetch.mock.calls[1][1] as any).body).toContain('provider_message_id')
+  })
+
   test('send text with success', async () => {
     const mockUrl = `${url}/${phone}`
     logger.debug(`Mock url ${mockUrl}`)

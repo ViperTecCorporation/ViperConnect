@@ -2,6 +2,54 @@
 
 Connection events use a separate [session lifecycle contract](./session-webhooks).
 
+## Original transport message ID
+
+In the Zapo runtime, `provider_message_id` is **optional, additive correlation
+metadata**. Existing message, echo, status, reference and media IDs and API
+responses stay unchanged. Never replace the UnoAPI ID with this field when
+sending, quoting, editing or deleting messages.
+
+**Typebot:** webhooks marked as Typebot do not receive this field, including
+context, reaction and status objects. It is removed only from that destination's
+copy; ViperChat and other webhooks retain the metadata. Existing Typebot event
+filters remain unchanged.
+
+| Object | Meaning of `provider_message_id` |
+| --- | --- |
+| `value.messages[]` / `value.message_echoes[]` | Original message/event ID |
+| `value.statuses[]` | Original ID of the message whose status changed |
+| `message.context` | Original ID of the quoted or edited message |
+| `message.reaction` | Original ID of the reaction target |
+
+Deletion uses the existing `statuses[].status: "deleted"` contract: both `id`
+and the new field refer to the **deleted message**, not the deletion event.
+For edits, the message ID identifies the event; context identifies the target.
+
+```json
+{
+  "id": "UNOAPI_EVENT_UUID",
+  "provider_message_id": "PROTOCOL_EVENT_ID",
+  "type": "text",
+  "message_type": "message_edit",
+  "text": { "body": "Corrected text" },
+  "context": {
+    "id": "ORIGINAL_UNOAPI_UUID",
+    "message_id": "ORIGINAL_UNOAPI_UUID",
+    "provider_message_id": "ORIGINAL_PROTOCOL_ID"
+  }
+}
+```
+
+Treat the value as an opaque string. Do not truncate, change case or add a `wamid`
+prefix. Cross-transport correlation still requires production validation.
+The ID is captured before UUID conversion and travels through normal webhook
+delivery and retries. Queues, filters and sending rules are unchanged.
+It is omitted without a proven original ID, including synthetic call notices,
+failures before confirmation and old events. Previously delivered events are not
+replayed; consumers must accept payloads without the field.
+API sends are confirmed asynchronously by the worker: the additional ID arrives
+in the corresponding echo/status, not the API enqueue response.
+
 ## View-once media
 
 Incoming image, video and audio messages include `message_type: "view_once"`

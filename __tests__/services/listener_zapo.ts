@@ -67,6 +67,7 @@ describe('ListenerZapo', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-1[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     )
     expect(payload.entry[0].changes[0].value.messages[0].id).not.toBe('3EB0ZAPO')
+    expect(payload.entry[0].changes[0].value.messages[0].provider_message_id).toBe('3EB0ZAPO')
   })
 
   test('preserves location labels and existing UnoID, suppressing repeated delivery', async () => {
@@ -100,6 +101,48 @@ describe('ListenerZapo', () => {
     ])
   })
 
+  test.each(['image', 'video', 'audio', 'document', 'contact'])('retains protocol identity on %s received from the phone', async type => {
+    ;(store.dataStore.loadUnoId as jest.Mock).mockImplementation(async id => id === 'protocol-media' ? 'uno-media' : undefined)
+    const field = `${type}Message`
+    ;(store.mediaStore.saveDownloadedMedia as jest.Mock).mockImplementation(async message => {
+      message.message[field].url = 'https://example.test/uno-media'
+      return message
+    })
+    const content = type === 'contact'
+      ? { displayName: 'Test', vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Test\nTEL;type=CELL;waid=5511999999999:+5511999999999\nEND:VCARD' }
+      : { mimetype: { image: 'image/jpeg', video: 'video/mp4', audio: 'audio/ogg', document: 'application/pdf' }[type], fileName: 'test' }
+    await service.process('5511888888888', [{ key: { id: 'protocol-media', remoteJid: '5511999999999@s.whatsapp.net', fromMe: true },
+      message: { [field]: content }, __unoapiMediaBytes: Buffer.from([1, 2]), messageTimestamp: 1790672409 }], 'notify')
+    const message = (outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value.messages[0]
+    expect(message).toMatchObject({ id: 'uno-media', provider_message_id: 'protocol-media', type: type === 'contact' ? 'contacts' : type })
+    if (type !== 'contact') expect(message[type].id).toBe('5511888888888/uno-media')
+  })
+
+  test.each(['quote', 'reaction', 'edit', 'wrapped-edit', 'delete'])('preserves event and target identity for %s', async kind => {
+    ;(store.dataStore.loadUnoId as jest.Mock).mockImplementation(async id => ({
+      'protocol-event': 'uno-event', 'protocol-target': 'uno-target',
+    }[id]))
+    const target = { id: 'protocol-target', remoteJid: '5511999999999@s.whatsapp.net', fromMe: true }
+    const protocol = { key: target, type: kind === 'delete' ? 0 : 'MESSAGE_EDIT',
+      ...(kind !== 'delete' ? { editedMessage: { conversation: 'edited' }, timestampMs: '1790672409000' } : {}) }
+    const message = kind === 'quote'
+      ? { extendedTextMessage: { text: 'reply', contextInfo: { stanzaId: target.id, quotedMessage: { conversation: 'original' } } } }
+      : kind === 'reaction' ? { reactionMessage: { key: target, text: '👍' } }
+      : kind === 'wrapped-edit' ? { editedMessage: { message: { protocolMessage: protocol } } }
+      : { protocolMessage: protocol }
+    await service.process('5511888888888', [{ key: { id: 'protocol-event', remoteJid: target.remoteJid, fromMe: true },
+      message, messageTimestamp: 1790672409 }], 'notify')
+    const value = (outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value
+    if (kind === 'delete') {
+      expect(value.statuses[0]).toMatchObject({ id: 'uno-target', status: 'deleted', provider_message_id: 'protocol-target' })
+    } else {
+      expect(value.messages[0]).toMatchObject({ id: 'uno-event', provider_message_id: 'protocol-event' })
+      const reference = kind === 'reaction' ? value.messages[0].reaction : value.messages[0].context
+      expect(reference).toMatchObject({ provider_message_id: 'protocol-target',
+        ...(kind === 'wrapped-edit' ? { id: 'protocol-target' } : { message_id: 'uno-target' }) })
+    }
+  })
+
   test('marks synthetic call webhooks for Typebot exclusion', async () => {
     await service.process('5566999999999', [{
       key: {
@@ -114,6 +157,7 @@ describe('ListenerZapo', () => {
 
     const payload: any = (outgoing.send as jest.Mock).mock.calls[0][1]
     expect(payload.__unoapiSkipTypebot).toBe(true)
+    expect(payload.entry[0].changes[0].value.messages[0]).not.toHaveProperty('provider_message_id')
     expect(payload.entry[0].changes[0].value.messages[0].text.body).toBe('Tentou ligar no WhatsApp')
   })
 
@@ -193,6 +237,7 @@ describe('ListenerZapo', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-1[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     )
     expect(webhookMessage.id).toBe(storedMessage.key.id)
+    expect(webhookMessage.provider_message_id).toBe('3EB0MEDIA')
     expect(webhookMessage.image.id).toBe(`5566999999999/${storedMessage.key.id}`)
     expect(webhookMessage.image.url).toContain(storedMessage.key.id)
   })
@@ -440,7 +485,7 @@ describe('ListenerZapo', () => {
           value: expect.objectContaining({
             messages: [expect.objectContaining({
               text: { body: '*Resultado de enquete*\nTotal de votos: 1\n- Pizza: 1' },
-              context: { message_id: 'poll-uno-id', id: 'poll-uno-id' },
+              context: { message_id: 'poll-uno-id', id: 'poll-uno-id', provider_message_id: 'poll-provider-id' },
             })],
           }),
         })],
@@ -498,7 +543,7 @@ describe('ListenerZapo', () => {
         resolution_status: 'resolved',
         items: [expect.objectContaining({ product_id: 'product-1' })],
       }),
-      context: { message_id: 'request-uno-id', id: 'request-uno-id' },
+      context: { message_id: 'request-uno-id', id: 'request-uno-id', provider_message_id: 'request-provider-id' },
     }))
     expect(messageMetadata.resolve).toHaveBeenCalledWith(
       '5566996328386',
@@ -537,7 +582,7 @@ describe('ListenerZapo', () => {
         entry: [expect.objectContaining({
           changes: [expect.objectContaining({
             value: expect.objectContaining({
-              statuses: [expect.objectContaining({ id: 'uno-1', status: 'read' })],
+              statuses: [expect.objectContaining({ id: 'uno-1', status: 'read', provider_message_id: '3EB0PROVIDER' })],
             }),
           })],
         })],
