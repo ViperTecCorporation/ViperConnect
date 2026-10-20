@@ -1,6 +1,6 @@
-import { escapeHtml } from '../core/html.js?v=4.0.37-1527f181';
-import { t } from '../core/i18n.js?v=4.0.37-1527f181';
-import { icon } from './icons.js?v=4.0.37-1527f181';
+import { escapeHtml } from '../core/html.js?v=4.0.38-3be8da8e';
+import { t } from '../core/i18n.js?v=4.0.38-3be8da8e';
+import { icon } from './icons.js?v=4.0.38-3be8da8e';
 export const renderModal = (id, title, content, options = {}) => `
   <div class="modal-backdrop" data-modal-backdrop="${escapeHtml(id)}">
     <section class="modal ${options.wide ? 'modal--wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="${escapeHtml(id)}-title">

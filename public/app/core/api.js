@@ -1,4 +1,4 @@
-import { t } from './i18n.js?v=4.0.37-1527f181';
+import { t } from './i18n.js?v=4.0.38-3be8da8e';
 export class ApiError extends Error {
     get code() {
         const value = this.payload;
