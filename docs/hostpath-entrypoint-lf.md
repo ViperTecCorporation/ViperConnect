@@ -13,7 +13,7 @@ O arquivo não estava ausente: o kernel não encontrava o interpretador `/bin/sh
 Arquivo extraído do Git e comparado byte a byte antes do envio:
 
 ```text
-/opt/viperconnect-hostpath/entrypoint-e22b9bf4/container-entrypoint.sh
+/var/snap/docker/common/viperconnect-hostpath/entrypoint-e22b9bf4/container-entrypoint.sh
 SHA256 c4dea9d16358fc7d8c15f3e98a4e2b0711e86d6f1fac505a5e9cfc40cb95a952
 ```
 
@@ -25,7 +25,7 @@ Adicionar o bind aos cinco papéis ViperConnect/VoIP que usam a imagem afetada:
 
 ```yaml
 volumes:
-  - /opt/viperconnect-hostpath/entrypoint-e22b9bf4/container-entrypoint.sh:/home/u/app/container-entrypoint.sh:ro
+  - /var/snap/docker/common/viperconnect-hostpath/entrypoint-e22b9bf4/container-entrypoint.sh:/home/u/app/container-entrypoint.sh:ro
 ```
 
 Preservar todos os volumes anteriores. Se usar âncora, confirmar que cada
@@ -35,6 +35,26 @@ Após atualização manual, conferir estado/health e logs de todos os papéis;
 somente o arquivo validado não confirma a recuperação dos serviços.
 
 ## Prevenção no Git e nas próximas imagens
+
+### Aplicação autorizada na VPS
+
+O daemon é Docker Snap (`/var/snap/docker/common/var-lib-docker`); o caminho
+inicial em `/opt` não era acessível ao namespace do daemon e foi substituído
+pelo caminho acima. Após autorização explícita, foi atualizado o Compose salvo
+da stack 21 no volume do Portainer, preservando as âncoras e todos os valores,
+comandos, credenciais e volumes de dados anteriores. Apenas o bind foi inserido
+nos cinco serviços da imagem de teste.
+
+Backup restrito antes da aplicação:
+`/root/viperconnect-recovery-20261022-b036679e`, contendo Compose anterior,
+snapshot SQLite consistente e contagens anteriores. `quick_check=ok` e nenhum
+ID original ausente nas sete tabelas existentes, após inicialização.
+
+Aplicação: `docker compose -p unoapi -f <compose-salvo> up -d --pull never --no-build`.
+Web, broker, worker Zapo, worker de vídeo e VoIP em execução sem reinícios;
+HTTP 200 em `/ping` do web e `/health` do VoIP. Redis, RabbitMQ e documentação
+saudáveis. Não foi disparada mensagem nem chamada real de validação. Não houve
+restauração de banco nem exclusão de mensagens, gravações ou volumes.
 
 - Atributo LF explícito para `scripts/container-entrypoint.sh`.
 - Dockerfile normaliza o arquivo e recusa CR ou shebang diferente do esperado.
