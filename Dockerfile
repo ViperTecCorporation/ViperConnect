@@ -154,7 +154,9 @@ COPY ./lab/registration/*.cjs ./lab/registration/
 COPY ./lab/registration/package*.json ./lab/registration/
 COPY ./scripts/check-mobile-runtime.cjs ./scripts/check-mobile-runtime.cjs
 COPY --from=mobile-registration /app/lab/registration/node_modules /opt/mobile-registration/node_modules
-RUN node scripts/check-mobile-runtime.cjs
+RUN sed -i 's/\r$//' container-entrypoint.sh \
+    && node -e "const fs = require('fs'); const script = fs.readFileSync('container-entrypoint.sh'); if (script.includes(13) || !script.toString().startsWith('#!/bin/sh\n')) throw new Error('invalid_entrypoint_line_endings')" \
+    && node scripts/check-mobile-runtime.cjs
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg qpdf wget ca-certificates \
     && update-ca-certificates \
@@ -173,7 +175,7 @@ COPY --from=legacy-builder /app/dist ./dist
 COPY --from=legacy-builder /app/node_modules ./node_modules
 RUN chown -R u:u /home/u/app
 USER u
-ENTRYPOINT ["./container-entrypoint.sh"]
+ENTRYPOINT ["/home/u/app/container-entrypoint.sh"]
 
 # Default production target: Zapo-only compiled graph and production packages.
 FROM runtime-base AS runtime
@@ -181,4 +183,4 @@ COPY --from=builder /app/dist ./dist
 COPY --from=production-dependencies /app/node_modules ./node_modules
 RUN chown -R u:u /home/u/app
 USER u
-ENTRYPOINT ["./container-entrypoint.sh"]
+ENTRYPOINT ["/home/u/app/container-entrypoint.sh"]
