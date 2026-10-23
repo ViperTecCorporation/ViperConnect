@@ -56,6 +56,7 @@ import { SessionTransfersPanel, describeSessionBackup } from './features/session
 import type { ManagerIdentity } from './domain/manager_types.js'
 import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js'
 import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js'
+import { renderWebhookDiagnostics, replayWebhookPayload, type WebhookDiagnosticModal } from './features/voip_webhook_diagnostics.js'
 
 const TOKEN_KEY = 'whatsappApiToken'
 const THEME_KEY = 'viperconnect_theme'
@@ -87,6 +88,7 @@ type ToastState = {
 }
 
 type ModalState =
+  | WebhookDiagnosticModal
   | { type: 'contact-name'; phone: string; contact?: ContactDirectoryItem }
   | { type: 'new-session' }
   | { type: 'connection'; phone: string }
@@ -516,6 +518,42 @@ export class ViperConnectApp {
     } else if (action === 'new-voip-resource') {
       this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource as VoipResourceName, id: generatedVoipResourceId(), isNew: true }
       this.render()
+    } else if (action === 'refresh-voip-ai-models') {
+      const form = actionElement.closest<HTMLFormElement>('form[data-form="voip-resource-fields"]')
+      if (!form || this.modal?.type !== 'voip-resource' || this.modal.resource !== 'companies') return
+      for (const purpose of ['Transcription', 'Summary'] as const) {
+        if (form.querySelector<HTMLSelectElement>(`[name="ai${purpose}Provider"]`)?.value === 'openrouter') {
+          void loadAiModels(form, purpose, path => this.api.voipConsole(path))
+        }
+      }
+    } else if (action === 'show-voip-webhook-diagnostics' || action === 'refresh-voip-webhook-diagnostics') {
+      const companyId = action === 'show-voip-webhook-diagnostics' ? actionElement.dataset.companyId || '' : this.modal?.type === 'voip-webhook-diagnostics' ? this.modal.companyId : ''
+      if (!companyId) return
+      this.modal = { type: 'voip-webhook-diagnostics', companyId, loading: true }
+      this.render()
+      await this.refreshWebhookDiagnostics(companyId)
+    } else if (action === 'prepare-voip-webhook-replay' && this.modal?.type === 'voip-webhook-diagnostics') {
+      const eventId = actionElement.dataset.eventId || ''
+      if (!this.modal.value?.items?.some(item => item.eventId === eventId && item.replayAllowed === true && item.destinationMatches === true && ['dead', 'pending'].includes(item.status))) return
+      this.modal.confirmIds = [eventId]
+      this.modal.requestId = crypto.randomUUID()
+      this.render()
+    } else if (action === 'cancel-voip-webhook-replay' && this.modal?.type === 'voip-webhook-diagnostics') {
+      this.modal.confirmIds = undefined
+      this.modal.requestId = undefined
+      this.render()
+    } else if (action === 'confirm-voip-webhook-replay' && this.modal?.type === 'voip-webhook-diagnostics') {
+      const modal = this.modal
+      if (modal.loading || !modal.confirmIds?.length || !modal.requestId) return
+      modal.loading = true
+      this.render()
+      try {
+        await this.api.voipConsole(`companies/${encodeURIComponent(modal.companyId)}/viperchat-webhook/replay`, 'POST', replayWebhookPayload(modal.confirmIds, modal.requestId))
+        this.showToast('Reprocessamento agendado para o destino original.', 'success')
+        await this.refreshWebhookDiagnostics(modal.companyId)
+      } catch {
+        if (this.modal === modal) { modal.loading = false; modal.error = 'Não foi possível agendar. Confira permissões, estado e destino; atualize o diagnóstico antes de tentar novamente.'; this.render() }
+      }
     } else if (action === 'edit-voip-resource') {
       this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource as VoipResourceName, id: actionElement.dataset.id || '' }
       this.render()
@@ -965,6 +1003,21 @@ export class ViperConnectApp {
     }
   }
 
+  private async refreshWebhookDiagnostics(companyId: string) {
+    try {
+      const value = await this.api.voipConsole(`companies/${encodeURIComponent(companyId)}/viperchat-webhook/diagnostics?status=all&limit=50`)
+      if (this.modal?.type === 'voip-webhook-diagnostics' && this.modal.companyId === companyId) {
+        this.modal = { type: 'voip-webhook-diagnostics', companyId, value }
+      }
+    } catch {
+      if (this.modal?.type === 'voip-webhook-diagnostics' && this.modal.companyId === companyId) {
+        this.modal.loading = false
+        this.modal.error = 'Diagnóstico indisponível. Confira a conexão e a permissão administrativa.'
+      }
+    }
+    this.render()
+  }
+
   private voipResourcePayload(resource: VoipResourceName, data: FormData): Record<string, unknown> {
     const value = (name: string) => `${data.get(name) || ''}`.trim()
     const values = (name: string) =>
@@ -982,6 +1035,7 @@ export class ViperConnectApp {
         payload[name] = value(name)
       })
     if (resource === 'companies') {
+      payload.viperchatWebhook = voipWebhookPayload(data)
       putEditable(
         'label',
         'timeZone',
@@ -1000,11 +1054,14 @@ export class ViperConnectApp {
     }
     if (resource === 'accounts') {
       putEditable('defaultDdi', 'defaultDdd')
-      putEditable('label', 'companyId', 'phoneNumber', 'outboundAccessPrefix', 'chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId')
-      put('chatwootApiAccessToken')
+      putEditable('label', 'companyId', 'phoneNumber', 'outboundAccessPrefix')
       payload.maxConcurrentCalls = this.voipConcurrentCallLimit(data.get('maxConcurrentCalls'))
-      payload.chatwootRecordingEnabled = data.has('chatwootRecordingEnabled')
-      payload.chatwootPrivateNote = data.has('chatwootPrivateNote')
+      if (!data.has('chatwootRecordingInactive')) {
+        putEditable('chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId')
+        put('chatwootApiAccessToken')
+        payload.chatwootRecordingEnabled = data.has('chatwootRecordingEnabled')
+        payload.chatwootPrivateNote = data.has('chatwootPrivateNote')
+      }
     }
     if (resource === 'lineGroups') {
       put('label', 'companyId')
@@ -2252,6 +2309,7 @@ export class ViperConnectApp {
     if (this.modal.type === 'redis-editor') return renderRedisEditorModal(this.selectedRedisKey)
     if (this.modal.type === 'redis-delete') return renderRedisDeleteModal(this.modal.key)
     if (this.modal.type === 'redis-delete-prefix') return renderRedisDeleteModal(this.modal.prefix, true)
+    if (this.modal.type === 'voip-webhook-diagnostics') return renderWebhookDiagnostics(this.modal)
     if (this.modal.type === 'voip-resource') return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id, this.modal.isNew === true)
     if (this.modal.type === 'voip-recording-settings') return renderVoipRecordingSettingsModal(this.voip)
     if (this.modal.type === 'voip-credentials') return renderVoipCredentialsModal(this.modal.value, this.identity?.role === 'user', this.canEditScopedSipMode(`${this.modal.value.extensionId || ''}`))
@@ -2412,6 +2470,15 @@ export class ViperConnectApp {
 
   private messageFor(error: unknown): string {
     if (error instanceof ApiError) {
+      if (error.code === 'invalid_openrouter_model' || error.message === 'invalid_openrouter_model') {
+        return t('Selecione um modelo OpenRouter compatível com transcrição ou resumo. A configuração anterior foi preservada.')
+      }
+      if (error.code === 'ai_model_catalog_unavailable' || error.message === 'ai_model_catalog_unavailable') {
+        return t('O catálogo OpenRouter está indisponível. Tente atualizar os modelos; a configuração anterior foi preservada.')
+      }
+      if (error.code === 'ai_configuration_changed' || error.message === 'ai_configuration_changed') {
+        return t('A configuração de IA foi alterada por outra operação. Reabra a empresa antes de salvar novamente.')
+      }
       if (error.code === 'contact_directory_requires_zapo_provider' || error.message === 'contact_directory_requires_zapo_provider') {
         return t('O diretório de contatos está disponível apenas para sessões Zapo.')
       }
@@ -2440,3 +2507,4 @@ export class ViperConnectApp {
     this.render()
   }
 }
+import { voipWebhookPayload } from './domain/voip_webhook.js'

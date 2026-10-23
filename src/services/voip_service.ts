@@ -17,7 +17,12 @@ export const sanitizeVoipConsolePayload = <T>(value: T): T => {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([key]) => !LEGACY_SLOT_FIELDS.has(key))
-      .map(([key, item]) => [key, sanitizeVoipConsolePayload(item)]),
+      .map(([key, item]) => [key, key === 'viperchatWebhook' && item && typeof item === 'object'
+        ? Object.fromEntries(Object.entries(item).filter(([field, fieldValue]) =>
+          ['enabled', 'hasApiAccessToken'].includes(field) ? typeof fieldValue === 'boolean'
+            : field === 'artifactsDelivery' ? ['legacy', 'webhook'].includes(`${fieldValue}`) && typeof fieldValue === 'string'
+              : ['baseUrl', 'accountId', 'serviceId', 'sourceInstanceId'].includes(field) && typeof fieldValue === 'string'))
+        : sanitizeVoipConsolePayload(item)]),
   ) as T
 }
 

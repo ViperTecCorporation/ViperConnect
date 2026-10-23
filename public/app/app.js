@@ -1,38 +1,39 @@
-import { ApiClient, ApiError } from './core/api.js?v=4.0.37-1527f181';
-import { loadAiModels } from './domain/ai_providers.js?v=4.0.37-1527f181';
-import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js?v=4.0.37-1527f181';
-import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.37-1527f181';
-import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.37-1527f181';
-import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.37-1527f181';
-import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.37-1527f181';
-import { SocketBridge } from './core/socket.js?v=4.0.37-1527f181';
-import { renderLayout, renderLogin } from './components/layout.js?v=4.0.37-1527f181';
-import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.37-1527f181';
-import { updateProfileHours } from './features/profile_hours.js?v=4.0.37-1527f181';
-import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.37-1527f181';
-import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.37-1527f181';
-import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.37-1527f181';
-import { OwnProfilePanel } from './features/own_profile.js?v=4.0.37-1527f181';
-import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.37-1527f181';
-import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.37-1527f181';
-import { sessionConfigPayload } from './features/session_config.js?v=4.0.37-1527f181';
-import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.37-1527f181';
-import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.37-1527f181';
-import { renderDashboard } from './pages/dashboard.js?v=4.0.37-1527f181';
-import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.37-1527f181';
-import { renderSessionPage } from './pages/session.js?v=4.0.37-1527f181';
-import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.37-1527f181';
-import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.37-1527f181';
-import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.37-1527f181';
-import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.37-1527f181';
-import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.37-1527f181';
-import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.37-1527f181';
-import { icon } from './components/icons.js?v=4.0.37-1527f181';
-import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.37-1527f181';
-import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.37-1527f181';
-import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js?v=4.0.37-1527f181';
-import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.37-1527f181';
-import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.37-1527f181';
+import { ApiClient, ApiError } from './core/api.js?v=4.0.37-ef5d1c11';
+import { loadAiModels } from './domain/ai_providers.js?v=4.0.37-ef5d1c11';
+import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js?v=4.0.37-ef5d1c11';
+import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.37-ef5d1c11';
+import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.37-ef5d1c11';
+import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.37-ef5d1c11';
+import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.37-ef5d1c11';
+import { SocketBridge } from './core/socket.js?v=4.0.37-ef5d1c11';
+import { renderLayout, renderLogin } from './components/layout.js?v=4.0.37-ef5d1c11';
+import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.37-ef5d1c11';
+import { updateProfileHours } from './features/profile_hours.js?v=4.0.37-ef5d1c11';
+import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.37-ef5d1c11';
+import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.37-ef5d1c11';
+import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.37-ef5d1c11';
+import { OwnProfilePanel } from './features/own_profile.js?v=4.0.37-ef5d1c11';
+import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.37-ef5d1c11';
+import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.37-ef5d1c11';
+import { sessionConfigPayload } from './features/session_config.js?v=4.0.37-ef5d1c11';
+import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.37-ef5d1c11';
+import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.37-ef5d1c11';
+import { renderDashboard } from './pages/dashboard.js?v=4.0.37-ef5d1c11';
+import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.37-ef5d1c11';
+import { renderSessionPage } from './pages/session.js?v=4.0.37-ef5d1c11';
+import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.37-ef5d1c11';
+import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.37-ef5d1c11';
+import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.37-ef5d1c11';
+import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.37-ef5d1c11';
+import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.37-ef5d1c11';
+import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.37-ef5d1c11';
+import { icon } from './components/icons.js?v=4.0.37-ef5d1c11';
+import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.37-ef5d1c11';
+import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.37-ef5d1c11';
+import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js?v=4.0.37-ef5d1c11';
+import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.37-ef5d1c11';
+import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.37-ef5d1c11';
+import { renderWebhookDiagnostics, replayWebhookPayload } from './features/voip_webhook_diagnostics.js?v=4.0.37-ef5d1c11';
 const TOKEN_KEY = 'whatsappApiToken';
 const THEME_KEY = 'viperconnect_theme';
 const SIDEBAR_KEY = 'viperconnect_sidebar_collapsed';
@@ -537,6 +538,56 @@ export class ViperConnectApp {
         else if (action === 'new-voip-resource') {
             this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource, id: generatedVoipResourceId(), isNew: true };
             this.render();
+        }
+        else if (action === 'refresh-voip-ai-models') {
+            const form = actionElement.closest('form[data-form="voip-resource-fields"]');
+            if (!form || this.modal?.type !== 'voip-resource' || this.modal.resource !== 'companies')
+                return;
+            for (const purpose of ['Transcription', 'Summary']) {
+                if (form.querySelector(`[name="ai${purpose}Provider"]`)?.value === 'openrouter') {
+                    void loadAiModels(form, purpose, path => this.api.voipConsole(path));
+                }
+            }
+        }
+        else if (action === 'show-voip-webhook-diagnostics' || action === 'refresh-voip-webhook-diagnostics') {
+            const companyId = action === 'show-voip-webhook-diagnostics' ? actionElement.dataset.companyId || '' : this.modal?.type === 'voip-webhook-diagnostics' ? this.modal.companyId : '';
+            if (!companyId)
+                return;
+            this.modal = { type: 'voip-webhook-diagnostics', companyId, loading: true };
+            this.render();
+            await this.refreshWebhookDiagnostics(companyId);
+        }
+        else if (action === 'prepare-voip-webhook-replay' && this.modal?.type === 'voip-webhook-diagnostics') {
+            const eventId = actionElement.dataset.eventId || '';
+            if (!this.modal.value?.items?.some(item => item.eventId === eventId && item.replayAllowed === true && item.destinationMatches === true && ['dead', 'pending'].includes(item.status)))
+                return;
+            this.modal.confirmIds = [eventId];
+            this.modal.requestId = crypto.randomUUID();
+            this.render();
+        }
+        else if (action === 'cancel-voip-webhook-replay' && this.modal?.type === 'voip-webhook-diagnostics') {
+            this.modal.confirmIds = undefined;
+            this.modal.requestId = undefined;
+            this.render();
+        }
+        else if (action === 'confirm-voip-webhook-replay' && this.modal?.type === 'voip-webhook-diagnostics') {
+            const modal = this.modal;
+            if (modal.loading || !modal.confirmIds?.length || !modal.requestId)
+                return;
+            modal.loading = true;
+            this.render();
+            try {
+                await this.api.voipConsole(`companies/${encodeURIComponent(modal.companyId)}/viperchat-webhook/replay`, 'POST', replayWebhookPayload(modal.confirmIds, modal.requestId));
+                this.showToast('Reprocessamento agendado para o destino original.', 'success');
+                await this.refreshWebhookDiagnostics(modal.companyId);
+            }
+            catch {
+                if (this.modal === modal) {
+                    modal.loading = false;
+                    modal.error = 'Não foi possível agendar. Confira permissões, estado e destino; atualize o diagnóstico antes de tentar novamente.';
+                    this.render();
+                }
+            }
         }
         else if (action === 'edit-voip-resource') {
             this.modal = { type: 'voip-resource', resource: actionElement.dataset.resource, id: actionElement.dataset.id || '' };
@@ -1115,6 +1166,21 @@ export class ViperConnectApp {
             finishSubmitFeedback?.();
         }
     }
+    async refreshWebhookDiagnostics(companyId) {
+        try {
+            const value = await this.api.voipConsole(`companies/${encodeURIComponent(companyId)}/viperchat-webhook/diagnostics?status=all&limit=50`);
+            if (this.modal?.type === 'voip-webhook-diagnostics' && this.modal.companyId === companyId) {
+                this.modal = { type: 'voip-webhook-diagnostics', companyId, value };
+            }
+        }
+        catch {
+            if (this.modal?.type === 'voip-webhook-diagnostics' && this.modal.companyId === companyId) {
+                this.modal.loading = false;
+                this.modal.error = 'Diagnóstico indisponível. Confira a conexão e a permissão administrativa.';
+            }
+        }
+        this.render();
+    }
     voipResourcePayload(resource, data) {
         const value = (name) => `${data.get(name) || ''}`.trim();
         const values = (name) => data
@@ -1130,6 +1196,7 @@ export class ViperConnectApp {
             payload[name] = value(name);
         });
         if (resource === 'companies') {
+            payload.viperchatWebhook = voipWebhookPayload(data);
             putEditable('label', 'timeZone', 'aiTranscriptionProvider', 'aiSummaryProvider', 'aiTranscriptionBaseUrl', 'aiTranscriptionModel', 'aiTranscriptionLanguage', 'aiSummaryBaseUrl', 'aiSummaryModel', 'aiSummaryPrompt');
             put('aiTranscriptionApiKey', 'aiSummaryApiKey');
             payload.aiSummaryEnabled = data.has('aiSummaryEnabled');
@@ -1137,11 +1204,14 @@ export class ViperConnectApp {
         }
         if (resource === 'accounts') {
             putEditable('defaultDdi', 'defaultDdd');
-            putEditable('label', 'companyId', 'phoneNumber', 'outboundAccessPrefix', 'chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId');
-            put('chatwootApiAccessToken');
+            putEditable('label', 'companyId', 'phoneNumber', 'outboundAccessPrefix');
             payload.maxConcurrentCalls = this.voipConcurrentCallLimit(data.get('maxConcurrentCalls'));
-            payload.chatwootRecordingEnabled = data.has('chatwootRecordingEnabled');
-            payload.chatwootPrivateNote = data.has('chatwootPrivateNote');
+            if (!data.has('chatwootRecordingInactive')) {
+                putEditable('chatwootBaseUrl', 'chatwootAccountId', 'chatwootInboxId');
+                put('chatwootApiAccessToken');
+                payload.chatwootRecordingEnabled = data.has('chatwootRecordingEnabled');
+                payload.chatwootPrivateNote = data.has('chatwootPrivateNote');
+            }
         }
         if (resource === 'lineGroups') {
             put('label', 'companyId');
@@ -2516,6 +2586,8 @@ export class ViperConnectApp {
             return renderRedisDeleteModal(this.modal.key);
         if (this.modal.type === 'redis-delete-prefix')
             return renderRedisDeleteModal(this.modal.prefix, true);
+        if (this.modal.type === 'voip-webhook-diagnostics')
+            return renderWebhookDiagnostics(this.modal);
         if (this.modal.type === 'voip-resource')
             return renderVoipResourceModal(this.voip, this.modal.resource, this.modal.id, this.modal.isNew === true);
         if (this.modal.type === 'voip-recording-settings')
@@ -2682,6 +2754,15 @@ export class ViperConnectApp {
     }
     messageFor(error) {
         if (error instanceof ApiError) {
+            if (error.code === 'invalid_openrouter_model' || error.message === 'invalid_openrouter_model') {
+                return t('Selecione um modelo OpenRouter compatível com transcrição ou resumo. A configuração anterior foi preservada.');
+            }
+            if (error.code === 'ai_model_catalog_unavailable' || error.message === 'ai_model_catalog_unavailable') {
+                return t('O catálogo OpenRouter está indisponível. Tente atualizar os modelos; a configuração anterior foi preservada.');
+            }
+            if (error.code === 'ai_configuration_changed' || error.message === 'ai_configuration_changed') {
+                return t('A configuração de IA foi alterada por outra operação. Reabra a empresa antes de salvar novamente.');
+            }
             if (error.code === 'contact_directory_requires_zapo_provider' || error.message === 'contact_directory_requires_zapo_provider') {
                 return t('O diretório de contatos está disponível apenas para sessões Zapo.');
             }
@@ -2707,3 +2788,4 @@ export class ViperConnectApp {
         this.render();
     }
 }
+import { voipWebhookPayload } from './domain/voip_webhook.js?v=4.0.37-ef5d1c11';

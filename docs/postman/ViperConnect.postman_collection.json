@@ -268,6 +268,11 @@
       "type": "string"
     },
     {
+      "key": "status",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "status_ids",
       "value": "",
       "type": "string"
@@ -7418,7 +7423,7 @@
                 }
               ]
             },
-            "description": "Catálogo público consultado pelo worker, sem enviar chave ou áudio. Somente administradores. Não valida crédito nem acesso da chave ao modelo.",
+            "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7463,7 +7468,7 @@
                     }
                   ]
                 },
-                "description": "Catálogo público consultado pelo worker, sem enviar chave ou áudio. Somente administradores. Não valida crédito nem acesso da chave ao modelo.",
+                "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -8223,6 +8228,103 @@
           ]
         },
         {
+          "name": "Diagnóstico sanitizado das entregas VoIP de uma empresa",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/voip/console/companies/{{id}}/viperchat-webhook/diagnostics?status={{status}}&limit={{limit}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "voip",
+                "console",
+                "companies",
+                "{{id}}",
+                "viperchat-webhook",
+                "diagnostics"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "{{status}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Exclusivo de administrador. Somente IDs opacos, contagens, estado, tentativas e códigos técnicos; sem payload, telefone, mídia ou token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reprocessar eventos VoIP explicitamente selecionados da empresa",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/voip/console/companies/{{id}}/viperchat-webhook/replay",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "voip",
+                "console",
+                "companies",
+                "{{id}}",
+                "viperchat-webhook",
+                "replay"
+              ],
+              "query": []
+            },
+            "description": "Administrador e confirmação obrigatórios. Atômico e idempotente por requestId; somente pending/dead no destino original ainda habilitado. Não altera payload, tentativas ou destino; não reenvia entregues.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventIds\": [\n    \"string\"\n  ],\n  \"confirm\": true,\n  \"requestId\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Listar empresas",
           "request": {
             "method": "GET",
@@ -8815,6 +8917,61 @@
                 }
               ],
               "body": "{\n  \"error\": \"automatic_resource_managed\"\n}"
+            },
+            {
+              "name": "Novo modelo OpenRouter incompatível com a finalidade; nenhuma configuração é salva. Catálogo indisponível durante a validação retorna 502 ai_model_catalog_unavailable. Modelos salvos inalterados são preservados.",
+              "originalRequest": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/admin/voip/console/companies/{{id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "voip",
+                    "console",
+                    "companies",
+                    "{{id}}"
+                  ],
+                  "query": []
+                },
+                "description": "ID do caminho identifica o recurso. Requer vínculos existentes e consistentes. Recursos automáticos preservam campos gerenciados; modificá-los pode retornar 409. Senha vazia preserva a existente.\n\nAcesso: administrador autenticado (token global da stack ou login Manager com papel admin). Usuários comuns não recebem acesso global. Fluxos legados OAuth/QR/socket permanecem inalterados; não é garantia de isolamento multitenant completo. Atenção: executar altera o estado real. Revise IDs, corpo e impacto antes de enviar; não execute coleções inteiras automaticamente.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"label\": \"Empresa de exemplo\",\n  \"timeZone\": \"America/Cuiaba\",\n  \"enabled\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Novo modelo OpenRouter incompatível com a finalidade; nenhuma configuração é salva. Catálogo indisponível durante a validação retorna 502 ai_model_catalog_unavailable. Modelos salvos inalterados são preservados.",
+              "code": 422,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
             },
             {
               "name": "Erro da operação",

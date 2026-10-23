@@ -1,5 +1,5 @@
-import { escapeHtml } from '../core/html.js?v=4.0.37-1527f181';
-import { icon } from '../components/icons.js?v=4.0.37-1527f181';
+import { escapeHtml } from '../core/html.js?v=4.0.37-ef5d1c11';
+import { icon } from '../components/icons.js?v=4.0.37-ef5d1c11';
 export const messageTime = (ms) => ms ? new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 export const conversationAvatar = (conversation) => `<span class="message-avatar">${conversation.picture?.startsWith('blob:') ? `<img src="${escapeHtml(conversation.picture)}" alt="Foto de ${escapeHtml(conversation.name)}">` : icon(conversation.kind === 'group' ? 'users' : 'user')}</span>`;
 export const conversationCard = (conversation, selected) => `

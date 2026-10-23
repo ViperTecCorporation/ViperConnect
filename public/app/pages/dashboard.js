@@ -1,8 +1,8 @@
-import { escapeHtml } from '../core/html.js?v=4.0.37-1527f181';
-import { icon } from '../components/icons.js?v=4.0.37-1527f181';
-import { renderStatus } from '../components/status.js?v=4.0.37-1527f181';
-import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.37-1527f181';
-import { t } from '../core/i18n.js?v=4.0.37-1527f181';
+import { escapeHtml } from '../core/html.js?v=4.0.37-ef5d1c11';
+import { icon } from '../components/icons.js?v=4.0.37-ef5d1c11';
+import { renderStatus } from '../components/status.js?v=4.0.37-ef5d1c11';
+import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.37-ef5d1c11';
+import { t } from '../core/i18n.js?v=4.0.37-ef5d1c11';
 export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', mobileSessionPhones = [] }) => {
     const excluded = new Set(canCreate && mobileGrid ? mobileSessionPhones : []);
     const filtered = filterSessions(sessions.filter(session => !excluded.has(sessionPhone(session))), query, status);

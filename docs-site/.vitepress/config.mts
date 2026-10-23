@@ -65,6 +65,7 @@ const portugueseTheme = {
       collapsed: true,
       items: [
         { text: 'Visão geral', link: '/guide/telephony' },
+        { text: 'Contrato de webhooks VoIP', link: '/guide/voip-webhooks' },
         { text: 'Linux nativo', link: '/guide/install-voip-native-linux' },
         { text: 'VoIP IPv4 e IPv6', link: '/guide/voip-ipv6' },
       ],
@@ -147,6 +148,7 @@ const englishTheme = {
       collapsed: true,
       items: [
         { text: 'Overview', link: '/en/guide/telephony' },
+        { text: 'VoIP webhook contract', link: '/en/guide/voip-webhooks' },
         { text: 'Native Linux', link: '/en/guide/install-voip-native-linux' },
         { text: 'IPv4 and IPv6 VoIP', link: '/en/guide/voip-ipv6' },
       ],

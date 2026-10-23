@@ -38,6 +38,21 @@ test('OpenRouter loads a real select by purpose, fills endpoint and clears previ
     expect(fields.aiTranscriptionModel.options.at(-1).text).toContain('fora do catálogo')
     await loadAiModels(form, 'Transcription', async () => { throw new Error('network') })
     expect(fields.aiTranscriptionModel.options[0].text).toContain('catálogo indisponível')
+    expect(fields.aiTranscriptionModel.value).toBe('saved/model')
+    let finish: (value: unknown) => void = () => undefined
+    const pending = loadAiModels(form, 'Transcription', () => new Promise(resolve => { finish = resolve }))
+    fields.aiTranscriptionProvider.value = 'openai'
+    await loadAiModels(form, 'Transcription', request, true)
+    const openaiInput = fields.aiTranscriptionModel
+    finish({ models: [{ id: 'late/stt', name: 'Late model' }] })
+    await pending
+    expect(fields.aiTranscriptionModel).toBe(openaiInput)
+    expect(fields.aiTranscriptionModel.value).toBe('whisper-1')
+    fields.aiTranscriptionProvider.value = 'openrouter'
+    await loadAiModels(form, 'Transcription', async () => ({ models: [] }), true)
+    expect(fields.aiTranscriptionModel.value).toBe('')
+    expect(fields.aiTranscriptionModel.required).toBe(true)
+    expect(fields.aiTranscriptionModel.options[0].text).toBe('Nenhum modelo compatível disponível')
   } finally {
     if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument)
     else delete (globalThis as any).document

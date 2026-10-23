@@ -189,6 +189,19 @@ gravação e não garante crédito ou disponibilidade para a sua conta. Se falha
 a tela informa o erro e preserva o modelo salvo, sem selecionar outro silenciosamente.
 Para Groq/OpenAI/personalizado, o ID do modelo permanece editável.
 
+O botão **Atualizar catálogo de modelos OpenRouter** consulta novamente as duas
+listas sem apagar a escolha ou a chave digitada. Um modelo salvo que saiu do
+catálogo continua identificado como salvo, sem troca automática. Assim como no
+Super Admin do ViperChat, o servidor valida novos modelos ao salvar: transcrição
+exige entrada de áudio e saída de transcrição; resumo exige entrada/saída de
+texto. Modelo incompatível retorna `422 invalid_openrouter_model`; catálogo
+indisponível durante uma mudança retorna `502 ai_model_catalog_unavailable`.
+Em ambos os casos a configuração anterior permanece intacta. Salvar outros
+campos sem trocar modelos existentes não exige disponibilidade do catálogo.
+Essa consulta externa não bloqueia a fila de configuração da telefonia. Uma
+alteração concorrente da IA retorna `409 ai_configuration_changed`, pedindo
+reabrir a empresa para não sobrescrever a configuração mais recente.
+
 Informe a chave correspondente a cada provedor. Trocar a URL/provedor não
 reutiliza o segredo antigo; campo vazio mantém a chave somente no mesmo endpoint.
 A chave de transcrição pode servir ao resumo apenas quando ambos usam o mesmo
@@ -433,3 +446,71 @@ histórico possui busca, período e paginação. O navegador recebe o áudio
 pela fachada autenticada da Uno e nunca conhece o token interno do serviço VoIP.
 O Manager também mostra quantidade e tamanho por linha e exige confirmação
 antes da limpeza em lote.
+
+## Eventos de chamadas no ViperChat
+
+No Manager, um administrador abre **Telefonia → Empresas → Editar** e configura
+**Eventos de chamadas no ViperChat**. Esse cadastro é independente de gravações
+no Chatwoot. Informe URL base HTTPS, ID da conta, ID do serviço VoIP cadastrado
+no ViperChat, identificador estável da origem e `api_access_token` de um usuário
+administrador dessa conta. O identificador deve coincidir nos dois sistemas.
+
+O segredo é somente de escrita: nunca é preenchido novamente na tela nem
+retornado pelo proxy. Campo vazio preserva o token; **Remover o token salvo**
+exige desativar o envio junto da remoção. Usuários comuns do Manager não podem
+ler nem alterar essa configuração, mesmo tendo acesso à linha.
+
+O formulário envia `viperchatWebhook` à rota administrativa existente de empresas.
+Somente os ramais comprovadamente vinculados à empresa participam desse envio;
+chamadas internas não dependem de uma linha WhatsApp. Participantes de outras
+empresas ou desconhecidos não herdam essa autorização. A configuração antiga
+do webhook por linha permanece protegida para compatibilidade, sem uso automático.
+O serviço entrega snapshots ao endpoint
+`/api/v1/accounts/{accountId}/voip/services/{serviceId}/events`, com cabeçalho
+`api_access_token`. Não é Bearer, token interno VoIP, áudio ou AMI.
+HTTPS é obrigatório; HTTP em loopback só é aceito em desenvolvimento.
+
+O runtime do serviço precisa de SQLite persistente, RabbitMQ existente e
+`VOIP_WEBHOOK_AMQP_ENABLED=true`, `VOIP_AMQP_URL` configurado com credenciais
+do broker e, opcionalmente, `VOIP_WEBHOOK_QUEUE_PREFIX` e
+`VOIP_WEBHOOK_MAX_ATTEMPTS`. Não exponha esses segredos no navegador.
+Outbox transacional, publicação confirmada, ACK manual, retentativas com atraso
+e fila de falhas protegem a entrega. Eventos repetidos são idempotentes.
+A ativação não reenvia automaticamente todo o histórico anterior.
+
+Salvar no Manager não instala nem habilita o receptor no ViperChat: as migrações,
+worker e configuração do serviço de destino também devem estar ativos.
+Recuperação REST agendada/checkpoint e notificações nativas CallKit/Android
+continuam etapas separadas; webhook não registra um ramal nem muda o áudio.
+
+Em **Envio de gravação e IA**, selecionar `legacy` mantém a integração antiga por
+caixa de entrada. Selecionar `webhook` usa o processador ViperChat e desativa
+efetivamente os dois publicadores antigos (gravação e nota de IA), inclusive
+jobs pendentes, sem apagar token, caixa ou preferências legadas. A IA continua
+sendo gerada e armazenada. Não há publicação simultânea nem fallback silencioso.
+
+O evento `call.artifacts.updated` leva metadados e referência autenticada do áudio,
+transcrição/resumo e prova numérica do destino. O ViperChat mantém uma nota
+privada por chamada na conversa comprovada, respeita caixas parceiras WhatsApp oficial/
+ViperConnect, deduplica anexo/nota e apresenta os artefatos junto do histórico.
+Sem conversa inequívoca, conserva pendência em vez de criar conversa vazia ou
+publicar na caixa errada. Não reabre atendimento nem envia mensagem pública.
+
+Consulte o [contrato completo de envio VoIP](/guide/voip-webhooks), incluindo
+todos os campos, opções, eventos, estados, JSONs, respostas HTTP, segurança,
+retentativas e limites de compatibilidade.
+
+### Diagnóstico e reprocessamento administrativo
+
+Em **Empresas → Editar → Diagnóstico de entregas ao ViperChat**, o administrador
+consulta contagens, estado, tentativas, próxima tentativa e motivo técnico de
+cada evento. Não são exibidos payload, telefone, áudio ou credenciais. O painel
+consulta até 50 entregas recentes; **Atualizar** refaz a consulta.
+
+**Reprocessar evento** só aparece para pendente/falha definitiva com destino
+original ainda compatível. Uma confirmação explica o escopo e precisa ser aceita.
+O servidor verifica novamente empresa, evento, estado e destino e agenda o mesmo
+evento sem mudar conteúdo, IDs ou tentativas. Não reenvia eventos entregues,
+não redireciona a outra empresa e não usa parâmetros de destino no corpo.
+`requestId` UUID torna a repetição do mesmo pedido idempotente. Conflitos retornam
+409 e precisam de nova análise, nunca ampliação automática de escopo.

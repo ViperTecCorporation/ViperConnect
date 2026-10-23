@@ -1,0 +1,552 @@
+# ViperChat VoIP webhook contract — v1 in development
+
+2026-10-22. This reference covers company-scoped call events, recordings,
+transcripts and AI summaries. Code and synthetic validation are not publication,
+VPS deployment or acceptance of native background calling.
+
+## 1. Responsibilities and flow
+
+```text
+Legacy PBX → PBX owner translates AMI/CEL/CDR → contract v1
+Our VoIP service → actual call state and history → contract v1
+                                      ↓ HTTPS + api_access_token
+                              ViperChat durable inbox
+                               processing and history
+Our service → existing incremental REST feed → recovery
+```
+
+ViperChat does not connect to legacy AMI or PBX databases. The PBX owner chooses
+how to collect AMI/CEL/CDR and deliver normalized events; these are internal
+sources, not three required ViperChat endpoints. No SQL account, dialplan parser
+or connector installed by our team is required. Our service does not need to
+emulate Asterisk. SIP/WebRTC still carries signaling/audio: a webhook does not
+originate, transfer or terminate a call in the PBX.
+
+## 2. Administrative setup and authentication
+
+```http
+POST /api/v1/accounts/{account_id}/voip/services/{service_id}/events
+Content-Type: application/json
+api_access_token: <VIPERCHAT_ADMIN_USER_TOKEN>
+```
+
+Use an explicit API token belonging to a `User` who is an administrator of the
+account in the URL, with its API enabled. Bots, agents, invalid tokens and a
+browser session without this header cannot submit events. **Do not use
+`Authorization: Bearer` for this endpoint.** HTTPS is required; HTTP loopback is
+only allowed in controlled development/test environments.
+
+Prefer a dedicated technical administrator. Its token retains that user's
+administrative powers. Store it only in the authorized producer, never in jobs,
+payloads, logs or configuration responses. Rotation/revocation uses the existing
+user token; v1 does not require a separate HMAC credential. Account/service
+identity comes from the trusted destination/configuration, not a free-form
+`account_id` in an event.
+
+In ViperChat, configure `integration_provider` as `none`, `webhook` or
+`viperconnect`, and the stable `webhook_source_instance_id`. Save a new service
+before copying its generated URL. Do not display the administrator token in the
+ViperChat form. There are no AMI host/user/password or legacy database fields in
+the final design; older credentials remain protected, not silently reused.
+
+Producer configuration belongs to the **company**, not a WhatsApp line. Only
+participations of extensions proven to belong to that company may be delivered
+through its webhook. Internal calls do not require selecting an arbitrary line.
+Do not infer authorization from an old recording-note integration.
+
+The inverse REST connection uses the configured VoIP service HTTPS base URL and
+`Authorization: Bearer <VOIP_SERVICE_TOKEN>`. This is neither the inbound
+ViperChat `api_access_token` nor the agent's SIP password.
+
+## 3. Common envelope
+
+Send a complete normalized call snapshot for each change. Required fields are
+`schema_version`, `event_id`, `event_type`, `occurred_at`, `source_instance_id`,
+`call_id`, `revision` and `call`, including `call.participants`.
+
+```json
+{
+  "schema_version": 1,
+  "event_id": "company-a:event-003",
+  "event_type": "participant.answered",
+  "occurred_at": "2026-10-22T16:00:05Z",
+  "source_instance_id": "pbx-company-a",
+  "call_id": "pbx-company-a:call-001",
+  "revision": 3,
+  "call": {
+    "direction": "internal",
+    "state": "active",
+    "started_at": "2026-10-22T16:00:00Z",
+    "answered_at": "2026-10-22T16:00:05Z",
+    "from": {"kind": "extension", "value": "1001"},
+    "to": {"kind": "extension", "value": "1002"},
+    "participants": [
+      {"id": "leg-1001", "extension": "1001", "state": "active", "sip_call_id": "actual-sip-leg-1001"},
+      {"id": "leg-1002", "extension": "1002", "state": "active", "sip_call_id": "actual-sip-leg-1002"}
+    ]
+  }
+}
+```
+
+Keep `event_id` and logical content unchanged on retries; never generate an ID
+per HTTP attempt. Revisions increase per call and survive producer restarts.
+Technical call, participant and SIP leg identities are not phone numbers. Do not
+correlate by display name, similar text or temporal proximity. Unknown facts are
+omitted rather than fabricated; IVR answer is not proof of an agent answer.
+Transfers preserve previous legs. A final-only CDR can consolidate history but
+cannot provide a realtime incoming-call alert. Declare realtime, participant,
+history and recovery capabilities separately.
+
+## 4. Security, durability and retries
+
+- Authenticate and authorize every delivery, including duplicates. A valid admin
+  token does not grant access to another account where that user is not an admin.
+  Tokens are not accepted in the query string or body.
+- Body limit: 256 KiB. All strings, arrays and nested objects are validated.
+  Canonical logical JSON fingerprints are independent of object-key order.
+- Validate, commit the durable inbox, then return `202` with
+  `{"event_id":"...","status":"accepted"}`. An identical duplicate returns
+  `200` and `status: "duplicate"`. Conflicting ID/revision content returns `409`
+  without overwriting. HTTP receipt does not mean history, media or notes have
+  finished processing.
+- Enqueue after commit; recover committed inbox entries left without a job after
+  a crash. Process with call revision ordering and account/service isolation,
+  then publish an authorized UI update after persistence.
+- Producers need their own durable outbox. Network errors, timeouts, `429` and
+  `5xx` retry with bounded exponential backoff/jitter and valid `Retry-After`.
+  Invalid authentication/schema is quarantined, not retried forever.
+- Do not log secrets, full bodies or signed recording URLs. Administrative REST
+  credentials never reach the browser. REST clients enforce SSRF policy and
+  reject redirects. A fire-and-forget POST gains no recovery just because the
+  receiver has a durable inbox.
+
+### RabbitMQ in our service
+
+1. Persist the history change and local outbox in the same SQLite transaction.
+2. Publish a persistent job containing **only the outbox ID**, through a dedicated
+   exchange/queue, using mandatory confirmed publishing. Never put the token or
+   complete event body in RabbitMQ.
+3. A bounded-prefetch/manual-ACK consumer reads the current outbox/configuration,
+   verifies the destination installation/account/service has not changed, and
+   posts with `api_access_token`.
+4. On matching `200`/`202` JSON receipts, mark delivered and ACK. A lost response
+   can cause an idempotent duplicate; this is not exactly-once transport.
+5. Persist the retry deadline and confirm retry publication before acknowledging
+   the original job. A publish failure must not consume/delete the original.
+6. Permanent errors or exhausted attempts enter `.dead` with sanitized errors.
+   Never send the customer a WhatsApp error message containing the payload.
+7. The outbox recovers broker outages and crashes before/after publish. Broker
+   confirmation is not HTTP acceptance. Destination changes pause/quarantine old
+   work rather than delivering it to another customer. Token rotation for the
+   same destination does not change the event.
+8. Reuse ViperConnect's durable queues, confirmed mandatory publishing and ACK
+   strategy, without copying full error logs or sharing WhatsApp message queues.
+   Development uses the existing broker, without creating a container.
+
+## 5. Recovery and coverage limits
+
+Our service reuses `GET /v1/console/history?sync=changes&cursor=...&limit=100`:
+an initial snapshot followed by persistent cursor-based changes. The existing
+paginated history and recording-by-ID routes remain available. The feed contains
+retained complete CDR snapshots, not raw CEL or Asterisk emulation. SIP/UDP and
+SIP/WebRTC observations preserve actual Call-IDs and previous transfer legs.
+
+Automatic REST recovery is implemented in dev, with an encrypted checkpoint per
+service, a persistent lease and one-minute scheduling. It consumes the producer's
+exact stored canonical envelopes through the same reconciler. A checkpoint only
+advances in the transaction that persists the whole page; individual webhooks
+never advance it. Replay never repeats a SIP action or rings a completed call.
+See section 12 for scoped queries, retention gaps and administrative controls.
+
+For legacy PBXs, recovery depends on the integrator's outbox/replay or API.
+Without SQL access, API or durable producer storage, lost producer events remain
+an explicit gap. A collector disconnected from AMI cannot reconstruct events it
+never observed merely by reconnecting to the webhook. It must recover through
+authorized local means or report the coverage gap. A closed browser with a
+connected backend is a different scenario. Agree retention/capacity per producer.
+
+## 6. Web and native applications
+
+The backend can receive/persist events while the browser/app is closed. Valid
+live events may feed web notifications and push; historical synchronization
+updates history without pretending there is a new call.
+
+Native background answering still requires iOS PushKit/CallKit, Android native
+telephony integration, expired/cancelled offer handling and SIP delivery after
+wake-up. A webhook neither keeps an extension registered nor guarantees an
+answerable call. The PBX must declare this capability separately.
+
+## 7. Implementation and acceptance status
+
+The receiver includes administrator authentication, durable inbox, replay and
+revision checks, job recovery and canonical calls. Agent-history projection
+requires an exact SIP Call-ID and unique binding; otherwise it stores the
+canonical call without guessing an agent or recreating an existing `VoipCall`.
+Authorized ActionCable invalidation refreshes history/detail without F5 and
+without dialing/ringing. `last_observed_at` uses the source event time capped at
+the current clock, preventing stale replay or future clocks from appearing live.
+
+The service includes an atomic SQLite outbox, confirmed RabbitMQ publishing,
+manual ACK, retry/dead queues, reconnection and sanitized errors. Manager setup
+moves from line to company; old line configuration stays preserved for
+compatibility, not silently inherited. Webhook artifact mode replaces both old
+recording and AI-note publishers while keeping AI generation/storage.
+
+Initial-block validation recorded 78 Ruby examples, 126 frontend tests, 19 clean
+RuboCop files and no new ESLint errors (existing UI/i18n warnings). The service
+recorded 220 tests: 219 passed and one pre-existing skip because ffmpeg was
+unavailable; typecheck/build passed. Existing RabbitMQ plus isolated Rails
+confirmed retry after `503`, three accepted events, duplicate `200` and one ended
+call retaining its original ID. Responsive component images covered
+320/360/390/412/430/1280 px; this is not native acceptance.
+
+Company-scoped artifact delivery has its own acceptance validation; the figures
+above describe the initial block, not proof of every later addition. Dev
+activation uses the existing replica and backups before migrations. REST recovery
+and administrative replay have synthetic dev acceptance. Real-call acceptance,
+legacy-PBX homologation, prolonged outages and background PushKit/CallKit/Telecom
+remain separate work. This document
+does not publish the site/image, commit/push code or deploy to a VPS.
+
+## 8. Complete field and configuration reference
+
+### Producer company configuration
+
+Manager: **Telephony → Companies → Edit → ViperChat call events**. The current
+Manager labels may be Portuguese. The existing administrative company API accepts
+`viperchatWebhook` within the company; normal users cannot edit this secret.
+
+| Field | Type / rule |
+| --- | --- |
+| `enabled` | Boolean, default `false`; enables events for that company's extensions. |
+| `baseUrl` | HTTPS installation base URL, not the complete endpoint; no URL credentials, query or fragment. HTTP only for dev/test loopback. |
+| `accountId` | String containing a positive integer: target ViperChat account, not the local company ID. |
+| `serviceId` | String containing a positive integer: VoIP service in that target account. |
+| `sourceInstanceId` | Stable identity up to 200 characters, matching the receiver's service configuration. |
+| `apiAccessToken` | Write-only ViperChat admin token; omitted/blank preserves the existing token. |
+| `clearApiAccessToken` | Boolean edit command for explicit removal, with delivery disabled. Never part of an event. |
+| `hasApiAccessToken` | Read-only flag, never the secret. |
+| `activatedAt` | Server-maintained activation time; clients must not manufacture/reset it. |
+| `artifactsDelivery` | `legacy` (compatibility/default) or `webhook` (ViperChat processor). Webhook mode requires the integration enabled. Never execute both note delivery paths for the same company. |
+
+```json
+{
+  "viperchatWebhook": {
+    "enabled": true,
+    "baseUrl": "https://chat.example.com",
+    "accountId": "1",
+    "serviceId": "206",
+    "sourceInstanceId": "pbx-company-a",
+    "apiAccessToken": "<VIPERCHAT_ADMIN_TOKEN>",
+    "artifactsDelivery": "webhook"
+  }
+}
+```
+
+Old line credentials are not merged automatically. This change does not delete
+`chatwootRecording`, tokens, inboxes or history. While webhook mode is selected,
+legacy recording/AI-note delivery is **effectively disabled**, including already
+queued legacy jobs. Do not fall back to legacy delivery on webhook failure: that
+would create duplicates. Returning to legacy is an explicit decision; old
+destination pending work needs separate review. Enabling does not replay all
+historical calls.
+
+### Envelope and snapshot fields
+
+| Field | Required | Type / limit |
+| --- | --- | --- |
+| `schema_version` | Yes | Integer exactly `1`, not a string or boolean. |
+| `event_id` | Yes | Nonempty string, at most 200 characters, no control characters. |
+| `event_type` | Yes | One of the nine events in section 10. |
+| `occurred_at` | Yes | ISO 8601 UTC ending in `Z` or `+00:00`, at most 40 characters; source change time, not HTTP retry time. |
+| `source_instance_id` | Yes | Nonempty string up to 200 characters, exactly matching configured source. |
+| `call_id` | Yes | Stable namespaced technical string up to 200 characters; not a phone-number-only dedupe key. |
+| `revision` | Yes | Integer 1–9223372036854775807, increasing per call; gaps are allowed. |
+| `call` | Yes | Closed object with only the following documented fields. |
+| `call.direction` | Yes | `inbound`, `outbound`, `internal`. |
+| `call.state` | Yes | `routing`, `ringing`, `active`, `completed`, `missed`, `failed`, `cancelled`. |
+| `call.started_at` | Yes | Actual start time in ISO UTC. |
+| `call.answered_at` | No | Proven answer time in ISO UTC; not inferred from IVR answer. |
+| `call.ended_at` | No | Proven end time in ISO UTC. |
+| `call.end_reason` | No | Nonempty technical string up to 128 characters; no closed enum. |
+| `call.from`, `call.to` | No | Address objects below; never determine tenant identity. |
+| `call.participants` | Yes | Array of 0–100 participants with unique IDs; empty when evidence is unavailable. |
+| `call.recording` | No | Closed initial-contract object with `status` and `record_id`. Status: `disabled`, `recording`, `processing`, `available`, `failed`; record ID is required. |
+| `call.artifacts` | No | Closed object specified in section 9. |
+
+The schema is closed at every level. Omit unknown optional facts and extra
+properties; `null` is not a substitute for required fields. Technical strings
+cannot contain control characters. All optional timestamps follow the same UTC
+format. Never include `account_id`, tokens, signed URLs or audio in the body.
+
+| Address (`from`/`to`) | Required within object | Rule |
+| --- | --- | --- |
+| `kind` | Yes | `phone`, `extension`, `unknown`. |
+| `value` | Yes | String 1–128; `phone` requires 10–15 digits with an optional initial `+`. |
+| `name` | No | Display string 1–128; never a correlation key. |
+
+Extension values preserve leading zeros and have no Brazilian ninth-digit rule.
+A LID/JID is not a phone: use `unknown`, not digits extracted as a guessed E.164.
+
+| Participant | Required | Rule |
+| --- | --- | --- |
+| `id` | Yes | Stable technical leg string 1–200. |
+| `state` | Yes | `offered`, `ringing`, `active`, `completed`, `missed`, `failed`, `cancelled`, `answered_elsewhere`. |
+| `extension` | No | Proven company-linked extension string 1–128. |
+| `sip_call_id` | No | Actual leg SIP Call-ID string 1–256. |
+| `started_at`, `answered_at`, `ended_at` | No | ISO UTC timestamps of observed participant facts. |
+
+A call may have several legs/SIP Call-IDs, including multiple devices for one
+extension. Preserve previous transfer legs and `answered_elsewhere`. Never invent
+`sip_call_id` to force a match with a webphone observation.
+
+## 9. Recordings, transcripts and summaries through webhooks
+
+Use **`call.artifacts.updated`** with the complete call snapshot. Only these
+`call.artifacts` fields are permitted:
+
+| Object/field | Rule |
+| --- | --- |
+| `recording` | Optional object: `status`, `record_id`; optional `mime_type`, `size_bytes`, `sha256`. |
+| `recording.status` | `disabled`, `recording`, `processing`, `available`, `failed`. |
+| `recording.record_id` | Stable string 1–200 used for authenticated media retrieval. |
+| `recording.mime_type` | `audio/mpeg`, `audio/mp3`, `audio/wav`, `audio/wave`, `audio/x-wav`, `audio/gsm`, `audio/x-gsm` or `audio/ogg`. |
+| `recording.size_bytes` | Integer from 1 to 52428800 (50 MiB). |
+| `recording.sha256` | Optional 64 lowercase hexadecimal characters calculated from actual content. |
+| `ai` | Optional object: `status`; optional `transcript`, `summary`, `transcription_model`, `summary_model`, `completed_at`. |
+| `ai.status` | `disabled`, `queued`, `processing`, `completed`, `failed`. |
+| `ai.transcript` | Text up to 64000 characters; newlines/tabs allowed, no executable HTML. |
+| `ai.summary` | Text up to 16000 characters; never automatically sent as a public customer reply. |
+| `ai.transcription_model`, `ai.summary_model` | Optional identifiers up to 128 characters, never an API key. |
+| `ai.completed_at` | ISO UTC completion time when confirmed. |
+| `note_target` | Optional object: `business_phone` and `remote_phone`, both complete phone numbers derived from immutable call snapshots. |
+
+Do not transmit audio/base64, arbitrary/signed URLs, local paths, buckets, tokens,
+secret prompts, `conversation_id`, `inbox_id`, `agent_id` or a public-note flag.
+The note is **always private**; the account comes from trusted URL/configuration.
+
+```json
+{
+  "schema_version": 1,
+  "event_id": "company-a:artifacts-008",
+  "event_type": "call.artifacts.updated",
+  "occurred_at": "2026-10-22T16:01:05Z",
+  "source_instance_id": "pbx-company-a",
+  "call_id": "pbx-company-a:call-001",
+  "revision": 8,
+  "call": {
+    "direction": "inbound",
+    "state": "completed",
+    "started_at": "2026-10-22T16:00:00Z",
+    "answered_at": "2026-10-22T16:00:05Z",
+    "ended_at": "2026-10-22T16:01:00Z",
+    "from": {"kind": "phone", "value": "+5566999990000", "name": "Example contact"},
+    "to": {"kind": "extension", "value": "1001", "name": "Support"},
+    "end_reason": "normal_clearing",
+    "participants": [
+      {
+        "id": "call-001:leg-1001",
+        "extension": "1001",
+        "state": "completed",
+        "sip_call_id": "actual-sip-leg-1001",
+        "started_at": "2026-10-22T16:00:00Z",
+        "answered_at": "2026-10-22T16:00:05Z",
+        "ended_at": "2026-10-22T16:01:00Z"
+      }
+    ],
+    "artifacts": {
+      "recording": {"status": "available", "record_id": "recording-call-001", "mime_type": "audio/wav", "size_bytes": 16044},
+      "ai": {"status": "completed", "transcript": "Synthetic call transcript.", "summary": "Synthetic summary.", "transcription_model": "transcription-model", "summary_model": "summary-model", "completed_at": "2026-10-22T16:01:05Z"},
+      "note_target": {"business_phone": "5566999991111", "remote_phone": "5566999990000"}
+    }
+  }
+}
+```
+
+The example omits `sha256`: calculate it from real audio rather than using an
+invented hash. Names, model IDs and optional timestamps may also be omitted.
+Recording and AI may arrive in separate revisions; repeating delivery must not
+create another note or attachment.
+
+### ViperChat processing
+
+1. Persist the event/snapshot and schedule artifacts in a separate durable queue.
+   `202` acknowledges receipt, not completed download/note creation.
+2. Validate the business number in the same account and resolve the existing
+   operational inbox. A unified inbox follows its canonical link: no empty
+   official WhatsApp/ViperConnect conversation or duplicate partner-inbox bubble.
+3. Match only an existing contact/conversation with safe telephone evidence.
+   Never use name, similar text or the first search result. Missing/ambiguous
+   evidence stays pending: do not create a contact/conversation or post wrongly.
+4. Pin the proven call-to-contact/conversation/inbox relationship. Later media/AI
+   updates preserve it after a contact phone edit; do not migrate old history to
+   the new owner of a reused number.
+5. Retrieve audio only through configured service route
+   `GET /v1/console/history-records/{record_id}/recording`, using protected Bearer
+   authentication, size/MIME/hash checks and no redirects. Never use payload URLs.
+6. Create one private note per call and update that same message with AI/audio,
+   retaining IDs. Deduplication must survive retries/crashes. Do not reopen the
+   conversation or send any external customer message.
+7. Show state, recording, transcript and summary beside call history, enforcing
+   account/agent authorization. Local URLs do not expose the Bearer token.
+
+Without proven conversation matching, artifacts stay associated with the call
+in the call center pending resolution; do not claim a private note was posted.
+Internal calls without an external telephone do not create WhatsApp notes.
+
+## 10. All event and state options
+
+| Event | Meaning |
+| --- | --- |
+| `call.created` | First observation; may start in `routing` or `ringing`. |
+| `call.ringing` | Ringing offer, without claiming answer. |
+| `participant.answered` | A leg answered, with actual participant state/time. |
+| `participant.released` | A leg released; other legs may remain active. |
+| `call.transferred` | Leg changes, preserving previous participants. |
+| `call.ended` | Global termination with a terminal state. |
+| `call.updated` | Correction/complement, including a CDR only known at the end. |
+| `recording.updated` | Initial-contract recording metadata; does not itself imply private-note delivery. |
+| `call.artifacts.updated` | Recording/AI publication or update through the private processor. |
+
+The receiver accepts types a producer might not emit separately. Our producer
+may represent release/transfer as `call.updated` with a new snapshot. Do not
+promise realtime support from every PBX.
+
+- Global `routing` means routing, `ringing` an offer, `active` a proven answer.
+- Global terminal states are `completed`, `missed`, `failed`, `cancelled`.
+- `offered` and `answered_elsewhere` are participant states, not global states.
+- A newer revision can enrich an ended call's artifacts, never make it ring again.
+  An obsolete revision cannot overwrite newer state.
+- v1 excludes video, hold/mute, DTMF, quality metrics, control commands, inline
+  audio and free-form inbox/user selection.
+
+## 11. Stack, HTTP responses and operational acceptance
+
+| Producer setting | Default / behavior |
+| --- | --- |
+| `VOIP_WEBHOOK_AMQP_ENABLED` | `false`; exactly `true` enables transport. |
+| `VOIP_AMQP_URL` | Required when enabled; AMQP/AMQPS credentials kept outside Git. |
+| `VOIP_WEBHOOK_QUEUE_PREFIX` | `viperconnect.voip.webhooks`; dedicated namespace, not a WhatsApp queue. |
+| `VOIP_WEBHOOK_MAX_ATTEMPTS` | `8`; accepted range 1–20. |
+| `VOIP_SQLITE_PATH` | Persistent database; back up before migrations; do not delete media/volumes. |
+| `VOICE_CONFIG_STORAGE`, `CALL_HISTORY_STORAGE` | SQLite persistence for durable operation. |
+| `NODE_EXTRA_CA_CERTS` | Trusted private CA if needed; never disable TLS verification. |
+
+The receiver uses its existing PostgreSQL/Sidekiq/Redis infrastructure; RabbitMQ
+belongs to the producer delivery side. Saving Manager settings does not install
+receiver migrations or enable its destination service/worker.
+
+Private HTTPS VoIP origins require an explicit receiver-side
+`VOIP_TRUSTED_SERVICE_ORIGINS` allowlist: comma-separated exact origins
+(`https://host:port`, no path, credentials, query or fragment), empty by default.
+This is scoped to the VoIP client; do not broaden the global
+`SAFE_FETCH_ALLOW_PRIVATE_NETWORK` setting. Scheme, host and port must match;
+TLS verification remains enabled and redirects are rejected. Install a trusted
+CA chain for internal certificates; never disable certificate validation.
+
+HTTPS certificates must validate. Proxies must preserve `api_access_token`.
+For Nginx check `underscores_in_headers on;`: dropping this header produces `401`
+even with a correct token. Fix forwarding, not authentication security.
+
+| HTTP result | Meaning / producer handling |
+| --- | --- |
+| `202` | Durable acceptance; matching JSON `event_id` and `status: "accepted"`. |
+| `200` | Identical duplicate; matching JSON `event_id` and `status: "duplicate"`. |
+| `401` | Missing/invalid token; permanent configuration/authentication failure. |
+| `403` | Insufficient permission or API/service disabled; resolve configuration. |
+| `404` | Missing or out-of-scope destination. |
+| `409` | ID/revision has different content; do not overwrite/retry as a new ID. |
+| `413` | Body exceeds limit. |
+| `422` | Invalid schema/source/service configuration. |
+| `408`, `429`, `5xx`, network/timeout | Temporary; persist and retry. |
+| `3xx` | Never follow redirects. |
+
+A `200` HTML page is not a valid receipt. Transport is at least once; retries
+preserve event/content, new observations receive new IDs/revisions. Publisher
+confirm is not HTTP receipt; `202` is not a completed private note. Persist both
+stages independently.
+
+Our consumer uses prefetch 4, HTTP timeout 15 seconds and receipt limit 16 KiB.
+Exponential backoff starts at 30 seconds with 0.75–1.25 jitter, an exponential
+ceiling of 15 minutes and `Retry-After` up to one hour. Delay buckets are 1 s,
+5 s, 30 s, 1 min, 2 min, 5 min, 15 min and 1 h; rounding to a bucket may extend
+the wait. Permanent/exhausted work enters `.dead` without deleting the outbox.
+Automatic dead-queue replay is not enabled. Administrators can open company
+delivery diagnostics in Manager and explicitly confirm replay of pending/dead
+events. `GET companies/{id}/viperchat-webhook/diagnostics` exposes only sanitized
+counts and technical metadata. `POST companies/{id}/viperchat-webhook/replay`
+accepts `eventIds` (1–20 hashes), `confirm: true` and an idempotent UUID `requestId`.
+The server atomically rechecks company, events and the original enabled
+destination. Mismatches, busy/delivered events or the same UUID with another
+body return 409. Replay preserves content, IDs and attempts and never broadens
+the destination.
+
+Synthetic acceptance covers all event/state types, foreign company/extensions,
+recording/AI arrival order, retries, one note/attachment, linked official WhatsApp/ViperConnect
+inboxes, changed contact phone, resolved conversation without reopening,
+missing/ambiguous evidence, invalid MIME/hash/size and invalid credentials.
+The operator performs the subsequent real-call test; do not call customers for
+validation. See also the [telephony guide](/en/guide/telephony).
+
+## 12. Automatic recovery and administrative operation
+
+In ViperChat, select the `viperconnect` integration and configure
+`history_api_url`, the protected `history_api_token` and `history_company_id`,
+the exact company ID from the producer. Missing company scope returns
+`configuration_required` and never initiates a broad query. Webhook-only
+services return `unsupported` for REST recovery without disabling webhooks.
+
+The existing REST endpoint supports:
+
+```text
+GET /v1/console/history?sync=webhook_events&company_id=company-a&account_id=1&service_id=206&source_instance_id=pbx-company-a&limit=100&cursor=<optional-opaque-cursor>
+Authorization: Bearer <VOIP_SERVICE_TOKEN>
+```
+
+Response fields: `version: 1`, `phase: snapshot|changes`,
+`items[{sequence,webhook_event}]`, `nextCursor`, `hasMore` and `scope` containing
+the four requested identifiers. Each event is exactly the persisted webhook
+envelope, not a reconstruction from CDR fields. Pages contain at most 100 items
+and approximately 1.5 MB of events. Canonical preparation and watermark
+selection are transactional; cursors never skip unprepared events. Recovery
+covers retained, authorized events since activation, not invented older history.
+
+The receiver fetches outside the database lock and rechecks its lease and
+configuration before committing inbox events and the encrypted checkpoint
+together. It enqueues processing after commit. Pagination continues until
+caught up; the scheduled scanner also recovers unavailable Redis enqueues.
+
+- `400`: invalid cursor; pause for an explicit correction/reset.
+- `409`: changed scope; pause without crossing installations or companies.
+- `410`: expired retention; reread retained snapshots and keep
+  `gap_detected: true`. Never erase local history or claim missing source data
+  was recovered.
+- `401/403`: authentication/configuration blocked, no infinite retry.
+- Network/`5xx`: persistent backoff and later recovery.
+- Changed settings invalidate the lease. An old cursor is replaced only after
+  successfully accepting a new scoped page. No raw cursor is exposed to users.
+
+ViperChat administrator endpoints under
+`/api/v1/accounts/:account_id/voip/services/:service_id`:
+
+| Route | Behavior |
+| --- | --- |
+| `GET /diagnostics` | Sanitized `counts`, `records` (up to 25 events and 25 artifacts), `truncated` and `recovery`. No payload or credentials. |
+| `POST /reprocess` | `kind` (`event` or `artifact`) and numeric `record_id`; returns 202 `queued`. Keeps IDs, content, pinned target and blobs. |
+| `POST /recover_history` | Boolean `reset_cursor`, default false; returns 202 `queued`. True requires explicit confirmation to reread retained history. |
+
+Only administrators of the selected account may operate. Completed records,
+foreign services, changed sources, disabled integrations and replay within
+30 seconds are rejected. Requests record operator/time. Event/artifact failures
+use sanitized codes and stop after eight attempts; replay never bypasses missing
+conversation evidence.
+
+Manager company replay remains a separate producer-side operation, using the
+company-scoped `/viperchat-webhook/diagnostics` and `/replay` routes described
+above. It revalidates the original destination and preserves event identity.
+
+Synthetic acceptance includes lifecycle/transfer/answered-elsewhere cases,
+real RabbitMQ 503 retry and consumer restart, REST recovery of a deliberately
+undelivered event, and a later webhook duplicate. Call, conversation, note,
+attachment and blob IDs remained unchanged. This is not a real-call, native
+device, prolonged-outage or production acceptance claim.

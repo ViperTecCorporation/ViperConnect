@@ -1518,6 +1518,22 @@ tbody tr:last-child td {
   padding-top: 22px;
 }
 
+.voip-editor-form > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.voip-editor-form .field > *,
+.voip-editor-form .voip-check > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.voip-editor-form .voip-check > input {
+  flex: 0 0 auto;
+}
+
 .voip-sip-mode {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2129,6 +2145,10 @@ select[multiple] {
 
   .voip-line-group-grid > .wide {
     grid-column: auto;
+  }
+
+  .voip-editor-form {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .voip-routing-summary > p {
