@@ -1,4 +1,4 @@
-import { escapeHtml as esc } from '../core/html.js?v=4.0.38-f3615757';
+import { escapeHtml as esc } from '../core/html.js?v=4.0.38-9a2d1afb';
 export function renderAccountEmail(status) {
     return `<div class="section__heading"><div><h3>E-mail da conta WhatsApp</h3><p class="muted">Exclusivo do aparelho principal. Não é o e-mail comercial público.</p></div></div>
     <form data-form="profile-email-get"><button class="btn" type="submit">Consultar situação atual</button></form>

@@ -1,4 +1,4 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.38-f3615757';
+import { escapeHtml as e } from '../core/html.js?v=4.0.38-9a2d1afb';
 const endpointError = 'Cole a URL completa do webhook gerada pelo ViperChat, com a conta e o serviço. Use HTTPS, sem credenciais, parâmetros ou fragmento.';
 export const parseVoipWebhookUrl = (value) => {
     try {

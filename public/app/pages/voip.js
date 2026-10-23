@@ -1,9 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.38-f3615757';
-import { renderModal } from '../components/modal.js?v=4.0.38-f3615757';
-import { renderStatus } from '../components/status.js?v=4.0.38-f3615757';
-import { escapeHtml } from '../core/html.js?v=4.0.38-f3615757';
-import { aiProviderOptions, inferAiProvider } from '../domain/ai_providers.js?v=4.0.38-f3615757';
-import { renderVoipWebhookFields } from '../domain/voip_webhook.js?v=4.0.38-f3615757';
+import { icon } from '../components/icons.js?v=4.0.38-9a2d1afb';
+import { renderModal } from '../components/modal.js?v=4.0.38-9a2d1afb';
+import { renderStatus } from '../components/status.js?v=4.0.38-9a2d1afb';
+import { escapeHtml } from '../core/html.js?v=4.0.38-9a2d1afb';
+import { aiProviderOptions, inferAiProvider } from '../domain/ai_providers.js?v=4.0.38-9a2d1afb';
+import { renderVoipWebhookFields } from '../domain/voip_webhook.js?v=4.0.38-9a2d1afb';
 const labels = {
     companies: 'Empresas',
     accounts: 'Linhas Zapo',

@@ -1,8 +1,8 @@
-import { ApiError } from '../core/api.js?v=4.0.38-f3615757';
-import { escapeHtml as e } from '../core/html.js?v=4.0.38-f3615757';
-import { renderModal } from '../components/modal.js?v=4.0.38-f3615757';
-import { renderMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.38-f3615757';
-import { uploadSessionRestore } from './session_restore_upload.js?v=4.0.38-f3615757';
+import { ApiError } from '../core/api.js?v=4.0.38-9a2d1afb';
+import { escapeHtml as e } from '../core/html.js?v=4.0.38-9a2d1afb';
+import { renderModal } from '../components/modal.js?v=4.0.38-9a2d1afb';
+import { renderMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.38-9a2d1afb';
+import { uploadSessionRestore } from './session_restore_upload.js?v=4.0.38-9a2d1afb';
 const base = '/manager/session-transfers';
 export async function isStreamSessionBackup(file) {
     const header = (await file.slice(0, 1024).text()).split('\n')[0];

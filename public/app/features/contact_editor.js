@@ -1,6 +1,6 @@
-import { renderModal } from '../components/modal.js?v=4.0.38-f3615757';
-import { escapeHtml } from '../core/html.js?v=4.0.38-f3615757';
-import { t } from '../core/i18n.js?v=4.0.38-f3615757';
+import { renderModal } from '../components/modal.js?v=4.0.38-9a2d1afb';
+import { escapeHtml } from '../core/html.js?v=4.0.38-9a2d1afb';
+import { t } from '../core/i18n.js?v=4.0.38-9a2d1afb';
 export const renderContactEditor = (contact) => renderModal('contact-editor', t(contact ? 'Editar nome do contato' : 'Adicionar contato'), `
   <form class="stack" data-form="contact-name">
     <label class="field"><span>${t('Nome')}</span><input name="full_name" required maxlength="256" value="${escapeHtml(contact?.display_name || contact?.push_name || '')}" placeholder="${t('Nome do contato')}" autocomplete="off" aria-describedby="contact-name-help"></label>

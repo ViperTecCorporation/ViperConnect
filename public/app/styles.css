@@ -1254,6 +1254,11 @@ tbody tr:last-child td {
   color: var(--brand);
 }
 
+.voip-editor-form > .field {
+  align-self: start;
+  align-content: start;
+}
+
 .voip-editor-form .wide,
 .voip-editor-form > .form-actions {
   grid-column: 1 / -1;
