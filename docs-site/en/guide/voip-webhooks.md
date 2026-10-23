@@ -434,10 +434,8 @@ promise realtime support from every PBX.
 
 | Producer setting | Default / behavior |
 | --- | --- |
-| `VOIP_WEBHOOK_AMQP_ENABLED` | `false`; exactly `true` enables transport. |
-| `VOIP_AMQP_URL` | Required when enabled; AMQP/AMQPS credentials kept outside Git. |
-| `VOIP_WEBHOOK_QUEUE_PREFIX` | `viperconnect.voip.webhooks`; dedicated namespace, not a WhatsApp queue. |
-| `VOIP_WEBHOOK_MAX_ATTEMPTS` | `8`; accepted range 1–20. |
+| `AMQP_URL` | Only required ENV, same name as ViperConnect. A nonblank URL automatically enables delivery; absent/blank disables it. AMQP/AMQPS credentials stay outside Git. |
+| Queues and retries | Internal defaults: `viperconnect.voip.webhooks` prefix, separate from messaging queues, and eight attempts. No additional ENV; independent installations use separate vhosts. |
 | `VOIP_SQLITE_PATH` | Persistent database; back up before migrations; do not delete media/volumes. |
 | `VOICE_CONFIG_STORAGE`, `CALL_HISTORY_STORAGE` | SQLite persistence for durable operation. |
 | `NODE_EXTRA_CA_CERTS` | Trusted private CA if needed; never disable TLS verification. |

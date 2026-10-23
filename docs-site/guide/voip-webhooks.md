@@ -365,10 +365,8 @@ snapshot atualizado. Não prometer suporte de todas as centrais a tempo real.
 
 | Opção do produtor | Padrão / comportamento |
 | --- | --- |
-| `VOIP_WEBHOOK_AMQP_ENABLED` | `false`; exatamente `true` ativa transporte. |
-| `VOIP_AMQP_URL` | Obrigatória ao ativar: AMQP/AMQPS com credenciais fora do Git. |
-| `VOIP_WEBHOOK_QUEUE_PREFIX` | `viperconnect.voip.webhooks`; namespace exclusivo, não fila WhatsApp. |
-| `VOIP_WEBHOOK_MAX_ATTEMPTS` | `8`, intervalo 1–20. |
+| `AMQP_URL` | Única ENV necessária, mesmo nome do ViperConnect. Preenchida ativa automaticamente o transporte; ausente/vazia desativa. AMQP/AMQPS com credenciais fora do Git. |
+| Filas e retentativas | Valores internos: prefixo `viperconnect.voip.webhooks`, separado das filas de mensagens, e oito tentativas. Nenhuma ENV adicional; instalações independentes usam vhosts separados. |
 | `VOIP_SQLITE_PATH` | Banco persistente; backup antes de migrations; não apagar volume/mídias. |
 | `VOICE_CONFIG_STORAGE`, `CALL_HISTORY_STORAGE` | Persistência SQLite para durabilidade do fluxo. |
 | `NODE_EXTRA_CA_CERTS` | CA privada confiável quando necessária; não desativar TLS. |
