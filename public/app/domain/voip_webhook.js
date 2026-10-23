@@ -1,4 +1,4 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.37-ef5d1c11';
+import { escapeHtml as e } from '../core/html.js?v=4.0.38-ef5d1c11';
 export const renderVoipWebhookFields = (config = {}) => {
     const input = (key, label, extra = '') => `<label class="field"><span>${label}</span><input name="viperchatWebhook.${key}" value="${e(`${config[key] ?? ''}`)}" ${extra}></label>`;
     return `<h3 class="wide">Eventos de chamadas no ViperChat</h3>

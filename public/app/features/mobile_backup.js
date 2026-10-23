@@ -1,4 +1,4 @@
-import { ApiError } from '../core/api.js?v=4.0.37-ef5d1c11';
+import { ApiError } from '../core/api.js?v=4.0.38-ef5d1c11';
 export function renderMobileBackup(restore, busy) {
     if (busy)
         return `<div class="stack" role="status" aria-live="polite" aria-busy="true"><h3>${restore ? 'Restaurando dispositivo…' : 'Gerando backup…'}</h3><p>${restore ? 'Aguarde a validação e a restauração do arquivo.' : 'Aguarde: suspendendo a origem, reunindo os dados e criptografando o arquivo. Isso pode levar alguns instantes.'}</p><p>Não feche esta janela nem atualize a página.</p><button class="btn" disabled>Aguarde…</button></div>`;
