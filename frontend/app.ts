@@ -1133,6 +1133,10 @@ export class ViperConnectApp {
   private handleFilter(event: Event): void {
     const input = event.target as HTMLInputElement | HTMLSelectElement
     const dialingForm = input.closest<HTMLFormElement>('form[data-form="voip-resource-fields"]')
+    if (dialingForm && input.name.startsWith('viperchatWebhook.')) {
+      syncVoipWebhookFields(dialingForm)
+      return
+    }
     if (dialingForm && ['aiTranscriptionProvider', 'aiSummaryProvider'].includes(input.name)) {
       void loadAiModels(dialingForm, input.name === 'aiTranscriptionProvider' ? 'Transcription' : 'Summary', path => this.api.voipConsole(path), true)
       return
@@ -2507,4 +2511,4 @@ export class ViperConnectApp {
     this.render()
   }
 }
-import { voipWebhookPayload } from './domain/voip_webhook.js'
+import { voipWebhookPayload, syncVoipWebhookFields } from './domain/voip_webhook.js'

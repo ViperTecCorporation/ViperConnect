@@ -22,6 +22,16 @@ Nosso serviço → REST existente com modo incremental → recuperação de falh
 
 ## 2. Cadastro administrativo no ViperChat
 
+No Manager, ao selecionar **Webhook da empresa**, cole a **URL completa** gerada
+pelo ViperChat (`https://…/api/v1/accounts/…/voip/services/…/events`). Conta e serviço
+são extraídos dessa URL, sem edição manual de IDs. Configurações já salvas são
+exibidas nesse formato automaticamente. URLs inválidas, credenciais na URL,
+parâmetros e fragmentos são recusados; HTTPS obrigatório, exceto loopback dev.
+No modo **Integração legada por caixa de entrada**, os campos separados continuam
+livres e as configurações das linhas são preservadas. Alternar o modo não apaga
+rascunhos ou o token digitado. O contrato REST permanece com `baseUrl`, `accountId`
+e `serviceId`; a URL completa é apenas a entrada do formulário.
+
 - Endpoint: `POST /api/v1/accounts/:account_id/voip/services/:service_id/events`. Reutilizar a autenticação de API do ViperChat, exigir token explícito pertencente a `User` administrador da conta da URL, API da conta habilitada e serviço encontrado dentro dessa conta. Bot, usuário agente, token inválido e sessão de browser sem token não podem gravar eventos.
 - Cabeçalhos obrigatórios: `api_access_token: <token-do-usuario-admin>` e `Content-Type: application/json`. **Não usar `Authorization: Bearer` neste endpoint.** HTTPS obrigatório na entrega; loopback HTTP permitido exclusivamente em dev/teste controlado.
 - Preferir usuário técnico administrador dedicado. O token tem os poderes administrativos do usuário: armazenar somente no produtor autorizado, nunca em RabbitMQ, payload, logs ou resposta da configuração. Revogação/rotação seguem o token de usuário já existente; não criar token paralelo/HMAC obrigatório nesta versão.

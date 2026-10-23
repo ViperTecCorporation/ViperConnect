@@ -1,4 +1,4 @@
-import { escapeHtml as esc } from '../core/html.js?v=4.0.38-ef5d1c11';
+import { escapeHtml as esc } from '../core/html.js?v=4.0.38-f3615757';
 const visibility = ['all', 'contacts', 'contact_blacklist', 'none'];
 export const privacyFields = [
     ['lastSeen', 'Visto por último', visibility], ['online', 'Online', ['all', 'none', 'match_last_seen']],

@@ -1,10 +1,10 @@
-import { ApiError } from '../core/api.js?v=4.0.38-ef5d1c11';
-import { escapeHtml as e } from '../core/html.js?v=4.0.38-ef5d1c11';
-import { renderModal } from '../components/modal.js?v=4.0.38-ef5d1c11';
-import { icon } from '../components/icons.js?v=4.0.38-ef5d1c11';
-import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js?v=4.0.38-ef5d1c11';
-import { sessionPhone } from '../domain/session.js?v=4.0.38-ef5d1c11';
-import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.38-ef5d1c11';
+import { ApiError } from '../core/api.js?v=4.0.38-f3615757';
+import { escapeHtml as e } from '../core/html.js?v=4.0.38-f3615757';
+import { renderModal } from '../components/modal.js?v=4.0.38-f3615757';
+import { icon } from '../components/icons.js?v=4.0.38-f3615757';
+import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js?v=4.0.38-f3615757';
+import { sessionPhone } from '../domain/session.js?v=4.0.38-f3615757';
+import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.38-f3615757';
 const reason = 'O registro SMS exige habilitação; o cadastro não conecta automaticamente a Zapo nem altera sessões vinculadas.';
 const button = (label, action, id = '') => `<button type="button" class="btn btn--ghost" data-action="mobile-${action}" data-id="${e(id)}">${action === 'new' ? icon('devicePlus') : ''}${e(label)}</button>`;
 export class MobileDevicesPanel {
