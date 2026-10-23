@@ -32,3 +32,8 @@ pesadas, mas não representa um limite rígido de memória para todo o Docker/WS
 Nos testes locais, `NODE_OPTIONS=--max-old-space-size=1024` limita o heap V8 por
 processo; não equivale a limitar todo o consumo do host. Não reiniciar WSL/Docker,
 interromper serviços da réplica ou limpar caches compartilhados para isso.
+
+O `compiler` existente do laboratório recebe limite de 2 GiB de RAM e duas CPUs,
+sem swap adicional. O Compose persiste esses limites e reduz o heap do compilador
+para 1536 MiB nas próximas criações desse mesmo serviço. A alteração de limites
+foi aplicada ao container atual com `docker update`, sem recriar containers.

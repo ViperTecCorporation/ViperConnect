@@ -57,6 +57,9 @@ x-app: &app
 services:
   compiler:
     image: viperconnect-mobile-lab:dev
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
     build:
       context: .
       dockerfile: lab/Dockerfile
@@ -64,7 +67,7 @@ services:
     init: true
     networks: [lab]
     environment:
-      NODE_OPTIONS: --max-old-space-size=4096
+      NODE_OPTIONS: --max-old-space-size=1536
     command: [node, node_modules/nodemon/bin/nodemon.js, --legacy-watch, --watch, src, --watch, frontend, --watch, /source-public, --watch, scripts, --ext, "ts,json,css,html,svg,cjs,mjs", --delay, "1", --exec, "node lab/compile.mjs"]
     volumes:
       - ./src:/app/src:ro
