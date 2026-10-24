@@ -1,1 +1,2 @@
+deploy/ipv6-ddns/* text eol=lf
 /scripts/container-entrypoint.sh text eol=lf

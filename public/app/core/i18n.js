@@ -1,4 +1,5 @@
 const english = {
+    'Eventos VoIP para o ViperChat. Retentativas persistem na outbox do serviço; esta tela é somente leitura.': 'VoIP events for ViperChat. Retries persist in the service outbox; this view is read-only.',
     'Mensagens': 'Messages',
     'Perfil': 'Profile',
     'Nome do contato': 'Contact name',

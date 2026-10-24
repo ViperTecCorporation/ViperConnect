@@ -1,8 +1,8 @@
-import { icon } from '../components/icons.js?v=4.0.38-9a2d1afb';
-import { renderModal } from '../components/modal.js?v=4.0.38-9a2d1afb';
-import { escapeHtml } from '../core/html.js?v=4.0.38-9a2d1afb';
-import { formatNumber, t } from '../core/i18n.js?v=4.0.38-9a2d1afb';
-import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.38-9a2d1afb';
+import { icon } from '../components/icons.js?v=4.0.39-b1ebcc98';
+import { renderModal } from '../components/modal.js?v=4.0.39-b1ebcc98';
+import { escapeHtml } from '../core/html.js?v=4.0.39-b1ebcc98';
+import { formatNumber, t } from '../core/i18n.js?v=4.0.39-b1ebcc98';
+import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.39-b1ebcc98';
 export const redisKeyIsReadOnly = (key) => ['manager-identity:', 'unoapi-webhook-history:'].some(prefix => key.startsWith(prefix) || prefix.startsWith(key));
 export const redisTreeFromKeys = (keys) => {
     const tree = { '': [] };

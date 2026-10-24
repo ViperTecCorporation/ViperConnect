@@ -30,6 +30,7 @@ export type RabbitManagementOptions = {
 }
 
 type Fetcher = typeof fetch
+const voipWebhookQueues = new Set(['viperconnect.voip.webhooks.outgoing', 'viperconnect.voip.webhooks.dead'])
 
 export class RabbitManagementError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -90,7 +91,8 @@ export class RabbitManagement {
     return `/api/queues/${encodeURIComponent(this.options.vhost)}${name ? `/${encodeURIComponent(name)}` : ''}`
   }
 
-  private assertQueueName(name: string): void {
+  private assertQueueName(name: string, includeVoip = false): void {
+    if (includeVoip && voipWebhookQueues.has(name)) return
     if (name !== this.options.queuePrefix && !name.startsWith(`${this.options.queuePrefix}.`)) {
       throw new RabbitManagementError(403, 'rabbit_queue_not_allowed')
     }
@@ -122,7 +124,7 @@ export class RabbitManagement {
     return queues
       .filter((queue) => {
         const name = `${queue?.name || ''}`
-        return name === this.options.queuePrefix || name.startsWith(`${this.options.queuePrefix}.`)
+        return name === this.options.queuePrefix || name.startsWith(`${this.options.queuePrefix}.`) || voipWebhookQueues.has(name)
       })
       .map((queue) => ({
         name: `${queue.name}`,
@@ -138,7 +140,7 @@ export class RabbitManagement {
   }
 
   async previewMessages(name: string, count = 20, session = ''): Promise<RabbitQueueMessage[]> {
-    this.assertQueueName(name)
+    this.assertQueueName(name, true)
     const safeCount = Math.min(200, Math.max(1, Number(count) || 20))
     const messages = await this.request<any[]>(`${this.queuePath(name)}/get`, {
       method: 'POST',

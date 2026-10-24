@@ -8,6 +8,7 @@ import type { RabbitQueueInfo, RabbitQueueMessage, SessionConfig } from '../doma
 import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js'
 
 export const queueDescriptionKey = (name: string): TranslationKey => {
+  if (parseRabbitQueueName(name).family === 'voip_webhooks') return 'Eventos VoIP para o ViperChat. Retentativas persistem na outbox do serviço; esta tela é somente leitura.'
   if (/^unoapi\.mobile\.companion\.history\.(?:v2\.)?[^.]+\.zapo(?:\.(?:dead|delayed))?$/.test(name)) return 'Envia histórico local ao dispositivo secundário, sem webhooks. Inclui referências de mídias comuns; não baixa arquivos.'
   const queue = parseRabbitQueueName(name)
   const variants: Record<string, TranslationKey> = {
@@ -157,7 +158,7 @@ export const renderQueueInspectorPage = (options: QueuePageOptions): string => {
         <h1>${escapeHtml(options.selectedQueue)}</h1>
         <p class="muted">${t('A amostra é lida e recolocada na fila; nenhuma mensagem é removida.')}</p>
       </div>
-      <button class="btn btn--danger btn--ghost" type="button" data-action="open-queue-purge" data-queue="${escapeHtml(options.selectedQueue)}">${icon('trash')}${t('Limpar mensagens')}</button>
+      ${parseRabbitQueueName(options.selectedQueue).family === 'voip_webhooks' ? '' : `<button class="btn btn--danger btn--ghost" type="button" data-action="open-queue-purge" data-queue="${escapeHtml(options.selectedQueue)}">${icon('trash')}${t('Limpar mensagens')}</button>`}
     </section>
     <section class="stats">
       <article class="stat-card"><span>${t('Mensagens prontas')}</span><strong>${formatNumber(selectedQueue?.messages_ready || 0)}</strong><small>${t('aguardando processamento')}</small></article>
@@ -228,7 +229,7 @@ export const renderQueuesPage = (options: QueuePageOptions): string => {
               <td><span class="queue-state queue-state--${attention ? 'danger' : 'healthy'}"><span></span>${attention ? t('Atenção') : t('Normal')}</span></td>
               <td class="table-actions"><div class="row-actions">
                 <button class="btn btn--ghost" type="button" data-action="inspect-queue" data-queue="${escapeHtml(queue.name)}">${icon('search')}${t('Inspecionar')}</button>
-                <button class="btn btn--icon btn--ghost" type="button" data-action="open-queue-purge" data-queue="${escapeHtml(queue.name)}" aria-label="${t('Limpar fila')}">${icon('trash')}</button>
+                ${parseRabbitQueueName(queue.name).family === 'voip_webhooks' ? '' : `<button class="btn btn--icon btn--ghost" type="button" data-action="open-queue-purge" data-queue="${escapeHtml(queue.name)}" aria-label="${t('Limpar fila')}">${icon('trash')}</button>`}
               </div></td>
             </tr>`
           }).join('') : `<tr><td colspan="6"><div class="empty-state">${t('Nenhuma fila encontrada.')}</div></td></tr>`}</tbody>

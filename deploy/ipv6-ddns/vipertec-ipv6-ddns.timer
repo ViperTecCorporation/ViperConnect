@@ -1,0 +1,12 @@
+[Unit]
+Description=Executa atualizador IPv6 do VoIP periodicamente
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=60s
+RandomizedDelaySec=10s
+Persistent=true
+Unit=vipertec-ipv6-ddns.service
+
+[Install]
+WantedBy=timers.target

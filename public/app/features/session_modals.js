@@ -1,9 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.38-9a2d1afb';
-import { renderModal } from '../components/modal.js?v=4.0.38-9a2d1afb';
-import { renderStatus } from '../components/status.js?v=4.0.38-9a2d1afb';
-import { escapeHtml } from '../core/html.js?v=4.0.38-9a2d1afb';
-import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.38-9a2d1afb';
-import { t } from '../core/i18n.js?v=4.0.38-9a2d1afb';
+import { icon } from '../components/icons.js?v=4.0.39-b1ebcc98';
+import { renderModal } from '../components/modal.js?v=4.0.39-b1ebcc98';
+import { renderStatus } from '../components/status.js?v=4.0.39-b1ebcc98';
+import { escapeHtml } from '../core/html.js?v=4.0.39-b1ebcc98';
+import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.39-b1ebcc98';
+import { t } from '../core/i18n.js?v=4.0.39-b1ebcc98';
 export const renderNewSessionModal = () => renderModal('new-session', t('Nova sessão'), `
     <form class="stack" data-form="new-session">
       <p class="muted">${t('Novas sessões são registradas diretamente no motor Zapo.')}</p>

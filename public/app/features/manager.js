@@ -1,6 +1,6 @@
-import { ApiError } from '../core/api.js?v=4.0.38-9a2d1afb';
-import { escapeHtml as e } from '../core/html.js?v=4.0.38-9a2d1afb';
-import { renderModal } from '../components/modal.js?v=4.0.38-9a2d1afb';
+import { ApiError } from '../core/api.js?v=4.0.39-b1ebcc98';
+import { escapeHtml as e } from '../core/html.js?v=4.0.39-b1ebcc98';
+import { renderModal } from '../components/modal.js?v=4.0.39-b1ebcc98';
 const field = (label, name, value = '', type = 'text', required = true) => `<label class="field"><span>${e(label)}</span><input name="${name}" type="${type}" value="${e(value)}" ${required ? 'required' : ''} ${type === 'password' ? 'autocomplete="new-password"' : ''}></label>`;
 const button = (label, action, id = '') => `<button class="btn btn--ghost" type="button" data-action="manager-${action}" data-id="${e(id)}">${e(label)}</button>`;
 const submit = (label, busy) => `<button class="btn" ${busy ? 'disabled' : ''}>${e(label)}</button>`;

@@ -2346,3 +2346,6 @@ select[multiple] {
 .message-quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-delivery { margin-left: 5px; font-size: 14px; }
 .message-delivery.is-read { color: #53bdeb; }
+:root .voip-ai-section { display: grid; align-content: start; gap: 12px; min-width: 0; }
+:root .voip-ai-section h4, :root .voip-ai-section p { margin: 0; }
+:root .voip-ai-section .field { min-width: 0; }

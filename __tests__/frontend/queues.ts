@@ -18,6 +18,10 @@ const queues = [
 ]
 
 describe('RabbitMQ queues page', () => {
+  test('identifies VoIP queues and explains that durable retries are stored in the service outbox', () => {
+    expect(queueDescriptionKey('viperconnect.voip.webhooks.outgoing')).toContain('outbox')
+    expect(queueTooltip('viperconnect.voip.webhooks.dead')).toContain('esgotou')
+  })
   afterEach(() => setLocale('pt-BR'))
 
   test('describes known queue domains', () => {

@@ -38,7 +38,7 @@ const tagFor = (route) => {
   if (route.startsWith('/manager/')) return 'Manager'
   if (/^\/admin\/(?:redis|rabbitmq|settings)\//.test(route)) return 'Administração'
   if (/^\/(?:ping|version)$/.test(route)) return 'Sistema'
-  if (route.startsWith('/admin/voip/')) return 'Telefonia'
+  if (route.startsWith('/admin/voip/') || route.startsWith('/v1/console/')) return 'Telefonia'
   if (route.startsWith('/passkey-bridge/') || route.startsWith('/connect/') || route.endsWith('/request_code')) return 'Pareamento'
   if (route.includes('/debug/')) return 'Diagnóstico'
   if (route.includes('/groups')) return 'Grupos'
@@ -150,7 +150,7 @@ spec.tags = [
 
 const normalizedPaths = {}
 for (const [route, pathItem] of Object.entries(spec.paths)) {
-  const routeKey = publicRoute(route)
+  const routeKey = pathItem.servers?.length ? route : publicRoute(route)
   normalizedPaths[routeKey] = { ...(normalizedPaths[routeKey] || {}), ...pathItem }
 }
 spec.paths = normalizedPaths

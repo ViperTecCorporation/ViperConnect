@@ -43,13 +43,29 @@ describe('generated Postman collection', () => {
 
     for (const [route, pathItem] of Object.entries<any>(spec.paths)) {
       for (const method of Object.keys(pathItem).filter((candidate) => methods.has(candidate))) {
-        const expectedPath = canonicalPath(route)
+        const baseVariable = pathItem.servers?.length ? 'voip_base_url' : 'base_url'
+        const expectedPath = baseVariable === 'voip_base_url'
+          ? route.replace(/\{([^}]+)\}/g, '{{$1}}') : canonicalPath(route)
         expect(requests.some((item) => (
           item.request?.method === method.toUpperCase()
-          && item.request.url.raw.split('?', 1)[0] === `{{base_url}}${expectedPath}`
+          && item.request.url.raw.split('?', 1)[0] === `{{${baseVariable}}}${expectedPath}`
         ))).toBe(true)
       }
     }
+  })
+
+  test('keeps direct VoIP recovery on v1 with its own service credential', () => {
+    const collection = JSON.parse(fs.readFileSync(canonicalPathname, 'utf8'))
+    const request = flatten(collection.item).find((item) => (
+      item.request?.url.raw.startsWith('{{voip_base_url}}/v1/console/history?')
+    ))?.request
+    expect(request).toBeDefined()
+    expect(request).toEqual(expect.objectContaining({
+      auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{voip_service_token}}', type: 'string' }] },
+    }))
+    expect(request?.url.raw).not.toContain('{{version}}')
+    expect((request as any)?.header.some((header: any) => header.key === 'Authorization')).toBe(false)
+    expect(collection.variable.find((variable: any) => variable.key === 'voip_service_token')?.value).toBe('')
   })
 
   test('links charge, capture and completion through Postman variables', () => {

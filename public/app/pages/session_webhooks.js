@@ -1,6 +1,6 @@
-import { escapeHtml } from '../core/html.js?v=4.0.38-9a2d1afb';
-import { sessionPhone } from '../domain/session.js?v=4.0.38-9a2d1afb';
-import { renderInfoTooltip } from '../components/form_controls.js?v=4.0.38-9a2d1afb';
+import { escapeHtml } from '../core/html.js?v=4.0.39-b1ebcc98';
+import { sessionPhone } from '../domain/session.js?v=4.0.39-b1ebcc98';
+import { renderInfoTooltip } from '../components/form_controls.js?v=4.0.39-b1ebcc98';
 const events = {
     connected: 'A conexão foi aberta pelo provider ou a observação local de conexão foi retomada. Envia event=session.connected e state.current=connected. Não garante que toda mensagem será entregue.',
     disconnected: 'A conexão foi fechada, sem confirmação de desvinculação. Envia event=session.disconnected e state.current=disconnected. connection.reason/code indicam a causa quando conhecida; reconnect_expected indica expectativa, não garantia de reconexão.',

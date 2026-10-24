@@ -17,6 +17,8 @@ NUL
 # Local experiments and generated diagnostics, never release artifacts.
 .playwright-cli/
 output/playwright/
+# Preserved local deployment evidence, not source or release payload.
+output/hostpatch-recent-20261023/
 lab/registration/node_modules/
 lab/registration/ipv6_relay.cjs
 lab/registration/ipv6_transport.cjs

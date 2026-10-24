@@ -48,6 +48,11 @@
       "type": "string"
     },
     {
+      "key": "account_id",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "admin_token",
       "value": "",
       "type": "string"
@@ -69,6 +74,11 @@
     },
     {
       "key": "command",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "company_id",
       "value": "",
       "type": "string"
     },
@@ -258,8 +268,18 @@
       "type": "string"
     },
     {
+      "key": "service_id",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "session",
       "value": "5511999999999",
+      "type": "string"
+    },
+    {
+      "key": "source_instance_id",
+      "value": "",
       "type": "string"
     },
     {
@@ -274,6 +294,11 @@
     },
     {
       "key": "status_ids",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sync",
       "value": "",
       "type": "string"
     },
@@ -305,6 +330,16 @@
     {
       "key": "version",
       "value": "v15.0",
+      "type": "string"
+    },
+    {
+      "key": "voip_base_url",
+      "value": "https://voip.example.com",
+      "type": "string"
+    },
+    {
+      "key": "voip_service_token",
+      "value": "",
       "type": "string"
     },
     {
@@ -18106,6 +18141,80 @@
               "body": "{\n  \"error\": \"voip_service_timeout\"\n}"
             }
           ]
+        },
+        {
+          "name": "Recuperar eventos canônicos VoIP para consolidação no ViperChat",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{voip_base_url}}/v1/console/history?sync={{sync}}&company_id={{company_id}}&account_id={{account_id}}&service_id={{service_id}}&source_instance_id={{source_instance_id}}&cursor={{cursor}}&limit={{limit}}",
+              "host": [
+                "{{voip_base_url}}"
+              ],
+              "path": [
+                "v1",
+                "console",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "sync",
+                  "value": "{{sync}}",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "company_id",
+                  "value": "{{company_id}}",
+                  "description": "ID exato da empresa na central; pode ser UUID",
+                  "disabled": false
+                },
+                {
+                  "key": "account_id",
+                  "value": "{{account_id}}",
+                  "description": "Conta no ViperChat",
+                  "disabled": false
+                },
+                {
+                  "key": "service_id",
+                  "value": "{{service_id}}",
+                  "description": "Serviço cadastrado no ViperChat",
+                  "disabled": false
+                },
+                {
+                  "key": "source_instance_id",
+                  "value": "{{source_instance_id}}",
+                  "description": "Origem estável igual ao cadastro do produtor",
+                  "disabled": false
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "description": "nextCursor opaco da página anterior",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Rota do SERVIÇO VOIP, não do Manager. Authorization Bearer usa VOIP_SERVICE_TOKEN; o POST inverso ao ViperChat usa api_access_token. Sem cursor inicia snapshot do journal retido; nextCursor assinado continua em changes. Persistir checkpoint após processar a página; webhook e REST usam os mesmos event_id/revision. Não reiniciar cursor em erro automaticamente. Configuração de empresa/destino e ramais é revalidada em cada página. Gravações são baixadas separadamente em /v1/console/history-records/{recordId}/recording.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{voip_service_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
         },
         {
           "name": "Consultar histórico de chamadas e gravações",

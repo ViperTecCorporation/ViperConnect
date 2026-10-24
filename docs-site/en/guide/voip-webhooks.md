@@ -1,4 +1,74 @@
-# ViperChat VoIP webhook contract — v1 in development
+# ViperChat VoIP webhook contract — v1
+
+## Integrated release 4.0.39 / VoIP 0.1.68
+
+This release includes company-scoped events, call state changes and the REST
+consolidation used by ViperChat. Documentation/OpenAPI/Postman ship with
+`ghcr.io/viperteccorporation/viperconnect-docs:4.0.39`. Publishing does not deploy
+the VPS or upgrade the ViperChat receiver. Dated dev results below are historical,
+not evidence that this release is running in production.
+
+| Global state | Consolidation meaning |
+| --- | --- |
+| `routing` / `ringing` | Routing / alerting; not proof of an answer. |
+| `active` | Observed answer; preserve confirmed `answered_at`. |
+| `completed` | Finished after a confirmed answer. |
+| `missed` | Incoming call ended without a confirmed answer. |
+| `failed` / `cancelled` | Failure / cancellation; retain reasons and legs. |
+
+Participants also support `offered` and `answered_elsewhere`. Ending one leg
+does not end the whole call; transfers retain prior identities/participants.
+Late recording/AI updates preserve terminal state without reopening the call.
+Full snapshots are authoritative: supported event names do not imply a dedicated
+event for every transition; compare revisions and snapshots, not names alone.
+
+Webhook and REST update the same service/source/`call_id`. Deduplicate `event_id`,
+reject stale revisions and persist the checkpoint only after safely saving the
+page. Use `sync=webhook_events` for original envelopes, not `sync=changes` CDRs.
+Handle `410` with explicit retained-snapshot reconciliation, without deleting
+local history; on `503`, back off without advancing the cursor. Retention gaps
+cannot be recovered by this endpoint.
+
+Postman keeps the direct `/v1` path, `voip_base_url` and Bearer
+`voip_service_token`, separate from WhatsApp `{{version}}` and its token.
+The inverse POST to ViperChat uses the admin `api_access_token`.
+Before a future deployment, review only overlays proven to be incorporated,
+with backup/rollback. Publishing does not remove any bind or persistent volume.
+
+## 2026-10-23: REST recovery and conversation events
+
+ViperChat polls the **VoIP service HTTPS origin**, not the Manager origin:
+`GET /v1/console/history?sync=webhook_events`. Authenticate with Authorization:
+Bearer SERVICE_TOKEN; POST delivery to ViperChat instead uses its admin
+api_access_token. Required query: company_id (actual company ID/UUID), account_id,
+service_id (ViperChat destination), source_instance_id. limit=1..100, default 100;
+optional opaque cursor, at most 2048 bytes. Do not append /voip-api to the origin.
+
+Response: version=1, phase=snapshot|changes, scope, items containing
+{sequence,webhook_event}, nextCursor, hasMore. sequence equals revision. Persist
+the cursor only after safely applying the page; continue polling empty pages.
+Snapshots cover retained journal entries only. Deduplicate by service, source,
+event_id/revision and call_id, never phone/text/time similarity.
+Errors: 400 invalid query/cursor/limit; 401/403 auth/scope; 409 destination/scope
+changed; 410 expired cursor; 422 oversized event; 501 missing SQLite outbox.
+Use backoff on connection/5xx errors, never silently discard a checkpoint.
+Download audio separately at /v1/console/history-records/:recordId/recording
+with Bearer; AI data travels in snapshots. Never accept arbitrary recording URLs.
+
+Optional call.business_phone identifies the business line even in legacy audio
+delivery mode; earlier note_target remains supported. Upgrade the receiver first.
+ViperChat service settings control opening/reopening conversations (off by default).
+Live incoming calls follow the inbox single/new-conversation policy; historical
+terminal snapshots do not reopen closed work. Linked inboxes use their primary.
+One internal Voice-style card updates across events, without messaging customers.
+
+Manager queues include viperconnect.voip.webhooks.outgoing and .dead, read-only.
+Timed retries remain in SQLite outbox, not a RabbitMQ .delayed queue. Use company
+diagnostics/replay rather than purging. Company AI fields are grouped by task.
+Late REGISTER can receive an INVITE only for the authorized current ringing wave;
+this does not implement native push/CallKit. Recording retention also reads retained
+recording metadata after CDR pruning, keeping IDs/keys/history on expiry. Test only
+synthetic files; no real cleanup or VPS deployment is authorized by this change.
 
 2026-10-22. This reference covers company-scoped call events, recordings,
 transcripts and AI summaries. Code and synthetic validation are not publication,

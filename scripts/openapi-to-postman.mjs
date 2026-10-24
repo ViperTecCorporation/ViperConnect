@@ -15,6 +15,8 @@ const variableDefaults = {
   admin_token: '',
   manager_login_token: '',
   base_url: 'http://localhost:9876',
+  voip_base_url: 'https://voip.example.com',
+  voip_service_token: '',
   version: 'v15.0',
   token: '',
   phone: '5511999999999',
@@ -133,10 +135,14 @@ for (const [route, pathItem] of Object.entries(spec.paths || {})) {
     collectVariables(route, parameters, variables)
     const queryParameters = parameters.filter((parameter) => parameter.in === 'query')
     const queryString = queryParameters.map((parameter) => `${encodeURIComponent(parameter.name)}={{${parameter.name}}}`).join('&')
-    const routePath = postmanPath(route)
+    const baseVariable = pathItem.servers?.length ? 'voip_base_url' : 'base_url'
+    const routePath = baseVariable === 'voip_base_url'
+      ? route.replace(/\{([^}]+)\}/g, '{{$1}}') : postmanPath(route)
+    variables.add(baseVariable)
+    if (baseVariable === 'voip_base_url') variables.add('voip_service_token')
     const url = {
-      raw: `{{base_url}}${routePath}${queryString ? `?${queryString}` : ''}`,
-      host: ['{{base_url}}'],
+      raw: `{{${baseVariable}}}${routePath}${queryString ? `?${queryString}` : ''}`,
+      host: [`{{${baseVariable}}}`],
       path: routePath.split('/').filter(Boolean),
       query: queryParameters.map((parameter) => ({
         key: parameter.name,
@@ -169,7 +175,9 @@ for (const [route, pathItem] of Object.entries(spec.paths || {})) {
       }
       const security = operation.security ?? spec.security ?? []
       const administrative = route.startsWith('/admin/') || route.startsWith('/manager/')
-      if (administrative && !security.length) request.auth = { type: 'noauth' }
+      if (baseVariable === 'voip_base_url') {
+        request.auth = { type: 'bearer', bearer: [{ key: 'token', value: '{{voip_service_token}}', type: 'string' }] }
+      } else if (administrative && !security.length) request.auth = { type: 'noauth' }
       else if (administrative) {
         const schemes = security.flatMap((requirement) => Object.keys(requirement))
         const variable = schemes.includes('ManagerToken') ? 'token'

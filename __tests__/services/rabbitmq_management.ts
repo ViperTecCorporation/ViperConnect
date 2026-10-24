@@ -15,6 +15,17 @@ const options = {
 }
 
 describe('RabbitMQ management service', () => {
+  test('lists the two VoIP webhook queues, allows read-only inspection and rejects purging them or accessing other foreign queues', async () => {
+    const fetcher = jest.fn(async () => new Response(JSON.stringify([
+      { name: 'viperconnect.voip.webhooks.outgoing', messages: 2 },
+      { name: 'viperconnect.voip.webhooks.dead', messages: 1 },
+      { name: 'viperconnect.private', messages: 99 },
+    ]))) as typeof fetch
+    const manager = new RabbitManagement(options, fetcher)
+    expect((await manager.listQueues()).map(queue => queue.name)).toEqual(['viperconnect.voip.webhooks.outgoing', 'viperconnect.voip.webhooks.dead'])
+    await expect(manager.purgeQueue('viperconnect.voip.webhooks.dead')).rejects.toMatchObject({ status: 403 })
+    await expect(manager.previewMessages('viperconnect.private')).rejects.toMatchObject({ status: 403 })
+  })
   test('derives management credentials and vhost from AMQP_URL', () => {
     expect(rabbitManagementOptions('amqp://user:p%40ss@rabbitmq:5672/viper')).toMatchObject({
       baseUrl: 'http://rabbitmq:15672',

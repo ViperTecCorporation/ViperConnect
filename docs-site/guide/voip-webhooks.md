@@ -1,4 +1,78 @@
-# VoIP: contrato de webhooks recebidos pelo ViperChat — v1 em dev
+# VoIP: contrato de webhooks recebidos pelo ViperChat — v1
+
+## Release integrada 4.0.39 / VoIP 0.1.68
+
+Esta versão reúne o contrato por empresa, mudanças de estado e consolidação
+REST usados pelo ViperChat. O site/OpenAPI/Postman acompanham a imagem de docs
+`ghcr.io/viperteccorporation/viperconnect-docs:4.0.39`. Publicar não faz deploy
+na VPS nem atualiza o receptor ViperChat. As validações dev datadas abaixo são
+registros históricos, não prova de implantação desta versão.
+
+| Estado global | Significado para consolidação |
+| --- | --- |
+| `routing` / `ringing` | Encaminhando / em toque; não comprova atendimento. |
+| `active` | Atendimento observado; preservar `answered_at` quando confirmado. |
+| `completed` | Encerrada após atendimento comprovado. |
+| `missed` | Entrada encerrada sem atendimento comprovado. |
+| `failed` / `cancelled` | Falha / cancelamento, preservando motivo e legs. |
+
+Participações usam também `offered` e `answered_elsewhere`. Uma leg encerrada
+não encerra toda a ligação; transferência conserva IDs e participações anteriores.
+Atualizações de gravação/IA mantêm estado terminal e não reabrem a ligação.
+O serviço emite snapshots completos; nem todo tipo aceito pelo contrato implica
+evento dedicado para cada transição: comparar revisão e snapshot, não só o nome.
+
+Webhook e REST alimentam a mesma ligação por serviço/origem/`call_id`.
+Deduplicar `event_id`, rejeitar revisões obsoletas e persistir o checkpoint após
+gravação segura da página. `sync=webhook_events` recupera o envelope original;
+`sync=changes` é outro contrato, de CDR, e não deve ser usado para reconstruí-lo.
+`410` exige reconciliação explícita de snapshot retido, sem apagar o histórico;
+`503` exige backoff sem avançar cursor. Não há garantia de dados fora da retenção.
+
+No Postman, a rota direta mantém `/v1`, `voip_base_url` e Bearer
+`voip_service_token`, sem herdar `{{version}}` ou token da API WhatsApp.
+O POST inverso ao ViperChat usa `api_access_token` administrativo.
+Na futura implantação, revisar/remover somente overlays comprovadamente
+incorporados, com backup e rollback; nenhum bind/volume é removido pela release.
+
+## Atualização de 23/10/2026: REST, conversas e operação
+
+O ViperChat consulta a **raiz HTTPS do serviço VoIP**, não a origem do Manager:
+`GET /v1/console/history?sync=webhook_events`. Header `Authorization: Bearer
+TOKEN_DO_SERVICO`; o POST ao ViperChat continua com api_access_token de admin.
+Query obrigatória: company_id (ID real/UUID da empresa), account_id e service_id
+do ViperChat e source_instance_id estável. limit=1..100 (padrão 100), cursor
+opcional opaco de até 2048 bytes. Não acrescentar /voip-api à URL base.
+
+Resposta: version=1, phase=snapshot|changes, scope com os quatro IDs, items
+com {sequence,webhook_event}, nextCursor e hasMore. sequence=revision. Enviar
+nextCursor na próxima página; persistir somente após aplicação segura. Mesmo
+hasMore=false mantém polling incremental. Snapshot só cobre o journal retido.
+Deduplicação usa origem, serviço, event_id/revision e call_id; nunca texto/horário.
+
+400: query/cursor/limite inválido; 401/403: token/escopo; 409: escopo/destino
+alterado; 410: cursor expirado; 422: evento grande demais; 501: SQLite ausente.
+5xx/conexão: backoff. Não apagar checkpoint nem reler tudo silenciosamente.
+Gravação: GET /v1/console/history-records/:recordId/recording, com Bearer; IA
+acompanha os snapshots. URLs arbitrárias e segredos não fazem parte do envelope.
+
+call.business_phone é opcional e identifica a linha mesmo no envio legado de
+gravação; note_target anterior continua compatível. Atualizar receptor primeiro.
+No ViperChat, a opção abrir/reabrir atendimento fica no Serviço VoIP, desligada
+por padrão: entrada ao vivo respeita conversa única ou nova conversa da caixa;
+histórico terminal não reabre atendimentos. Caixas parceiras usam a principal.
+Uma bolha interna no estilo Voice é atualizada, sem enviar mensagem ao cliente.
+
+Filas agora incluem viperconnect.voip.webhooks.outgoing e .dead, apenas inspeção;
+retentativas temporizadas ficam na outbox SQLite, não em RabbitMQ .delayed.
+Use diagnóstico/replay por empresa para recuperação; purga não é recuperação.
+Transcrição e resumo ficam agrupados no editor da empresa, com avisos junto às chaves.
+
+REGISTER tardio pode receber INVITE de chamada em toque, somente na onda de
+roteamento autorizada. Isso não implementa push/CallKit por si só. Retenção passa
+a consultar call_recordings mesmo após saída do CDR do catálogo, preservando
+IDs/chaves/histórico ao expirar a mídia. Validar com arquivos sintéticos; esta
+alteração não autoriza limpeza real nem atualização automática da VPS.
 
 22/10/2026 — America/Cuiaba. **Contrato v1 em desenvolvimento:** autenticação por `api_access_token` de administrador; serviço VoIP entrega por RabbitMQ com outbox e retentativas. Cadastro por empresa, restrito aos ramais vinculados; gravação e IA podem usar esse mesmo caminho, sem envio legado simultâneo. As seções 8–11 especificam todas as opções e a evolução de artefatos. Não confundir código/testes com publicação, implantação na VPS ou aceite nativo em segundo plano.
 
@@ -57,6 +131,7 @@ Campos obrigatórios: `schema_version`, `event_id`, `event_type`, `occurred_at`,
 | `call.direction` | `inbound`, `outbound` ou `internal`. |
 | `call.state` | `routing`, `ringing`, `active`, `completed`, `missed`, `failed` ou `cancelled`. |
 | `call.started_at` | ISO 8601; `answered_at`/`ended_at` opcionais quando confirmados. |
+| `call.business_phone` | Opcional, telefone confirmado da linha externa (`+` opcional, 10–15 dígitos); omitido em chamada interna. Receptor deve aceitar o campo antes da atualização do produtor. |
 | `call.from` / `call.to` | Opcionais: `{kind: phone|extension|unknown, value: string, name?: string}`. |
 | `call.participants` | Array de no máximo 100 participações com `id` estável, `extension` quando conhecido, `state`, tempos opcionais e `sip_call_id` exato quando disponível. |
 | `call.recording` | Opcional: `{status, record_id}`; sem bytes de áudio, senha, path local ou credencial S3. |

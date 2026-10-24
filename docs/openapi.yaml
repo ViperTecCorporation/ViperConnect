@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ViperConnect API
-  version: 2.5.2
+  version: 4.0.39
   description: |
     API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.
     - Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).
@@ -6632,6 +6632,47 @@ paths:
       security: [{"AdminToken":[]}]
       x-destructive: false
 
+  /v1/console/history:
+    servers:
+      - url: https://voip.example.com
+        description: Serviço VoIP direto; não é a origem HTTP do ViperConnect.
+    get:
+      tags: ["Telefonia"]
+      summary: Recuperar eventos canônicos VoIP para consolidação no ViperChat
+      description: "Rota do SERVIÇO VOIP, não do Manager. Authorization Bearer usa VOIP_SERVICE_TOKEN; o POST inverso ao ViperChat usa api_access_token. Sem cursor inicia snapshot do journal retido; nextCursor assinado continua em changes. Persistir checkpoint após processar a página; webhook e REST usam os mesmos event_id/revision. Não reiniciar cursor em erro automaticamente. Configuração de empresa/destino e ramais é revalidada em cada página. Gravações são baixadas separadamente em /v1/console/history-records/{recordId}/recording."
+      security: [{ VoipServiceToken: [] }]
+      parameters:
+        - { name: sync, in: query, required: true, schema: { type: string, enum: [webhook_events] } }
+        - { name: company_id, in: query, required: true, schema: { type: string }, description: ID exato da empresa na central; pode ser UUID }
+        - { name: account_id, in: query, required: true, schema: { type: string }, description: Conta no ViperChat }
+        - { name: service_id, in: query, required: true, schema: { type: string }, description: Serviço cadastrado no ViperChat }
+        - { name: source_instance_id, in: query, required: true, schema: { type: string }, description: Origem estável igual ao cadastro do produtor }
+        - { name: cursor, in: query, schema: { type: string, maxLength: 2048 }, description: nextCursor opaco da página anterior }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        "200":
+          description: Página sem cache; cada item contém sequence e webhook_event completo; sequence corresponde à revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, phase, scope, items, nextCursor, hasMore]
+                properties:
+                  version: { type: integer, enum: [1] }
+                  phase: { type: string, enum: [snapshot, changes] }
+                  scope: { type: object }
+                  items: { type: array, items: { type: object, properties: { sequence: { type: integer }, webhook_event: { $ref: '#/components/schemas/VoipWebhookEnvelope' } } } }
+                  nextCursor: { type: string }
+                  hasMore: { type: boolean }
+              example: { version: 1, phase: snapshot, scope: { company_id: empresa, account_id: "1", service_id: "10", source_instance_id: pbx }, items: [], nextCursor: cursor-opaco-assinado, hasMore: false }
+        "400": { description: 'Query, limite ou cursor inválido' }
+        "401": { description: Token do serviço recusado }
+        "403": { description: Empresa ou vínculo não autorizado }
+        "409": { description: Escopo ou destino alterado }
+        "410": { description: Cursor expirado; avaliar nova leitura e possível lacuna }
+        "422": { description: Envelope individual grande demais }
+        "501": { description: Recuperação exige outbox SQLite }
+        "503": { description: Preparação de envelopes pendente; repetir com backoff sem avançar o cursor }
   /admin/voip/console/history:
     get:
       tags: ["Telefonia"]
@@ -7713,6 +7754,10 @@ paths:
 
 components:
   securitySchemes:
+    VoipServiceToken:
+      type: http
+      scheme: bearer
+      description: VOIP_SERVICE_TOKEN do serviço VoIP direto. Não é o api_access_token administrativo usado nos POSTs para o ViperChat nem uma senha SIP.
     AdminToken:
       type: http
       scheme: bearer
@@ -7755,6 +7800,84 @@ components:
         enum: [companies, accounts, lineGroups, extensionGroups, sessions, extensions]
 
   schemas:
+    VoipWebhookEnvelope:
+      type: object
+      description: Snapshot canônico persistido na outbox; o mesmo event_id e conteúdo são usados no POST ao ViperChat e na consolidação REST. Revisões obsoletas não devem regredir o estado da chamada.
+      required: [schema_version, event_id, event_type, occurred_at, source_instance_id, call_id, revision, call]
+      properties:
+        schema_version: { type: integer, enum: [1] }
+        event_id: { type: string, minLength: 1, maxLength: 200 }
+        event_type: { type: string, enum: [call.created, call.ringing, participant.answered, participant.released, call.transferred, call.ended, call.updated, recording.updated, call.artifacts.updated] }
+        occurred_at: { type: string, format: date-time }
+        source_instance_id: { type: string, minLength: 1, maxLength: 200 }
+        call_id: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        call: { $ref: '#/components/schemas/VoipWebhookCall' }
+    VoipWebhookCall:
+      type: object
+      required: [direction, state, started_at, participants]
+      properties:
+        direction: { type: string, enum: [inbound, outbound, internal] }
+        state: { type: string, enum: [routing, ringing, active, completed, missed, failed, cancelled] }
+        business_phone: { type: string, pattern: '^\+?\d{10,15}$', description: Telefone confirmado da linha externa; omitido em chamada interna. Nunca inferir de LID/JID. Receptor precisa aceitar este campo opcional. }
+        started_at: { type: string, format: date-time }
+        answered_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        end_reason: { type: string, maxLength: 128 }
+        from: { $ref: '#/components/schemas/VoipWebhookParty' }
+        to: { $ref: '#/components/schemas/VoipWebhookParty' }
+        participants:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [id, state]
+            properties:
+              id: { type: string, minLength: 1, maxLength: 200 }
+              extension: { type: string, maxLength: 128 }
+              sip_call_id: { type: string, maxLength: 256 }
+              state: { type: string, enum: [offered, ringing, active, completed, missed, failed, cancelled, answered_elsewhere] }
+              started_at: { type: string, format: date-time }
+              answered_at: { type: string, format: date-time }
+              ended_at: { type: string, format: date-time }
+        recording: { $ref: '#/components/schemas/VoipWebhookRecording' }
+        artifacts:
+          type: object
+          description: Opcional, apenas no modo artifactsDelivery=webhook. Sem áudio, URLs arbitrárias, caminhos ou segredos; consultar mídia por record_id usando Bearer.
+          properties:
+            recording: { $ref: '#/components/schemas/VoipWebhookRecording' }
+            ai:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [disabled, queued, processing, completed, failed] }
+                transcript: { type: string, maxLength: 64000 }
+                summary: { type: string, maxLength: 16000 }
+                transcription_model: { type: string, maxLength: 128 }
+                summary_model: { type: string, maxLength: 128 }
+                completed_at: { type: string, format: date-time }
+            note_target:
+              type: object
+              required: [business_phone, remote_phone]
+              properties:
+                business_phone: { type: string, pattern: '^\+?\d{10,15}$' }
+                remote_phone: { type: string, pattern: '^\+?\d{10,15}$' }
+    VoipWebhookParty:
+      type: object
+      required: [kind, value]
+      properties:
+        kind: { type: string, enum: [phone, extension, unknown] }
+        value: { type: string }
+        name: { type: string, maxLength: 128 }
+    VoipWebhookRecording:
+      type: object
+      required: [status, record_id]
+      properties:
+        status: { type: string, enum: [disabled, recording, processing, available, failed] }
+        record_id: { type: string, minLength: 1, maxLength: 200 }
+        mime_type: { type: string }
+        size_bytes: { type: integer, minimum: 1, maximum: 52428800 }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
     SessionConversation:
       type: object
       required: [id, name, kind, timestamp_ms, last_message_id, preview, type]
