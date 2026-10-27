@@ -193,6 +193,10 @@ such as `example.com/page` is normalized to `https://example.com/page`. Email
 addresses, IPs, `localhost`, filenames and malformed domains do not enable a
 preview. The page and its Open Graph image must be publicly reachable. Do not
 set `preview_url`.
+Email addresses remain unchanged, including dotted local parts, subdomains and
+suffixes such as `.com.br`: no part of an email receives `https://`.
+When the same message also contains a separate website, its preview remains
+available without additional configuration or permissions.
 Links from `youtube.com`, including Shorts, and `youtu.be` automatically use
 YouTube's official `oEmbed` response for title and thumbnail metadata without
 downloading the complete page. If that lookup fails, the generic preview path

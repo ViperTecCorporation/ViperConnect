@@ -174,6 +174,10 @@ sem protocolo, como `vipertec.com.br/oferta`, é normalizado para
 `https://vipertec.com.br/oferta`. E-mails, IPs, `localhost`, nomes de arquivo e
 domínios malformados não ativam a prévia. A página e sua imagem Open Graph
 precisam estar publicamente acessíveis pela UnoAPI. Não defina `preview_url`.
+Endereços de e-mail são preservados integralmente, inclusive partes com pontos,
+subdomínios e sufixos como `.com.br`: nenhum trecho recebe `https://`.
+Se a mesma mensagem contiver um site separado do e-mail, a prévia desse site
+continua disponível, sem configuração ou permissão adicional.
 Links `youtube.com`, incluindo Shorts, e `youtu.be` usam automaticamente o
 `oEmbed` oficial do YouTube para obter título e miniatura sem baixar a página
 completa. Se essa consulta falhar, o envio continua pelo coletor genérico.
