@@ -144,6 +144,9 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: "viperconnect"
       RABBITMQ_DEFAULT_PASS: "TROQUE_A_SENHA"
+    # Telefonia usa rede host; o broker AMQP fica acessível somente no loopback.
+    ports:
+      - "127.0.0.1:5672:5672"
     volumes:
       - rabbitmq:/var/lib/rabbitmq
     healthcheck:
@@ -188,6 +191,7 @@ services:
     restart: always
     network_mode: host
     environment:
+      AMQP_URL: "amqp://viperconnect:TROQUE_A_SENHA@127.0.0.1:5672"
       PORT: "3097"
       UNOAPI_PROCESS_ROLE: "voip"
       VOIP_SERVICE_TOKEN: "GERE_UM_TOKEN_LONGO_E_ALEATORIO"

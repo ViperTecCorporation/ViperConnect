@@ -49,6 +49,9 @@ export const renderVoipWebhookFields = (config: Record<string, any> = {}) => {
   return `<h3 class="wide">Eventos de chamadas no ViperChat</h3>
     <p class="hint wide">Integração desta empresa: somente chamadas com ramais vinculados a ela enviam eventos. Todos os seus ramais herdam esta configuração, sem repetir tokens por linha. Configure o serviço VoIP no ViperChat e copie a origem estável. A fila persistente usa retentativas; não envia áudio nem inicia chamadas.</p>
     <label class="voip-check wide"><input type="checkbox" name="viperchatWebhook.enabled" ${config.enabled === true ? 'checked' : ''}><span>Enviar eventos ao ViperChat</span></label>
+    <label class="voip-check wide"><input type="checkbox" name="viperchatWebhook.nativeWakeEnabled" ${config.nativeWakeEnabled === true ? 'checked' : ''}><span>Permitir despertar do app para chamadas recebidas</span></label>
+    <label class="field"><span>Validade da oferta nativa (segundos)</span><input type="number" name="viperchatWebhook.nativeWakeTimeoutSeconds" value="${e(`${config.nativeWakeTimeoutSeconds ?? 30}`)}" min="5" max="60" step="1" required><small class="muted">De 5 a 60 segundos; padrão 30. Novos registros do ramal não renovam esse prazo.</small></label>
+    <p class="hint wide">Desativado por padrão. Exige eventos da empresa habilitados, receptor ViperChat compatível e dispositivos nativos autorizados. Apenas conserva uma oferta real para o ramal vinculado registrar e receber o INVITE; não ativa push, não atende a chamada e não altera o transporte de gravações.</p>
     <label class="field wide"><span>Envio de gravação e IA</span><select name="viperchatWebhook.artifactsDelivery"><option value="legacy" ${config.artifactsDelivery !== 'webhook' ? 'selected' : ''}>Integração legada por caixa de entrada</option><option value="webhook" ${config.artifactsDelivery === 'webhook' ? 'selected' : ''}>Webhook da empresa</option></select><small class="muted">Escolha somente um transporte. Webhook exige o envio da empresa habilitado e configuração válida; desativa o envio legado efetivo das linhas, preservando caixas, tokens e configurações salvas. Não envia pelos dois caminhos.</small></label>
     <div class="wide" data-voip-webhook-mode="webhook" ${webhook ? '' : 'hidden'}>
       <label class="field"><span>URL completa do webhook da empresa</span><input type="url" name="viperchatWebhook.endpointUrl" value="${e(endpointFromConfig(config))}" placeholder="https://chat.exemplo.com/api/v1/accounts/1/voip/services/123/events" required ${webhook ? '' : 'disabled'}><small class="muted">Cole a URL gerada no cadastro do serviço VoIP no ViperChat. A conta e o serviço são extraídos automaticamente; não preencha IDs manualmente.</small></label>
@@ -66,11 +69,17 @@ export const renderVoipWebhookFields = (config: Record<string, any> = {}) => {
 
 export const voipWebhookPayload = (data: FormData): Record<string, unknown> => {
   const value = (key: string) => `${data.get(`viperchatWebhook.${key}`) || ''}`.trim()
+  const nativeWakeTimeoutSeconds = Number(value('nativeWakeTimeoutSeconds') || '30')
+  if (!Number.isInteger(nativeWakeTimeoutSeconds) || nativeWakeTimeoutSeconds < 5 || nativeWakeTimeoutSeconds > 60) {
+    throw new Error('A validade da oferta nativa deve ser um inteiro entre 5 e 60 segundos.')
+  }
   const webhook = value('artifactsDelivery') === 'webhook'
   const destination = webhook ? parseVoipWebhookUrl(value('endpointUrl'))
     : Object.fromEntries(['baseUrl', 'accountId', 'serviceId'].map(key => [key, value(key)]))
   return {
     enabled: data.has('viperchatWebhook.enabled'),
+    nativeWakeEnabled: data.has('viperchatWebhook.nativeWakeEnabled'),
+    nativeWakeTimeoutSeconds,
     artifactsDelivery: value('artifactsDelivery') === 'webhook' ? 'webhook' : 'legacy',
     ...destination,
     sourceInstanceId: value('sourceInstanceId'),

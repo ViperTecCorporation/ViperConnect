@@ -8599,6 +8599,16 @@ components:
       description: Eventos de chamadas por empresa, somente dos ramais vinculados a ela. Todos os ramais herdam a configuração, sem seletor e sem repetir credenciais por linha. Configuração exclusiva de administrador do Manager, independente do envio de gravações. Chamadas sem evidência de ramal da empresa não são enviadas; transferências não incluem ramais de outras empresas. Entrega persistente SQLite/RabbitMQ. HTTPS obrigatório; HTTP loopback somente em desenvolvimento. Configuração legada por linha não é ativada nem migrada automaticamente; exige revisão do operador.
       properties:
         enabled: { type: boolean, default: false }
+        nativeWakeEnabled:
+          type: boolean
+          default: false
+          description: Opt-in por empresa para conservar ofertas SIP reais enquanto o app nativo registra. Exige eventos habilitados, receptor compatível e dispositivo autorizado. Não ativa push nem atende chamadas. Desabilitado preserva o roteamento anterior.
+        nativeWakeTimeoutSeconds:
+          type: integer
+          minimum: 5
+          maximum: 60
+          default: 30
+          description: Validade máxima da oferta nativa em segundos, limitada também pela janela real de roteamento. Novo REGISTER ou retry não renova o prazo. Edições que omitem o campo preservam o valor salvo.
         artifactsDelivery:
           type: string
           enum: [legacy, webhook]

@@ -1,0 +1,37 @@
+# Complemento opcional para um dos modelos docker-compose.unoapi-*.yml.
+# Não altera automaticamente STORAGE_ENDPOINT ou as credenciais das sessões.
+# Configure https://s3.seudominio.com.br e crie o bucket privado antes de usar.
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.3
+    restart: unless-stopped
+    command: ["/data"]
+    environment:
+      RUSTFS_ACCESS_KEY: "TROQUE_A_CHAVE_ADMIN_RUSTFS"
+      RUSTFS_SECRET_KEY: "GERE_UM_SEGREDO_ADMIN_RUSTFS_LONGO_E_ALEATORIO"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOGGER_LEVEL: "warn"
+      RUSTFS_OBS_LOG_DIRECTORY: "/logs"
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    # Nginx no host acessa 9000; console somente por túnel SSH/rede administrativa.
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    networks:
+      - unoapi
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  rustfs-data:
+  rustfs-logs:

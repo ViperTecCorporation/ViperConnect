@@ -33,7 +33,7 @@ describe('ViperChat call webhook configuration', () => {
     form.set('viperchatWebhook.accountId', ' 1 ')
     form.set('viperchatWebhook.apiAccessToken', '  ')
     form.set('viperchatWebhook.activatedAt', 'untrusted')
-    expect(voipWebhookPayload(form)).toEqual({ enabled: true, artifactsDelivery: 'legacy', accountId: '1', serviceId: '', baseUrl: '', sourceInstanceId: '' })
+    expect(voipWebhookPayload(form)).toEqual({ enabled: true, nativeWakeEnabled: false, nativeWakeTimeoutSeconds: 30, artifactsDelivery: 'legacy', accountId: '1', serviceId: '', baseUrl: '', sourceInstanceId: '' })
     form.set('viperchatWebhook.artifactsDelivery', 'webhook')
     form.set('viperchatWebhook.endpointUrl', 'https://chat.example/api/v1/accounts/1/voip/services/206/events')
     expect(voipWebhookPayload(form).artifactsDelivery).toBe('webhook')
@@ -43,6 +43,35 @@ describe('ViperChat call webhook configuration', () => {
     form.delete('viperchatWebhook.enabled')
     form.set('viperchatWebhook.clearApiAccessToken', 'on')
     expect(voipWebhookPayload(form)).toMatchObject({ enabled: false, clearApiAccessToken: true })
+  })
+  test('native wake is opt-in and the company editor retains saved state and timeout', () => {
+    const defaults = renderVoipWebhookFields()
+    expect(defaults).toContain('name="viperchatWebhook.nativeWakeEnabled" >')
+    expect(defaults).toContain('name="viperchatWebhook.nativeWakeTimeoutSeconds" value="30" min="5" max="60" step="1" required')
+    const saved = renderVoipResourceModal({ companies: [{ id: 'company', viperchatWebhook: {
+      enabled: true, nativeWakeEnabled: true, nativeWakeTimeoutSeconds: 15,
+    } }] }, 'companies', 'company')
+    expect(saved).toContain('name="viperchatWebhook.nativeWakeEnabled" checked')
+    expect(saved).toContain('name="viperchatWebhook.nativeWakeTimeoutSeconds" value="15"')
+    const form = new FormData()
+    expect(voipWebhookPayload(form)).toMatchObject({ nativeWakeEnabled: false, nativeWakeTimeoutSeconds: 30 })
+    form.set('viperchatWebhook.nativeWakeEnabled', 'on')
+    form.set('viperchatWebhook.nativeWakeTimeoutSeconds', '15')
+    expect(voipWebhookPayload(form)).toMatchObject({ nativeWakeEnabled: true, nativeWakeTimeoutSeconds: 15 })
+    form.delete('viperchatWebhook.nativeWakeEnabled')
+    expect(voipWebhookPayload(form)).toMatchObject({ nativeWakeEnabled: false, nativeWakeTimeoutSeconds: 15 })
+  })
+  test.each(['0', '4', '61', '10.5', 'NaN', 'Infinity', 'invalid'])(
+    'rejects native offer timeout %s before submitting the company', timeout => {
+      const form = new FormData()
+      form.set('viperchatWebhook.nativeWakeTimeoutSeconds', timeout)
+      expect(() => voipWebhookPayload(form)).toThrow('inteiro entre 5 e 60')
+    },
+  )
+  test.each(['5', '30', '60'])('accepts native offer timeout boundary %s', timeout => {
+    const form = new FormData()
+    form.set('viperchatWebhook.nativeWakeTimeoutSeconds', timeout)
+    expect(voipWebhookPayload(form).nativeWakeTimeoutSeconds).toBe(Number(timeout))
   })
   test('submits webhook configuration only for companies, never for line writes', () => {
     const app = Object.create(ViperConnectApp.prototype) as any

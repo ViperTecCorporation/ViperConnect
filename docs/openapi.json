@@ -17813,6 +17813,18 @@
             "type": "boolean",
             "default": false
           },
+          "nativeWakeEnabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt-in por empresa para conservar ofertas SIP reais enquanto o app nativo registra. Exige eventos habilitados, receptor compatível e dispositivo autorizado. Não ativa push nem atende chamadas. Desabilitado preserva o roteamento anterior."
+          },
+          "nativeWakeTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 60,
+            "default": 30,
+            "description": "Validade máxima da oferta nativa em segundos, limitada também pela janela real de roteamento. Novo REGISTER ou retry não renova o prazo. Edições que omitem o campo preservam o valor salvo."
+          },
           "artifactsDelivery": {
             "type": "string",
             "enum": [

@@ -1,0 +1,404 @@
+# Modelo completo com RustFS; gerado por generate-storage-examples.mjs.
+# Configure bucket, credenciais da aplicação e STORAGE_ENDPOINT HTTPS antes de usar.
+version: "3.8"
+
+# Docker Swarm com Traefik conectado a uma overlay externa.
+# Substitua todos os placeholders diretamente neste arquivo antes do deploy.
+# As faixas de mídia do arquivo final são fixas e usam a sintaxe compacta do Swarm.
+
+x-base: &base
+  image: ghcr.io/viperteccorporation/viperconnect:latest
+  networks:
+    - unoapi-internal
+  stop_grace_period: 60s
+
+x-base-environment: &base-environment
+  UNOAPI_SERVER_NAME: "server_1"
+  WHATSAPP_ENGINE: "zapo"
+
+  HTTP_PROTOCOL: "https"
+  BASE_URL: "https://unoapi.seudominio.com.br"
+  UNOAPI_AUTH_TOKEN: "GERE_UM_TOKEN_LONGO_E_ALEATORIO"
+
+  AMQP_URL: "amqp://viperconnect:TROQUE_A_SENHA_RABBITMQ@unoapi-rabbitmq:5672"
+  REDIS_URL: "redis://:TROQUE_A_SENHA_VALKEY@unoapi-redis:6379"
+  VOIP_SERVICE_URL: "http://viperconnect-telefonia:3097"
+  VOIP_BRIDGE_URL: "ws://viperconnect-telefonia:3097/v1/bridge/zapo"
+  VOIP_SERVICE_TOKEN: "GERE_UM_TOKEN_VOIP_LONGO_E_ALEATORIO"
+  VOIP_MAX_CONCURRENT_CALLS: "2"
+
+  WEBHOOK_URL: "https://chatwoot.seudominio.com.br/webhooks/whatsapp"
+  WEBHOOK_TOKEN: "TROQUE_O_TOKEN_WEBHOOK"
+  WEBHOOK_HEADER: "Authorization"
+
+  STORAGE_BUCKET_NAME: "unoapi"
+  STORAGE_ACCESS_KEY_ID: "TROQUE_A_CHAVE"
+  STORAGE_SECRET_ACCESS_KEY: "TROQUE_O_SEGREDO"
+  STORAGE_REGION: "auto"
+  STORAGE_ENDPOINT: "https://SEU-ENDPOINT-S3"
+  STORAGE_FORCE_PATH_STYLE: "true"
+  STORAGE_TIMEOUT_MS: "1200000"
+
+  LOG_LEVEL: "info"
+  UNO_LOG_LEVEL: "info"
+  IGNORE_GROUP_MESSAGES: "true"
+  IGNORE_BROADCAST_STATUSES: "true"
+  IGNORE_OWN_MESSAGES: "false"
+  IGNORE_STATUS_MESSAGE: "true"
+  IGNORE_YOURSELF_MESSAGES: "false"
+  IGNORE_HISTORY_MESSAGES: "true"
+  IGNORE_BROADCAST_MESSAGES: "true"
+  COMPOSING_MESSAGE: "true"
+  REJECT_CALLS: "Nao consigo atender ligacoes"
+  REJECT_CALLS_WEBHOOK: "Tentou ligar no WhatsApp"
+  SEND_CONNECTION_STATUS: "true"
+  AUTO_CONNECT: "true"
+  CLEAN_CONFIG_ON_DISCONNECT: "true"
+  UNOAPI_RETRY_REQUEST_DELAY_MS: "10000"
+  CONSUMER_TIMEOUT_MS: "450000"
+  HISTORY_MAX_AGE_DAYS: "7"
+
+  STATUS_RECIPIENT_RETENTION_SEC: "2592000"
+  CONTACT_INFO_TTL_SEC: "2592000"
+  ZAPO_REDIS_MESSAGES_TTL_MS: "2592000000"
+  ZAPO_REDIS_THREADS_TTL_MS: "2592000000"
+  ZAPO_REDIS_CONTACTS_TTL_MS: "2592000000"
+  ZAPO_REDIS_KEY_PREFIX: "unoapi-zapo:"
+  ZAPO_REDIS_MAINTENANCE_INTERVAL_MS: "3600000"
+  ZAPO_SESSION_LEASE_TTL_MS: "60000"
+  ZAPO_SESSION_LEASE_RENEW_MS: "20000"
+
+services:
+  unoapi:
+    <<: *base
+    networks:
+      - unoapi-internal
+      - traefik-public
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "web"
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:9876/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.swarm.network=traefik-public"
+        - "traefik.http.routers.viperconnect.rule=Host(`unoapi.seudominio.com.br`)"
+        - "traefik.http.routers.viperconnect.entrypoints=websecure"
+        - "traefik.http.routers.viperconnect.tls=true"
+        - "traefik.http.routers.viperconnect.tls.certresolver=letsencrypt"
+        - "traefik.http.services.viperconnect.loadbalancer.server.port=9876"
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1536M
+        reservations:
+          memory: 512M
+
+  unoapi-broker:
+    <<: *base
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "broker"
+      UNOAPI_VIDEO_WORKER_MODE: "dedicated"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  unoapi-video-worker:
+    <<: *base
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "video"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  unoapi-worker-zapo:
+    <<: *base
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "worker"
+      UNOAPI_WORKER_ENGINE: "zapo"
+      ZAPO_NETWORK_IP_FAMILY: "auto"
+      ZAPO_CHAT_SOCKET_IP_FAMILY: ""
+      ZAPO_MEDIA_UPLOAD_IP_FAMILY: ""
+      ZAPO_MEDIA_DOWNLOAD_IP_FAMILY: ""
+      ZAPO_LINK_PREVIEW_IP_FAMILY: ""
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2048M
+        reservations:
+          memory: 512M
+
+  unoapi-rabbitmq:
+    image: rabbitmq:4.2.2-management-alpine
+    hostname: unoapi-rabbitmq
+    networks:
+      - unoapi-internal
+    environment:
+      RABBITMQ_DEFAULT_USER: "viperconnect"
+      RABBITMQ_DEFAULT_PASS: "TROQUE_A_SENHA_RABBITMQ"
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.viperconnect.data == true
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1024M
+        reservations:
+          memory: 256M
+
+  unoapi-redis:
+    image: valkey/valkey:9-alpine3.23
+    networks:
+      - unoapi-internal
+    environment:
+      VALKEY_PASSWORD: "TROQUE_A_SENHA_VALKEY"
+    command:
+      - valkey-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --no-appendfsync-on-rewrite
+      - "no"
+      - --save
+      - "3600 1"
+      - --requirepass
+      - "TROQUE_A_SENHA_VALKEY"
+      - --protected-mode
+      - "no"
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASSWORD\" ping | grep -q PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.viperconnect.data == true
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4096M
+        reservations:
+          memory: 512M
+
+  viperconnect-telefonia:
+    image: ghcr.io/viperteccorporation/viperconnect:latest
+    networks:
+      - unoapi-internal
+      - traefik-public
+    environment:
+      AMQP_URL: "amqp://viperconnect:TROQUE_A_SENHA_RABBITMQ@unoapi-rabbitmq:5672"
+      PORT: "3097"
+      UNOAPI_PROCESS_ROLE: "voip"
+      VOIP_SERVICE_TOKEN: "GERE_UM_TOKEN_VOIP_LONGO_E_ALEATORIO"
+      VOIP_BRIDGE_TOKEN: "GERE_UM_TOKEN_VOIP_LONGO_E_ALEATORIO"
+      VOIP_MAX_CONCURRENT_CALLS: "2"
+      VOIP_DOMAIN: "sip.seudominio.com.br"
+      VOIP_PUBLIC_WS_URL: "wss://voip.seudominio.com.br/sip/ws"
+      VOIP_LAN_DOMAIN: "192.168.1.10"
+      VOIP_STUN_URL: "stun:sip.seudominio.com.br:3478"
+      VOIP_TURN_URL: "turn:sip.seudominio.com.br:3478"
+      VOIP_TURN_USERNAME: "TROQUE_O_USUARIO_TURN"
+      VOIP_TURN_CREDENTIAL: "TROQUE_A_SENHA_TURN"
+      VOIP_CALL_ENGINE: "zapo_native"
+      VOIP_NATIVE_LOG_LEVEL: "info"
+      VOIP_AUTO_UPDATE_ENABLED: "false"
+      VOIP_AUTO_UPDATE_APPLY_ENABLED: "false"
+      VOIP_MEMORY_RESTART_RSS_MB: "0"
+      CALL_HISTORY_STORAGE: "sqlite"
+      VOIP_SQLITE_PATH: "/home/u/app/data/voip.sqlite"
+      VOIP_APP_STORAGE: "sqlite"
+      VOICE_CONFIG_STORAGE: "sqlite"
+      SIP_RTP_ENABLED: "true"
+      SIP_RTP_BIND_IPV4: "0.0.0.0"
+      SIP_RTP_BIND_IPV6: "::"
+      SIP_RTP_PUBLIC_IPV4: "203.0.113.10"
+      SIP_RTP_PUBLIC_IPV6_HOST: "sip6.seudominio.com.br"
+      SIP_RTP_LAN_IP: "192.168.1.10"
+      SIP_RTP_TRUSTED_PRIVATE_SDP_PEERS: ""
+      SIP_RTP_PORT: "5060"
+      # Estes quatro valores correspondem exatamente as faixas fixas publicadas abaixo.
+      SIP_RTP_MEDIA_PORT_MIN: "12000"
+      SIP_RTP_MEDIA_PORT_MAX: "13000"
+      SIP_WEBRTC_UDP_PORT_MIN: "13001"
+      SIP_WEBRTC_UDP_PORT_MAX: "14000"
+      SIP_RTP_CODECS: "PCMU,PCMA"
+      SIP_REGISTER_EXPIRES_SECONDS: "60"
+    volumes:
+      - telefonia:/home/u/app/data
+    ports:
+      - target: 5060
+        published: 5060
+        protocol: udp
+        mode: host
+      # Faixas fixas compactas; o docker stack config expande cada porta em mode: ingress.
+      - "12000-13000:12000-13000/udp"
+      - "13001-14000:13001-14000/udp"
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:3097/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.swarm.network=traefik-public"
+        - "traefik.http.routers.viperconnect-voip.rule=Host(`voip.seudominio.com.br`)"
+        - "traefik.http.routers.viperconnect-voip.entrypoints=websecure"
+        - "traefik.http.routers.viperconnect-voip.tls=true"
+        - "traefik.http.routers.viperconnect-voip.tls.certresolver=letsencrypt"
+        - "traefik.http.services.viperconnect-voip.loadbalancer.server.port=3097"
+      placement:
+        constraints:
+          - node.labels.viperconnect.voip == true
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4096M
+        reservations:
+          memory: 512M
+  rustfs:
+    image: rustfs/rustfs:1.0.3
+    command: [ "/data" ]
+    environment:
+      RUSTFS_ACCESS_KEY: "TROQUE_A_CHAVE_ADMIN_RUSTFS"
+      RUSTFS_SECRET_KEY: "GERE_UM_SEGREDO_ADMIN_RUSTFS_LONGO_E_ALEATORIO"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_OBS_LOGGER_LEVEL: "warn"
+      RUSTFS_OBS_LOG_DIRECTORY: "/logs"
+    networks:
+      - unoapi-internal
+      - traefik-public
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    # Swarm não permite bind em 127.0.0.1: restrinja 9000 no firewall ao proxy.
+    ports:
+      - target: 9000
+        published: 9000
+        protocol: tcp
+        mode: host
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/health/ready" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.viperconnect.data == true
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+      labels:
+        - "traefik.enable=true"
+        - "traefik.swarm.network=traefik-public"
+        - "traefik.http.routers.unoapi-s3.rule=Host(`s3.seudominio.com.br`)"
+        - "traefik.http.routers.unoapi-s3.entrypoints=websecure"
+        - "traefik.http.routers.unoapi-s3.tls=true"
+        - "traefik.http.routers.unoapi-s3.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.unoapi-s3.service=unoapi-s3"
+        - "traefik.http.services.unoapi-s3.loadbalancer.server.port=9000"
+        - "traefik.http.services.unoapi-s3.loadbalancer.passhostheader=true"
+
+volumes:
+  rabbitmq:
+    driver: local
+  redis:
+    driver: local
+  telefonia:
+    driver: local
+  rustfs-data:
+    driver: local
+  rustfs-logs:
+    driver: local
+
+networks:
+  unoapi-internal:
+    driver: overlay
+    attachable: true
+  traefik-public:
+    external: true
+    name: traefik-public

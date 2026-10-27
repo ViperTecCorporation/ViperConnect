@@ -5,6 +5,9 @@ proxy and for Traefik. Both use the unified `latest` image, separate web,
 broker, video and Zapo worker roles, persistent Valkey and RabbitMQ, and host
 networking for telephony.
 
+For self-hosted S3 storage, add the [optional RustFS model](/en/guide/storage-rustfs)
+with dedicated volumes and HTTPS routing. It does not switch an existing S3 destination.
+
 - [Download the Nginx/edge-proxy model](/examples/docker-compose.unoapi-nginx.yml)
 - [Download the Traefik model](/examples/docker-compose.unoapi-traefik.yml)
 
@@ -22,6 +25,11 @@ Before deployment, replace every domain, token, password, public address and
 storage credential. Keep the same RabbitMQ password in the service and
 `AMQP_URL`, and the same Valkey password in `REDIS_URL`, `--requirepass` and the
 healthcheck.
+
+Telephony also receives `AMQP_URL` for ViperChat event delivery. Host networking
+uses `127.0.0.1:5672`, so RabbitMQ publishes AMQP on loopback only. Other services
+use `unoapi-rabbitmq:5672` on the Docker network. Keep both URLs and RabbitMQ
+credentials consistent; the host-networked VoIP service cannot rely on container DNS.
 
 ## IPv4 and IPv6 Docker network
 

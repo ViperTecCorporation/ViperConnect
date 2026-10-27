@@ -6,7 +6,7 @@ on:
       voip_ref:
         description: Ref do código de telefonia incorporado na imagem única
         required: false
-        default: a45509908513a2a0679b03df899252e3ccf07a63
+        default: dcbae383408beb024105b90f689855766132fb5b
   push:
     branches:  [ main develop ]
     tags:
@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: ViperTecCorporation/viperconnect-voip-service
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.voip_ref || 'a45509908513a2a0679b03df899252e3ccf07a63' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.voip_ref || 'dcbae383408beb024105b90f689855766132fb5b' }}
           token: ${{ secrets.VOIP_REPOSITORY_TOKEN || github.token }}
           path: _build/voip-service
 

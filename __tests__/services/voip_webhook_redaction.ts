@@ -16,3 +16,14 @@ test('Manager webhook projection rejects nested values in public scalar fields',
     enabled: { token: 'secret' }, baseUrl: { token: 'secret' }, hasApiAccessToken: 'secret',
   } })).toEqual({ viperchatWebhook: {} })
 })
+
+test('Manager preserves public native wake settings without exposing token or accepting invalid timeout', () => {
+  expect(sanitizeVoipConsolePayload({ viperchatWebhook: {
+    nativeWakeEnabled: true, nativeWakeTimeoutSeconds: 15, apiAccessToken: 'secret',
+  } })).toEqual({ viperchatWebhook: { nativeWakeEnabled: true, nativeWakeTimeoutSeconds: 15 } })
+  for (const value of [4, 61, 10.5, NaN, Infinity, '30', { token: 'secret' }]) {
+    expect(sanitizeVoipConsolePayload({ viperchatWebhook: {
+      nativeWakeEnabled: false, nativeWakeTimeoutSeconds: value,
+    } })).toEqual({ viperchatWebhook: { nativeWakeEnabled: false } })
+  }
+})

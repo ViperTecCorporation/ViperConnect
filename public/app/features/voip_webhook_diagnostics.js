@@ -1,5 +1,5 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.39-b1ebcc98';
-import { renderModal } from '../components/modal.js?v=4.0.39-b1ebcc98';
+import { escapeHtml as e } from '../core/html.js?v=4.0.39-370dfa13';
+import { renderModal } from '../components/modal.js?v=4.0.39-370dfa13';
 const statuses = { pending: 'Pendente', published: 'Na fila', delivering: 'Em entrega', dead: 'Falha definitiva', delivered: 'Entregue', skipped: 'Ignorado' };
 const technicalError = (value = '') => /^http_(?:[1-5]\d\d|5xx)$/i.test(value) ? value.toUpperCase()
     : ['timeout', 'network_error', 'invalid_receipt', 'invalid_response', 'destination_changed', 'destination_changed_or_disabled', 'destination_unavailable', 'max_attempts', 'invalid_payload', 'delivery_failed'].includes(value) ? value : value ? 'delivery_error' : '—';

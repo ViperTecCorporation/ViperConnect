@@ -1,5 +1,12 @@
 # Docker Swarm
 
+Optional [RustFS Swarm add-ons](/en/guide/storage-rustfs#docker-swarm) provide
+self-hosted S3 without migrating or silently switching existing storage.
+
+The telephony service includes `AMQP_URL` for ViperChat events. It connects to
+`unoapi-rabbitmq:5672` through the overlay like the workers; publishing AMQP on
+the host is not required in Swarm.
+
 The Swarm templates keep persistent services on labeled nodes, use overlay
 networks for internal traffic and publish telephony media ranges in host mode.
 

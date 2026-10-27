@@ -7,6 +7,9 @@ DNS interno entre serviços e publicação explícita das portas SIP/RTP/WebRTC.
 Use [Docker Compose](/guide/docker-compose) quando todos os containers rodam em
 um único host sem Swarm.
 
+Para armazenamento S3 próprio, há [complementos RustFS para Swarm](/guide/storage-rustfs#docker-swarm).
+São opcionais e não migram nem substituem automaticamente um armazenamento existente.
+
 ## Escolha o proxy
 
 ### Nginx ou proxy de borda
@@ -60,6 +63,10 @@ Revise principalmente:
 - o mesmo token em `VOIP_SERVICE_TOKEN` e `VOIP_BRIDGE_TOKEN`;
 - webhook e armazenamento, quando utilizados;
 - IPv4 público, hostname público IPv6 e IP local da telefonia.
+
+`AMQP_URL` está presente também no serviço `viperconnect-telefonia`. No Swarm,
+ele usa `unoapi-rabbitmq:5672` pela overlay, assim como os workers; não precisa
+publicar a porta AMQP no host para entregar os eventos ao ViperChat.
 
 O Valkey mantém AOF com fsync a cada segundo e
 `no-appendfsync-on-rewrite no`. O RDB fica como snapshot de segurança em `save
