@@ -16,7 +16,7 @@ A imagem integrada fixa o SHA exato desse serviço nos dois pontos de
 `.github/workflows/main.yml`: valor padrão de `voip_ref` e ref do checkout para
 push/tag. Não usar uma branch ou `latest` como substituto dessa revisão.
 
-Revisão incorporada nesta preparação: **`d4fa199aeca68c09b96e267354192aa86536191f`**,
+Revisão incorporada nesta preparação: **`71f5d1def7a7ef9663e86888631f5e05b8df28bc`**,
 publicada na branch existente `codex/zapo-uno-voice-bridge` do serviço VoIP.
 Os dois pins do workflow usam esse mesmo SHA; não a revisão antiga `0.1.68`.
 
@@ -65,6 +65,22 @@ a queda. Há [relato upstream compatível](https://github.com/WonderInventions/n
 sem correção estável publicada na validação.
 
 Isso não foi mascarado com saída forçada, troca de SDK ou uso de Redis/dados
-reais. A promoção das tags finais deve registrar a decisão de homologação ou
-uma correção comprovada da dependência; CI padrão verde não substitui esse
-teste opt-in. Nenhuma tag de produção foi aplicada ou stack reiniciada nesta fase.
+reais. CI padrão verde não substitui esse teste opt-in nem comprova a correção
+da finalização nativa. Não foi constatada relação desse erro com as chamadas
+validadas por hostpath ou com o atraso de áudio em rede móvel.
+
+### Decisão de homologação e acompanhamento
+
+Em 27/10/2026, foi autorizada a publicação da tag integrada `v4.0.40` com o
+VoIP `0.1.69`, mantendo `@roamhq/wrtc` `0.10.0` e a limitação de finalização
+acima explicitamente aberta. Isso autoriza publicar os artefatos para
+homologação; não constitui aceite de mídia em todos os cenários nem implantação
+na VPS. Nenhum SDK foi substituído para esta entrega.
+
+Durante a homologação, distinguir a falha de encerramento de uma falha durante
+chamadas: registrar horário, versão, motivo de saída do processo e contexto da
+chamada antes de atribuir os sintomas à biblioteca. Se houver impacto observado,
+um fork da biblioteca pode ser avaliado para corrigir o gerenciamento de
+referências nativas, com regressões de saída natural e áudio bidirecional nas
+plataformas publicadas. Esse fork é uma alternativa futura, não foi criado nem
+incorporado nesta release.

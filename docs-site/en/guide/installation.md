@@ -40,3 +40,19 @@ and telephony process. Native Linux packages are also available.
 
 Do not publish Valkey or RabbitMQ to the internet. Terminate TLS at your edge
 proxy and use strong, unique tokens for every installation.
+
+## Integrated 4.0.40 validation
+
+`ViperConnect 4.0.40` embeds VoIP service `0.1.69` at a pinned source revision.
+The [delivery notes](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.40/docs/release-4.0.40-viperchat38.md)
+record the contracts, embedded revision and validation boundaries.
+
+The `@roamhq/wrtc` `0.10.0` addon has a known limitation: an isolated test
+reproduced `SIGSEGV` during natural process finalization after confirming
+bidirectional audio. Publication for validation was authorized with the current
+library; this shutdown fault remains unresolved. No relationship was established
+with the calls validated using hostpath patches or the mobile-network audio delay.
+Publishing an image does not deploy it to an installation.
+
+If validation reveals an impact, a library fork may be evaluated with teardown
+and media regressions. No fork or SDK replacement is part of this delivery.
