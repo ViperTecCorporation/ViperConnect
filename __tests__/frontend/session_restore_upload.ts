@@ -1,14 +1,18 @@
-import { webcrypto } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import { uploadSessionRestore } from '../../frontend/features/session_restore_upload'
 
 beforeAll(() => { Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true }) })
 
 test('576 MiB upload uses 72 bounded HTTP parts and polls the asynchronous result without a whole-file buffer', async () => {
   const size = 576 * 1024 * 1024, partSize = 8 * 1024 * 1024
-  const file: any = { size, slice: jest.fn((start, end) => new Blob([Buffer.alloc(end - start, 7)])) }
+  const partData = Buffer.alloc(partSize, 7)
+  const part = new Blob([partData])
+  const partSha256 = createHash('sha256').update(partData).digest('hex')
+  // Every virtual slice has the same immutable content; do not retain 576 MiB in Jest's call history.
+  const file: any = { size, slice: jest.fn(() => part) }
   const api: any = { request: jest.fn(async (path, init) => {
     if (path.endsWith('restore-uploads')) return { id: 'test', partSize, parts: 72 }
-    if (init?.method === 'PUT') { expect(init.body.size).toBe(partSize); expect(init.headers['X-Part-SHA256']).toMatch(/^[a-f0-9]{64}$/); return { received: Number(path.split('/').pop()) + 1, parts: 72 } }
+    if (init?.method === 'PUT') { expect(init.body).toBe(part); expect(init.body.size).toBe(partSize); expect(init.headers['X-Part-SHA256']).toBe(partSha256); return { received: Number(path.split('/').pop()) + 1, parts: 72 } }
     if (path.endsWith('/complete')) return { state: 'restoring' }
     return { state: 'ready', result: { warning: 'synthetic-warning' } }
   }) }
@@ -16,6 +20,7 @@ test('576 MiB upload uses 72 bounded HTTP parts and polls the asynchronous resul
   expect(await uploadSessionRestore(api, file, 'synthetic-password', callbacks)).toEqual({ warning: 'synthetic-warning' })
   expect(api.request.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(72)
   expect(file.slice).toHaveBeenCalledTimes(72)
+  expect(file.slice.mock.calls).toEqual(Array.from({ length: 72 }, (_, index) => [index * partSize, (index + 1) * partSize]))
   expect(callbacks.progress).toHaveBeenCalledWith('Upload confirmado: 100% (72/72 partes).')
   expect(callbacks.created).toHaveBeenCalledWith('test')
 })

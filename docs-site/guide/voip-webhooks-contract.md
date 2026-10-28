@@ -85,9 +85,49 @@ Uma ligação pode envolver vários trechos SIP, também chamados de *legs*, e v
 | `state` | Sim | `offered`, `ringing`, `active`, `completed`, `missed`, `failed`, `cancelled` ou `answered_elsewhere`. |
 | `extension` | Não | Ramal comprovadamente vinculado à empresa, de 1 a 128 caracteres. |
 | `sip_call_id` | Não | Call-ID SIP real desse trecho, de 1 a 256 caracteres. |
+| `client_call_id` | Não | UUID exato da intenção de saída autenticada. Exige `extension` e `sip_call_id`; nunca inferir pelo telefone, agente logado ou horário. |
+| `offer` | Não | Oferta nativa da participação; formato e limites na seção abaixo. |
 | `started_at`, `answered_at`, `ended_at` | Não | Datas ISO 8601 em UTC, conforme os fatos observados nessa participação. |
 
 Transferências preservam os participantes anteriores. O encerramento de um trecho não significa o fim da ligação inteira. Sem um Call-ID SIP exato e um vínculo único, o ViperChat registra a chamada sem inventar uma associação com o histórico de um agente.
+
+### Ofertas nativas e transferência sem registro
+
+Extensão aditiva v1 da entrega ViperConnect `4.0.40` / serviço VoIP `0.1.69`,
+vinculada ao ViperChat `4.16.12-viper.38`. Atualizar o receptor ViperChat antes
+do produtor; receptores antigos rejeitam campos novos com `422`.
+
+Participação `offered/ringing`, com ramal, pode conter `offer` com `id` estável
+(1–200 caracteres) e `expires_at` UTC. Oferta inicial omite finalidade e pertence
+ao pai `routing/ringing`. Na transferência, o pai e a origem continuam `active`:
+
+```json
+{
+  "id": "transfer-attempt-1-1001", "extension": "1001", "state": "offered",
+  "offer": {
+    "id": "transfer-attempt-1-1001", "expires_at": "2026-10-27T17:00:30Z",
+    "purpose": "transfer", "source_participant_id": "source-leg-1010"
+  }
+}
+```
+
+Fragmento sintético. `source-leg-1010` precisa existir no mesmo snapshot, ativa,
+com SIP Call-ID real e ramal diferente. `purpose` aceita somente `transfer`;
+campo de origem isolado, fonte inválida ou participação terminal não autorizam
+despertar. Prazo máximo 60 s e ID novo a cada tentativa.
+
+O ViperChat gera UUID nativo por dispositivo/tentativa e o mantém nas retentativas.
+UUID principal, `call_id`, horários, histórico e gravação não são trocados. Push
+permanece `voip.incoming` schema 1 sem os campos novos; nenhum token/relay novo.
+A resolução autenticada usa a delivery do próprio aparelho, inclusive SIP antes
+do push, retornando `state: ringing` com `call_state: active` verdadeiro no pai.
+
+Depois do REGISTER, INVITE da oferta exata, sem duplicar renovação/socket. Origem
+só é liberada após destino atender; REFER `202` não comprova sucesso. Rejeição,
+prazo ou revogação preservam origem e cancelam tentativa; um vencedor encerra os
+outros forks. Replay histórico não envia outro wake. O serviço próprio cobre
+externas Zapo recebidas/efetuadas; transferência interna com SDP direto e áudio
+físico Wi-Fi/4G mantêm aceites separados. Sem publicação/deploy implícito.
 
 ## Eventos e estados
 

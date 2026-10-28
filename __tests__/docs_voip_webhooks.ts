@@ -33,15 +33,19 @@ describe.each(['', 'en/'])('VoIP integration documentation (%s)', (locale) => {
     expect(recovery).not.toContain('sync=changes&')
   })
 
-  test('keeps documented event names and a complete parseable artifact example', () => {
+  test('keeps documented event names and parseable artifact and native offer examples', () => {
     const contract = read('voip-webhooks-contract')
     for (const event of spec.components.schemas.VoipWebhookEnvelope.properties.event_type.enum) {
       expect(contract).toContain(`\`${event}\``)
     }
     const examples = [...contract.matchAll(/```json\s*\n([\s\S]*?)\n```/g)]
       .map((match) => JSON.parse(match[1]))
-    expect(examples).toHaveLength(1)
-    const event = examples[0]
+    expect(examples).toHaveLength(2)
+    const events = examples.filter((example) => example.schema_version !== undefined)
+    const offers = examples.filter((example) => example.offer !== undefined)
+    expect(events).toHaveLength(1)
+    expect(offers).toHaveLength(1)
+    const event = events[0]
     expect(event).toMatchObject({ schema_version: 1, event_type: 'call.artifacts.updated' })
     expect(event.call).toMatchObject({ state: 'completed', artifacts: {
       recording: { status: 'available' }, ai: { status: 'completed' },
@@ -51,6 +55,26 @@ describe.each(['', 'en/'])('VoIP integration documentation (%s)', (locale) => {
     for (const term of ['answered_elsewhere', '64000', '16000', '52428800', '256 KiB']) {
       expect(contract).toContain(term)
     }
+    const participant = offers[0]
+    expect(participant).toMatchObject({ extension: '1001', state: 'offered' })
+    expect(participant.offer).toMatchObject({ id: participant.id, purpose: 'transfer', source_participant_id: 'source-leg-1010' })
+    expect(participant.offer.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+    expect(Number.isNaN(Date.parse(participant.offer.expires_at))).toBe(false)
+  })
+
+  test('documents exact native intent correlation and the bounded transfer offer schema', () => {
+    const contract = read('voip-webhooks-contract')
+    const participant = spec.components.schemas.VoipWebhookCall.properties.participants.items.properties
+    const offer = spec.components.schemas.VoipWebhookNativeOffer
+    for (const term of ['client_call_id', 'sip_call_id', 'source_participant_id']) {
+      expect(contract).toContain(term)
+    }
+    expect(participant.client_call_id).toMatchObject({ type: 'string', format: 'uuid' })
+    expect(participant.offer.$ref).toBe('#/components/schemas/VoipWebhookNativeOffer')
+    expect(offer).toMatchObject({ type: 'object', additionalProperties: false, required: ['id', 'expires_at'] })
+    expect(offer.properties.purpose.enum).toEqual(['transfer'])
+    expect(offer.properties.id).toMatchObject({ minLength: 1, maxLength: 200 })
+    expect(offer.properties.source_participant_id).toMatchObject({ minLength: 1, maxLength: 200 })
   })
   test('documents explicit native wake opt-in without claiming push is automatically ready', () => {
     const guide = read('voip-webhooks')

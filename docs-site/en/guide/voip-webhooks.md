@@ -2,6 +2,11 @@
 
 The integration sends company-scoped extension call events to ViperChat. ViperChat maintains call history and, when configured, receives recordings, transcripts and AI summaries.
 
+Transfer wake uses a separate offer linked to the active call, with no new
+configuration/token. See the [rules and limits](/en/guide/voip-webhooks-contract#native-offers-and-transfers-to-an-unregistered-app)
+and upgrade the receiver before the producer. This dev extension does not change
+the parent state or treat REFER `202` as a confirmed answer.
+
 Use this guide for setup. Technical details are separated into:
 
 - [Events and states reference](/en/guide/voip-webhooks-contract): fields, limits and payload examples.

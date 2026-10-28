@@ -94,6 +94,11 @@ Sem uma associação segura entre telefone, contato e conversa, os dados permane
 
 ## Como verificar o funcionamento
 
+O despertar na transferência usa oferta própria vinculada à chamada ativa, sem
+novo cadastro/token. Veja as [regras e limites](/guide/voip-webhooks-contract#ofertas-nativas-e-transferencia-sem-registro)
+e atualize o receptor antes do produtor. A extensão em dev não muda o estado do
+pai nem confirma atendimento só pelo `202` do REFER.
+
 1. Abra **Empresas → Editar → Diagnóstico de entregas ao ViperChat** no Manager.
 2. Confira os estados das entregas e os motivos de falha. O painel mostra até 50 registros recentes, sem conteúdo das chamadas ou credenciais.
 3. No ViperChat, confira a ligação e suas atualizações no histórico.

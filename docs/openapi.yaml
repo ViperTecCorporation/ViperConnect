@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: ViperConnect API
-  version: 4.0.39
+  version: 4.0.40
   description: |
     API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.
     - Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).
@@ -7836,6 +7836,8 @@ components:
               id: { type: string, minLength: 1, maxLength: 200 }
               extension: { type: string, maxLength: 128 }
               sip_call_id: { type: string, maxLength: 256 }
+              client_call_id: { type: string, format: uuid, description: UUID exato da intenção da origem autenticada; exige extension e sip_call_id. Não inferir por telefone. }
+              offer: { $ref: '#/components/schemas/VoipWebhookNativeOffer' }
               state: { type: string, enum: [offered, ringing, active, completed, missed, failed, cancelled, answered_elsewhere] }
               started_at: { type: string, format: date-time }
               answered_at: { type: string, format: date-time }
@@ -7862,6 +7864,16 @@ components:
               properties:
                 business_phone: { type: string, pattern: '^\+?\d{10,15}$' }
                 remote_phone: { type: string, pattern: '^\+?\d{10,15}$' }
+    VoipWebhookNativeOffer:
+      type: object
+      additionalProperties: false
+      required: [id, expires_at]
+      description: Oferta opcional de participação offered/ringing com ramal explícito. Inicial omite finalidade e pertence a chamada routing/ringing. Transferência exige pai active, purpose=transfer e source_participant_id de participação ACTIVE com SIP Call-ID real e outro ramal no mesmo snapshot. Prazo máximo 60 s. Atualizar receptor antes do produtor; não encaminhar campos extras no push voip.incoming.
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200, description: Identidade estável por tentativa; tentativa nova usa ID novo. }
+        expires_at: { type: string, format: date-time, description: Prazo UTC real da oferta. }
+        purpose: { type: string, enum: [transfer] }
+        source_participant_id: { type: string, minLength: 1, maxLength: 200, description: Obrigatório somente com purpose=transfer; fonte ativa e exata no mesmo snapshot. }
     VoipWebhookParty:
       type: object
       required: [kind, value]
