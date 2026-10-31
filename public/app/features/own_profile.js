@@ -1,10 +1,10 @@
-import { escapeHtml as esc } from '../core/html.js?v=4.0.39-370dfa13';
-import { openProfileMap, profileMapControls } from './profile_map.js?v=4.0.39-370dfa13';
-import { renderProfileHours } from './profile_hours.js?v=4.0.39-370dfa13';
-import { renderAccountEmail, accountEmailRequest } from './profile_email.js?v=4.0.39-370dfa13';
-import { accountEmailError, accountEmailFeedback } from './profile_email_feedback.js?v=4.0.39-370dfa13';
-import { renderPrivacy, privacyCommands } from './profile_privacy.js?v=4.0.39-370dfa13';
-import { bindPrivacyListModals } from './privacy_list_modal.js?v=4.0.39-370dfa13';
+import { escapeHtml as esc } from '../core/html.js?v=4.0.40-0f2cc5a1';
+import { openProfileMap, profileMapControls } from './profile_map.js?v=4.0.40-0f2cc5a1';
+import { renderProfileHours } from './profile_hours.js?v=4.0.40-0f2cc5a1';
+import { renderAccountEmail, accountEmailRequest } from './profile_email.js?v=4.0.40-0f2cc5a1';
+import { accountEmailError, accountEmailFeedback } from './profile_email_feedback.js?v=4.0.40-0f2cc5a1';
+import { renderPrivacy, privacyCommands } from './profile_privacy.js?v=4.0.40-0f2cc5a1';
+import { bindPrivacyListModals } from './privacy_list_modal.js?v=4.0.40-0f2cc5a1';
 const days = [['sun', 'Domingo'], ['mon', 'Segunda'], ['tue', 'Terça'], ['wed', 'Quarta'], ['thu', 'Quinta'], ['fri', 'Sexta'], ['sat', 'Sábado']];
 const time = (v) => v === undefined ? '' : `${Math.floor(v / 60)}`.padStart(2, '0') + ':' + `${v % 60}`.padStart(2, '0');
 const field = (name, label, value, extra = '') => `<label class="field"><span class="field-label">${esc(label)}</span><input name="${name}" value="${esc(String(value ?? ''))}" ${extra}></label>`;

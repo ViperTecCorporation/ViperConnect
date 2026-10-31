@@ -29,6 +29,7 @@ export class ConnectionInProgress extends Error {
 }
 
 export interface Client {
+  recoverContactCrypto?(userId: string): Promise<import('./contacts/contact_crypto').ContactCryptoResult>
   ownProfile?(command: import('./profile_input').ProfileCommand): Promise<any>
   connect(time: number): Promise<void>
 

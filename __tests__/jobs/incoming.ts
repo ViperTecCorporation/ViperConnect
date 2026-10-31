@@ -883,6 +883,15 @@ describe('incoming job', () => {
     expect(incoming.saveContact).toHaveBeenCalledWith('556600000000', input)
   })
 
+  test('dispatches manual contact crypto recovery without sending a message', async () => {
+    const incoming = mock<Incoming>()
+    incoming.recoverContactCrypto = jest.fn().mockResolvedValue({ success: true, user_id: '123@lid', resent: false, cooldown_seconds: 300 })
+    const job = new IncomingJob(incoming, mock<Outgoing>(), async () => ({ ...defaultConfig, server: 'server_1' }))
+    await expect(job.consume('556600000000', { type: 'provider_operation', action: 'recoverContactCrypto', args: ['123@lid'] })).resolves.toEqual(expect.objectContaining({ resent: false }))
+    expect(incoming.recoverContactCrypto).toHaveBeenCalledWith('556600000000', '123@lid')
+    expect(incoming.send).not.toHaveBeenCalled()
+  })
+
   test('dispatches pairing-code requests to the local client adapter', async () => {
     const incoming = mock<Incoming>()
     incoming.requestPairingCode = jest.fn().mockResolvedValue('1234-5678')

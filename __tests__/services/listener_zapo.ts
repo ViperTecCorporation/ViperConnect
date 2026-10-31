@@ -42,6 +42,18 @@ describe('ListenerZapo', () => {
     service = new ListenerZapo(outgoing, mock<Broadcast>(), async () => config, messageMetadata)
   })
 
+  test.each(['notify', 'append'] as const)('preserves forwarded context through %s webhook delivery and reply ID mapping', async type => {
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-quoted-id')
+    await service.process('5511888888888', [{ key: { id: 'provider-forward', remoteJid: '123@lid', remoteJidAlt: '5511999999999@s.whatsapp.net', fromMe: false },
+      message: { extendedTextMessage: { text: 'Mensagem recebida', contextInfo: { isForwarded: true, stanzaId: 'provider-quoted-id' } } },
+      messageTimestamp: 1790000000 }], type)
+    const body = (outgoing.send as jest.Mock).mock.calls[0][1]
+    const message = body.entry[0].changes[0].value.messages[0]
+    expect(message.context).toEqual(expect.objectContaining({ id: 'uno-quoted-id', message_id: 'uno-quoted-id', forwarded: true }))
+    expect(message.text.body).toBe('Mensagem recebida')
+    expect(message.id).not.toBe('provider-forward')
+  })
+
   test('maps the official Zapo id to an external Uno id and forwards the webhook', async () => {
     await service.process('5566999999999', [{
       key: {

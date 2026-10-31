@@ -6503,7 +6503,7 @@ yocto-queue@^0.1.0:
   resolved "https://registry.npmjs.org/yocto-queue/-/yocto-queue-0.1.0.tgz"
   integrity sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==
 
-zapo-js@1.10.0:
-  version "1.10.0"
-  resolved "https://registry.yarnpkg.com/zapo-js/-/zapo-js-1.10.0.tgz#76be653568597b0215b3733ece436e3ffb3c666d"
-  integrity sha512-FV9xuzeV7KOffcqDfm3u/I8gyU5EA90wtaOyFUMUdI7/lrjt/a7WFmpHoDBHBoUFcEIkK6udhs+VHKrObPoGqQ==
+zapo-js@1.11.0:
+  version "1.11.0"
+  resolved "https://registry.yarnpkg.com/zapo-js/-/zapo-js-1.11.0.tgz#abfa7531ad1eb2fdf77b74c8bd900a1f15e593a5"
+  integrity sha512-gkjgChYzbPJoyEhTadGKpUFNS1EhlQLDvYOOZLisF0GHGhhDd2BaSMtLIoJhXQQ/0dhfSpduzrH/hZpXzZZoAQ==

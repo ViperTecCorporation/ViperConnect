@@ -11,6 +11,7 @@ import { indexController } from './controllers/index_controller'
 import { WebhookController } from './controllers/webhook_controller'
 import { WebhookFakeController } from './controllers/webhook_fake_controller'
 import { ContactsController } from './controllers/contacts_controller'
+import { ContactCryptoController } from './controllers/contact_crypto_controller'
 import { OwnProfileController } from './controllers/own_profile_controller'
 import { OwnProfileCover } from './services/own_profile_cover'
 import { GoogleMapsSettingsController } from './controllers/google_maps_settings_controller'
@@ -97,6 +98,7 @@ export const router = (
   const webhookController = new WebhookController(outgoing, getConfig)
   const blacklistController = new BlacklistController(addToBlacklist)
   const contactsController = new ContactsController(contact, new ZapoContactDirectory(getConfig), new ContactBookIncoming(incoming))
+  const contactCryptoController = new ContactCryptoController(incoming, getConfig)
   const ownProfileController = new OwnProfileController(incoming, undefined, async phone => {
     const config = await getConfig(phone)
     return new OwnProfileCover(phone, (await config.getStore(phone, config)).mediaStore)
@@ -211,6 +213,7 @@ export const router = (
   router.get('/:phone/contacts', middleware, contactsController.get.bind(contactsController))
   router.post('/:phone/contacts', middleware, contactsController.post.bind(contactsController))
   router.post('/:phone/contacts/import', middleware, contactsController.save.bind(contactsController))
+  router.post('/:phone/contacts/recover-crypto', middleware, contactCryptoController.recover.bind(contactCryptoController))
   router.post('/:version/:phone/register', middleware, registrationController.register.bind(registrationController))
   router.post('/:version/:phone/deregister', middleware, registrationController.deregister.bind(registrationController))
   router.patch('/:version/:phone/webhooks/:webhook_id', middleware, registrationController.updateWebhook.bind(registrationController))

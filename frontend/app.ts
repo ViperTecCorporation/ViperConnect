@@ -2,6 +2,7 @@ import { ApiClient, ApiError } from './core/api.js'
 import { loadAiModels } from './domain/ai_providers.js'
 import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js'
 import { renderContactEditor, saveContactName } from './features/contact_editor.js'
+import { recoverContactCrypto } from './features/contact_crypto.js'
 import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js'
 import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js'
 import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js'
@@ -743,6 +744,17 @@ export class ViperConnectApp {
         this.modal = { type: 'contact-name', phone: this.selectedPhone }
         this.render()
       }
+    } else if (action === 'recover-contact-crypto') {
+      const contact = this.contacts.items.find(item => item.user_id === actionElement.dataset.recipient)
+      const button = actionElement as HTMLButtonElement
+      if (!contact || !this.selectedPhone || button.disabled) return
+      button.disabled = true
+      try {
+        if (await recoverContactCrypto(this.api, this.selectedPhone, contact)) {
+          this.showToast(t('Criptografia reconstruída para este LID. Nenhuma mensagem foi reenviada; a entrega não foi confirmada.'), 'success')
+        }
+      } catch (error) { this.showToast(this.messageFor(error), 'error') }
+      finally { button.disabled = false }
     } else if (action === 'edit-contact-name') {
       const contact = this.contacts.items.find(item => item.user_id === actionElement.dataset.recipient)
       if (contact?.phone_number && this.selectedPhone) {

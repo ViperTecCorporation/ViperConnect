@@ -1,5 +1,37 @@
 # Webhooks
 
+## Forwarded messages
+
+When the current message received through Zapo carries
+`contextInfo.isForwarded=true`, ViperConnect emits `context.forwarded=true` in
+`entry[].changes[].value.messages[]`. Partial message example:
+
+```json
+{
+  "type": "text",
+  "text": { "body": "Received message" },
+  "context": { "forwarded": true }
+}
+```
+
+This is an additive, automatic change with no extra configuration or permission
+beyond the existing webhook. The shared converter handles text, media, groups
+and normalized wrappers. History/replay messages passing through that converter
+retain the marker when present in stored content. No network lookup fills
+missing metadata and previously delivered webhooks are not updated retroactively.
+
+- Only boolean `true` is emitted. An absent marker is not proof of original authorship.
+- `context` may contain only `forwarded`, without a reply `id` or `message_id`.
+- Reply references retain `context.id`, `message_id` and optional
+  `provider_message_id`. Forwarding flags on quoted content do not mark the reply.
+- Delivery statuses do not gain this context. This does not mark ordinary sends
+  as forwarded or prepend a label to the text.
+- Neither `forwardingScore` nor `frequently_forwarded` is emitted by this contract.
+  Do not infer counts, original authors, conversation chains or a “frequently forwarded” badge.
+
+The Portuguese receiver handoff is maintained in the repository at
+`docs/WEBHOOK_FORWARDED_CONTRACT.md`.
+
 Connection events use a separate [session lifecycle contract](./session-webhooks).
 
 ## Original transport message ID

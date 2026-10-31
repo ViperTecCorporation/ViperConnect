@@ -11261,6 +11261,129 @@
         }
       }
     },
+    "/{phone}/contacts/recover-crypto": {
+      "post": {
+        "tags": [
+          "Contatos"
+        ],
+        "operationId": "recoverContactCrypto",
+        "summary": "Recuperar manualmente a criptografia de um contato Zapo",
+        "description": "Requer token global, token da sessão ou credencial Manager autorizada para\na sessão. Apenas Zapo já conectado, sem conectar ou parear automaticamente.\nO user_id deve ser um LID presente no cache de contatos dessa sessão.\nExecuta no worker dono message.syncSignalSession(user_id, { force: true })\ndo Zapo 1.11.0: remove a sessão Signal do endereço e busca uma nova,\npreservando a identidade. Não renova a lista de dispositivos, não solicita\nmudança de identidade, não limpa outros contatos e não faz logout.\nNão reenvia mensagens nem confirma entrega ou recuperação de conteúdo antigo.\nNão é transacional; uma falha pode ocorrer após remover a sessão antiga.\nUma tentativa por sessão/LID a cada 300 segundos via Redis, inclusive\nem falha. Sem retry automático. Timeout RPC não comprova cancelamento.\nUse somente para investigação pontual de falha de criptografia, não para\ndestinatário offline ou simples ausência de recibo de entrega.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user_id",
+                  "confirm"
+                ],
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "pattern": "^\\d{1,32}@lid$",
+                    "maxLength": 36
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "user_id": "000000000000002@lid",
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chamada ao SDK concluída; nenhuma mensagem reenviada e entrega não confirmada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "user_id",
+                    "resent",
+                    "cooldown_seconds"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "user_id": {
+                      "type": "string"
+                    },
+                    "resent": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "cooldown_seconds": {
+                      "type": "integer",
+                      "enum": [
+                        300
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "user_id": "000000000000002@lid",
+                  "resent": false,
+                  "cooldown_seconds": 300
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "contact_user_id_must_be_a_lid ou contact_crypto_confirmation_required"
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Token inválido ou sessão fora do escopo da credencial"
+          },
+          "404": {
+            "description": "contact_not_found"
+          },
+          "409": {
+            "description": "contact_crypto_requires_zapo ou zapo_client_not_connected"
+          },
+          "429": {
+            "description": "contact_crypto_recovery_cooldown",
+            "headers": {
+              "Retry-After": {
+                "description": "Intervalo conservador em segundos antes de nova tentativa",
+                "schema": {
+                  "type": "integer",
+                  "example": 300
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "contact_crypto_recovery_failed ou contact_crypto_recovery_unconfirmed; não repetir imediatamente"
+          }
+        }
+      }
+    },
     "/{phone}/contacts/import": {
       "post": {
         "summary": "Adicionar ou atualizar contato na agenda do WhatsApp",
@@ -22313,7 +22436,15 @@
           },
           "context": {
             "type": "object",
+            "description": "Metadados opcionais da mensagem. forwarded pode existir sem id; não implica resposta citada. Ausência da marca não comprova autoria original.",
             "properties": {
+              "forwarded": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Presente somente quando a mensagem atual traz contextInfo.isForwarded=true no provider. Não herda a marca de mensagem citada. Não expõe score, autor original ou cadeia de encaminhamento; frequently_forwarded não é emitido nesta versão do contrato."
+              },
               "id": {
                 "type": "string",
                 "example": "UUID_UNOAPI_ORIGINAL"

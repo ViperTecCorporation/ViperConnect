@@ -122,7 +122,7 @@
     "ws": "^8.21.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yaml": "^2.8.3",
-    "zapo-js": "1.10.0"
+    "zapo-js": "1.11.0"
   },
   "engines": {
     "node": ">= 24.x"

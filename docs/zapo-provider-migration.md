@@ -2,6 +2,15 @@
 
 ## Recuperacao automatica do transporte
 
+A manutenção manual de criptografia é independente do watchdog: o endpoint
+`POST /{phone}/contacts/recover-crypto` exige `user_id` LID conhecido e
+`confirm=true`. Executa `message.syncSignalSession(lid, { force: true })` do
+Zapo 1.11.0 no worker dono, sem conectar conta offline, logout, alteração de
+identidade ou reenvio de mensagem. Uma reserva atômica Redis limita tentativas
+por sessão/LID a cada 300 segundos, inclusive em falha; não há retry automático.
+A remoção/reconstrução não é transacional e sucesso não comprova entrega.
+Contrato e limites: [Contatos](../docs-site/guide/contacts.md#recuperar-criptografia-de-um-contato).
+
 - `ZapoTransportWatchdog` consulta `getState().connected` local a cada 15s apos
   conectar, sem IQ/ping extra. Queda observada marca offline; retorno restaura online.
 - Apos 60s desconectado desde a primeira observacao, recria somente a sessao

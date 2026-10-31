@@ -1,4 +1,4 @@
-import { escapeHtml as esc } from '../core/html.js?v=4.0.39-370dfa13';
+import { escapeHtml as esc } from '../core/html.js?v=4.0.40-0f2cc5a1';
 const days = [['sun', 'Domingo'], ['mon', 'Segunda-feira'], ['tue', 'Terça-feira'], ['wed', 'Quarta-feira'], ['thu', 'Quinta-feira'], ['fri', 'Sexta-feira'], ['sat', 'Sábado']];
 const modes = [['specific_hours', 'Horário específico'], ['open_24h', 'Sempre aberta'], ['appointment_only', 'Somente com hora marcada']];
 const time = (v) => `${Math.floor(v / 60)}`.padStart(2, '0') + ':' + `${v % 60}`.padStart(2, '0');

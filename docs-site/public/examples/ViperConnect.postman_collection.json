@@ -24465,6 +24465,41 @@
           "response": []
         },
         {
+          "name": "Recuperar manualmente a criptografia de um contato Zapo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/contacts/recover-crypto",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "contacts",
+                "recover-crypto"
+              ],
+              "query": []
+            },
+            "description": "Requer token global, token da sessão ou credencial Manager autorizada para\na sessão. Apenas Zapo já conectado, sem conectar ou parear automaticamente.\nO user_id deve ser um LID presente no cache de contatos dessa sessão.\nExecuta no worker dono message.syncSignalSession(user_id, { force: true })\ndo Zapo 1.11.0: remove a sessão Signal do endereço e busca uma nova,\npreservando a identidade. Não renova a lista de dispositivos, não solicita\nmudança de identidade, não limpa outros contatos e não faz logout.\nNão reenvia mensagens nem confirma entrega ou recuperação de conteúdo antigo.\nNão é transacional; uma falha pode ocorrer após remover a sessão antiga.\nUma tentativa por sessão/LID a cada 300 segundos via Redis, inclusive\nem falha. Sem retry automático. Timeout RPC não comprova cancelamento.\nUse somente para investigação pontual de falha de criptografia, não para\ndestinatário offline ou simples ausência de recibo de entrega.\n",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"000000000000002@lid\",\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Adicionar ou atualizar contato na agenda do WhatsApp — Resolver o LID e adicionar o contato",
           "request": {
             "method": "POST",

@@ -22,6 +22,7 @@ jest.mock('../../src/services/zapo/zapo_poll_addon_decrypt', () => ({
 import { mockDeep } from 'jest-mock-extended'
 import { proto, type WaClient, type WaStore, type WaStoreSession } from 'zapo-js'
 import { ClientZapo } from '../../src/services/client_zapo'
+import { ZapoContactCrypto } from '../../src/services/zapo/zapo_contact_crypto'
 import { clients } from '../../src/services/client'
 import { defaultConfig } from '../../src/services/config'
 import type { DataStore } from '../../src/services/data_store'
@@ -107,6 +108,28 @@ describe('ClientZapo', () => {
       { get: jest.fn().mockReturnValue(zapoStore), destroy: jest.fn() },
       jest.fn().mockReturnValue(client),
     )
+  })
+
+  test('manual encryption recovery rejects disconnected sessions without invoking maintenance', async () => {
+    const recover = jest.spyOn(ZapoContactCrypto.prototype, 'recover')
+    try {
+      await expect(service.recoverContactCrypto('123@lid')).rejects.toThrow('409: zapo_client_not_connected')
+      expect(recover).not.toHaveBeenCalled()
+    } finally { recover.mockRestore() }
+  })
+
+  test('manual encryption recovery delegates only while both connection states are online', async () => {
+    const recover = jest.spyOn(ZapoContactCrypto.prototype, 'recover').mockResolvedValue({ success: true, user_id: '123@lid', resent: false, cooldown_seconds: 300 })
+    try {
+      ;(service as any).socket = client
+      ;(service as any).zapoSession = session
+      ;(service as any).connected = true
+      await expect(service.recoverContactCrypto('123@lid')).resolves.toEqual(expect.objectContaining({ resent: false }))
+      expect(recover).toHaveBeenCalledWith('123@lid')
+      client.getState.mockReturnValue({ connected: false } as never)
+      await expect(service.recoverContactCrypto('123@lid')).rejects.toThrow('409: zapo_client_not_connected')
+      expect(recover).toHaveBeenCalledTimes(1)
+    } finally { recover.mockRestore() }
   })
 
   afterEach(async () => {

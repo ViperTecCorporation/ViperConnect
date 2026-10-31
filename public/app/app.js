@@ -1,39 +1,40 @@
-import { ApiClient, ApiError } from './core/api.js?v=4.0.39-370dfa13';
-import { loadAiModels } from './domain/ai_providers.js?v=4.0.39-370dfa13';
-import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js?v=4.0.39-370dfa13';
-import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.39-370dfa13';
-import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.39-370dfa13';
-import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.39-370dfa13';
-import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.39-370dfa13';
-import { SocketBridge } from './core/socket.js?v=4.0.39-370dfa13';
-import { renderLayout, renderLogin } from './components/layout.js?v=4.0.39-370dfa13';
-import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.39-370dfa13';
-import { updateProfileHours } from './features/profile_hours.js?v=4.0.39-370dfa13';
-import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.39-370dfa13';
-import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.39-370dfa13';
-import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.39-370dfa13';
-import { OwnProfilePanel } from './features/own_profile.js?v=4.0.39-370dfa13';
-import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.39-370dfa13';
-import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.39-370dfa13';
-import { sessionConfigPayload } from './features/session_config.js?v=4.0.39-370dfa13';
-import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.39-370dfa13';
-import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.39-370dfa13';
-import { renderDashboard } from './pages/dashboard.js?v=4.0.39-370dfa13';
-import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.39-370dfa13';
-import { renderSessionPage } from './pages/session.js?v=4.0.39-370dfa13';
-import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.39-370dfa13';
-import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.39-370dfa13';
-import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.39-370dfa13';
-import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.39-370dfa13';
-import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.39-370dfa13';
-import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.39-370dfa13';
-import { icon } from './components/icons.js?v=4.0.39-370dfa13';
-import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.39-370dfa13';
-import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.39-370dfa13';
-import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js?v=4.0.39-370dfa13';
-import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.39-370dfa13';
-import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.39-370dfa13';
-import { renderWebhookDiagnostics, replayWebhookPayload } from './features/voip_webhook_diagnostics.js?v=4.0.39-370dfa13';
+import { ApiClient, ApiError } from './core/api.js?v=4.0.40-0f2cc5a1';
+import { loadAiModels } from './domain/ai_providers.js?v=4.0.40-0f2cc5a1';
+import { inferBrazilianDialingDefaults } from './domain/dialing_defaults.js?v=4.0.40-0f2cc5a1';
+import { renderContactEditor, saveContactName } from './features/contact_editor.js?v=4.0.40-0f2cc5a1';
+import { recoverContactCrypto } from './features/contact_crypto.js?v=4.0.40-0f2cc5a1';
+import { MobileCompanionsPanel, formatCompanionCode } from './features/mobile_companions_panel.js?v=4.0.40-0f2cc5a1';
+import { digitsOnly, escapeHtml, messageRecipient } from './core/html.js?v=4.0.40-0f2cc5a1';
+import { getLocale, normalizeLocale, setLocale, t } from './core/i18n.js?v=4.0.40-0f2cc5a1';
+import { SocketBridge } from './core/socket.js?v=4.0.40-0f2cc5a1';
+import { renderLayout, renderLogin } from './components/layout.js?v=4.0.40-0f2cc5a1';
+import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js?v=4.0.40-0f2cc5a1';
+import { updateProfileHours } from './features/profile_hours.js?v=4.0.40-0f2cc5a1';
+import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js?v=4.0.40-0f2cc5a1';
+import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js?v=4.0.40-0f2cc5a1';
+import { shouldRenderBackgroundUpdate } from './domain/render_policy.js?v=4.0.40-0f2cc5a1';
+import { OwnProfilePanel } from './features/own_profile.js?v=4.0.40-0f2cc5a1';
+import { SessionMessagesPanel } from './features/session_messages.js?v=4.0.40-0f2cc5a1';
+import { ContactPictureLoader } from './domain/contact_picture_loader.js?v=4.0.40-0f2cc5a1';
+import { sessionConfigPayload } from './features/session_config.js?v=4.0.40-0f2cc5a1';
+import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js?v=4.0.40-0f2cc5a1';
+import { renderWebhookModal, webhookPayload } from './features/webhooks.js?v=4.0.40-0f2cc5a1';
+import { renderDashboard } from './pages/dashboard.js?v=4.0.40-0f2cc5a1';
+import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js?v=4.0.40-0f2cc5a1';
+import { renderSessionPage } from './pages/session.js?v=4.0.40-0f2cc5a1';
+import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js?v=4.0.40-0f2cc5a1';
+import { renderSessionWebhooks, sessionDestinationPayload } from './pages/session_webhooks.js?v=4.0.40-0f2cc5a1';
+import { renderWebhookHistory } from './features/webhook_history.js?v=4.0.40-0f2cc5a1';
+import { renderRedisDeleteModal, renderRedisEditorModal, renderRedisPage } from './pages/redis.js?v=4.0.40-0f2cc5a1';
+import { CONTACT_SEARCH_MIN_LENGTH, filterContacts, filterGroups } from './features/entities.js?v=4.0.40-0f2cc5a1';
+import { renderVoipCredentialsModal, renderVoipPage, renderVoipRecordingSettingsModal, renderVoipResourceModal, } from './pages/voip.js?v=4.0.40-0f2cc5a1';
+import { icon } from './components/icons.js?v=4.0.40-0f2cc5a1';
+import { ManagerPage, managerIdentity } from './features/manager.js?v=4.0.40-0f2cc5a1';
+import { MobileDevicesPanel } from './features/mobile_devices.js?v=4.0.40-0f2cc5a1';
+import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js?v=4.0.40-0f2cc5a1';
+import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js?v=4.0.40-0f2cc5a1';
+import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js?v=4.0.40-0f2cc5a1';
+import { renderWebhookDiagnostics, replayWebhookPayload } from './features/voip_webhook_diagnostics.js?v=4.0.40-0f2cc5a1';
 const TOKEN_KEY = 'whatsappApiToken';
 const THEME_KEY = 'viperconnect_theme';
 const SIDEBAR_KEY = 'viperconnect_sidebar_collapsed';
@@ -821,6 +822,24 @@ export class ViperConnectApp {
             if (this.selectedPhone) {
                 this.modal = { type: 'contact-name', phone: this.selectedPhone };
                 this.render();
+            }
+        }
+        else if (action === 'recover-contact-crypto') {
+            const contact = this.contacts.items.find(item => item.user_id === actionElement.dataset.recipient);
+            const button = actionElement;
+            if (!contact || !this.selectedPhone || button.disabled)
+                return;
+            button.disabled = true;
+            try {
+                if (await recoverContactCrypto(this.api, this.selectedPhone, contact)) {
+                    this.showToast(t('Criptografia reconstruída para este LID. Nenhuma mensagem foi reenviada; a entrega não foi confirmada.'), 'success');
+                }
+            }
+            catch (error) {
+                this.showToast(this.messageFor(error), 'error');
+            }
+            finally {
+                button.disabled = false;
             }
         }
         else if (action === 'edit-contact-name') {
@@ -2792,4 +2811,4 @@ export class ViperConnectApp {
         this.render();
     }
 }
-import { voipWebhookPayload, syncVoipWebhookFields } from './domain/voip_webhook.js?v=4.0.39-370dfa13';
+import { voipWebhookPayload, syncVoipWebhookFields } from './domain/voip_webhook.js?v=4.0.40-0f2cc5a1';

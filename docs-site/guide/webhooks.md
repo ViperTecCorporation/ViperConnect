@@ -9,6 +9,40 @@ Responda HTTP `2xx` rapidamente e processe o evento de forma idempotente.
 
 Eventos de conexão usam um contrato separado: [Webhooks de sessões](./session-webhooks).
 
+## Mensagem encaminhada
+
+Quando a mensagem atual recebida pela Zapo traz `contextInfo.isForwarded=true`,
+o ViperConnect entrega `context.forwarded=true` em
+`entry[].changes[].value.messages[]`. Exemplo parcial da mensagem:
+
+```json
+{
+  "type": "text",
+  "text": { "body": "Mensagem recebida" },
+  "context": { "forwarded": true }
+}
+```
+
+A alteração é aditiva e automática, sem configuração ou permissão adicional às
+do webhook existente. Texto, mídia, grupos e wrappers normalizados usam a mesma
+regra. Mensagens de histórico/replay que passem pelo conversor preservam a marca
+quando ela estiver disponível no conteúdo armazenado. Não é feita consulta ao
+WhatsApp para preencher metadados ausentes nem correção retroativa de webhooks.
+
+- O campo só é emitido como booleano `true`; não envie `false` por ausência de
+  metadados. Ausência significa **sem marca disponível**, não prova de autoria.
+- `context` pode conter apenas `forwarded`, sem `id` ou `message_id`.
+- Uma resposta citada mantém `context.id`, `message_id` e, quando aplicável,
+  `provider_message_id`. A marca da mensagem citada não passa para a resposta.
+- Status de entrega não recebem esse contexto. A mudança não transforma um
+  envio comum em encaminhamento nem adiciona prefixo ao texto.
+- `forwardingScore` e `frequently_forwarded` **não são emitidos neste contrato**.
+  Não inferir contagem, autor original, cadeia de conversas ou o selo de
+  “encaminhada muitas vezes”.
+
+Contrato e caminhos para o receptor ViperChat no repositório:
+`docs/WEBHOOK_FORWARDED_CONTRACT.md`.
+
 ## ID original do transporte
 
 No runtime Zapo, `provider_message_id` é um campo **opcional e aditivo** para
