@@ -47,6 +47,7 @@ import type { getConfig } from '../services/config'
 import { outgoingMediaLogSummary, prepareOutgoingMediaInput } from '../services/messages/outgoing_media_input'
 import { normalizeOutgoingLocation } from '../services/messages/outgoing_location'
 import { outgoingViewOnce } from '../services/messages/outgoing_view_once'
+import { outgoingForwarded } from '../services/messages/outgoing_forwarded'
 import { videoQuality } from '../services/video_profile'
 
 export class MessagesController {
@@ -96,6 +97,7 @@ export class MessagesController {
     payload._requestId = requestId
     try {
       outgoingViewOnce(payload)
+      outgoingForwarded(payload)
       if (payload?.type === 'video') videoQuality(payload.video?.quality)
       if (payload?.type === 'location') payload.location = normalizeOutgoingLocation(payload.location)
       payload = (await prepareOutgoingMediaInput(sessionPhone, payload, this.getConfig)).payload
@@ -194,6 +196,7 @@ export class MessagesController {
     }
     try {
       outgoingViewOnce(payload)
+      outgoingForwarded(payload)
       if (payload?.type === 'location') payload.location = normalizeOutgoingLocation(payload.location)
       payload = (await prepareOutgoingMediaInput(sessionPhone, payload, this.getConfig)).payload
       res.setHeader('x-request-id', requestId)

@@ -19154,11 +19154,17 @@
           },
           "context": {
             "type": "object",
-            "description": "Responde ou cita uma mensagem anterior.",
-            "required": [
-              "message_id"
-            ],
+            "description": "Metadados opcionais. forwarded marca o conteúdo fornecido como encaminhado; message_id/id continuam sendo referência de resposta citada, nunca origem do encaminhamento. Não é preciso ID de origem para encaminhar.",
             "properties": {
+              "forwarded": {
+                "type": "boolean",
+                "description": "Extensão ViperConnect/Zapo. true usa options.forward=true; false/ausente não marcam o envio. Suporta text, image, video, audio, document, sticker, contacts e location. Campo informado em outros tipos ou Status retorna 400. O cliente fornece o conteúdo, sem busca automática por ID nem score explícito nesta etapa."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Alias de message_id para resposta citada, não origem de encaminhamento."
+              },
               "message_id": {
                 "type": "string",
                 "minLength": 1,
@@ -19365,6 +19371,7 @@
         ]
       },
       "MessageEdit": {
+        "description": "Edita texto ou legenda de imagem, vídeo e documento enviados pela sessão.\ntext.body é o novo texto/legenda (string vazia limpa legenda). O worker\nrecupera o protobuf original do store Zapo/cache, preserva descritores da\nmídia e usa editKey do original, sem download/upload ou envio independente.\nValida fromMe, destino explícito e participante em grupos. Áudio, sticker,\nvisualização única, origem ausente/incompleta ou destino divergente falham\nexplicitamente. A resposta HTTP de aceite não confirma edição no aparelho:\nerros do worker geram status failed com error_data.reason, sem eco de sucesso.\nO eco ViperChat mantém type=text/message_type=message_edit com referência\noriginal, embora o conteúdo entregue à Zapo preserve a mídia.\nrecover_delivery não aceita message_edit para evitar um reenvio independente.\n",
         "allOf": [
           {
             "$ref": "#/components/schemas/MessageCommon"

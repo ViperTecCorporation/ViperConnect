@@ -492,6 +492,22 @@ describe('incoming job', () => {
     expect(values.find(value => value.statuses).statuses[0]).not.toHaveProperty('provider_message_id')
   })
 
+  test('preserves forwarded=true in outgoing generic and Chatwoot echoes without changing content', async () => {
+    const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
+    incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-forward' }] } })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+      webhooks: ['https://chatwoot.example.com/webhooks/whatsapp/5511888888888', 'https://example.com/hook']
+        .map(urlAbsolute => ({ ...defaultConfig.webhooks[0], sendNewMessages: true, url: '', urlAbsolute })),
+      getStore: async () => ({ dataStore }) as any,
+    }))
+    const payload = { to: '5511999999999', type: 'text', text: { body: 'Encaminhada' }, context: { forwarded: true } }
+    await job.consume('5511888888888', { id: 'uno-forward', payload, options: { endpoint: 'messages' } })
+    const values = (outgoing.sendHttp as jest.Mock).mock.calls.map(call => call[2].entry[0].changes[0].value).filter(value => value.messages || value.message_echoes)
+    expect(values).toHaveLength(2)
+    for (const value of values) expect((value.messages || value.message_echoes)[0]).toMatchObject({ id: 'uno-forward', text: { body: 'Encaminhada' }, context: { forwarded: true } })
+  })
+
   test.each(['image', 'video', 'audio'])('marks %s echoes for Chatwoot and generic webhooks', async type => {
     const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
     incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-once' }] } })

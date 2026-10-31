@@ -9172,9 +9172,15 @@ components:
           type: string
         context:
           type: object
-          description: Responde ou cita uma mensagem anterior.
-          required: [message_id]
+          description: Metadados opcionais. forwarded marca o conteúdo fornecido como encaminhado; message_id/id continuam sendo referência de resposta citada, nunca origem do encaminhamento. Não é preciso ID de origem para encaminhar.
           properties:
+            forwarded:
+              type: boolean
+              description: Extensão ViperConnect/Zapo. true usa options.forward=true; false/ausente não marcam o envio. Suporta text, image, video, audio, document, sticker, contacts e location. Campo informado em outros tipos ou Status retorna 400. O cliente fornece o conteúdo, sem busca automática por ID nem score explícito nesta etapa.
+            id:
+              type: string
+              minLength: 1
+              description: Alias de message_id para resposta citada, não origem de encaminhamento.
             message_id:
               type: string
               minLength: 1
@@ -9276,6 +9282,18 @@ components:
                 address: { type: string }
 
     MessageEdit:
+      description: |
+        Edita texto ou legenda de imagem, vídeo e documento enviados pela sessão.
+        text.body é o novo texto/legenda (string vazia limpa legenda). O worker
+        recupera o protobuf original do store Zapo/cache, preserva descritores da
+        mídia e usa editKey do original, sem download/upload ou envio independente.
+        Valida fromMe, destino explícito e participante em grupos. Áudio, sticker,
+        visualização única, origem ausente/incompleta ou destino divergente falham
+        explicitamente. A resposta HTTP de aceite não confirma edição no aparelho:
+        erros do worker geram status failed com error_data.reason, sem eco de sucesso.
+        O eco ViperChat mantém type=text/message_type=message_edit com referência
+        original, embora o conteúdo entregue à Zapo preserve a mídia.
+        recover_delivery não aceita message_edit para evitar um reenvio independente.
       allOf:
         - $ref: '#/components/schemas/MessageCommon'
         - type: object

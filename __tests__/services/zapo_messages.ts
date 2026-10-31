@@ -11,6 +11,50 @@ const mockedFetch = fetch as unknown as jest.Mock
 const publishResult = { id: 'provider-id', attempts: 1, ackNode: {}, ack: { refreshLid: false } } as never
 
 describe('Zapo messages adapter', () => {
+  test('marks supplied content with the official SDK forward option without source lookup', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    client.message.send.mockResolvedValue(publishResult)
+    await new ZapoMessages(client, dataStore).send({ to: '123@lid', type: 'text', text: { body: 'Encaminhada' }, context: { forwarded: true } })
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.objectContaining({ text: 'Encaminhada' }), expect.objectContaining({ forward: true }))
+    expect(dataStore.loadKey).not.toHaveBeenCalled()
+    expect(dataStore.loadMessage).not.toHaveBeenCalled()
+    expect(client.message.send.mock.calls[0][2]).not.toHaveProperty('quote')
+  })
+  test('keeps normal messages unmarked and accepts forwarded=false', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    client.message.send.mockResolvedValue(publishResult)
+    const messages = new ZapoMessages(client, dataStore)
+    await messages.send({ to: '123@lid', type: 'text', text: { body: 'Normal' } })
+    expect(client.message.send.mock.calls[0][2]).not.toHaveProperty('forward')
+    await messages.send({ to: '123@lid', type: 'text', text: { body: 'Normal' }, context: { forwarded: false } })
+    expect(client.message.send.mock.calls[1][2]).toMatchObject({ forward: false })
+  })
+  test('rejects invalid forwarding before contacting the SDK', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    await expect(new ZapoMessages(client, dataStore).send({ to: '123@lid', type: 'text', context: { forwarded: 'true' } })).rejects.toThrow('400: forwarded_must_be_boolean')
+    expect(client.message.send).not.toHaveBeenCalled()
+  })
+  test('keeps quoting independent of the forwarding marker', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    client.message.send.mockResolvedValue(publishResult)
+    dataStore.loadKey.mockResolvedValue({ id: 'quoted-id', remoteJid: '123@lid', fromMe: false })
+    await new ZapoMessages(client, dataStore).send({ to: '123@lid', type: 'text', text: { body: 'Encaminhada em resposta' }, context: { forwarded: true, message_id: 'quoted-id' } })
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.anything(), expect.objectContaining({ forward: true, quote: expect.objectContaining({ id: 'quoted-id' }) }))
+  })
+  test.each(['image', 'video', 'audio', 'document', 'sticker'])('passes the marker on %s media sends', async type => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    mockedFetch.mockResolvedValueOnce({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer })
+    client.message.send.mockResolvedValue(publishResult)
+    await new ZapoMessages(client, dataStore).send({ to: '123@lid', type, [type]: { link: 'https://example.test/media' }, context: { forwarded: true } })
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.anything(), expect.objectContaining({ forward: true }))
+  })
+  test('preserves the marker in an explicit delivery recovery with supplied content', async () => {
+    const client = mockDeep<WaClient>(), dataStore = mockDeep<DataStore>()
+    client.message.send.mockResolvedValue(publishResult)
+    dataStore.loadKey.mockResolvedValue({ id: 'old-id', remoteJid: '123@lid', fromMe: true })
+    await new ZapoMessages(client, dataStore).recoverDelivery({ to: '123@lid', type: 'text', text: { body: 'Encaminhada' }, message_id: 'old-id', context: { forwarded: true } })
+    expect(client.message.send).toHaveBeenCalledWith('123@lid', expect.anything(), expect.objectContaining({ forward: true, id: 'old-id' }))
+  })
   test('contact card resolves canonical PN from network on cache miss', async () => {
     const client = mockDeep<WaClient>(), store = mockDeep<WaStoreSession>(), dataStore = mockDeep<DataStore>()
     client.profile.getLidsByPhoneNumbers.mockResolvedValue([{ queriedJid: '5566999554300@s.whatsapp.net', phoneJid: '556699554300@s.whatsapp.net', exists: true, lidJid: '222@lid' }] as never)
@@ -601,6 +645,7 @@ describe('Zapo messages adapter', () => {
     const dataStore = mockDeep<DataStore>()
     client.message.send.mockResolvedValue(publishResult)
     dataStore.loadProviderId.mockResolvedValue('original-provider-id')
+    dataStore.loadMessage.mockResolvedValue({ message: { conversation: 'texto original' } })
     dataStore.loadKey.mockResolvedValue({
       remoteJid: '120363000000000000@g.us',
       id: 'original-provider-id',

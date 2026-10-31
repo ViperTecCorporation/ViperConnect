@@ -61,13 +61,39 @@ existente. Não substitua os IDs operacionais por ele.
   Não publicar um segundo evento apenas para anunciar encaminhamento.
 - Mesma regra no conversor de texto/mídia/grupos e em histórico/replay quando o
   conteúdo armazenado contiver a marca. Sem backfill de mensagens já entregues.
-- Não acrescentar contexto a recibos/status. Não altera o payload de envio
-  nem solicita ao WhatsApp marcar novas mensagens como encaminhadas.
+- Não acrescentar contexto a recibos/status. Receber a marca não solicita
+  automaticamente ao WhatsApp marcar novos envios como encaminhados;
+  o fluxo inverso abaixo exige intenção explícita no envio.
 - `forwardingScore` e `frequently_forwarded` ficam **fora desta etapa**. Não
   inferir “encaminhada muitas vezes”, número de repasses, autor original ou rota.
 - Autenticação, destino e configuração de webhook permanecem os existentes.
 
-## Caminhos no ViperConnect
+## Fluxo inverso: envio pelo ViperChat
+
+O endpoint `POST /v15.0/{phone}/messages` agora aceita
+`context: { "forwarded": true }` junto ao conteúdo completo de texto/mídia.
+Não é necessário ID da mensagem original: a Zapo usa `options.forward=true`.
+Isso **não busca/copia mensagem por ID**; o ViperChat já seleciona a mensagem
+e prepara conteúdo/anexos em `Messages::ForwardService`.
+
+Para integrar no receptor/emissor ViperChat, mapear a intenção explícita de
+encaminhar (os atributos internos `forwarded_from_conversation_id` e
+`forwarded_from_message_id`) para o booleano público, sem enviar esses IDs
+como `context.id`/`message_id`: eles são referências de resposta citada.
+Não marcar envios comuns apenas porque o conteúdo recebido tinha o selo.
+
+Tipos suportados: text, image, video, audio, document, sticker, contacts e
+location. A flag deve ser booleana; false/ausente preservam o envio normal.
+Tipos não suportados retornam 400. Encaminhamento com referência citada explícita
+mantém o fluxo de resposta existente. Não há campo público de score.
+Ecos de saída habilitados preservam a marca em messages/message_echoes.
+Isso não altera a integração Meta Cloud direta nem comprova entrega.
+
+Implementação do envio: `src/services/messages/outgoing_forwarded.ts`,
+`src/controllers/messages_controller.ts`, `src/services/zapo/zapo_messages.ts`
+e `src/jobs/incoming.ts`. Contrato detalhado PT/EN nos guias de mensagens.
+
+## Caminhos de recepção no ViperConnect
 
 - `src/services/zapo/zapo_events.ts`: `toUnoMessageEvent` preserva o proto recebido.
 - `src/services/transformer/forwarded_context.ts`: helper puro que acrescenta a marca.

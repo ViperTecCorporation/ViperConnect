@@ -1,5 +1,44 @@
 # Envio de mensagens
 
+## Enviar conteúdo como encaminhado
+
+No endpoint existente `POST /v15.0/{phone}/messages`, informe:
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "5511999999999",
+  "type": "text",
+  "text": { "body": "Conteúdo que desejo encaminhar" },
+  "context": { "forwarded": true }
+}
+```
+
+Não precisa de ID de origem. A Zapo documenta
+`client.message.send(destino, conteudo, { forward: true })`; o ViperConnect
+traduz o campo público para essa opção. Isso marca um novo envio, **não busca
+nem copia conteúdo automaticamente**. Envie texto ou mídia pelos campos já
+documentados. O envio recebe ID próprio e mantém autenticação, escopo, filas e
+regras de mídia existentes.
+
+`context.id` e `context.message_id` continuam sendo referências de **resposta
+citada**. Não coloque ali o ID da mensagem/conversa de origem para encaminhar
+a outro contato. Uma referência informada segue as regras de resposta existentes,
+independentemente da marca de encaminhamento.
+
+Suporta `text`, `image`, `video`, `audio`, `document`, `sticker`, `contacts` e
+`location`. `false` ou ausência não marcam o envio. Valores não booleanos
+retornam `400 forwarded_must_be_boolean`; tipos não suportados (inclusive
+Status, recibos, edição, reação, enquete, interativos, templates e raw) retornam
+`400 forwarded_unsupported_message_type` quando o campo estiver informado.
+Pontuação explícita não é exposta nesta etapa.
+
+Webhooks de saída habilitados preservam `context.forwarded=true` em `messages[]`
+e no eco Chatwoot/ViperChat `message_echoes[]`, sem prefixar o texto. ACK/eco
+não comprovam entrega ou renderização no aparelho. Requer worker atualizado;
+não altera integrações diretas de outros provedores no ViperChat.
+Referência: [Zapo — Forwarding](https://zapo.to/en/guides/sending-messages#forwarding).
+
 ## Aba Mensagens no painel da sessão
 
 O nome dos grupos na lista e no cabeçalho vem do assunto armazenado no cache da sessão. Bolhas de grupos e citações exibem o nome do contato (`sender_name`), resolvido por LID/telefone canônico no mesmo cache; `sender` mantém a identidade original. Sem nome conhecido, exibe o identificador. As consultas são paginadas e em pipelines limitados, sem varredura de contatos, consulta externa ou extensão da retenção.
@@ -391,6 +430,36 @@ Envie `emoji` vazio para remover uma reação quando a operação for suportada
 pela sessão.
 
 ## Editar uma mensagem
+
+O mesmo payload edita texto ou a **legenda de imagem, vídeo e documento
+enviados pela sessão**. `text.body` continua sendo o novo texto/legenda;
+`""` permite limpar a legenda. Não envie novamente `image`, `video`, `document`
+ou um link de mídia para editar.
+
+No worker Zapo, o ID UnoAPI é resolvido para o original armazenado. A edição
+de mídia reutiliza seu protobuf e os descritores criptográficos, alterando
+somente `caption`, com `editKey` do original; não há download, upload nem novo
+envio independente. A autoria `fromMe`, o destino e o participante em grupos
+são preservados/validados. Um `to` explícito diferente do destino original é
+rejeitado. O original deve estar disponível no store Zapo ou no cache da sessão.
+
+Erros explícitos incluem `message_edit_original_content_not_found` (404),
+`message_edit_original_not_from_me` e `message_edit_target_mismatch` (400),
+`message_edit_original_identity_mismatch` (409),
+`message_edit_original_content_invalid`, `message_edit_original_media_incomplete`,
+`message_edit_original_type_unsupported` e `message_edit_view_once_unsupported`
+(422). Áudio, sticker, conteúdo de visualização única e mídia incompleta não
+são convertidos em texto. O fluxo independente `recover_delivery` não aceita
+`message_edit`; isso evita reenviar a edição como outra mensagem.
+
+O endpoint mantém o processamento assíncrono: a resposta de aceite não prova
+edição no aparelho. Uma falha no worker produz `statuses[].status=failed` no ID
+do evento, com o motivo em `errors[].error_data.reason`, sem eco de sucesso.
+O eco de edição mantém `type=text`, `message_type=message_edit`, `text.body` e
+referência ao ID UnoAPI original para compatibilidade com o ViperChat; esse
+formato de evento **não significa** que a mídia foi substituída por texto.
+As restrições e a aceitação final do WhatsApp ainda se aplicam. Os testes são
+sintéticos; confirmação visual no aparelho depende de validação autorizada.
 
 ```json
 {

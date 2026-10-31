@@ -445,6 +445,16 @@ fallback sem registrar conteúdo, segredo ou payload descriptografado. O evento 
 
 ### Edicao de mensagens Zapo
 
+Edição de legenda reutiliza `imageMessage`, `videoMessage` ou `documentMessage`
+originais via `ZapoMessageEdit` e `buildZapoEditContent`, sem download/upload.
+Somente `caption` muda, com `editKey` e o participante original de grupo.
+Original ausente, ilegível, de terceiros, destino divergente ou mídia incompleta
+geram erro explícito, sem fallback para texto. O mapper genérico rejeita
+`message_edit` sem resolução do original. Texto também requer o conteúdo original
+para não confundir uma mídia desconhecida com texto. `recover_delivery` bloqueia
+edições para não gerar envio independente. O eco ViperChat existente é mantido
+como evento textual de edição, sem afirmar substituição da mídia.
+
 O payload publico permanece `type: message_edit`, com o ID UnoAPI original em
 `context.message_id` e o novo texto em `text.body`. O adapter resolve o ID do provider,
 confirma que a mensagem original e `fromMe` e chama `client.message.send` com o novo

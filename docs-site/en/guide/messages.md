@@ -1,5 +1,71 @@
 # Messages
 
+## Editing media captions
+
+The existing `type: message_edit`, `context.message_id` (original UnoAPI ID),
+`text.body` payload edits text or captions of **images, videos and documents
+sent by this session**. An empty body clears the caption. Do not supply media
+again. The worker retrieves the original Zapo protobuf or session cache,
+preserves encrypted media descriptors and changes only `caption`, using the
+original `editKey`. No download, upload or independent send is performed.
+Ownership (`fromMe`), destination and group participant are checked/preserved.
+An explicit `to` that does not match the original chat is rejected.
+
+Explicit errors include `message_edit_original_content_not_found` (404),
+`message_edit_original_not_from_me`, `message_edit_target_mismatch` (400),
+`message_edit_original_identity_mismatch` (409),
+`message_edit_original_content_invalid`, `message_edit_original_media_incomplete`,
+`message_edit_original_type_unsupported`, `message_edit_view_once_unsupported`
+(422). Audio, stickers, view-once and incomplete media are not replaced with
+text. Independent `recover_delivery` rejects `message_edit` to avoid sending
+an edit as a new message.
+
+The endpoint remains asynchronous: acceptance does not prove a visible edit.
+Worker failures produce `statuses[].status=failed` on the edit-event ID with
+`errors[].error_data.reason`, without a success echo. For ViperChat compatibility,
+the edit echo still uses `type=text`, `message_type=message_edit`, `text.body`
+and the original UnoAPI reference. This event format does not mean that the
+media was replaced with text. WhatsApp's final acceptance and restrictions
+still apply. Synthetic tests do not replace an authorized device-level check.
+
+## Send supplied content as forwarded
+
+Use `context.forwarded: true` on `POST /v15.0/{phone}/messages`:
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "to": "15551234567",
+  "type": "text",
+  "text": { "body": "Content to forward" },
+  "context": { "forwarded": true }
+}
+```
+
+No source message ID is required. ViperConnect maps the field to the official
+Zapo `client.message.send(recipient, content, { forward: true })` option.
+It marks a **new send**, without retrieving/copying a source message.
+Supply text or media using the existing fields. The send gets its own ID and
+retains existing authentication, session scope, queue and media rules.
+
+`context.id` and `context.message_id` still mean a **quoted reply**, not the
+source of forwarding. Do not put the source message/conversation ID there when
+forwarding to another contact. A supplied quote follows existing reply rules
+independently of the forwarding marker.
+
+Supported: `text`, `image`, `video`, `audio`, `document`, `sticker`, `contacts`,
+`location`. False/absent leaves ordinary sends unmarked. Non-booleans return
+`400 forwarded_must_be_boolean`. Supplying the field for unsupported types
+(including Status, receipts, edits, reactions, polls, interactive messages,
+templates and raw) returns `400 forwarded_unsupported_message_type`.
+Explicit forwarding scores are not exposed in this contract.
+
+Enabled outgoing webhooks retain `context.forwarded=true` in `messages[]`
+and Chatwoot/ViperChat `message_echoes[]`, without changing the text.
+Server ACK/echo does not prove delivery or rendering. Requires the updated
+worker; does not change ViperChat's direct integrations with other providers.
+Reference: [Zapo forwarding](https://zapo.to/en/guides/sending-messages#forwarding).
+
 ## Messages tab in session management
 
 Group names in the sidebar/header come from the session's cached subject. Group bubbles and quotes display the contact name (`sender_name`), resolved by canonical LID/phone in the same session cache; `sender` preserves the original identity. Unknown names fall back to the identifier. Reads use bounded pipelines without scanning contacts, external queries or retention extension.

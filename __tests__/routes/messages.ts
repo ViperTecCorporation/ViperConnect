@@ -39,6 +39,22 @@ let incoming: Incoming
 let outgoing: Outgoing
 
 describe('messages routes', () => {
+  test('accepts forwarded content without any source message ID', async () => {
+    const spy = jest.spyOn(incoming, 'send').mockResolvedValue({ ok: { messages: [{ id: 'forwarded' }] } })
+    const payload = { to: '5511999999999', type: 'text', text: { body: 'Encaminhada' }, context: { forwarded: true } }
+    const result = await request(app.server).post(`/v15.0/${phone}/messages`).send(payload)
+    expect(result.status).toBe(200)
+    expect(spy).toHaveBeenCalledWith(phone, expect.objectContaining(payload), expect.anything())
+  })
+  test.each([
+    { type: 'text', context: { forwarded: 'true' } },
+    { type: 'reaction', context: { forwarded: true } },
+  ])('rejects invalid forwarded input before enqueueing %p', async payload => {
+    const spy = jest.spyOn(incoming, 'send')
+    const result = await request(app.server).post(`/v15.0/${phone}/messages`).send({ to: '5511999999999', ...payload })
+    expect(result.status).toBe(400)
+    expect(spy).not.toHaveBeenCalled()
+  })
   test.each(['image', 'video', 'audio'])('preserves %s view_once in the enqueued payload', async type => {
     const spy = jest.spyOn(incoming, 'send').mockResolvedValue({ ok: { messages: [{ id: 'once' }] } })
     const payload = { to: '5511999999999', type, [type]: { link: 'https://example.test/media', view_once: true } }

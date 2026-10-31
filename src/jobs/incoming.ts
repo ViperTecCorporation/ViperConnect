@@ -18,6 +18,7 @@ import { resolveProfilePictureId } from '../services/profile_picture_identity'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../services/messages/outgoing_media_input'
 
 import { outgoingEditWebhook } from '../services/messages/outgoing_edit_webhook'
+import { outgoingForwardedWebhook } from '../services/messages/outgoing_forwarded'
 import { outgoingViewOnceWebhook } from '../services/messages/outgoing_view_once'
 import { addProviderMessageIds } from '../services/messages/provider_message_identity'
 import { resolveProviderMessageId } from '../services/message_id_map'
@@ -115,6 +116,7 @@ export class IncomingJob {
       type: payload.type,
       ...outgoingEditWebhook(payload, timestamp),
       ...outgoingViewOnceWebhook(payload),
+      ...outgoingForwardedWebhook(payload),
     }
     if (groupId) message.group_id = groupId
     const userId =
@@ -222,6 +224,7 @@ export class IncomingJob {
                     type,
                     ...outgoingEditWebhook(payload, timestamp),
                     ...outgoingViewOnceWebhook(payload),
+                    ...outgoingForwardedWebhook(payload),
                   },
                 ],
               },
