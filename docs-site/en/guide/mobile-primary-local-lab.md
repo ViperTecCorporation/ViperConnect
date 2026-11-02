@@ -4,6 +4,35 @@ description: Isolated Docker Desktop development environment for the mobile-prim
 
 # Local mobile-primary lab
 
+## New companion preparation and history export
+
+The store normalizes the legacy setting `unoapi-zapo:` to `unoapi:zapo:`.
+History export uses the same resolver and reads the effective namespace instead
+of the raw configuration, without renaming keys or migrating data. Other prefixes
+follow store validation; wildcards remain invalid to prevent cross-session
+collection. Selecting history does not guarantee exported messages: `empty`
+means no eligible content was selected from the effective namespace.
+
+Only the exact prekey rejection `key bundle iq failed (406: not-acceptable)`
+gets up to three preparation attempts, waiting 1.5 and 3 seconds, before any
+bootstrap or key publication. Each attempt rechecks session ownership. This
+applies with and without history export. Other failures do not get this internal
+retry, and uncertain publications are never replayed by it.
+
+Diagnostics expose classified provider codes/reasons, not raw error contents.
+Native bootstrap receipts use the actual SDK message ID. If the SDK allocates
+the ID during publication, its server ACK may precede tracking; later device
+receipts can still be observed. Submission or server ACK does not prove that
+the companion completed linking. Deploying a new image and real-device
+validation remain necessary; local source changes do not update production.
+
+During production hotfix observation on 2026-11-02, three history-enabled attempts
+each submitted 3,127 messages in 52 packets, with server ACKs for all packets,
+`peer_msg` receipts and `hist_sync`. The history-disabled attempt submitted the
+native bootstrap and keys and also received receipts. The initial 406 recovered
+through retry. This validates observed server stages, not complete import or
+continued connectivity in the companion application.
+
 ## Registration library revision
 
 ### Safe companion-link diagnostics

@@ -35,6 +35,15 @@ sem QR, tokens, chaves ou conteudo das mensagens.
 
 ## Objetivo
 
+Vínculo adicional: a exportação usa `resolveZapoRedisKeyPrefix`, como o store,
+normalizando o valor legado `unoapi-zapo:` para o namespace efetivo `unoapi:zapo:`.
+Não renomeia chaves nem migra dados. Somente a rejeição exata de prekeys
+`key bundle iq failed (406: not-acceptable)` recebe até três tentativas de
+preparação com espera de 1,5/3s e revalidação de posse, antes de qualquer envio.
+Não há replay de publicação ambígua. Bootstrap nativo e exportado têm correlação
+de recibos pelo ID real; submissão não comprova conclusão no aparelho.
+Contrato e limites: [laboratório Mobile Primary](../docs-site/guide/mobile-primary-local-lab.md).
+
 Adicionar a Zapo como segundo motor do ViperConnect sem alterar o contrato HTTP da UnoAPI. A escolha e feita por sessao. Ao selecionar Zapo sem credenciais nativas, a sessao exige novo pareamento por QR; o motor Zapo nunca importa nem consulta o auth Baileys. Quando a matriz Zapo atingir 100% dos recursos usados pelo produto, a Baileys podera ser removida.
 
 ## Fontes de verdade

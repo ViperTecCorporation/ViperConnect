@@ -6,6 +6,37 @@ description: Ambiente isolado de desenvolvimento mobile-primary no Docker Deskto
 
 ## Revisão da biblioteca de registro
 
+### Preparação de um novo vínculo e histórico
+
+O valor legado `unoapi-zapo:` é normalizado pelo store para `unoapi:zapo:`.
+A exportação usa o mesmo resolvedor e consulta o namespace efetivo, não o valor
+bruto da configuração. Não renomeia chaves nem migra dados. Outros prefixos
+seguem a validação do store; curingas continuam rejeitados para impedir coleta
+fora da sessão. Histórico marcado não garante mensagens exportadas: `empty`
+significa que nenhum conteúdo elegível foi selecionado no namespace efetivo.
+
+Quando a consulta das prekeys do novo dispositivo retorna exatamente
+`key bundle iq failed (406: not-acceptable)`, a preparação faz no máximo três
+tentativas, com esperas de 1,5 e 3 segundos, antes de publicar qualquer bootstrap
+ou compartilhar chaves. A posse da sessão é conferida em cada tentativa.
+Outros erros não recebem esse retry interno; falhas de publicação não são
+repetidas por esse mecanismo. A regra vale com e sem exportação de histórico.
+
+Os logs informam código e motivo classificados, sem texto bruto do provedor.
+O bootstrap nativo sem histórico também permite correlacionar recibos pelo ID
+real atribuído pela biblioteca. Quando o ID só existe no retorno do envio, o ACK
+do servidor pode já ter passado; recibos posteriores ainda podem ser observados.
+Submissão ou ACK do servidor não comprovam conclusão do vínculo no aparelho.
+As correções exigem atualizar a imagem; não são aplicadas à produção apenas por
+alterar o código local. A conclusão no aparelho permanece sujeita a validação real.
+
+Na observação do hotfix em produção de 02/11/2026, três tentativas com histórico
+submeteram 3.127 mensagens em 52 pacotes cada, com ACK do servidor para todos os
+pacotes e recibos `peer_msg`, além de `hist_sync`. A tentativa sem histórico
+submeteu o bootstrap nativo e as chaves, também com recibos. O 406 inicial foi
+recuperado pelo retry. Isso valida as etapas observadas no servidor, não a
+importação completa nem a permanência da conexão no aplicativo adicional.
+
 ### Diagnóstico seguro de vínculo adicional
 
 Os observadores internos registram a plataforma conhecida do QR (`e` ou IDs

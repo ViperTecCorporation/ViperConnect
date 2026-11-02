@@ -3,6 +3,22 @@ import logger from '../../src/services/logger'
 import { traceCompanionOutgoing } from '../../src/services/mobile_primary/companion_outgoing_trace'
 jest.mock('../../src/services/logger', () => ({ __esModule: true, default: { info: jest.fn() } }))
 beforeEach(() => jest.clearAllMocks())
+test.each([true, false])('correlates SDK native bootstrap receipts, supplied ID=%s', async supplied => {
+  const receipts = { track: jest.fn() }
+  const result = { id: 'sdk-id' }
+  const original = jest.fn(async () => {
+    expect(receipts.track).toHaveBeenCalledTimes(supplied ? 1 : 0)
+    return result
+  })
+  const dispatch = { publishProtocolMessageToDevice: original as (...args: any[]) => Promise<any> }
+  const dispose = traceCompanionOutgoing(dispatch, 'draft', receipts)
+  const options = supplied ? { id: 'assigned-id' } : undefined
+  expect(await dispatch.publishProtocolMessageToDevice('target', { historySyncNotification: { chunkOrder: 0 } }, options)).toBe(result)
+  expect(receipts.track).toHaveBeenCalledTimes(1)
+  expect(receipts.track).toHaveBeenCalledWith(supplied ? 'assigned-id' : 'sdk-id', 'target', 0)
+  expect(original).toHaveBeenCalledTimes(1)
+  dispose()
+})
 test('observes submitted response, preserves invocation and result, and restores', async () => {
   const result = { id: 'secret-outgoing' }
   const original = jest.fn().mockResolvedValue(result)
