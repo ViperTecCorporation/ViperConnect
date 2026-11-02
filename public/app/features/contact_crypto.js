@@ -1,4 +1,4 @@
-import { t } from '../core/i18n.js?v=4.0.40-0f2cc5a1';
+import { t } from '../core/i18n.js?v=4.0.41-0f2cc5a1';
 export async function recoverContactCrypto(api, phone, contact, confirm = message => window.confirm(message)) {
     if (!phone || !/^\d{1,32}@lid$/.test(contact.user_id))
         throw new Error(t('Contato inválido para recuperação de criptografia.'));

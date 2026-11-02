@@ -65,6 +65,15 @@ token, os volumes são persistentes e os workers necessários estão saudáveis.
 Telefonia e worker de vídeo podem ser validados separadamente do primeiro envio
 de texto.
 
+## Versão 4.0.41
+
+A 4.0.41 atualiza a Zapo para 1.11.0 e inclui recuperação de criptografia por
+contato, marcação de encaminhamento, edição de legendas e correções de vínculo
+Mobile Primary. Mantém o serviço VoIP 0.1.69 e sua revisão fixada.
+As [notas da versão](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.41/docs/release-4.0.41.md)
+detalham limites e a revisão dos quatro hostpaths de vínculo antes de atualizar.
+Publicação não faz deploy, migra dados nem comprova conclusão no aparelho.
+
 ## Homologação integrada 4.0.40
 
 A entrega `ViperConnect 4.0.40` incorpora o serviço VoIP `0.1.69`, com revisão

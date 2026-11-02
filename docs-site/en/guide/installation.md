@@ -41,6 +41,15 @@ and telephony process. Native Linux packages are also available.
 Do not publish Valkey or RabbitMQ to the internet. Terminate TLS at your edge
 proxy and use strong, unique tokens for every installation.
 
+## Version 4.0.41
+
+Version 4.0.41 upgrades Zapo to 1.11.0 and adds per-contact crypto recovery,
+forwarding metadata, media caption editing and Mobile Primary companion fixes.
+It keeps VoIP service 0.1.69 at the same pinned revision.
+The [release notes](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.41/docs/release-4.0.41.md)
+describe limitations and the four companion hostpaths to review before upgrading.
+Publication does not deploy, migrate data or prove completion on the companion.
+
 ## Integrated 4.0.40 validation
 
 `ViperConnect 4.0.40` embeds VoIP service `0.1.69` at a pinned source revision.
