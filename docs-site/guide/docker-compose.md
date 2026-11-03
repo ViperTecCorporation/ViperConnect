@@ -10,6 +10,10 @@ Estes são os dois modelos do próprio projeto e usam a imagem
 última imagem publicada no canal `latest`. Ambos preservam a arquitetura usada em produção:
 web, broker e worker Zapo separados, com Valkey e RabbitMQ persistentes.
 
+Os modelos incluem também o worker de vídeo e o serviço VoIP. Para hospedar o
+armazenamento S3 na mesma instalação, use o [complemento opcional RustFS](/guide/storage-rustfs),
+com volume próprio e rota HTTPS. Ele não altera o destino de um S3 existente.
+
 Cada tag Git de release no formato `v*` publica duas referências da mesma
 imagem: a versão imutável, por exemplo `4.0.19`, e `latest`. Use `latest` para
 acompanhar o canal estável automaticamente ou fixe a versão semântica quando
@@ -172,6 +176,12 @@ No serviço `viperconnect-telefonia`, `VOIP_SERVICE_TOKEN` e
 `VOIP_BRIDGE_TOKEN` recebem exatamente esse mesmo segredo. Não coloque o token
 na URL e não o exponha em configuração do navegador.
 
+O VoIP também recebe `AMQP_URL` para entregar eventos ao ViperChat. Como usa
+rede host, o exemplo aponta para `127.0.0.1:5672`; o RabbitMQ publica essa porta
+somente no loopback. Os demais serviços usam `unoapi-rabbitmq:5672` pela rede
+Docker. Mantenha a mesma senha nos dois endereços e no RabbitMQ. Não troque o
+endereço do VoIP pelo nome interno de um contêiner que a rede host não resolve.
+
 No container, `VOIP_AUTO_UPDATE_ENABLED` e
 `VOIP_AUTO_UPDATE_APPLY_ENABLED` permanecem `false`: a atualização acontece com
 `docker compose pull` da imagem única. Essas opções ficam ativas somente no
@@ -280,8 +290,10 @@ Para atualizar depois, execute `docker compose pull && docker compose up -d`.
 Esse comando baixa o novo `latest` publicado pela tag de release. Se o Compose
 estiver fixado em uma versão, altere a tag explicitamente antes do `pull`.
 
-Somente a API é publicada. Valkey e RabbitMQ ficam restritos à network interna
-e mantêm dados nos volumes `redis` e `rabbitmq`.
+A API usa a porta publicada 9876 e a telefonia usa a rede host. Valkey fica
+restrito à rede interna; RabbitMQ também oferece AMQP no loopback para o VoIP,
+sem publicar a interface administrativa. Os dados permanecem nos volumes
+`redis` e `rabbitmq`.
 
 Para QR code, pairing code e atualizações de conexão, o proxy precisa aceitar o
 upgrade do Socket.IO em `/socket.io/`.

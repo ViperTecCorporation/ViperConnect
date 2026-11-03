@@ -1,5 +1,14 @@
 # Connect a session
 
+## Zapo SDK version
+
+The `zapo-js` dependency is pinned to **1.11.0**, including SDK reconnection
+and pairing fixes. The custom VoIP plugin in `vendor/zapo-voip` remains
+unchanged; this update does not integrate upstream's new VoIP features.
+The SDK's forced Signal session rebuild option is not automatically enabled
+by the application. See [Recover a contact's encryption](./contacts#recover-contact-encryption)
+for the manual per-contact maintenance action.
+
 Register a phone number with the Zapo engine, then request either a QR code or
 pairing code. Keep the same connection type until the session is deregistered.
 

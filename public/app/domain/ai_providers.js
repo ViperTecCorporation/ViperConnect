@@ -34,6 +34,7 @@ export const loadAiModels = async (form, purpose, request, providerChanged = fal
     select.name = old.name;
     select.required = true;
     select.add(new Option(selected || 'Carregando modelos…', selected));
+    select.value = selected;
     old.replaceWith(select);
     try {
         const result = await request(`ai/models?provider=openrouter&purpose=${purpose === 'Transcription' ? 'transcription' : 'summary'}`);
@@ -42,6 +43,8 @@ export const loadAiModels = async (form, purpose, request, providerChanged = fal
         select.replaceChildren(new Option('Selecione um modelo', ''));
         for (const model of result.models || [])
             select.add(new Option(`${model.name} (${model.id})`, model.id));
+        if (result.models?.length)
+            select.options[0].text = `Selecione um modelo (${result.models.length} disponíveis)`;
         if (selected && !Array.from(select.options).some(option => option.value === selected))
             select.add(new Option(`${selected} (salvo; fora do catálogo atual)`, selected));
         select.value = selected;

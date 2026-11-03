@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "ViperConnect API",
-    "version": "2.5.2",
+    "version": "4.0.41",
     "description": "API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.\n- Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).\n- Suporta envios de texto, mídia (imagem/áudio/documento/vídeo), contatos e mensagens interativas (botões/listas).\n"
   },
   "servers": [
@@ -4141,7 +4141,7 @@
           "VoIP"
         ],
         "summary": "Listar modelos atuais do OpenRouter para IA pós-chamada",
-        "description": "Catálogo público consultado pelo worker, sem enviar chave ou áudio. Somente administradores. Não valida crédito nem acesso da chave ao modelo.",
+        "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
         "parameters": [
           {
             "in": "query",
@@ -4587,6 +4587,167 @@
         "x-destructive": false
       }
     },
+    "/admin/voip/console/companies/{id}/viperchat-webhook/diagnostics": {
+      "get": {
+        "tags": [
+          "Telefonia"
+        ],
+        "summary": "Diagnóstico sanitizado das entregas VoIP de uma empresa",
+        "description": "Exclusivo de administrador. Somente IDs opacos, contagens, estado, tentativas e códigos técnicos; sem payload, telefone, mídia ou token.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "ManagerToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "pending",
+                "published",
+                "delivering",
+                "dead"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "companyId, counts, items (id/eventId/status/attempts/errorCode/nextAttemptAt/createdAt/replayAllowed/destinationMatches), hasMore"
+          },
+          "400": {
+            "description": "Filtro inválido"
+          },
+          "401": {
+            "description": "Autenticação ausente ou inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Empresa inexistente"
+          },
+          "503": {
+            "description": "Serviço indisponível"
+          }
+        }
+      }
+    },
+    "/admin/voip/console/companies/{id}/viperchat-webhook/replay": {
+      "post": {
+        "tags": [
+          "Telefonia"
+        ],
+        "summary": "Reprocessar eventos VoIP explicitamente selecionados da empresa",
+        "description": "Administrador e confirmação obrigatórios. Atômico e idempotente por requestId; somente pending/dead no destino original ainda habilitado. Não altera payload, tentativas ou destino; não reenvia entregues.",
+        "security": [
+          {
+            "AdminToken": []
+          },
+          {
+            "ManagerToken": []
+          }
+        ],
+        "x-destructive": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "eventIds",
+                  "confirm",
+                  "requestId"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "eventIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    }
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agendado ou repetição idempotente do mesmo requestId e corpo"
+          },
+          "400": {
+            "description": "Corpo ou confirmação inválidos"
+          },
+          "401": {
+            "description": "Autenticação ausente ou inválida"
+          },
+          "403": {
+            "description": "Administrador obrigatório"
+          },
+          "404": {
+            "description": "Empresa ou evento inexistente nesta empresa"
+          },
+          "409": {
+            "description": "Destino divergente/desabilitado",
+            "estado ocupado/entregue ou requestId com outro corpo": null
+          },
+          "503": {
+            "description": "Serviço indisponível"
+          }
+        }
+      }
+    },
     "/admin/voip/console/companies": {
       "get": {
         "tags": [
@@ -4825,6 +4986,31 @@
                 },
                 "example": {
                   "error": "automatic_resource_managed"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Novo modelo OpenRouter incompatível com a finalidade; nenhuma configuração é salva. Catálogo indisponível durante a validação retorna 502 ai_model_catalog_unavailable. Modelos salvos inalterados são preservados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "enum": [
+                        "invalid_openrouter_model"
+                      ]
+                    },
+                    "field": {
+                      "type": "string",
+                      "enum": [
+                        "transcriptionModel",
+                        "summaryModel"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -11075,6 +11261,129 @@
         }
       }
     },
+    "/{phone}/contacts/recover-crypto": {
+      "post": {
+        "tags": [
+          "Contatos"
+        ],
+        "operationId": "recoverContactCrypto",
+        "summary": "Recuperar manualmente a criptografia de um contato Zapo",
+        "description": "Requer token global, token da sessão ou credencial Manager autorizada para\na sessão. Apenas Zapo já conectado, sem conectar ou parear automaticamente.\nO user_id deve ser um LID presente no cache de contatos dessa sessão.\nExecuta no worker dono message.syncSignalSession(user_id, { force: true })\ndo Zapo 1.11.0: remove a sessão Signal do endereço e busca uma nova,\npreservando a identidade. Não renova a lista de dispositivos, não solicita\nmudança de identidade, não limpa outros contatos e não faz logout.\nNão reenvia mensagens nem confirma entrega ou recuperação de conteúdo antigo.\nNão é transacional; uma falha pode ocorrer após remover a sessão antiga.\nUma tentativa por sessão/LID a cada 300 segundos via Redis, inclusive\nem falha. Sem retry automático. Timeout RPC não comprova cancelamento.\nUse somente para investigação pontual de falha de criptografia, não para\ndestinatário offline ou simples ausência de recibo de entrega.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user_id",
+                  "confirm"
+                ],
+                "properties": {
+                  "user_id": {
+                    "type": "string",
+                    "pattern": "^\\d{1,32}@lid$",
+                    "maxLength": 36
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "user_id": "000000000000002@lid",
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chamada ao SDK concluída; nenhuma mensagem reenviada e entrega não confirmada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "user_id",
+                    "resent",
+                    "cooldown_seconds"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "user_id": {
+                      "type": "string"
+                    },
+                    "resent": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "cooldown_seconds": {
+                      "type": "integer",
+                      "enum": [
+                        300
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "user_id": "000000000000002@lid",
+                  "resent": false,
+                  "cooldown_seconds": 300
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "contact_user_id_must_be_a_lid ou contact_crypto_confirmation_required"
+          },
+          "401": {
+            "description": "Autenticação obrigatória"
+          },
+          "403": {
+            "description": "Token inválido ou sessão fora do escopo da credencial"
+          },
+          "404": {
+            "description": "contact_not_found"
+          },
+          "409": {
+            "description": "contact_crypto_requires_zapo ou zapo_client_not_connected"
+          },
+          "429": {
+            "description": "contact_crypto_recovery_cooldown",
+            "headers": {
+              "Retry-After": {
+                "description": "Intervalo conservador em segundos antes de nova tentativa",
+                "schema": {
+                  "type": "integer",
+                  "example": 300
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "contact_crypto_recovery_failed ou contact_crypto_recovery_unconfirmed; não repetir imediatamente"
+          }
+        }
+      }
+    },
     "/{phone}/contacts/import": {
       "post": {
         "summary": "Adicionar ou atualizar contato na agenda do WhatsApp",
@@ -13134,6 +13443,189 @@
         "x-destructive": false
       }
     },
+    "/v1/console/history": {
+      "servers": [
+        {
+          "url": "https://voip.example.com",
+          "description": "Serviço VoIP direto; não é a origem HTTP do ViperConnect."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Telefonia"
+        ],
+        "summary": "Recuperar eventos canônicos VoIP para consolidação no ViperChat",
+        "description": "Rota do SERVIÇO VOIP, não do Manager. Authorization Bearer usa VOIP_SERVICE_TOKEN; o POST inverso ao ViperChat usa api_access_token. Sem cursor inicia snapshot do journal retido; nextCursor assinado continua em changes. Persistir checkpoint após processar a página; webhook e REST usam os mesmos event_id/revision. Não reiniciar cursor em erro automaticamente. Configuração de empresa/destino e ramais é revalidada em cada página. Gravações são baixadas separadamente em /v1/console/history-records/{recordId}/recording.",
+        "security": [
+          {
+            "VoipServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sync",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "webhook_events"
+              ]
+            }
+          },
+          {
+            "name": "company_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ID exato da empresa na central; pode ser UUID"
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Conta no ViperChat"
+          },
+          {
+            "name": "service_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Serviço cadastrado no ViperChat"
+          },
+          {
+            "name": "source_instance_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Origem estável igual ao cadastro do produtor"
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "description": "nextCursor opaco da página anterior"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página sem cache; cada item contém sequence e webhook_event completo; sequence corresponde à revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "version",
+                    "phase",
+                    "scope",
+                    "items",
+                    "nextCursor",
+                    "hasMore"
+                  ],
+                  "properties": {
+                    "version": {
+                      "type": "integer",
+                      "enum": [
+                        1
+                      ]
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "snapshot",
+                        "changes"
+                      ]
+                    },
+                    "scope": {
+                      "type": "object"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sequence": {
+                            "type": "integer"
+                          },
+                          "webhook_event": {
+                            "$ref": "#/components/schemas/VoipWebhookEnvelope"
+                          }
+                        }
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string"
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "example": {
+                  "version": 1,
+                  "phase": "snapshot",
+                  "scope": {
+                    "company_id": "empresa",
+                    "account_id": "1",
+                    "service_id": "10",
+                    "source_instance_id": "pbx"
+                  },
+                  "items": [],
+                  "nextCursor": "cursor-opaco-assinado",
+                  "hasMore": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Query, limite ou cursor inválido"
+          },
+          "401": {
+            "description": "Token do serviço recusado"
+          },
+          "403": {
+            "description": "Empresa ou vínculo não autorizado"
+          },
+          "409": {
+            "description": "Escopo ou destino alterado"
+          },
+          "410": {
+            "description": "Cursor expirado; avaliar nova leitura e possível lacuna"
+          },
+          "422": {
+            "description": "Envelope individual grande demais"
+          },
+          "501": {
+            "description": "Recuperação exige outbox SQLite"
+          },
+          "503": {
+            "description": "Preparação de envelopes pendente; repetir com backoff sem avançar o cursor"
+          }
+        }
+      }
+    },
     "/admin/voip/console/history": {
       "get": {
         "tags": [
@@ -15104,6 +15596,11 @@
   },
   "components": {
     "securitySchemes": {
+      "VoipServiceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "VOIP_SERVICE_TOKEN do serviço VoIP direto. Não é o api_access_token administrativo usado nos POSTs para o ViperChat nem uma senha SIP."
+      },
       "AdminToken": {
         "type": "http",
         "scheme": "bearer",
@@ -15164,6 +15661,347 @@
       }
     },
     "schemas": {
+      "VoipWebhookEnvelope": {
+        "type": "object",
+        "description": "Snapshot canônico persistido na outbox; o mesmo event_id e conteúdo são usados no POST ao ViperChat e na consolidação REST. Revisões obsoletas não devem regredir o estado da chamada.",
+        "required": [
+          "schema_version",
+          "event_id",
+          "event_type",
+          "occurred_at",
+          "source_instance_id",
+          "call_id",
+          "revision",
+          "call"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "call.created",
+              "call.ringing",
+              "participant.answered",
+              "participant.released",
+              "call.transferred",
+              "call.ended",
+              "call.updated",
+              "recording.updated",
+              "call.artifacts.updated"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source_instance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "call_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "call": {
+            "$ref": "#/components/schemas/VoipWebhookCall"
+          }
+        }
+      },
+      "VoipWebhookCall": {
+        "type": "object",
+        "required": [
+          "direction",
+          "state",
+          "started_at",
+          "participants"
+        ],
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound",
+              "internal"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "routing",
+              "ringing",
+              "active",
+              "completed",
+              "missed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "business_phone": {
+            "type": "string",
+            "pattern": "^\\+?\\d{10,15}$",
+            "description": "Telefone confirmado da linha externa; omitido em chamada interna. Nunca inferir de LID/JID. Receptor precisa aceitar este campo opcional."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "answered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ended_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_reason": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "from": {
+            "$ref": "#/components/schemas/VoipWebhookParty"
+          },
+          "to": {
+            "$ref": "#/components/schemas/VoipWebhookParty"
+          },
+          "participants": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "state"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "extension": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "sip_call_id": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "client_call_id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "UUID exato da intenção da origem autenticada; exige extension e sip_call_id. Não inferir por telefone."
+                },
+                "offer": {
+                  "$ref": "#/components/schemas/VoipWebhookNativeOffer"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "offered",
+                    "ringing",
+                    "active",
+                    "completed",
+                    "missed",
+                    "failed",
+                    "cancelled",
+                    "answered_elsewhere"
+                  ]
+                },
+                "started_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "answered_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "ended_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "recording": {
+            "$ref": "#/components/schemas/VoipWebhookRecording"
+          },
+          "artifacts": {
+            "type": "object",
+            "description": "Opcional, apenas no modo artifactsDelivery=webhook. Sem áudio, URLs arbitrárias, caminhos ou segredos; consultar mídia por record_id usando Bearer.",
+            "properties": {
+              "recording": {
+                "$ref": "#/components/schemas/VoipWebhookRecording"
+              },
+              "ai": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "disabled",
+                      "queued",
+                      "processing",
+                      "completed",
+                      "failed"
+                    ]
+                  },
+                  "transcript": {
+                    "type": "string",
+                    "maxLength": 64000
+                  },
+                  "summary": {
+                    "type": "string",
+                    "maxLength": 16000
+                  },
+                  "transcription_model": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "summary_model": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "completed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              "note_target": {
+                "type": "object",
+                "required": [
+                  "business_phone",
+                  "remote_phone"
+                ],
+                "properties": {
+                  "business_phone": {
+                    "type": "string",
+                    "pattern": "^\\+?\\d{10,15}$"
+                  },
+                  "remote_phone": {
+                    "type": "string",
+                    "pattern": "^\\+?\\d{10,15}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "VoipWebhookNativeOffer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "expires_at"
+        ],
+        "description": "Oferta opcional de participação offered/ringing com ramal explícito. Inicial omite finalidade e pertence a chamada routing/ringing. Transferência exige pai active, purpose=transfer e source_participant_id de participação ACTIVE com SIP Call-ID real e outro ramal no mesmo snapshot. Prazo máximo 60 s. Atualizar receptor antes do produtor; não encaminhar campos extras no push voip.incoming.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Identidade estável por tentativa; tentativa nova usa ID novo."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Prazo UTC real da oferta."
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "transfer"
+            ]
+          },
+          "source_participant_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Obrigatório somente com purpose=transfer; fonte ativa e exata no mesmo snapshot."
+          }
+        }
+      },
+      "VoipWebhookParty": {
+        "type": "object",
+        "required": [
+          "kind",
+          "value"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "extension",
+              "unknown"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      },
+      "VoipWebhookRecording": {
+        "type": "object",
+        "required": [
+          "status",
+          "record_id"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "recording",
+              "processing",
+              "available",
+              "failed"
+            ]
+          },
+          "record_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 52428800
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      },
       "SessionConversation": {
         "type": "object",
         "required": [
@@ -17074,6 +17912,7 @@
       },
       "VoipCompany": {
         "type": "object",
+        "description": "Empresa VoIP. A integração ViperChat é exclusiva do administrador e abrange somente chamadas com ramais atualmente vinculados a esta empresa; não é configurada nas linhas.",
         "required": [
           "label"
         ],
@@ -17096,6 +17935,9 @@
           },
           "aiSummary": {
             "$ref": "#/components/schemas/VoipAiSummary"
+          },
+          "viperchatWebhook": {
+            "$ref": "#/components/schemas/VoipViperchatWebhook"
           }
         }
       },
@@ -17125,6 +17967,68 @@
           "privateNote": {
             "type": "boolean",
             "default": true
+          }
+        }
+      },
+      "VoipViperchatWebhook": {
+        "type": "object",
+        "description": "Eventos de chamadas por empresa, somente dos ramais vinculados a ela. Todos os ramais herdam a configuração, sem seletor e sem repetir credenciais por linha. Configuração exclusiva de administrador do Manager, independente do envio de gravações. Chamadas sem evidência de ramal da empresa não são enviadas; transferências não incluem ramais de outras empresas. Entrega persistente SQLite/RabbitMQ. HTTPS obrigatório; HTTP loopback somente em desenvolvimento. Configuração legada por linha não é ativada nem migrada automaticamente; exige revisão do operador.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "nativeWakeEnabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Opt-in por empresa para conservar ofertas SIP reais enquanto o app nativo registra. Exige eventos habilitados, receptor compatível e dispositivo autorizado. Não ativa push nem atende chamadas. Desabilitado preserva o roteamento anterior."
+          },
+          "nativeWakeTimeoutSeconds": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 60,
+            "default": 30,
+            "description": "Validade máxima da oferta nativa em segundos, limitada também pela janela real de roteamento. Novo REGISTER ou retry não renova o prazo. Edições que omitem o campo preservam o valor salvo."
+          },
+          "artifactsDelivery": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "webhook"
+            ],
+            "default": "legacy",
+            "description": "Transporte único de gravação e IA. legacy mantém a integração por caixa de entrada das linhas. webhook requer a integração da empresa habilitada e válida, inibe o envio legado efetivo sem apagar caixa, token ou configuração salva. Nunca publica pelos dois caminhos."
+          },
+          "baseUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "accountId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "serviceId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "sourceInstanceId": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "apiAccessToken": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "description": "api_access_token de usuário administrador da conta ViperChat. Omitido ou vazio preserva o segredo salvo; nunca retornado."
+          },
+          "clearApiAccessToken": {
+            "type": "boolean",
+            "writeOnly": true,
+            "description": "Remove explicitamente o token salvo. Desabilite o envio junto da remoção."
+          },
+          "hasApiAccessToken": {
+            "type": "boolean",
+            "readOnly": true
           }
         }
       },
@@ -18250,11 +19154,17 @@
           },
           "context": {
             "type": "object",
-            "description": "Responde ou cita uma mensagem anterior.",
-            "required": [
-              "message_id"
-            ],
+            "description": "Metadados opcionais. forwarded marca o conteúdo fornecido como encaminhado; message_id/id continuam sendo referência de resposta citada, nunca origem do encaminhamento. Não é preciso ID de origem para encaminhar.",
             "properties": {
+              "forwarded": {
+                "type": "boolean",
+                "description": "Extensão ViperConnect/Zapo. true usa options.forward=true; false/ausente não marcam o envio. Suporta text, image, video, audio, document, sticker, contacts e location. Campo informado em outros tipos ou Status retorna 400. O cliente fornece o conteúdo, sem busca automática por ID nem score explícito nesta etapa."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Alias de message_id para resposta citada, não origem de encaminhamento."
+              },
               "message_id": {
                 "type": "string",
                 "minLength": 1,
@@ -18461,6 +19371,7 @@
         ]
       },
       "MessageEdit": {
+        "description": "Edita texto ou legenda de imagem, vídeo e documento enviados pela sessão.\ntext.body é o novo texto/legenda (string vazia limpa legenda). O worker\nrecupera o protobuf original do store Zapo/cache, preserva descritores da\nmídia e usa editKey do original, sem download/upload ou envio independente.\nValida fromMe, destino explícito e participante em grupos. Áudio, sticker,\nvisualização única, origem ausente/incompleta ou destino divergente falham\nexplicitamente. A resposta HTTP de aceite não confirma edição no aparelho:\nerros do worker geram status failed com error_data.reason, sem eco de sucesso.\nO eco ViperChat mantém type=text/message_type=message_edit com referência\noriginal, embora o conteúdo entregue à Zapo preserve a mídia.\nrecover_delivery não aceita message_edit para evitar um reenvio independente.\n",
         "allOf": [
           {
             "$ref": "#/components/schemas/MessageCommon"
@@ -21515,6 +22426,61 @@
           }
         }
       },
+      "ProviderMessageId": {
+        "type": "string",
+        "example": "A5E5870B16922B5CA6CA6B6A71721286",
+        "description": "ID original opaco do transporte Zapo, opcional e somente para correlação. Não substitui o ID público UnoAPI, IDs de mídia ou referências operacionais. Omitido quando indisponível e em webhooks marcados Typebot, inclusive referências e status; não prefixar com wamid."
+      },
+      "WebhookMessageIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "UUID_UNOAPI_DO_EVENTO"
+          },
+          "provider_message_id": {
+            "$ref": "#/components/schemas/ProviderMessageId"
+          },
+          "context": {
+            "type": "object",
+            "description": "Metadados opcionais da mensagem. forwarded pode existir sem id; não implica resposta citada. Ausência da marca não comprova autoria original.",
+            "properties": {
+              "forwarded": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ],
+                "description": "Presente somente quando a mensagem atual traz contextInfo.isForwarded=true no provider. Não herda a marca de mensagem citada. Não expõe score, autor original ou cadeia de encaminhamento; frequently_forwarded não é emitido nesta versão do contrato."
+              },
+              "id": {
+                "type": "string",
+                "example": "UUID_UNOAPI_ORIGINAL"
+              },
+              "message_id": {
+                "type": "string",
+                "example": "UUID_UNOAPI_ORIGINAL"
+              },
+              "provider_message_id": {
+                "$ref": "#/components/schemas/ProviderMessageId"
+              }
+            }
+          },
+          "reaction": {
+            "type": "object",
+            "properties": {
+              "message_id": {
+                "type": "string"
+              },
+              "emoji": {
+                "type": "string"
+              },
+              "provider_message_id": {
+                "$ref": "#/components/schemas/ProviderMessageId"
+              }
+            }
+          }
+        }
+      },
       "WebhookInbound": {
         "description": "Mensagens recebidas no envelope Cloud API, com extensões ViperConnect como message_type=view_once.",
         "type": "object",
@@ -21555,6 +22521,13 @@
                               "type": "object"
                             }
                           },
+                          "message_echoes": {
+                            "type": "array",
+                            "description": "Echo para destinatários Chatwoot/ViperChat; preserva os IDs públicos e inclui identidade original opcional, assim como messages.",
+                            "items": {
+                              "$ref": "#/components/schemas/WebhookMessageIdentity"
+                            }
+                          },
                           "messages": {
                             "type": "array",
                             "items": {
@@ -21565,6 +22538,15 @@
                                 },
                                 "id": {
                                   "type": "string"
+                                },
+                                "provider_message_id": {
+                                  "$ref": "#/components/schemas/ProviderMessageId"
+                                },
+                                "context": {
+                                  "$ref": "#/components/schemas/WebhookMessageIdentity/properties/context"
+                                },
+                                "reaction": {
+                                  "$ref": "#/components/schemas/WebhookMessageIdentity/properties/reaction"
                                 },
                                 "timestamp": {
                                   "type": "string"
@@ -21653,6 +22635,7 @@
                       {
                         "from": "5566999999999",
                         "id": "MESSAGE_ID",
+                        "provider_message_id": "A5E5870B16922B5CA6CA6B6A71721286",
                         "timestamp": "1784900000",
                         "type": "interactive",
                         "interactive": {
@@ -21673,7 +22656,7 @@
         }
       },
       "WebhookAck": {
-        "description": "Status de mensagens enviadas (sent/delivered/read/deleted). Avisos opcionais devem ser mesclados por ID e código, mesmo em status já processados.",
+        "description": "Status de mensagens enviadas (sent/delivered/read/deleted). provider_message_id opcional identifica a mensagem afetada, inclusive em deleted, não o evento de exclusão. Avisos opcionais devem ser mesclados por ID e código, mesmo em status já processados.",
         "type": "object",
         "properties": {
           "object": {
@@ -21712,6 +22695,9 @@
                                 },
                                 "recipient_id": {
                                   "type": "string"
+                                },
+                                "provider_message_id": {
+                                  "$ref": "#/components/schemas/ProviderMessageId"
                                 },
                                 "status": {
                                   "type": "string",

@@ -1254,6 +1254,11 @@ tbody tr:last-child td {
   color: var(--brand);
 }
 
+.voip-editor-form > .field {
+  align-self: start;
+  align-content: start;
+}
+
 .voip-editor-form .wide,
 .voip-editor-form > .form-actions {
   grid-column: 1 / -1;
@@ -1516,6 +1521,22 @@ tbody tr:last-child td {
   gap: 8px;
   min-height: 42px;
   padding-top: 22px;
+}
+
+.voip-editor-form > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.voip-editor-form .field > *,
+.voip-editor-form .voip-check > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.voip-editor-form .voip-check > input {
+  flex: 0 0 auto;
 }
 
 .voip-sip-mode {
@@ -2131,6 +2152,10 @@ select[multiple] {
     grid-column: auto;
   }
 
+  .voip-editor-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .voip-routing-summary > p {
     grid-column: auto;
   }
@@ -2321,3 +2346,6 @@ select[multiple] {
 .message-quote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .message-delivery { margin-left: 5px; font-size: 14px; }
 .message-delivery.is-read { color: #53bdeb; }
+:root .voip-ai-section { display: grid; align-content: start; gap: 12px; min-width: 0; }
+:root .voip-ai-section h4, :root .voip-ai-section p { margin: 0; }
+:root .voip-ai-section .field { min-width: 0; }

@@ -1,0 +1,24 @@
+version: "3.8"
+
+# Use com docker-stack.unoapi-traefik.yml e docker-stack.rustfs.yml.
+# Ajuste domínio, entrypoint e certresolver para seu Traefik Swarm.
+services:
+  rustfs:
+    networks:
+      - unoapi-internal
+      - traefik-public
+    deploy:
+      labels:
+        - "traefik.enable=true"
+        - "traefik.swarm.network=traefik-public"
+        - "traefik.http.routers.unoapi-s3.rule=Host(`s3.seudominio.com.br`)"
+        - "traefik.http.routers.unoapi-s3.entrypoints=websecure"
+        - "traefik.http.routers.unoapi-s3.tls=true"
+        - "traefik.http.routers.unoapi-s3.tls.certresolver=letsencrypt"
+        - "traefik.http.routers.unoapi-s3.service=unoapi-s3"
+        - "traefik.http.services.unoapi-s3.loadbalancer.server.port=9000"
+        - "traefik.http.services.unoapi-s3.loadbalancer.passhostheader=true"
+
+networks:
+  traefik-public:
+    external: true

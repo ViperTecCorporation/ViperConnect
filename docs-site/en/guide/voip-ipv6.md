@@ -42,6 +42,23 @@ Do not bake a delegated IPv6 prefix into the image or Compose model. Point a
 DNS-only AAAA hostname to the current address and configure that hostname as
 the public IPv6 identity.
 
+## VPS DDNS and Coturn updater
+
+The operational package in `deploy/ipv6-ddns` tracks the delegated Starlink
+and Conecta prefixes. Each cycle checks both IPv6 exits, updates the DNS-only
+AAAA records in Cloudflare and, when the preferred address changes, updates
+the Coturn IPv6 variables after validating Compose and creating a backup.
+
+Credentials remain only in `/etc/vipertec-ddns/cloudflare.env`; the repository
+contains a secret-free example. On hosts where Docker is installed through
+Snap, the systemd unit cannot use `NoNewPrivileges=true` because the Snap
+launcher must change the execution profile. The unit keeps
+`PrivateTmp=true`, but it must still be treated as privileged because it has
+root-level Docker access.
+
+See `deploy/ipv6-ddns/README.md` for installation, recovery paths and
+post-change validation.
+
 ## Validation
 
 ```bash

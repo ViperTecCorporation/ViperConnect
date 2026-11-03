@@ -1,6 +1,28 @@
 import { proto } from 'zapo-js'
 import { inflateSync } from 'node:zlib'
 import { streamCompanionHistory } from '../../src/services/mobile_primary/companion_history_stream'
+import { resolveZapoRedisKeyPrefix } from '../../src/services/zapo/zapo_store'
+
+test.each(['unoapi-zapo:', 'unoapi:zapo:', 'custom_scope:'])('configured prefix %s exports from the actual store namespace without migration', async prefix => {
+  const phone = '999123456789', jid = '123@lid'
+  const effectivePrefix = resolveZapoRedisKeyPrefix(prefix)
+  const key = `${effectivePrefix}msg:idx:${phone}:${jid}`
+  const record = { id: 'original', threadJid: jid, timestampMs: Date.now() - 1000, messageBytes: proto.Message.encode({ conversation: 'synthetic' }).finish() }
+  const store: any = { threads: { getByJid: async () => null }, messages: { getById: async () => record } }
+  const redis = { scan: jest.fn(async () => ({ cursor: 0, keys: [key, `other:msg:idx:${phone}:${jid}`] })),
+    zRange: jest.fn(async (_key: string, start: number) => start === 0 ? ['original'] : []) }
+  const packets = []
+  for await (const packet of streamCompanionHistory(store, redis, prefix, phone)) packets.push(packet)
+  expect(packets).toHaveLength(1)
+  expect(redis.scan).toHaveBeenCalledWith(0, { MATCH: `${effectivePrefix}msg:idx:${phone}:*`, COUNT: 200 })
+  expect(redis.zRange.mock.calls.every(call => call[0] === key)).toBe(true)
+})
+
+test.each(['', 'unsafe*:', 'unsafe?:', 'unsafe[:', 'unsafe :', 'unsafe\n:'])('rejects unsafe prefix %p before Redis access', async prefix => {
+  const redis: any = { scan: jest.fn() }
+  await expect(streamCompanionHistory({} as any, redis, prefix, '999123456789').next()).rejects.toThrow('history_index_scope_invalid')
+  expect(redis.scan).not.toHaveBeenCalled()
+})
 
 test('text-video allowlist excludes every other content type without editing stored records', async () => {
   const phone = '999123456789', jid = '123@lid'

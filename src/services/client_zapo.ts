@@ -25,6 +25,7 @@ import { normalizeZapoPhoneJid, resolveZapoPhoneJid } from './zapo/zapo_contact_
 import { ZapoMessages } from './zapo/zapo_messages'
 import { isEncryptedZapoAddonMessage, toUnoAddonEvent, toUnoMessageEvent, toUnoReceiptUpdates } from './zapo/zapo_events'
 import { statusRecipients } from './status/status_recipients'
+import { ZapoContactCrypto } from './zapo/zapo_contact_crypto'
 import { zapoUsernameIndex } from './zapo/zapo_username_index'
 import { enrichZapoMessageUsername } from './zapo/zapo_username_enrichment'
 import { normalizeMessageContent } from './transformer/message_type'
@@ -1383,6 +1384,11 @@ export class ClientZapo implements Client {
         await this.unoStore?.dataStore.removeJidMapping?.(this.phone, phoneJid, lidJid)
       },
     ).save(input)
+  }
+
+  async recoverContactCrypto(userId: string) {
+    if (!this.socket || !this.zapoSession || !this.connected || !this.socket.getState().connected) throw new SendError(409, 'zapo_client_not_connected')
+    return new ZapoContactCrypto(this.socket, this.zapoSession.contacts, this.phone).recover(userId)
   }
 
   async requestPairingCode() {

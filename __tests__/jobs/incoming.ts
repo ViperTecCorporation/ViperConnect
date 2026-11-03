@@ -7,8 +7,6 @@ jest.mock('../../src/services/reply_warning_outbox', () => ({
 }))
 
 import { mock } from 'jest-mock-extended'
-import { UNOAPI_MEDIA_STORAGE_KEY } from '../../src/services/messages/outgoing_media_input'
-
 import { IncomingJob } from '../../src/jobs/incoming'
 import { Incoming } from '../../src/services/incoming'
 import { Outgoing } from '../../src/services/outgoing'
@@ -428,7 +426,9 @@ describe('incoming job', () => {
       const incoming = mock<Incoming>()
       const outgoing = mock<Outgoing>()
       const dataStore = mock<DataStore>()
-      dataStore.loadProviderId.mockResolvedValue('provider-edit')
+      dataStore.loadProviderId.mockImplementation(async id => ({
+        'uno-edit-event': 'provider-edit', 'uno-original': 'provider-original',
+      }[id]))
       dataStore.setUnoId.mockResolvedValue('uno-edit-event')
       incoming.send = jest.fn().mockResolvedValue({
         ok: { messaging_product: 'whatsapp', messages: [{ id: 'uno-edit-event' }] },
@@ -448,12 +448,18 @@ describe('incoming job', () => {
       const values = (outgoing.sendHttp as jest.Mock).mock.calls
         .map(call => JSON.parse(JSON.stringify(call[2])).entry[0].changes[0].value)
         .filter(value => value.messages || value.message_echoes)
+      const statuses = (outgoing.sendHttp as jest.Mock).mock.calls
+        .flatMap(call => call[2].entry[0].changes[0].value.statuses || [])
+      expect(statuses).toContainEqual(expect.objectContaining({
+        id: 'uno-edit-event', status: 'sent', provider_message_id: 'provider-edit',
+      }))
       expect(values).toHaveLength(2)
       for (const value of values) {
         const message = (value.message_echoes || value.messages)[0]
         expect(message).toEqual(expect.objectContaining({
           id: 'uno-edit-event', type: 'text', text: payload.text, message_type: 'message_edit',
-          context: { id: 'uno-original', message_id: 'uno-original' },
+          provider_message_id: 'provider-edit',
+          context: { id: 'uno-original', message_id: 'uno-original', provider_message_id: 'provider-original' },
           edit_timestamp: Number(message.timestamp) * 1000,
         }))
         expect(message).not.toHaveProperty('message_edit')
@@ -463,9 +469,49 @@ describe('incoming job', () => {
     },
   )
 
+  test.each([false, true])('keeps missing identity optional, lookup failure=%s cannot resend', async lookupFailure => {
+    const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
+    incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-old' }] } })
+    dataStore.loadProviderId.mockImplementation(async id => {
+      if (id === 'uno-target' && lookupFailure) throw new Error('metadata unavailable')
+      return undefined
+    })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+      webhooks: [{ ...defaultConfig.webhooks[0], sendNewMessages: true, url: 'https://example.com/hook' }],
+      getStore: async () => ({ dataStore }) as any,
+    }))
+    await job.consume('5511888888888', { id: 'uno-old', payload: {
+      to: '5511999999999', type: 'text', text: { body: 'reply' }, context: { message_id: 'uno-target' },
+    }, options: { endpoint: 'messages' } })
+    expect(incoming.send).toHaveBeenCalledTimes(1)
+    const values = (outgoing.sendHttp as jest.Mock).mock.calls.map(call => call[2].entry[0].changes[0].value)
+    const message = values.find(value => value.messages).messages[0]
+    expect(message).not.toHaveProperty('provider_message_id')
+    expect(message.context || {}).not.toHaveProperty('provider_message_id')
+    expect(values.find(value => value.statuses).statuses[0]).not.toHaveProperty('provider_message_id')
+  })
+
+  test('preserves forwarded=true in outgoing generic and Chatwoot echoes without changing content', async () => {
+    const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
+    incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-forward' }] } })
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
+      webhooks: ['https://chatwoot.example.com/webhooks/whatsapp/5511888888888', 'https://example.com/hook']
+        .map(urlAbsolute => ({ ...defaultConfig.webhooks[0], sendNewMessages: true, url: '', urlAbsolute })),
+      getStore: async () => ({ dataStore }) as any,
+    }))
+    const payload = { to: '5511999999999', type: 'text', text: { body: 'Encaminhada' }, context: { forwarded: true } }
+    await job.consume('5511888888888', { id: 'uno-forward', payload, options: { endpoint: 'messages' } })
+    const values = (outgoing.sendHttp as jest.Mock).mock.calls.map(call => call[2].entry[0].changes[0].value).filter(value => value.messages || value.message_echoes)
+    expect(values).toHaveLength(2)
+    for (const value of values) expect((value.messages || value.message_echoes)[0]).toMatchObject({ id: 'uno-forward', text: { body: 'Encaminhada' }, context: { forwarded: true } })
+  })
+
   test.each(['image', 'video', 'audio'])('marks %s echoes for Chatwoot and generic webhooks', async type => {
     const incoming = mock<Incoming>(), outgoing = mock<Outgoing>(), dataStore = mock<DataStore>()
     incoming.send.mockResolvedValue({ ok: { messages: [{ id: 'uno-once' }] } })
+    dataStore.loadProviderId.mockImplementation(async id => id === 'uno-once' ? 'provider-once' : undefined)
     const job = new IncomingJob(incoming, outgoing, async () => ({
       ...defaultConfig, provider: 'zapo', server: 'server_1', outgoingIdempotency: false,
       webhooks: ['https://chatwoot.example.com/webhooks/whatsapp/5511888888888', 'https://example.com/hook']
@@ -478,6 +524,7 @@ describe('incoming job', () => {
     expect(values).toHaveLength(2)
     for (const value of values) {
       const messages = value.messages || value.message_echoes
+      expect(messages[0]).toHaveProperty('provider_message_id', 'provider-once')
       expect(messages).toHaveLength(1)
       expect(messages[0]).toMatchObject({ id: 'uno-once', type, message_type: 'view_once' })
     }
@@ -850,6 +897,15 @@ describe('incoming job', () => {
     })).resolves.toEqual(expect.objectContaining({ success: true }))
 
     expect(incoming.saveContact).toHaveBeenCalledWith('556600000000', input)
+  })
+
+  test('dispatches manual contact crypto recovery without sending a message', async () => {
+    const incoming = mock<Incoming>()
+    incoming.recoverContactCrypto = jest.fn().mockResolvedValue({ success: true, user_id: '123@lid', resent: false, cooldown_seconds: 300 })
+    const job = new IncomingJob(incoming, mock<Outgoing>(), async () => ({ ...defaultConfig, server: 'server_1' }))
+    await expect(job.consume('556600000000', { type: 'provider_operation', action: 'recoverContactCrypto', args: ['123@lid'] })).resolves.toEqual(expect.objectContaining({ resent: false }))
+    expect(incoming.recoverContactCrypto).toHaveBeenCalledWith('556600000000', '123@lid')
+    expect(incoming.send).not.toHaveBeenCalled()
   })
 
   test('dispatches pairing-code requests to the local client adapter', async () => {

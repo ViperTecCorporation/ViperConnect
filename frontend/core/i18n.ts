@@ -1,9 +1,15 @@
 export type AppLocale = 'pt-BR' | 'en'
 
 const english = {
+  'Eventos VoIP para o ViperChat. Retentativas persistem na outbox do serviço; esta tela é somente leitura.': 'VoIP events for ViperChat. Retries persist in the service outbox; this view is read-only.',
   'Mensagens': 'Messages',
   'Perfil': 'Profile',
   'Nome do contato': 'Contact name',
+  'Recuperar criptografia': 'Recover encryption',
+  'Contato inválido para recuperação de criptografia.': 'Invalid contact for encryption recovery.',
+  'Recuperar a criptografia de {name}? Apenas a sessão criptográfica deste LID será reconstruída. Não faz logout nem reenvia mensagens antigas. Use somente em caso de falha de criptografia; contato offline não é motivo. Nova tentativa disponível após 5 minutos.': 'Recover encryption for {name}? Only the cryptographic session for this LID will be rebuilt. Does not log out or resend old messages. Use only for encryption failures; an offline contact is not a reason. Retry available after 5 minutes.',
+  'Recuperação não confirmada. Não repita imediatamente.': 'Recovery unconfirmed. Do not retry immediately.',
+  'Criptografia reconstruída para este LID. Nenhuma mensagem foi reenviada; a entrega não foi confirmada.': 'Encryption rebuilt for this LID. No messages were resent; delivery was not confirmed.',
   'Cancelar': 'Cancel',
   'Informe o país, DDD e número. Aceita +5566999999999 ou 5566999999999.': 'Enter country code, area code and number. Accepts +5566999999999 or 5566999999999.',
   'O número será verificado no WhatsApp antes do cadastro. Se já existir na agenda, o nome será atualizado.': 'The number will be checked on WhatsApp before saving. If it already exists, its name will be updated.',
@@ -343,6 +349,9 @@ const english = {
   'Token inválido ou sem permissão.': 'Invalid token or insufficient permission.',
   'O diretório de contatos está disponível apenas para sessões Zapo.': 'The contact directory is only available for Zapo sessions.',
   'Ocorreu um erro inesperado.': 'An unexpected error occurred.',
+  'A configuração de IA foi alterada por outra operação. Reabra a empresa antes de salvar novamente.': 'The AI configuration changed in another operation. Reopen the company before saving again.',
+  'Selecione um modelo OpenRouter compatível com transcrição ou resumo. A configuração anterior foi preservada.': 'Select an OpenRouter model compatible with transcription or summary. The previous configuration was preserved.',
+  'O catálogo OpenRouter está indisponível. Tente atualizar os modelos; a configuração anterior foi preservada.': 'The OpenRouter catalog is unavailable. Try refreshing the models; the previous configuration was preserved.',
   'Falha HTTP {status}': 'HTTP failure {status}',
   Filas: 'Queues',
   'Acompanhamento e inspeção das filas do ViperConnect': 'Monitoring and inspection of ViperConnect queues',

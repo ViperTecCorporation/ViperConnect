@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+import datetime
+import ipaddress
+import json
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+API_BASE = "https://api.cloudflare.com/client/v4"
+TOKEN = os.environ["CLOUDFLARE_API_TOKEN"]
+ZONE_ID = os.environ["CLOUDFLARE_ZONE_ID"]
+INTERFACE = os.environ.get("IPV6_INTERFACE", "eth0")
+PRIMARY_PROVIDER = os.environ.get("PRIMARY_PROVIDER", "starlink").lower()
+RECORD_MAIN = os.environ.get("CF_RECORD_MAIN", "sip6.vipertec.net")
+RECORD_DUAL = os.environ.get("CF_RECORD_DUAL", "sip.vipertec.net")
+RECORD_RUSTDESK = os.environ.get("CF_RECORD_RUSTDESK", "ftp.vipertec.net")
+RECORD_WIREGUARD = os.environ.get("CF_RECORD_WIREGUARD", "wg.vipertec.net")
+RECORD_STARLINK = os.environ.get("CF_RECORD_STARLINK", "sip6-starlink.vipertec.net")
+RECORD_CONECTA = os.environ.get("CF_RECORD_CONECTA", "sip6-conecta.vipertec.net")
+STARLINK_HINT = ipaddress.ip_network(os.environ.get("STARLINK_PREFIX_HINT", "2803::/16"))
+CONECTA_HINT = ipaddress.ip_network(os.environ.get("CONECTA_PREFIX_HINT", "2804::/16"))
+COMPOSE_PATH = pathlib.Path(os.environ.get(
+    "VOIP_COMPOSE_PATH",
+    "/var/snap/docker/common/var-lib-docker/volumes/portainer_data/_data/compose/21/docker-compose.yml",
+))
+BACKUP_DIR = pathlib.Path("/var/backups/vipertec-ipv6-ddns")
+PREFERRED_ROUTE_METRIC = int(os.environ.get("IPV6_PREFERRED_ROUTE_METRIC", "90"))
+HEALTH_TARGETS = (
+    "2606:4700:4700::1111",
+    "2001:4860:4860::8888",
+)
+
+
+def log(message):
+    print(f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] {message}", flush=True)
+
+
+def run(command, check=True, timeout=30):
+    return subprocess.run(
+        command,
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+
+
+def discover_addresses():
+    output = run(["ip", "-6", "-o", "address", "show", "dev", INTERFACE, "scope", "global"]).stdout
+    found = {}
+    for line in output.splitlines():
+        match = re.search(r"\binet6\s+([^/\s]+)/\d+", line)
+        if not match or " deprecated " in f" {line} ":
+            continue
+        address = ipaddress.ip_address(match.group(1))
+        if int(address) & ((1 << 64) - 1) != 0x50:
+            continue
+        if address in STARLINK_HINT:
+            found["starlink"] = str(address)
+        elif address in CONECTA_HINT:
+            found["conecta"] = str(address)
+    return found
+
+
+def provider_is_healthy(address):
+    for target in HEALTH_TARGETS:
+        result = run(
+            ["ping", "-6", "-c", "2", "-W", "2", "-I", address, target],
+            check=False,
+        )
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def sync_preferred_source(active_provider, active_address):
+    routes = run(["ip", "-6", "route", "show", "default", "dev", INTERFACE]).stdout
+    gateway = None
+    for route in routes.splitlines():
+        fields = route.split()
+        if "via" in fields:
+            gateway = fields[fields.index("via") + 1]
+            break
+    if gateway is None:
+        raise RuntimeError(f"gateway IPv6 default nao encontrado em {INTERFACE}")
+
+    run([
+        "ip", "-6", "route", "replace", "default",
+        "via", gateway,
+        "dev", INTERFACE,
+        "src", active_address,
+        "metric", str(PREFERRED_ROUTE_METRIC),
+    ])
+
+    updated_routes = run(["ip", "-6", "route", "show", "default", "dev", INTERFACE]).stdout
+    expected = f"src {active_address} metric {PREFERRED_ROUTE_METRIC}"
+    if not any(expected in route for route in updated_routes.splitlines()):
+        raise RuntimeError("rota IPv6 preferencial nao foi confirmada apos atualizacao")
+    log(
+        f"rota IPv6 preferencial: provedor={active_provider} "
+        f"gateway={gateway} src={active_address} metric={PREFERRED_ROUTE_METRIC}"
+    )
+
+
+def cloudflare_request(method, path, payload=None):
+    body = None if payload is None else json.dumps(payload).encode()
+    request = urllib.request.Request(
+        API_BASE + path,
+        data=body,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            result = json.load(response)
+    except urllib.error.HTTPError as error:
+        try:
+            detail = json.load(error)
+        except Exception:
+            detail = {"errors": [{"message": str(error)}]}
+        raise RuntimeError(f"Cloudflare HTTP {error.code}: {detail.get('errors')}") from error
+    if not result.get("success"):
+        raise RuntimeError(f"Cloudflare API: {result.get('errors')}")
+    return result.get("result")
+
+
+def find_record(name):
+    query = urllib.parse.urlencode({"type": "AAAA", "name": name, "per_page": 10})
+    records = cloudflare_request("GET", f"/zones/{ZONE_ID}/dns_records?{query}")
+    return records[0] if records else None
+
+
+def upsert_record(name, address):
+    record = find_record(name)
+    payload = {
+        "type": "AAAA",
+        "name": name,
+        "content": address,
+        "ttl": 1,
+        "proxied": False,
+        "comment": "Atualizado automaticamente pela VPS VoIP",
+    }
+    if record and record.get("content") == address and record.get("proxied") is False:
+        return False
+    if record:
+        cloudflare_request("PATCH", f"/zones/{ZONE_ID}/dns_records/{record['id']}", payload)
+    else:
+        cloudflare_request("POST", f"/zones/{ZONE_ID}/dns_records", payload)
+    log(f"DNS atualizado: {name} -> {address}")
+    return True
+
+
+def sync_coturn(active_address):
+    original = COMPOSE_PATH.read_text()
+    updated, relay_count = re.subn(
+        r'(?m)^(\s*COTURN_RELAY_IPV6:\s*")[^"]+("\s*)$',
+        rf'\g<1>{active_address}\g<2>',
+        original,
+    )
+    updated, external_count = re.subn(
+        r'(?m)^(\s*COTURN_EXTERNAL_IPV6:\s*")[^"]+("\s*)$',
+        rf'\g<1>{active_address}\g<2>',
+        updated,
+    )
+    if relay_count != 1 or external_count != 1:
+        raise RuntimeError("variaveis IPv6 do Coturn nao foram encontradas uma unica vez")
+    if updated == original:
+        return False
+
+    BACKUP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup = BACKUP_DIR / f"docker-compose.before-ipv6-{stamp}.yml"
+    shutil.copy2(COMPOSE_PATH, backup)
+    os.chmod(backup, 0o600)
+
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        dir=COMPOSE_PATH.parent,
+        prefix=".vipertec-ipv6-",
+        suffix=".yml",
+        delete=False,
+    ) as temporary:
+        temporary.write(updated)
+        temporary_path = pathlib.Path(temporary.name)
+    try:
+        os.chmod(temporary_path, 0o600)
+        run(["docker", "compose", "-f", str(temporary_path), "config", "-q"])
+        os.replace(temporary_path, COMPOSE_PATH)
+        run(["docker", "compose", "-f", str(COMPOSE_PATH), "up", "-d", "--no-deps", "coturn"])
+        status = run(["docker", "inspect", "-f", "{{.State.Status}}", "viperconnect-coturn"]).stdout.strip()
+        if status != "running":
+            raise RuntimeError(f"Coturn ficou em estado {status}")
+    except Exception as exc:
+        if isinstance(exc, subprocess.CalledProcessError):
+            detail = (exc.stderr or exc.stdout or "").strip()
+            if detail:
+                log(f"Detalhe do erro Docker Compose/Coturn: {detail}")
+        if temporary_path.exists():
+            temporary_path.unlink()
+        shutil.copy2(backup, COMPOSE_PATH)
+        run(["docker", "compose", "-f", str(COMPOSE_PATH), "up", "-d", "--no-deps", "coturn"], check=False)
+        raise
+    log(f"Coturn ajustado para o IPv6 ativo {active_address}")
+    return True
+
+
+def main():
+    addresses = discover_addresses()
+    if not addresses:
+        raise RuntimeError("nenhum IPv6 global com sufixo ::50 foi encontrado")
+
+    health = {provider: provider_is_healthy(address) for provider, address in addresses.items()}
+    log("enderecos=" + ",".join(sorted(addresses)) + " saude=" + json.dumps(health, sort_keys=True))
+
+    if "starlink" in addresses:
+        upsert_record(RECORD_STARLINK, addresses["starlink"])
+    if "conecta" in addresses:
+        upsert_record(RECORD_CONECTA, addresses["conecta"])
+
+    order = [PRIMARY_PROVIDER] + [provider for provider in ("starlink", "conecta") if provider != PRIMARY_PROVIDER]
+    active_provider = next((provider for provider in order if health.get(provider)), None)
+    if active_provider is None:
+        raise RuntimeError("nenhum provedor IPv6 respondeu; registro principal foi preservado")
+
+    active_address = addresses[active_provider]
+    sync_preferred_source(active_provider, active_address)
+    upsert_record(RECORD_MAIN, active_address)
+    upsert_record(RECORD_DUAL, active_address)
+    upsert_record(RECORD_RUSTDESK, active_address)
+    upsert_record(RECORD_WIREGUARD, active_address)
+    try:
+        sync_coturn(active_address)
+    except Exception as error:
+        # DNS de servicos criticos nao pode depender da disponibilidade do Docker.
+        log(f"AVISO: DNS atualizado, mas ajuste do Coturn falhou: {error}")
+    log(f"ativo={active_provider} endereco={active_address}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        log(f"ERRO: {error}")
+        sys.exit(1)

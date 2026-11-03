@@ -2,6 +2,8 @@ import { isIP } from 'node:net'
 import { domainToASCII } from 'node:url'
 
 const SCHEME_URL = /\bhttps?:\/\/[^\s<>"']+/gi
+// Protect the whole email token, including dotted local parts and domain suffixes.
+const EMAIL_TOKEN = /[^\s<>"(),;:]+@[^\s<>"(),;:]+/g
 const BARE_DOMAIN = /(?<![@\w-])((?:www\.)?(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:\/[^\s<>"']*)?)/gi
 const TRAILING_PUNCTUATION = '.,;:!?\'"»›'
 const FILE_EXTENSIONS = new Set([
@@ -55,10 +57,12 @@ export const findFirstAutomaticPreviewUrl = (text: string) => {
 export const normalizeAutomaticLinkPreview = (text: string): AutomaticLinkPreview => {
   if (findFirstAutomaticPreviewUrl(text)) return { text, enabled: true }
 
+  const emails = Array.from(text.matchAll(EMAIL_TOKEN))
   for (const match of text.matchAll(BARE_DOMAIN)) {
     const candidate = stripTrailingPunctuation(match[1] || '')
     const index = match.index ?? -1
     if (!candidate || index < 0 || text.slice(Math.max(0, index - 3), index) === '://') continue
+    if (emails.some((email) => index < email.index! + email[0].length && index + candidate.length > email.index!)) continue
     if (!isValidHttpUrl(`https://${candidate}`)) continue
     return {
       text: `${text.slice(0, index)}https://${candidate}${text.slice(index + candidate.length)}`,

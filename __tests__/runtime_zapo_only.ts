@@ -33,7 +33,12 @@ describe('Zapo-only runtime artifacts', () => {
     const dockerfile = fs.readFileSync(path.resolve('Dockerfile'), 'utf8')
     const compose = YAML.parse(fs.readFileSync(path.resolve('docker-compose.yml'), 'utf8'))
 
-    expect(dockerfile).toContain('ENTRYPOINT ["./container-entrypoint.sh"]')
+    const entrypoints = [...dockerfile.matchAll(/^ENTRYPOINT\s+(\[[^\r\n]+\])/gm)]
+      .map((match) => JSON.parse(match[1]))
+    expect(entrypoints).toEqual([
+      ['/home/u/app/container-entrypoint.sh'],
+      ['/home/u/app/container-entrypoint.sh'],
+    ])
     expect(dockerfile).toContain('COPY --from=voip-builder /app/dist ./voip/dist')
     expect(dockerfile).toContain('FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder')
     expect(dockerfile).toContain('AS production-dependencies')

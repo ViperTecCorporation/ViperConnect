@@ -2,6 +2,15 @@
 
 ## Recuperacao automatica do transporte
 
+A manutenção manual de criptografia é independente do watchdog: o endpoint
+`POST /{phone}/contacts/recover-crypto` exige `user_id` LID conhecido e
+`confirm=true`. Executa `message.syncSignalSession(lid, { force: true })` do
+Zapo 1.11.0 no worker dono, sem conectar conta offline, logout, alteração de
+identidade ou reenvio de mensagem. Uma reserva atômica Redis limita tentativas
+por sessão/LID a cada 300 segundos, inclusive em falha; não há retry automático.
+A remoção/reconstrução não é transacional e sucesso não comprova entrega.
+Contrato e limites: [Contatos](../docs-site/guide/contacts.md#recuperar-criptografia-de-um-contato).
+
 - `ZapoTransportWatchdog` consulta `getState().connected` local a cada 15s apos
   conectar, sem IQ/ping extra. Queda observada marca offline; retorno restaura online.
 - Apos 60s desconectado desde a primeira observacao, recria somente a sessao
@@ -25,6 +34,15 @@ Diagnostico Business continua opt-in, limitado por sessao/tempo/orcamento,
 sem QR, tokens, chaves ou conteudo das mensagens.
 
 ## Objetivo
+
+Vínculo adicional: a exportação usa `resolveZapoRedisKeyPrefix`, como o store,
+normalizando o valor legado `unoapi-zapo:` para o namespace efetivo `unoapi:zapo:`.
+Não renomeia chaves nem migra dados. Somente a rejeição exata de prekeys
+`key bundle iq failed (406: not-acceptable)` recebe até três tentativas de
+preparação com espera de 1,5/3s e revalidação de posse, antes de qualquer envio.
+Não há replay de publicação ambígua. Bootstrap nativo e exportado têm correlação
+de recibos pelo ID real; submissão não comprova conclusão no aparelho.
+Contrato e limites: [laboratório Mobile Primary](../docs-site/guide/mobile-primary-local-lab.md).
 
 Adicionar a Zapo como segundo motor do ViperConnect sem alterar o contrato HTTP da UnoAPI. A escolha e feita por sessao. Ao selecionar Zapo sem credenciais nativas, a sessao exige novo pareamento por QR; o motor Zapo nunca importa nem consulta o auth Baileys. Quando a matriz Zapo atingir 100% dos recursos usados pelo produto, a Baileys podera ser removida.
 
@@ -435,6 +453,16 @@ fallback sem registrar conteúdo, segredo ou payload descriptografado. O evento 
 `debug_decrypted_payload` não é habilitado pela UnoAPI.
 
 ### Edicao de mensagens Zapo
+
+Edição de legenda reutiliza `imageMessage`, `videoMessage` ou `documentMessage`
+originais via `ZapoMessageEdit` e `buildZapoEditContent`, sem download/upload.
+Somente `caption` muda, com `editKey` e o participante original de grupo.
+Original ausente, ilegível, de terceiros, destino divergente ou mídia incompleta
+geram erro explícito, sem fallback para texto. O mapper genérico rejeita
+`message_edit` sem resolução do original. Texto também requer o conteúdo original
+para não confundir uma mídia desconhecida com texto. `recover_delivery` bloqueia
+edições para não gerar envio independente. O eco ViperChat existente é mantido
+como evento textual de edição, sem afirmar substituição da mídia.
 
 O payload publico permanece `type: message_edit`, com o ID UnoAPI original em
 `context.message_id` e o novo texto em `text.body`. O adapter resolve o ID do provider,

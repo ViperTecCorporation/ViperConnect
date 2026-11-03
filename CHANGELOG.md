@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and follows SemVer when applicable.
 
+## [4.0.41] - 2026-11-02
+
+- Upgrade Zapo from 1.10.0 to 1.11.0 without changing the dedicated VoIP plugin.
+- Add confirmed, per-contact crypto recovery in the panel and API, with a five-minute cooldown and no automatic message resend.
+- Preserve explicit forwarding metadata in incoming webhooks and support `context.forwarded` on outgoing messages.
+- Edit image, video and document captions using the original media descriptors and edit key; reject missing or unsupported originals instead of replacing media with text.
+- Use the Redis store's effective namespace for Mobile Primary companion history, including the legacy `unoapi-zapo:` alias; preserve existing keys and data.
+- Retry only the exact prekey 406 rejection before publication, recheck session ownership, and correlate native and exported bootstrap receipts without replaying ambiguous sends.
+- Update PT/EN guides, OpenAPI, Postman and regression tests. Server submission/receipts do not prove companion import or continued connectivity.
+- Keep integrated VoIP 0.1.69 pinned to `71f5d1def7a7ef9663e86888631f5e05b8df28bc`, including its previously documented native WebRTC teardown limitation.
+- Publication does not deploy to the VPS. Before upgrading, back up the stack and review/remove only the four incorporated companion-link hostpaths in coordination with the image update.
+
+## [4.0.38] - 2026-10-20
+
+- Add optional `provider_message_id` correlation metadata to Zapo message webhooks, echoes, statuses and supported references without replacing existing public IDs.
+- Omit the new metadata from Typebot destinations while preserving other webhook consumers.
+- Document the additive contract in PT/EN guides, OpenAPI and Postman. Preserve the integrated VoIP 0.1.67 revision and existing session/media data.
+- Publishing the unified image does not deploy to the VPS. Compare existing hostpath overlays before a future upgrade.
+
 ## [4.0.37] - 2026-10-14
 
 - Standardize WA Business QR on iPad + SMB_IOS, retaining QR marker e and VoIP relay 3480. Pairing, messages and media validated by the user in local dev.

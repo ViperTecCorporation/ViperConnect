@@ -65,6 +65,14 @@ export class IncomingProvider implements Incoming {
     return client.saveContact(input)
   }
 
+  public async recoverContactCrypto(phone: string, userId: string) {
+    // This maintenance action must not connect or pair an offline account.
+    const client = clients.get(phone)
+    if (!client) throw new Error('409: zapo_client_not_connected')
+    if (!client.recoverContactCrypto) throw new Error('409: contact_crypto_requires_zapo')
+    return client.recoverContactCrypto(userId)
+  }
+
   public async requestPairingCode(phone: string) {
     const client = await this.client(phone)
     if (typeof client.requestPairingCode !== 'function') {

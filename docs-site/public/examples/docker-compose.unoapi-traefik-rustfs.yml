@@ -1,0 +1,295 @@
+# Modelo completo com RustFS; gerado por generate-storage-examples.mjs.
+# Configure bucket, credenciais da aplicação e STORAGE_ENDPOINT HTTPS antes de usar.
+name: unoapi
+
+# Docker Compose standalone. Nao use este arquivo com docker stack deploy.
+# Para Swarm, baixe docker-stack.unoapi-traefik.yml na documentacao oficial.
+
+x-base: &base
+  image: ghcr.io/viperteccorporation/viperconnect:latest
+  # Preserve o ENTRYPOINT oficial da imagem; selecione o processo somente por UNOAPI_PROCESS_ROLE.
+  restart: always
+  networks:
+    - unoapi
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    unoapi-redis:
+      condition: service_healthy
+    unoapi-rabbitmq:
+      condition: service_healthy
+
+x-base-environment: &base-environment
+  UNOAPI_SERVER_NAME: "server_1"
+  WHATSAPP_ENGINE: "zapo"
+
+  HTTP_PROTOCOL: "https"
+  BASE_URL: "https://unoapi.seudominio.com.br"
+  UNOAPI_AUTH_TOKEN: "GERE_UM_TOKEN_LONGO_E_ALEATORIO"
+
+  AMQP_URL: "amqp://viperconnect:TROQUE_A_SENHA@unoapi-rabbitmq:5672"
+  REDIS_URL: "redis://:TROQUE_A_SENHA@unoapi-redis:6379"
+  VOIP_SERVICE_URL: "http://host.docker.internal:3097"
+  VOIP_BRIDGE_URL: "wss://voip.seudominio.com.br/v1/bridge/zapo"
+  VOIP_SERVICE_TOKEN: "GERE_UM_TOKEN_LONGO_E_ALEATORIO"
+  # Capacidade padrão por linha Zapo: mínimo 1, máximo 32.
+  VOIP_MAX_CONCURRENT_CALLS: "2"
+
+  WEBHOOK_URL: "https://chatwoot.seudominio.com.br/webhooks/whatsapp"
+  WEBHOOK_TOKEN: "TROQUE_O_TOKEN"
+  WEBHOOK_HEADER: "Authorization"
+
+  STORAGE_BUCKET_NAME: "unoapi"
+  STORAGE_ACCESS_KEY_ID: "TROQUE_A_CHAVE"
+  STORAGE_SECRET_ACCESS_KEY: "TROQUE_O_SEGREDO"
+  STORAGE_REGION: "auto"
+  STORAGE_ENDPOINT: "https://SEU-ENDPOINT-S3"
+  STORAGE_FORCE_PATH_STYLE: "true"
+  STORAGE_TIMEOUT_MS: "1200000"
+
+  LOG_LEVEL: "info"
+  UNO_LOG_LEVEL: "info"
+
+  IGNORE_GROUP_MESSAGES: "true"
+  IGNORE_BROADCAST_STATUSES: "true"
+  IGNORE_OWN_MESSAGES: "false"
+  IGNORE_STATUS_MESSAGE: "true"
+  IGNORE_YOURSELF_MESSAGES: "false"
+  IGNORE_HISTORY_MESSAGES: "true"
+  IGNORE_BROADCAST_MESSAGES: "true"
+  COMPOSING_MESSAGE: "true"
+
+  REJECT_CALLS: "Nao consigo atender ligacoes"
+  REJECT_CALLS_WEBHOOK: "Tentou ligar no WhatsApp"
+  SEND_CONNECTION_STATUS: "true"
+  AUTO_CONNECT: "true"
+  CLEAN_CONFIG_ON_DISCONNECT: "true"
+  UNOAPI_RETRY_REQUEST_DELAY_MS: "10000"
+  CONSUMER_TIMEOUT_MS: "450000"
+  HISTORY_MAX_AGE_DAYS: "7"
+
+  STATUS_RECIPIENT_RETENTION_SEC: "2592000"
+  CONTACT_INFO_TTL_SEC: "2592000"
+  ZAPO_REDIS_MESSAGES_TTL_MS: "2592000000"
+  ZAPO_REDIS_THREADS_TTL_MS: "2592000000"
+  ZAPO_REDIS_CONTACTS_TTL_MS: "2592000000"
+  ZAPO_REDIS_KEY_PREFIX: "unoapi-zapo:"
+  ZAPO_REDIS_MAINTENANCE_INTERVAL_MS: "3600000"
+  ZAPO_SESSION_LEASE_TTL_MS: "60000"
+  ZAPO_SESSION_LEASE_RENEW_MS: "20000"
+
+services:
+  unoapi:
+    <<: *base
+    container_name: unoapi
+    networks:
+      - unoapi
+      - traefik-public
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "web"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.unoapi.rule=Host(`unoapi.seudominio.com.br`)"
+      - "traefik.http.routers.unoapi.entrypoints=websecure"
+      - "traefik.http.routers.unoapi.tls=true"
+      - "traefik.http.routers.unoapi.tls.certresolver=letsencrypt"
+      - "traefik.http.services.unoapi.loadbalancer.server.port=9876"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1536M
+
+  unoapi-broker:
+    <<: *base
+    container_name: unoapi-broker
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "broker"
+      UNOAPI_VIDEO_WORKER_MODE: "dedicated"
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+
+  unoapi-video-worker:
+    <<: *base
+    container_name: unoapi-video-worker
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "video"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1024M
+
+  unoapi-worker-zapo:
+    <<: *base
+    container_name: unoapi-worker-zapo
+    environment:
+      <<: *base-environment
+      UNOAPI_PROCESS_ROLE: "worker"
+      UNOAPI_WORKER_ENGINE: "zapo"
+      ZAPO_NETWORK_IP_FAMILY: "auto"
+      ZAPO_CHAT_SOCKET_IP_FAMILY: ""
+      ZAPO_MEDIA_UPLOAD_IP_FAMILY: ""
+      ZAPO_MEDIA_DOWNLOAD_IP_FAMILY: ""
+      ZAPO_LINK_PREVIEW_IP_FAMILY: ""
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2048M
+
+  unoapi-rabbitmq:
+    image: rabbitmq:4.2.2-management-alpine
+    container_name: unoapi-rabbitmq
+    hostname: unoapi-rabbitmq
+    restart: always
+    networks:
+      - unoapi
+    environment:
+      RABBITMQ_DEFAULT_USER: "viperconnect"
+      RABBITMQ_DEFAULT_PASS: "TROQUE_A_SENHA"
+    # Telefonia usa rede host; o broker AMQP fica acessível somente no loopback.
+    ports:
+      - "127.0.0.1:5672:5672"
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 748m
+    mem_reservation: 128m
+    cpus: 1.75
+
+  unoapi-redis:
+    image: valkey/valkey:9-alpine3.23
+    container_name: unoapi-redis
+    restart: unless-stopped
+    networks:
+      - unoapi
+    command: >
+      valkey-server --appendonly yes --appendfsync everysec --no-appendfsync-on-rewrite no --save 3600 1 --requirepass "TROQUE_A_SENHA" --protected-mode no
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "valkey-cli -a 'TROQUE_A_SENHA' ping | grep -q PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8048M
+
+  viperconnect-telefonia:
+    image: ghcr.io/viperteccorporation/viperconnect:latest
+    container_name: viperconnect-telefonia
+    restart: always
+    network_mode: host
+    environment:
+      AMQP_URL: "amqp://viperconnect:TROQUE_A_SENHA@127.0.0.1:5672"
+      PORT: "3097"
+      UNOAPI_PROCESS_ROLE: "voip"
+      VOIP_SERVICE_TOKEN: "GERE_UM_TOKEN_LONGO_E_ALEATORIO"
+      VOIP_BRIDGE_TOKEN: "GERE_UM_TOKEN_LONGO_E_ALEATORIO"
+      VOIP_MAX_CONCURRENT_CALLS: "2"
+      VOIP_DOMAIN: "sip.seudominio.com.br"
+      VOIP_PUBLIC_WS_URL: "wss://voip.seudominio.com.br/sip/ws"
+      VOIP_LAN_DOMAIN: "192.168.0.50"
+      VOIP_STUN_URL: "stun:sip.seudominio.com.br:3478"
+      VOIP_TURN_URL: "turn:sip.seudominio.com.br:3478"
+      VOIP_TURN_USERNAME: "TROQUE_O_USUARIO_TURN"
+      VOIP_TURN_CREDENTIAL: "TROQUE_A_SENHA_TURN"
+      VOIP_CALL_ENGINE: "zapo_native"
+      VOIP_NATIVE_LOG_LEVEL: "info"
+      VOIP_AUTO_UPDATE_ENABLED: "false"
+      VOIP_AUTO_UPDATE_APPLY_ENABLED: "false"
+      VOIP_MEMORY_RESTART_RSS_MB: "0"
+      CALL_HISTORY_STORAGE: "sqlite"
+      VOIP_SQLITE_PATH: "/home/u/app/data/voip.sqlite"
+      VOIP_APP_STORAGE: "sqlite"
+      VOICE_CONFIG_STORAGE: "sqlite"
+      SIP_RTP_ENABLED: "true"
+      SIP_RTP_BIND_IPV4: "0.0.0.0"
+      SIP_RTP_BIND_IPV6: "::"
+      SIP_RTP_PUBLIC_IPV4: "203.0.113.10"
+      SIP_RTP_PUBLIC_IPV6_HOST: "sip6.seudominio.com.br"
+      SIP_RTP_LAN_IP: "192.168.0.50"
+      SIP_RTP_TRUSTED_PRIVATE_SDP_PEERS: ""
+      SIP_RTP_PORT: "5060"
+      SIP_RTP_MEDIA_PORT_MIN: "12000"
+      SIP_RTP_MEDIA_PORT_MAX: "13000"
+      SIP_WEBRTC_UDP_PORT_MIN: "13001"
+      SIP_WEBRTC_UDP_PORT_MAX: "14000"
+      SIP_RTP_CODECS: "PCMU,PCMA"
+      SIP_REGISTER_EXPIRES_SECONDS: "60"
+    volumes:
+      - telefonia:/home/u/app/data
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:3097/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  rustfs:
+    image: rustfs/rustfs:1.0.3
+    restart: unless-stopped
+    command: [ "/data" ]
+    environment:
+      RUSTFS_ACCESS_KEY: "TROQUE_A_CHAVE_ADMIN_RUSTFS"
+      RUSTFS_SECRET_KEY: "GERE_UM_SEGREDO_ADMIN_RUSTFS_LONGO_E_ALEATORIO"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_OBS_LOGGER_LEVEL: "warn"
+      RUSTFS_OBS_LOG_DIRECTORY: "/logs"
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    # Nginx no host acessa 9000; console somente por túnel SSH/rede administrativa.
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    networks:
+      - unoapi
+      - traefik-public
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/health/ready" ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.unoapi-s3.rule=Host(`s3.seudominio.com.br`)"
+      - "traefik.http.routers.unoapi-s3.entrypoints=websecure"
+      - "traefik.http.routers.unoapi-s3.tls=true"
+      - "traefik.http.routers.unoapi-s3.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.unoapi-s3.service=unoapi-s3"
+      - "traefik.http.services.unoapi-s3.loadbalancer.server.port=9000"
+      - "traefik.http.services.unoapi-s3.loadbalancer.passhostheader=true"
+
+volumes:
+  rabbitmq:
+  redis:
+  telefonia:
+
+
+  rustfs-data: null
+  rustfs-logs: null
+networks:
+  unoapi:
+    driver: bridge
+  traefik-public:
+    external: true

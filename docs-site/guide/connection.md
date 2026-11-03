@@ -1,5 +1,14 @@
 # Conectar uma sessão
 
+## Versão do SDK Zapo
+
+A dependência `zapo-js` está fixada em **1.11.0**, com correções de reconexão
+e pareamento do SDK. O plugin VoIP próprio em `vendor/zapo-voip` permanece
+inalterado; esta atualização não incorpora os novos recursos VoIP do upstream.
+A opção de reconstrução forçada de sessão Signal disponível no SDK não é
+habilitada automaticamente pela aplicação. A manutenção manual por contato está
+descrita em [Recuperar criptografia](./contacts#recuperar-criptografia-de-um-contato).
+
 ## 1. Escute o Socket.IO antes do registro
 
 O QR Code e o código de pareamento são eventos assíncronos. Conecte em `/ws`,

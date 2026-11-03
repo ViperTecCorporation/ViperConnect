@@ -4,6 +4,13 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 
 O formato segue o Keep a Changelog e adota SemVer quando aplicável.
 
+## [4.0.38] - 2026-10-20
+
+- Campo opcional `provider_message_id` nos webhooks Zapo de mensagens, echoes, status e referências suportadas, sem substituir os IDs públicos existentes.
+- Destinos marcados como Typebot não recebem esse campo; os demais consumidores mantêm seus metadados.
+- Contrato aditivo documentado nos guias PT/EN, OpenAPI e Postman. VoIP 0.1.67, sessões e mídias preservados.
+- Publicação da imagem não aplica alterações na VPS. Conferir hostpaths antigos antes de uma atualização futura.
+
 ## [4.0.37] - 2026-10-14
 
 - WA Business por QR padronizado em iPad + SMB_IOS, preservando QR e e relay 3480. Vinculo, mensagens e midia validados pelo usuario no dev local.

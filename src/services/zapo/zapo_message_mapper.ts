@@ -415,6 +415,7 @@ export const toZapoMessageContent = async (
   youtubeLinkPreviewResolver?: YouTubeLinkPreviewResolver,
 ): Promise<ZapoMappedMessage> => {
   const type = `${payload?.type || ''}`
+  if (type === 'message_edit') throw new SendError(400, 'message_edit_original_content_required')
   const viewOnce = outgoingViewOnce(payload)
   const mentions = getMentions(payload)
   if (type === 'location') {
@@ -424,7 +425,7 @@ export const toZapoMessageContent = async (
       options: {},
     }
   }
-  if (type === 'text' || type === 'message_edit') {
+  if (type === 'text') {
     const preview = normalizeAutomaticLinkPreview(
       customMessageCharactersFunction(`${payload?.text?.body || ''}`),
     )

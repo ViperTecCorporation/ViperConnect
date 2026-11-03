@@ -1,6 +1,36 @@
 import { installHistoryBootstrap } from '../../src/services/mobile_primary/companion_history_bootstrap'
-import { HistoryPreparationError } from '../../src/services/mobile_primary/companion_history_prepare'
+import { HistoryPreparationError, prepareCompanionHistory } from '../../src/services/mobile_primary/companion_history_prepare'
 import { captureCompanionHistoryChoice, withCompanionHistoryChoice } from '../../src/services/mobile_primary/companion_history_choice'
+
+test.each([true, false])('prekey 406 retry precedes a single publication (history=%s)', async history => {
+  const order: string[] = []
+  const sync = jest.fn().mockRejectedValueOnce(new Error('key bundle iq failed (406: not-acceptable)')).mockImplementation(async () => { order.push('ready') })
+  const prepare = () => prepareCompanionHistory(sync, async () => { order.push('wait') })
+  const native = jest.fn(async () => { order.push('native') })
+  const send = jest.fn(async () => { await prepare(); order.push('archive'); return 'submitted' as const })
+  const mobile = { sendHistorySyncBootstrap: native, listCompanions: jest.fn().mockResolvedValue([{ deviceJid: 'target', keyIndex: 1 }]) }
+  installHistoryBootstrap(mobile, send, () => () => history, prepare)
+  await Promise.all([mobile.sendHistorySyncBootstrap('target'), mobile.sendHistorySyncBootstrap('target')])
+  expect(order).toEqual(['wait', 'ready', history ? 'archive' : 'native'])
+  expect(sync).toHaveBeenCalledTimes(2)
+  expect(native).toHaveBeenCalledTimes(history ? 0 : 1)
+  expect(send).toHaveBeenCalledTimes(history ? 1 : 0)
+})
+
+test('ownership loss during prekey backoff prevents any publication', async () => {
+  let current = true
+  const sync = jest.fn().mockRejectedValue(new Error('key bundle iq failed (406: not-acceptable)'))
+  const native = jest.fn(), send = jest.fn()
+  const prepare = () => prepareCompanionHistory(async () => {
+    if (!current) throw new Error('mobile_history_not_connected')
+    await sync()
+  }, async () => { current = false })
+  const mobile = { sendHistorySyncBootstrap: native, listCompanions: jest.fn().mockResolvedValue([{ deviceJid: 'target', keyIndex: 1 }]) }
+  installHistoryBootstrap(mobile, send, () => () => false, prepare)
+  await expect(mobile.sendHistorySyncBootstrap('target')).rejects.toBeInstanceOf(HistoryPreparationError)
+  expect(sync).toHaveBeenCalledTimes(1)
+  expect(native).not.toHaveBeenCalled(); expect(send).not.toHaveBeenCalled()
+})
 
 test('opt-out skips Redis export but retains mandatory native bootstrap once, including later retries', async () => {
   const original = jest.fn().mockResolvedValue(undefined), send = jest.fn(), prepare = jest.fn().mockResolvedValue(undefined)

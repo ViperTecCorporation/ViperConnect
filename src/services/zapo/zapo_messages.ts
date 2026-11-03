@@ -16,6 +16,8 @@ import { getZapoRecipientIdentity, getZapoStoredPhone } from './zapo_recipient'
 import type { YouTubeLinkPreviewResolver } from '../messages/youtube_link_preview'
 import { ZapoSentArchive } from './zapo_sent_archive'
 import { normalizeZapoContactCards } from './zapo_contact_cards'
+import { outgoingForwarded } from '../messages/outgoing_forwarded'
+import { buildZapoEditContent, ZapoMessageEdit } from './zapo_message_edit'
 
 type ZapoMessagesOptions = {
   customMessageCharactersFunction?: (message: string) => string
@@ -171,9 +173,18 @@ export class ZapoMessages {
 
     const key = await this.resolveKey(messageId)
     if (!key.fromMe) throw new SendError(400, `message_edit_original_not_from_me: ${messageId}`)
+    const requestedTarget = getZapoRecipientIdentity(payload)
+    if (requestedTarget && requestedTarget !== key.remoteJid
+      && await this.canonicalJid(requestedTarget) !== await this.canonicalJid(key.remoteJid)) {
+      throw new SendError(400, 'message_edit_target_mismatch')
+    }
+    if (typeof payload?.text?.body !== 'string') throw new SendError(400, 'message_edit_text_body_required')
+    const original = await new ZapoMessageEdit(this.dataStore, this.store).original(key)
+    const content = buildZapoEditContent(original, this.customMessageCharactersFunction(payload.text.body))
 
     return {
       target: key.remoteJid,
+      content,
       editKey: {
         id: key.id,
         ...(key.remoteJid.endsWith('@g.us') && key.participant
@@ -253,6 +264,8 @@ export class ZapoMessages {
   }
 
   async recoverDelivery(payload: any, baseOptions: Record<string, unknown> = {}): Promise<Response> {
+    if (payload?.type === 'message_edit') throw new SendError(400, 'message_edit_delivery_recovery_unsupported')
+    const forwarded = outgoingForwarded(payload)
     const messageId = `${payload?.message_id || payload?.messageId || payload?.id || ''}`.trim()
     if (!messageId) throw new SendError(400, 'delivery_recovery_message_id_required')
     const providerId = `${await resolveProviderMessageId(this.dataStore, messageId) || ''}`.trim() || messageId
@@ -278,6 +291,7 @@ export class ZapoMessages {
     const result = await this.client.message.send(target, content, {
       ...baseOptions,
       ...mappedOptions,
+      ...(forwarded !== undefined ? { forward: forwarded } : {}),
       id: providerId,
     } as WaSendMessageOptions)
     await this.dataStore.setUnoId(result.id, messageId)
@@ -301,14 +315,17 @@ export class ZapoMessages {
   }
 
   async send(payload: any, baseOptions: Record<string, unknown> = {}): Promise<Response> {
+    const forwarded = outgoingForwarded(payload)
     if (payload?.status) return this.updateStatus(payload)
     payload = await this.expandTemplate(payload)
     if (this.identity) payload = await normalizeZapoContactCards(payload, async phone => (await this.identity!.resolveManyPhoneJids([phone]))[0])
     const type = `${payload?.type || ''}`
-    let target = await this.canonicalJid(getZapoRecipientIdentity(payload))
+    const edit = type === 'message_edit' ? await this.buildEditTarget(payload) : undefined
+    let target = edit?.target || await this.canonicalJid(getZapoRecipientIdentity(payload))
     let content
     const requestedUnoId = `${baseOptions.unoMessageId || ''}`.trim()
     const options: Record<string, unknown> = { ...baseOptions }
+    if (forwarded !== undefined) options.forward = forwarded
     const warnings: ReturnType<typeof replyWithoutQuoteWarning>[] = []
     if (type === 'video' && (baseOptions.videoTranscoded === 'hd' || baseOptions.videoTranscoded === 'sd')) {
       warnings.push({ code: 'VIDEO_TRANSCODED', message: `${apiMessage('VIDEO_TRANSCODED')} (${String(baseOptions.videoTranscoded).toUpperCase()})` })
@@ -320,11 +337,12 @@ export class ZapoMessages {
     delete options.requestId
 
     if (type === 'message_edit') {
-      const edit = await this.buildEditTarget(payload)
-      const mapped = await toZapoMessageContent(this.client, payload, this.customMessageCharactersFunction, this.youtubeLinkPreviewResolver)
-      target = edit.target
+      content = edit!.content
+      const mapped = 'type' in content && content.type === 'text'
+        ? await toZapoMessageContent(this.client, { ...payload, type: 'text', text: { ...payload.text, body: content.text } }, value => value, this.youtubeLinkPreviewResolver)
+        : { content, options: {} }
       content = mapped.content
-      Object.assign(options, mapped.options, { editKey: edit.editKey })
+      Object.assign(options, mapped.options, { editKey: edit!.editKey })
       if (Array.isArray(options.mentions)) {
         options.mentions = await this.canonicalJids(options.mentions.map((jid) => `${jid}`))
       }

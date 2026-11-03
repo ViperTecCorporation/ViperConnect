@@ -1,0 +1,50 @@
+version: "3.8"
+
+# Complemento opcional para docker-stack.unoapi-nginx.yml ou traefik.yml.
+# Single-node: fixe um único nó de dados e preserve seus volumes locais.
+# Não altera STORAGE_ENDPOINT nem migra buckets ou dados existentes.
+services:
+  rustfs:
+    image: rustfs/rustfs:1.0.3
+    command: ["/data"]
+    environment:
+      RUSTFS_ACCESS_KEY: "TROQUE_A_CHAVE_ADMIN_RUSTFS"
+      RUSTFS_SECRET_KEY: "GERE_UM_SEGREDO_ADMIN_RUSTFS_LONGO_E_ALEATORIO"
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_OBS_LOGGER_LEVEL: "warn"
+      RUSTFS_OBS_LOG_DIRECTORY: "/logs"
+    networks:
+      - unoapi-internal
+    volumes:
+      - rustfs-data:/data
+      - rustfs-logs:/logs
+    # Swarm não permite bind em 127.0.0.1: restrinja 9000 no firewall ao proxy.
+    ports:
+      - target: 9000
+        published: 9000
+        protocol: tcp
+        mode: host
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.viperconnect.data == true
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        order: stop-first
+
+volumes:
+  rustfs-data:
+    driver: local
+  rustfs-logs:
+    driver: local

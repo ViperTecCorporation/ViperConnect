@@ -6,6 +6,16 @@ import {
 } from '../../frontend/pages/voip'
 
 describe('VoIP manager page', () => {
+  test('keeps transcription and summary fields together, including the configured-secret hint inside each section', () => {
+    const html = renderVoipResourceModal({ companies: [{ id: 'company', aiSummary: { hasTranscriptionApiKey: true, hasSummaryApiKey: true } }] }, 'companies', 'company')
+    const sections = html.split('<section class="voip-ai-section">').slice(1)
+    expect(sections).toHaveLength(2)
+    expect(sections[0].split('</section>')[0]).toContain('name="aiTranscriptionProvider"')
+    expect(sections[0].split('</section>')[0]).toContain('name="aiTranscriptionApiKey"')
+    expect(sections[0].split('</section>')[0]).toContain('Chave configurada')
+    expect(sections[1].split('</section>')[0]).toContain('name="aiSummaryApiKey"')
+    expect(sections[1].split('</section>')[0]).toContain('Chave configurada')
+  })
   test('shows editable line defaults and per-field extension inheritance', () => {
     const state = { accounts: [{ id: 'line', defaultDdi: '55', defaultDdd: '66' }], extensions: [{ id: '1001', defaultDdd: '11' }] }
     const line = renderVoipResourceModal(state, 'accounts', 'line')

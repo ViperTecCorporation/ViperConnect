@@ -254,6 +254,7 @@ services:
       - unoapi-internal
       - traefik-public
     environment:
+      AMQP_URL: "amqp://viperconnect:TROQUE_A_SENHA_RABBITMQ@unoapi-rabbitmq:5672"
       PORT: "3097"
       UNOAPI_PROCESS_ROLE: "voip"
       VOIP_SERVICE_TOKEN: "GERE_UM_TOKEN_VOIP_LONGO_E_ALEATORIO"

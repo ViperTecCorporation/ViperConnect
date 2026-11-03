@@ -1,0 +1,14 @@
+[Unit]
+Description=Atualiza DNS IPv6 do VoIP e o relay Coturn
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/vipertec-ddns/cloudflare.env
+ExecStart=/usr/local/sbin/vipertec-ipv6-ddns
+Nice=10
+# Docker via Snap requires profile transition; the service already has root-equivalent Docker access.
+NoNewPrivileges=false
+PrivateTmp=true

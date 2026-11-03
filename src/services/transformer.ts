@@ -12,6 +12,7 @@ import { Config } from './config'
 import { SendError } from './send_error'
 import { BindTemplateError, DecryptError } from './transformer/errors'
 import { isViewOnceContent } from './transformer/view_once'
+import { withForwardedContext } from './transformer/forwarded_context'
 import {
   MESSAGE_STUB_TYPE_ERRORS,
   TYPE_MESSAGES_TO_PROCESS_FILE,
@@ -2496,6 +2497,9 @@ export const fromBaileysMessageContent = (phone: string, payload: any, config?: 
         }
         if (editInfo.timestampMs) message.edit_timestamp = editInfo.timestampMs
       }
+
+      const forwardedContext = withForwardedContext(message.context, binMessage?.contextInfo)
+      if (forwardedContext) message.context = forwardedContext
 
       const externalAdReply = binMessage?.contextInfo?.externalAdReply
       if (externalAdReply) {

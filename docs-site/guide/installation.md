@@ -64,3 +64,28 @@ Antes de integrar, confirme que a API responde em HTTPS, `/sessions` aceita o
 token, os volumes são persistentes e os workers necessários estão saudáveis.
 Telefonia e worker de vídeo podem ser validados separadamente do primeiro envio
 de texto.
+
+## Versão 4.0.41
+
+A 4.0.41 atualiza a Zapo para 1.11.0 e inclui recuperação de criptografia por
+contato, marcação de encaminhamento, edição de legendas e correções de vínculo
+Mobile Primary. Mantém o serviço VoIP 0.1.69 e sua revisão fixada.
+As [notas da versão](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.41/docs/release-4.0.41.md)
+detalham limites e a revisão dos quatro hostpaths de vínculo antes de atualizar.
+Publicação não faz deploy, migra dados nem comprova conclusão no aparelho.
+
+## Homologação integrada 4.0.40
+
+A entrega `ViperConnect 4.0.40` incorpora o serviço VoIP `0.1.69`, com revisão
+fixada no build. As [notas da entrega](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.40/docs/release-4.0.40-viperchat38.md)
+descrevem os contratos, a revisão incorporada e os limites da homologação.
+
+Existe uma limitação conhecida no addon `@roamhq/wrtc` `0.10.0`: um teste
+isolado reproduziu `SIGSEGV` na finalização natural do processo, depois de
+confirmar áudio bidirecional. A publicação para homologação foi autorizada
+mantendo a biblioteca atual; a falha de encerramento não está corrigida. Não
+foi constatada relação com as chamadas validadas por hostpath ou com o atraso
+de áudio em rede móvel. Publicar uma imagem não aplica mudanças na instalação.
+
+Se a homologação revelar impacto, um fork poderá ser avaliado com testes de
+finalização e mídia; nenhum fork ou troca de SDK integra esta entrega.

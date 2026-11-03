@@ -18,7 +18,10 @@ import { resolveProfilePictureId } from '../services/profile_picture_identity'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../services/messages/outgoing_media_input'
 
 import { outgoingEditWebhook } from '../services/messages/outgoing_edit_webhook'
+import { outgoingForwardedWebhook } from '../services/messages/outgoing_forwarded'
 import { outgoingViewOnceWebhook } from '../services/messages/outgoing_view_once'
+import { addProviderMessageIds } from '../services/messages/provider_message_identity'
+import { resolveProviderMessageId } from '../services/message_id_map'
 
 type RetryContext = {
   countRetries: number
@@ -94,7 +97,7 @@ export class IncomingJob {
   }
 
   private async consumeProviderOperation(phone: string, data: any) {
-    const allowedActions = ['contacts', 'saveContact', 'ownProfile', 'requestPairingCode', 'resyncAppState', 'fetchPrivacyTokens', 'fetchMessageHistory']
+    const allowedActions = ['contacts', 'saveContact', 'recoverContactCrypto', 'ownProfile', 'requestPairingCode', 'resyncAppState', 'fetchPrivacyTokens', 'fetchMessageHistory']
     if (!allowedActions.includes(data.action)) throw new Error(`Unknown provider operation ${data.action}`)
     const fn = this.incoming[data.action]
     if (typeof fn !== 'function') throw new Error(`Incoming provider does not support operation ${data.action}`)
@@ -113,6 +116,7 @@ export class IncomingJob {
       type: payload.type,
       ...outgoingEditWebhook(payload, timestamp),
       ...outgoingViewOnceWebhook(payload),
+      ...outgoingForwardedWebhook(payload),
     }
     if (groupId) message.group_id = groupId
     const userId =
@@ -220,6 +224,7 @@ export class IncomingJob {
                     type,
                     ...outgoingEditWebhook(payload, timestamp),
                     ...outgoingViewOnceWebhook(payload),
+                    ...outgoingForwardedWebhook(payload),
                   },
                 ],
               },
@@ -238,6 +243,7 @@ export class IncomingJob {
     idUno: string,
     timestamp: string,
     messagePayload: any,
+    identities: ReadonlyMap<string, string> = new Map(),
   ) {
     const webhookMessagePayload = `${payload?.type || ''}` === 'interactive'
       ? { ...messagePayload, action: withOrderDetailsPixCopyButton(messagePayload?.action) }
@@ -247,6 +253,8 @@ export class IncomingJob {
       ? interactiveForChatwootWebhook(messagePayload)
       : messagePayload
     const chatwootEcho = this.buildChatwootOutgoingEchoMessage(phone, payload, idUno, timestamp, chatwootMessagePayload)
+    addProviderMessageIds(standardMessage, identities)
+    addProviderMessageIds(chatwootEcho, identities)
     const enabled = webhooks.filter((webhook) => webhook.sendNewMessages)
     logger.debug('%s webhooks with sendNewMessages', enabled.length)
     await Promise.all(enabled.map((webhook) => this.outgoing.sendHttp(
@@ -323,6 +331,7 @@ export class IncomingJob {
       return { ok: { success: true, idempotent: true } }
     }
     let response
+    const identities = new Map<string, string>()
     try {
       response = await this.incoming.send(phone, payload, options)
     } catch (error) {
@@ -359,6 +368,19 @@ export class IncomingJob {
       const returnedId: string = ok.messages[0].id
       const { dataStore } = await config.getStore(phone, config)
       const idProvider: string = `${(await dataStore.loadProviderId?.(returnedId)) || returnedId}`
+      // A response that only repeats the Uno ID is not proof of a provider ID.
+      if (idProvider !== idUno) identities.set(idUno, idProvider)
+      const referenceId = outgoingEditWebhook(payload, timestamp).context?.id
+        || payload?.context?.id || payload?.context?.message_id || payload?.reaction?.message_id
+      if (referenceId) {
+        try {
+          const original = await resolveProviderMessageId(dataStore, referenceId)
+          if (original) identities.set(referenceId, original)
+        } catch {
+          // Optional correlation metadata must not retry a message already sent.
+          logger.warn('Provider reference identity unavailable phone=%s id=%s', phone, idUno)
+        }
+      }
       logger.debug('%s id %s to Unoapi id %s', config.provider, idProvider, idUno)
       const prevProviderStatus = await dataStore.loadStatus(idProvider)
       const prevUnoStatus = await dataStore.loadStatus(idUno)
@@ -408,7 +430,7 @@ export class IncomingJob {
           delete messagePayload.base64
         }
       }
-      await this.sendOutgoingMessageWebhooks(phone, config.webhooks, payload, idUno, timestamp, messagePayload)
+      await this.sendOutgoingMessageWebhooks(phone, config.webhooks, payload, idUno, timestamp, messagePayload, identities)
       // Reconcile early status updates that arrived before UNO<->provider mapping
       try {
         if (prevProviderStatus && rankStatus(prevProviderStatus) > rankStatus(prevUnoStatus || '')) {
@@ -452,6 +474,7 @@ export class IncomingJob {
             })
             const sendStatus = async (status: string) => {
               const statusPayload = buildStatusPayload(status)
+              addProviderMessageIds(statusPayload, identities)
               await amqpPublish(
                 UNOAPI_EXCHANGE_BROKER_NAME,
                 UNOAPI_QUEUE_BULK_STATUS,
@@ -547,6 +570,7 @@ export class IncomingJob {
       } catch {}
     }
     if (outgingPayload) {
+      addProviderMessageIds(outgingPayload, identities)
       await amqpPublish(
         UNOAPI_EXCHANGE_BROKER_NAME,
         UNOAPI_QUEUE_BULK_STATUS,

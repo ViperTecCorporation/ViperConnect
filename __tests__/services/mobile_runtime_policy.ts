@@ -22,6 +22,11 @@ test('production image installs and validates the same pinned mobile package as 
   const docker = readFileSync('Dockerfile', 'utf8')
   expect(docker).toContain('npm ci --prefix lab/registration --omit=dev --ignore-scripts')
   expect(docker).toContain('COPY --from=mobile-registration /app/lab/registration/node_modules /opt/mobile-registration/node_modules')
-  expect(docker).toContain('RUN node scripts/check-mobile-runtime.cjs')
+  const instructions = docker.replace(/\\\r?\n\s*/g, ' ')
+  for (const stage of ['mobile-registration', 'runtime-base']) {
+    const stageBody = instructions.split(new RegExp(`^FROM .+ AS ${stage}\\s*$`, 'm'))[1]?.split(/^FROM /m)[0]
+    expect(stageBody).toBeDefined()
+    expect(stageBody).toMatch(/^RUN\s+(?:node scripts\/check-mobile-runtime\.cjs|[^\r\n]*&&\s*node scripts\/check-mobile-runtime\.cjs)(?=\s*(?:&&|$))/m)
+  }
   expect(readFileSync('.github/workflows/main.yml', 'utf8')).toContain('yarn check:mobile-runtime')
 })

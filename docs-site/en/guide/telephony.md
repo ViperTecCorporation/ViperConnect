@@ -101,6 +101,19 @@ On failure, the UI reports the error and preserves a saved model without silent
 replacement. Other providers retain an editable model ID. Administrator access
 is required for configuration and `GET /admin/voip/console/ai/models`.
 
+The **Atualizar catálogo de modelos OpenRouter** button refreshes both lists
+without clearing the selected model or a newly entered key. Saved retired
+models remain visible and are never silently replaced. As in ViperChat Super
+Admin, changed selections are validated server-side: STT requires audio input
+and transcription output; summaries require text input/output. An incompatible
+selection returns `422 invalid_openrouter_model`; catalog failure while changing
+a model returns `502 ai_model_catalog_unavailable`. Both preserve the previous
+configuration. Unchanged saved models do not require a catalog fetch when
+editing unrelated company settings.
+External catalog requests do not hold the voice configuration queue. Concurrent
+AI edits return `409 ai_configuration_changed`, requiring the company editor
+to be reopened rather than overwriting newer configuration.
+
 Changing endpoint/provider clears an old secret unless a new key is supplied;
 blank fields preserve secrets only for the same endpoint. A transcription key
 can serve summaries only when both endpoints match. Secrets remain redacted.
@@ -161,3 +174,36 @@ extension family, so an IPv6 relay can feed an IPv4 extension without NAT64.
 Zapo owns the session, public Meow Caller contracts are used as wire references,
 and ViperConnect adds the PCM bridge, codec policy, dual-stack handling,
 recovery and safe telemetry.
+
+## ViperChat call events
+
+In Manager, an administrator opens **Telephony → Companies → Edit** and configures
+**ViperChat call events** (current UI labels may be Portuguese). The company owns
+the destination/token; only its linked extensions contribute events. Internal
+extension calls do not need an arbitrary WhatsApp line. Tokens are write-only;
+blank preserves the token and explicit removal requires disabling delivery.
+
+Choose `artifactsDelivery: legacy` for existing recording/AI-note compatibility,
+or `webhook` for the ViperChat private artifact processor. Webhook mode disables
+effective legacy recording and AI-note sending, including queued jobs, without
+deleting the old configuration. Never silently fall back to both delivery paths.
+
+The [complete webhook contract](/en/guide/voip-webhooks) documents every company
+option, field, event/state, recording/transcript/summary example, authentication,
+RabbitMQ setting, retry/HTTP rule, deduplication and recovery/native limitation.
+Webhook delivery neither registers a SIP endpoint nor changes the media path.
+
+### Administrative diagnostics and replay
+
+In **Companies → Edit → ViperChat delivery diagnostics**, administrators inspect
+counts, state, attempts, next retry and technical errors. The UI does not expose
+payloads, phone numbers, audio or credentials. It requests up to 50 recent
+deliveries; **Refresh** fetches the current state again.
+
+Replay is only offered for pending/dead events matching the original enabled
+destination. An explicit confirmation explains the scope before submission.
+The server checks company, event, state and destination again, preserving the
+original payload, IDs and attempt count. Delivered events cannot be replayed and
+the request cannot redirect data to another company. A UUID `requestId` makes
+repeated submissions idempotent. Conflicts return 409 and require investigation,
+never automatic scope expansion.

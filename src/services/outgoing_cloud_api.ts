@@ -14,6 +14,7 @@ import { acquireWebhookCircuitProbe, isWebhookCircuitOpen, isWebhookCircuitRecov
 import { WebhookCircuitOpenError } from './webhook_circuit_breaker'
 import { payloadLogSummary } from './payload_log_summary'
 import { webhookErrorBodySummary } from './webhook_error_summary'
+import { removeProviderMessageIds } from './messages/provider_message_identity'
 
 export const isWebhookCircuitFailureStatus = (status: number) => (
   status === 408 || status === 425 || status === 429 || status >= 500
@@ -470,6 +471,7 @@ export class OutgoingCloudApi implements Outgoing {
     // wa_id/from are intentionally left blank when no valid phone is available.
     // Aplicar schema Typebot (Cloud API estrito) se habilitado no webhook
     if (webhook.typebot) {
+      removeProviderMessageIds(message)
       message = normalizePayloadForTypebot(message, phone)
       if (!message) return
     }

@@ -1,6 +1,86 @@
 # Webhooks
 
+## Forwarded messages
+
+When the current message received through Zapo carries
+`contextInfo.isForwarded=true`, ViperConnect emits `context.forwarded=true` in
+`entry[].changes[].value.messages[]`. Partial message example:
+
+```json
+{
+  "type": "text",
+  "text": { "body": "Received message" },
+  "context": { "forwarded": true }
+}
+```
+
+This is an additive, automatic change with no extra configuration or permission
+beyond the existing webhook. The shared converter handles text, media, groups
+and normalized wrappers. History/replay messages passing through that converter
+retain the marker when present in stored content. No network lookup fills
+missing metadata and previously delivered webhooks are not updated retroactively.
+
+- Only boolean `true` is emitted. An absent marker is not proof of original authorship.
+- `context` may contain only `forwarded`, without a reply `id` or `message_id`.
+- Reply references retain `context.id`, `message_id` and optional
+  `provider_message_id`. Forwarding flags on quoted content do not mark the reply.
+- Delivery statuses do not gain this context. This does not mark ordinary sends
+  as forwarded or prepend a label to the text.
+- Neither `forwardingScore` nor `frequently_forwarded` is emitted by this contract.
+  Do not infer counts, original authors, conversation chains or a “frequently forwarded” badge.
+
+The Portuguese receiver handoff is maintained in the repository at
+`docs/WEBHOOK_FORWARDED_CONTRACT.md`.
+
 Connection events use a separate [session lifecycle contract](./session-webhooks).
+
+## Original transport message ID
+
+In the Zapo runtime, `provider_message_id` is **optional, additive correlation
+metadata**. Existing message, echo, status, reference and media IDs and API
+responses stay unchanged. Never replace the UnoAPI ID with this field when
+sending, quoting, editing or deleting messages.
+
+**Typebot:** webhooks marked as Typebot do not receive this field, including
+context, reaction and status objects. It is removed only from that destination's
+copy; ViperChat and other webhooks retain the metadata. Existing Typebot event
+filters remain unchanged.
+
+| Object | Meaning of `provider_message_id` |
+| --- | --- |
+| `value.messages[]` / `value.message_echoes[]` | Original message/event ID |
+| `value.statuses[]` | Original ID of the message whose status changed |
+| `message.context` | Original ID of the quoted or edited message |
+| `message.reaction` | Original ID of the reaction target |
+
+Deletion uses the existing `statuses[].status: "deleted"` contract: both `id`
+and the new field refer to the **deleted message**, not the deletion event.
+For edits, the message ID identifies the event; context identifies the target.
+
+```json
+{
+  "id": "UNOAPI_EVENT_UUID",
+  "provider_message_id": "PROTOCOL_EVENT_ID",
+  "type": "text",
+  "message_type": "message_edit",
+  "text": { "body": "Corrected text" },
+  "context": {
+    "id": "ORIGINAL_UNOAPI_UUID",
+    "message_id": "ORIGINAL_UNOAPI_UUID",
+    "provider_message_id": "ORIGINAL_PROTOCOL_ID"
+  }
+}
+```
+
+Treat the value as an opaque string. Do not truncate, change case or add a `wamid`
+prefix. Cross-transport correlation still requires production validation.
+The ID is captured before UUID conversion and travels through normal webhook
+delivery and retries. Queues, filters and sending rules are unchanged.
+It is omitted without a proven original ID, including synthetic call notices,
+failures before confirmation and old events. Previously delivered events are not
+replayed; consumers must accept payloads without the field.
+API sends are confirmed asynchronously by the worker: the additional ID arrives
+in the corresponding echo/status, not the API enqueue response.
 
 ## View-once media
 

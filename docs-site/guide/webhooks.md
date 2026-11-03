@@ -9,6 +9,88 @@ Responda HTTP `2xx` rapidamente e processe o evento de forma idempotente.
 
 Eventos de conexão usam um contrato separado: [Webhooks de sessões](./session-webhooks).
 
+## Mensagem encaminhada
+
+Quando a mensagem atual recebida pela Zapo traz `contextInfo.isForwarded=true`,
+o ViperConnect entrega `context.forwarded=true` em
+`entry[].changes[].value.messages[]`. Exemplo parcial da mensagem:
+
+```json
+{
+  "type": "text",
+  "text": { "body": "Mensagem recebida" },
+  "context": { "forwarded": true }
+}
+```
+
+A alteração é aditiva e automática, sem configuração ou permissão adicional às
+do webhook existente. Texto, mídia, grupos e wrappers normalizados usam a mesma
+regra. Mensagens de histórico/replay que passem pelo conversor preservam a marca
+quando ela estiver disponível no conteúdo armazenado. Não é feita consulta ao
+WhatsApp para preencher metadados ausentes nem correção retroativa de webhooks.
+
+- O campo só é emitido como booleano `true`; não envie `false` por ausência de
+  metadados. Ausência significa **sem marca disponível**, não prova de autoria.
+- `context` pode conter apenas `forwarded`, sem `id` ou `message_id`.
+- Uma resposta citada mantém `context.id`, `message_id` e, quando aplicável,
+  `provider_message_id`. A marca da mensagem citada não passa para a resposta.
+- Status de entrega não recebem esse contexto. A mudança não transforma um
+  envio comum em encaminhamento nem adiciona prefixo ao texto.
+- `forwardingScore` e `frequently_forwarded` **não são emitidos neste contrato**.
+  Não inferir contagem, autor original, cadeia de conversas ou o selo de
+  “encaminhada muitas vezes”.
+
+Contrato e caminhos para o receptor ViperChat no repositório:
+`docs/WEBHOOK_FORWARDED_CONTRACT.md`.
+
+## ID original do transporte
+
+No runtime Zapo, `provider_message_id` é um campo **opcional e aditivo** para
+correlação. `messages[].id`, `message_echoes[].id`, `statuses[].id`, os IDs de
+referência, os IDs de mídia e as respostas da API continuam iguais. Não use esse
+campo no lugar do ID UnoAPI para enviar, citar, editar ou excluir mensagens.
+
+**Typebot:** quando o webhook estiver marcado como Typebot, esse campo não é
+entregue, inclusive em contexto, reação e status. A remoção é feita somente na
+cópia daquele destinatário; ViperChat e outros webhooks preservam os metadados.
+Os filtros atuais de eventos para Typebot continuam iguais.
+
+| Objeto | Significado de `provider_message_id` |
+| --- | --- |
+| `value.messages[]` / `value.message_echoes[]` | ID original da mensagem/evento |
+| `value.statuses[]` | ID original da mensagem cujo status mudou |
+| `message.context` | ID original da mensagem citada ou editada |
+| `message.reaction` | ID original da mensagem que recebeu a reação |
+
+Na exclusão, o contrato atual é `statuses[].status: "deleted"`: tanto `id`
+quanto o novo campo identificam a **mensagem excluída**, não o evento de exclusão.
+Na edição, `messages[].id` identifica o evento e `context` identifica o alvo.
+
+```json
+{
+  "id": "UUID_UNOAPI_DO_EVENTO",
+  "provider_message_id": "ID_PROTOCOLO_DO_EVENTO",
+  "type": "text",
+  "message_type": "message_edit",
+  "text": { "body": "Texto corrigido" },
+  "context": {
+    "id": "UUID_UNOAPI_ORIGINAL",
+    "message_id": "UUID_UNOAPI_ORIGINAL",
+    "provider_message_id": "ID_PROTOCOLO_ORIGINAL"
+  }
+}
+```
+
+Trate o valor como string opaca, sem truncar, converter caixa ou adicionar prefixos
+como `wamid`. A correlação entre transportes ainda precisa de validação em produção.
+O campo é capturado antes da conversão para UUID, acompanha a publicação normal
+do webhook e seus retries, sem mudar filas, filtros ou regras de envio.
+É omitido quando não há ID original comprovado (inclusive avisos sintéticos de
+chamada, falhas antes da confirmação e eventos antigos). Eventos já entregues não
+são reenviados; consumidores devem aceitar payloads sem esse campo.
+No envio por API, a confirmação do provider ocorre no worker: o ID adicional chega
+pelo echo/status correspondente, não pela resposta de enfileiramento da API.
+
 ## Mídia de visualização única
 
 O recebimento de imagem, vídeo ou áudio de visualização única inclui

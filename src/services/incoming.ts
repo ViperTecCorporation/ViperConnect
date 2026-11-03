@@ -2,6 +2,7 @@ import { Response } from './response'
 import type { SaveContactInput, SaveContactResponse } from './contacts/contact_book_types'
 
 export interface Incoming {
+  recoverContactCrypto?(phone: string, userId: string): Promise<import('./contacts/contact_crypto').ContactCryptoResult>
   ownProfile?(phone: string, command: import('./profile_input').ProfileCommand): Promise<any>
   send(phone: string, payload: object, options: object): Promise<Response>
   contacts?(phone: string, numbers: string[]): Promise<any[]>

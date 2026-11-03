@@ -56,8 +56,8 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
     // Approved history allowlist for every mobile-primary lab session.
     // Other message types remain archived and usable by normal messaging.
     const strategy = 'inline-text-video-only'
-    ctx.registerDispose(traceCompanionOutgoing(ctx.deps.messageDispatch, device))
     const receiptTrace = new CompanionHistoryReceiptTrace(device)
+    ctx.registerDispose(traceCompanionOutgoing(ctx.deps.messageDispatch, device, receiptTrace))
     const removeReceiptTrace = ctx.registerIncomingHandler({ tag: 'receipt', prepend: true, handler: async node => {
       if (!current()) return false
       return receiptTrace.observe(node)
@@ -100,7 +100,6 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
       },
       async send(target, message, _jobPacketId) {
         const id = await ctx.deps.messageDispatch.generateOutgoingMessageId()
-        receiptTrace.track(id, target, message.historySyncNotification?.chunkOrder ?? 0)
         const details = { device, packet: message.historySyncNotification?.chunkOrder,
           progress: message.historySyncNotification?.progress, strategy }
         await ctx.deps.messageDispatch.publishProtocolMessageToDevice(target, message, { id })
@@ -111,7 +110,10 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
     const restore = installHistoryBootstrap(ctx.client.mobile, async target => {
       if (!await runtime.current()) throw new Error('mobile_history_not_connected')
       // A prekey failure before publication is safe for the SDK to retry.
-      await prepareCompanionHistory(() => ctx.deps.messageDispatch.syncSignalSession(target))
+      await prepareCompanionHistory(async () => {
+        if (!await runtime.current()) throw new Error('mobile_history_not_connected')
+        await ctx.deps.messageDispatch.syncSignalSession(target)
+      })
       await earlyKeys.share(target)
       if (!await runtime.current()) throw new Error('mobile_history_not_connected')
       provisioned.add(target)
@@ -129,7 +131,10 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
       }
     }, async target => {
       if (!await runtime.current()) throw new Error('mobile_history_not_connected')
-      await prepareCompanionHistory(() => ctx.deps.messageDispatch.syncSignalSession(target))
+      await prepareCompanionHistory(async () => {
+        if (!await runtime.current()) throw new Error('mobile_history_not_connected')
+        await ctx.deps.messageDispatch.syncSignalSession(target)
+      })
       if (!await runtime.current()) throw new Error('mobile_history_not_connected')
       // The SDK continues with shareAppStateSyncKeys after its native bootstrap.
       // No archive job or early key sender is started for this branch.

@@ -89,6 +89,10 @@ export class IncomingAmqp implements Incoming {
     return this.providerOperation<SaveContactResponse>(phone, 'saveContact', [input])
   }
 
+  public recoverContactCrypto(phone: string, userId: string) {
+    return this.providerOperation<import('./contacts/contact_crypto').ContactCryptoResult>(phone, 'recoverContactCrypto', [userId])
+  }
+
   public async requestPairingCode(phone: string) {
     const config = await this.getConfig(phone)
     return amqpRpc<string>(

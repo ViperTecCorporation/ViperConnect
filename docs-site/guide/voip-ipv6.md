@@ -112,6 +112,24 @@ O processo passa um `--listening-ip` e um `--relay-ip` para cada família. No
 IPv4 atrás de NAT, `--external-ip` usa `PUBLICO/LOCAL`; no IPv6 global, o
 endereço externo e o relay normalmente são o mesmo AAAA resolvido.
 
+### Atualizador DDNS e Coturn da VPS
+
+O pacote operacional versionado em `deploy/ipv6-ddns` acompanha os prefixos
+delegados Starlink e Conecta. A cada ciclo ele testa as duas saídas, atualiza
+os registros AAAA DNS-only na Cloudflare e, quando o endereço preferencial
+muda, atualiza as variáveis IPv6 do Coturn após validar o Compose e criar um
+backup.
+
+O arquivo de credenciais fica somente em
+`/etc/vipertec-ddns/cloudflare.env`; o repositório contém apenas um exemplo sem
+segredos. Em hosts com Docker instalado via Snap, o unit não pode usar
+`NoNewPrivileges=true`, pois o launcher do Snap precisa mudar o perfil da
+execução. O serviço continua isolando `/tmp` com `PrivateTmp=true`, mas deve ser
+tratado como privilegiado porque possui acesso root ao Docker.
+
+Consulte `deploy/ipv6-ddns/README.md` para instalação, restauração, caminhos e
+validação pós-alteração.
+
 ## Limites desta entrega
 
 O WebSocket interno worker Zapo → VoIP continua na rede Docker existente. O
