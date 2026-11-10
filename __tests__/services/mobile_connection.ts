@@ -11,6 +11,34 @@ function fixture() {
   return { service: new MobileConnectionService(deps), deps, auth, lease }
 }
 describe('mobile primary import and worker dispatch', () => {
+  test.each(['sqlite', 'redis'])('new primary prepares %s storage before reading or importing auth and preserves selected backend', async backend => {
+    const s = fixture(), steps: string[] = []
+    const prepared = { mobilePrimaryDraftId: 'draft', provider: 'zapo', server: 'mobile_lab', autoConnect: false,
+      ...(backend === 'sqlite' ? { sessionStorage: { backend: 'sqlite', storageId: 'synthetic' } } : {}) }
+    const prepareStorage = jest.fn(async () => { steps.push('prepare'); s.deps.config.mockResolvedValue(prepared) })
+    s.deps.auth.mockImplementation(async () => { steps.push('auth'); return s.auth })
+    const service = new MobileConnectionService({ ...s.deps, prepareStorage })
+    await service.connect('draft', { confirm: true })
+    expect(steps).toEqual(['prepare', 'auth'])
+    expect(prepareStorage).toHaveBeenCalledWith('999123456789', 'draft', expect.objectContaining({ id: 'draft' }))
+    expect(s.deps.saveConfig).toHaveBeenCalledWith('999123456789', { mobilePrimaryImported: true, autoConnect: true })
+    expect(s.deps.saveConfig).not.toHaveBeenCalledWith('999123456789', expect.objectContaining({ sessionStorage: expect.anything() }))
+    expect(s.auth.save).toHaveBeenCalledWith(credentials)
+  })
+  test('storage preparation failure keeps new primary paused and never imports auth or dispatches', async () => {
+    const s = fixture(), prepareStorage = jest.fn().mockRejectedValue(new Error('storage_provision_uncertain'))
+    const service = new MobileConnectionService({ ...s.deps, prepareStorage })
+    await expect(service.connect('draft', { confirm: true })).rejects.toThrow('storage_provision_uncertain')
+    expect(s.deps.auth).not.toHaveBeenCalled(); expect(s.auth.save).not.toHaveBeenCalled(); expect(s.deps.dispatch).not.toHaveBeenCalled()
+    expect(s.lease.acquire).not.toHaveBeenCalled(); expect(s.lease.release).not.toHaveBeenCalled()
+  })
+  test('existing primary never provisions over a previously selected storage', async () => {
+    const s = fixture(), prepareStorage = jest.fn()
+    s.deps.config.mockResolvedValue({ mobilePrimaryDraftId: 'draft', provider: 'zapo', server: 'mobile_lab', mobilePrimaryImported: true, autoConnect: true })
+    s.auth.load.mockResolvedValue(credentials)
+    await new MobileConnectionService({ ...s.deps, prepareStorage }).connect('draft', { confirm: true })
+    expect(prepareStorage).not.toHaveBeenCalled(); expect(s.auth.save).not.toHaveBeenCalled()
+  })
   test('nine-digit session namespace keeps canonical eight-digit authentication', async () => {
     const s = fixture()
     s.deps.draft.mockResolvedValue({ id: 'draft', phone: '5566999554300', name: 'Lab' } as any)
@@ -83,5 +111,38 @@ describe('mobile primary import and worker dispatch', () => {
     s.lease.renew.mockResolvedValue(true); s.deps.dispatch.mockRejectedValue(new Error('queue unavailable'))
     await expect(s.service.connect('draft', { confirm: true })).rejects.toThrow('queue unavailable')
     expect(s.lease.release).toHaveBeenCalledTimes(2)
+  })
+
+  test('the socket lease keeps renewing while the owner auth RPC is waiting', async () => {
+    jest.useFakeTimers()
+    const s = fixture()
+    let entered!: () => void, finish!: () => void
+    const loading = new Promise<void>(resolve => { entered = resolve }), blocked = new Promise<void>(resolve => { finish = resolve })
+    s.auth.load.mockImplementationOnce(async () => { entered(); await blocked; return null })
+    const operation = s.service.connect('draft', { confirm: true })
+    try {
+      await loading; await jest.advanceTimersByTimeAsync(45000)
+      expect(s.lease.renew).toHaveBeenCalledTimes(3)
+      finish(); await operation
+      const renewals = s.lease.renew.mock.calls.length
+      await jest.advanceTimersByTimeAsync(60000)
+      expect(s.lease.renew).toHaveBeenCalledTimes(renewals); expect(s.lease.release).toHaveBeenCalledTimes(1)
+    } finally { finish(); jest.useRealTimers() }
+  })
+
+  test('a failed background renewal permanently fences a delayed auth RPC even if later renewals would succeed', async () => {
+    jest.useFakeTimers()
+    const s = fixture()
+    let entered!: () => void, finish!: () => void
+    const loading = new Promise<void>(resolve => { entered = resolve }), blocked = new Promise<void>(resolve => { finish = resolve })
+    s.auth.load.mockImplementationOnce(async () => { entered(); await blocked; return null })
+    const result = s.service.connect('draft', { confirm: true }).then(() => undefined, error => error)
+    try {
+      await loading; s.lease.renew.mockResolvedValueOnce(false)
+      await jest.advanceTimersByTimeAsync(15000)
+      s.lease.renew.mockResolvedValue(true); finish()
+      expect(await result).toMatchObject({ code: 'mobile_session_in_use' })
+      expect(s.auth.save).not.toHaveBeenCalled(); expect(s.deps.dispatch).not.toHaveBeenCalled(); expect(s.lease.release).toHaveBeenCalledTimes(1)
+    } finally { finish(); jest.useRealTimers() }
   })
 })

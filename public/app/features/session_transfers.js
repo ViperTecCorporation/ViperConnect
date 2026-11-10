@@ -1,8 +1,9 @@
-import { ApiError } from '../core/api.js?v=4.0.41-0f2cc5a1';
-import { escapeHtml as e } from '../core/html.js?v=4.0.41-0f2cc5a1';
-import { renderModal } from '../components/modal.js?v=4.0.41-0f2cc5a1';
-import { renderMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.41-0f2cc5a1';
-import { uploadSessionRestore } from './session_restore_upload.js?v=4.0.41-0f2cc5a1';
+import { ApiError } from '../core/api.js?v=4.0.41-39b50dec';
+import { escapeHtml as e } from '../core/html.js?v=4.0.41-39b50dec';
+import { renderModal } from '../components/modal.js?v=4.0.41-39b50dec';
+import { renderMobileBackup, downloadMobileBackup, mobileBackupError, manualBackupNeedsStorage, renderSqliteBackupAlternative, isSqliteStorageBackup, transferMobileBackup } from './mobile_backup.js?v=4.0.41-39b50dec';
+import { uploadSessionRestore } from './session_restore_upload.js?v=4.0.41-39b50dec';
+import { SessionStorageImport } from './session_storage_import.js?v=4.0.41-39b50dec';
 const base = '/manager/session-transfers';
 export async function isStreamSessionBackup(file) {
     const header = (await file.slice(0, 1024).text()).split('\n')[0];
@@ -14,6 +15,8 @@ export async function isStreamSessionBackup(file) {
     }
 }
 export async function describeSessionBackup(file) {
+    if (await isSqliteStorageBackup(file))
+        return `${file.name}: backup SQLite .viperstorage, até 256 MiB. Informe o telefone e escolha o worker de destino para restaurar offline. Nenhum arquivo foi enviado.`;
     const streamed = await isStreamSessionBackup(file);
     return `${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MiB). ${streamed ? 'Formato em blocos reconhecido; não se aplica o limite legado de 16 MiB.' : file.size > 16 * 1024 * 1024 ? 'Formato não reconhecido como backup em blocos; arquivos legados aceitam até 16 MiB.' : 'Formato legado; limite de 16 MiB.'} Informe a senha, confirme a origem desconectada e clique em Restaurar sessão. A seleção não inicia o envio.`;
 }
@@ -24,6 +27,7 @@ export function sessionBackupFailure(code) {
         session_backup_record_too_large: 'Uma entrada individual excedeu o limite seguro por bloco. Nenhum dado foi cortado; consulte o diagnóstico antes de tentar novamente.',
         session_backup_registered_linked_required: 'As credenciais registradas desta sessão vinculada não estão disponíveis no Redis.',
         session_backup_requires_linked_redis_session: 'O backup exige uma sessão vinculada Zapo com armazenamento Redis.',
+        session_backup_sqlite_requires_session_storage_endpoint: 'Esta sessão usa SQLite. Use Armazenamento da sessão para .viperstorage; não há exportação Redis nem troca automática de backend.',
         session_backup_waiting_disconnect: 'A origem ainda não liberou a conexão. Aguarde a desconexão antes de tentar novamente.',
         session_backup_storage_failed: 'O storage do arquivo não está disponível. Verifique o armazenamento e tente novamente.',
         session_backup_read_failed: 'Não foi possível ler o estado no Redis. Verifique o armazenamento e tente novamente.',
@@ -42,12 +46,30 @@ export class SessionTransfersPanel {
         this.error = '';
         this.notice = '';
         this.eligible = false;
+        this.storageRequired = false;
         this.restoreUploadId = '';
         this.progress = '';
         this.tasks = [];
+        this.sqliteRestore = false;
         this.generation = 0;
+        this.sqliteImport = new SessionStorageImport(api, render);
     }
-    reset() { this.generation++; this.modal = undefined; this.phone = ''; this.busy = false; this.error = ''; this.notice = ''; this.tasks = []; this.file = undefined; this.eligible = false; this.restoreUploadId = ''; this.progress = ''; }
+    reset() { this.generation++; this.modal = undefined; this.phone = ''; this.busy = false; this.error = ''; this.notice = ''; this.tasks = []; this.file = undefined; this.eligible = false; this.restoreUploadId = ''; this.progress = ''; this.storageRequired = false; this.sqliteRestore = false; this.sqliteImport.reset(); }
+    async selectRestoreFile(file) {
+        if (this.modal !== 'restore')
+            return false;
+        const generation = this.generation;
+        if (!await isSqliteStorageBackup(file))
+            return false;
+        if (generation !== this.generation || this.modal !== 'restore')
+            return true;
+        this.sqliteRestore = true;
+        this.error = '';
+        this.storageRequired = false;
+        await this.sqliteImport.select(file);
+        return true;
+    }
+    restoredPhone() { return this.sqliteImport.successPhone(); }
     async refresh() {
         const generation = this.generation;
         try {
@@ -62,6 +84,27 @@ export class SessionTransfersPanel {
             return;
         const generation = this.generation;
         this.error = '';
+        if (action === 'transfer-sqlite-check') {
+            await this.sqliteImport.check();
+            return;
+        }
+        if (action === 'transfer-sqlite-change') {
+            if (!this.sqliteImport.blocked()) {
+                this.sqliteImport.reset();
+                this.sqliteRestore = false;
+                this.render();
+            }
+            return;
+        }
+        if (action === 'transfer-sqlite-another') {
+            if (this.sqliteImport.successPhone()) {
+                this.sqliteImport.reset();
+                this.sqliteRestore = false;
+                this.modal = 'restore';
+                this.render();
+            }
+            return;
+        }
         if (action === 'transfer-check-restore' && this.restoreUploadId) {
             try {
                 const state = await this.api.request(`${base}/restore-uploads/${encodeURIComponent(this.restoreUploadId)}`);
@@ -101,8 +144,11 @@ export class SessionTransfersPanel {
         }
         this.phone = id;
         this.eligible = false;
-        if (action === 'transfer-restore')
+        this.storageRequired = false;
+        if (action === 'transfer-restore') {
             this.modal = 'restore';
+            this.sqliteRestore = !!this.sqliteImport.file || this.sqliteImport.blocked();
+        }
         else if (action === 'transfer-open') {
             this.modal = 'backup';
             this.busy = true;
@@ -112,7 +158,12 @@ export class SessionTransfersPanel {
                 if (generation === this.generation && this.phone === id)
                     this.eligible = result.eligible;
             }
-            catch { }
+            catch (error) {
+                if (generation === this.generation && this.phone === id && manualBackupNeedsStorage(error)) {
+                    this.storageRequired = true;
+                    this.error = mobileBackupError(error);
+                }
+            }
             finally {
                 if (generation === this.generation)
                     this.busy = false;
@@ -154,6 +205,10 @@ export class SessionTransfersPanel {
             this.render();
     }
     async submit(form, data) {
+        if (form === 'transfer-sqlite-restore') {
+            await this.sqliteImport.submit(data);
+            return;
+        }
         if (this.busy)
             return;
         if (typeof data.get('phone') === 'string')
@@ -182,10 +237,13 @@ export class SessionTransfersPanel {
                     const file = data.get('archive');
                     if (!(file instanceof Blob) || !file.size)
                         throw new Error('Selecione um arquivo .vipersession.');
+                    if (await isSqliteStorageBackup(file))
+                        throw new ApiError(409, '', { error: 'session_backup_sqlite_requires_session_storage_endpoint' });
                     const streamed = await isStreamSessionBackup(file);
                     if (!streamed && file.size > 16 * 1024 * 1024)
                         throw new Error('O formato legado aceita até 16 MiB. Gere um novo backup em blocos.');
-                    const result = streamed ? await uploadSessionRestore(this.api, file, password, {
+                    const mobile = file.name?.toLowerCase().endsWith('.viperdevice');
+                    const result = mobile ? await transferMobileBackup(this.api, true, undefined, data) : streamed ? await uploadSessionRestore(this.api, file, password, {
                         created: id => { if (generation === this.generation)
                             this.restoreUploadId = id; },
                         progress: text => { if (generation === this.generation) {
@@ -213,10 +271,13 @@ export class SessionTransfersPanel {
             this.file = undefined;
         }
         catch (error) {
-            if (generation === this.generation)
+            if (generation === this.generation) {
+                if (manualBackupNeedsStorage(error))
+                    this.storageRequired = true;
                 this.error = error instanceof ApiError && error.status === 413
                     ? 'O servidor ou proxy recusou uma parte do upload (HTTP 413). Confira o limite do proxy para requisições de 8 MiB. Não repita a importação sem verificar o destino.'
                     : mobileBackupError(error);
+            }
         }
         finally {
             if (generation === this.generation) {
@@ -226,12 +287,16 @@ export class SessionTransfersPanel {
         }
     }
     html() {
-        return `<section class="mobile-overview__section"><div class="mobile-overview__status"><h3>Backups de sessões</h3><div class="mobile-overview__actions">${button('Restaurar sessão', 'restore')}${button('Atualizar', 'refresh')}</div></div>${this.notice ? `<p role="status">${e(this.notice)}</p>` : ''}${this.error && !this.modal ? `<p role="alert">${e(this.error)}</p>` : ''}${!this.tasks.length ? '<p class="muted">Nenhum backup solicitado. Em Gerenciar → Visão geral, escolha Backup e migração.</p>' : this.tasks.map(task => `<div class="mobile-overview__status"><div><strong>${e(task.deviceId)}</strong><p role="status">${e(task.status === 'ready' ? `Disponível até ${new Date(task.expiresAt).toLocaleString('pt-BR')}` : task.status === 'running' ? 'Gerando em segundo plano…' : task.status === 'interrupted' ? 'Interrompido. Consulte a conexão antes de tentar novamente.' : sessionBackupFailure(task.error))}</p></div>${task.status === 'ready' ? button('Baixar .vipersession', 'download', task.deviceId) : ''}</div>`).join('')}</section>`;
+        return `<section class="mobile-overview__section"><div class="mobile-overview__status"><h3>Backups de sessões</h3><div class="mobile-overview__actions">${button('Restaurar sessão', 'restore')}${button('Atualizar', 'refresh')}</div></div>${this.notice ? `<p role="status">${e(this.notice)}</p>` : ''}${this.error && !this.modal ? `<p role="alert">${e(this.error)}</p>` : ''}${this.sqliteImport.task || this.sqliteImport.uncertain ? this.sqliteImport.html() : ''}${!this.tasks.length ? '<p class="muted">Nenhum backup solicitado. Para gerar um backup, abra Gerenciar → Visão geral → Armazenamento da sessão.</p>' : this.tasks.map(task => `<div class="mobile-overview__status"><div><strong>${e(task.deviceId)}</strong><p role="status">${e(task.status === 'ready' ? `Disponível até ${new Date(task.expiresAt).toLocaleString('pt-BR')}` : task.status === 'running' ? 'Gerando em segundo plano…' : task.status === 'interrupted' ? 'Interrompido. Consulte a conexão antes de tentar novamente.' : sessionBackupFailure(task.error))}</p></div>${task.status === 'ready' ? button('Baixar .vipersession', 'download', task.deviceId) : ''}</div>`).join('')}</section>`;
     }
     dialog() {
         if (!this.modal)
             return '';
         let content;
+        if (this.modal === 'restore' && this.sqliteRestore)
+            return renderModal('session-transfer', 'Restaurar sessão SQLite', `${this.sqliteImport.html()}${!this.sqliteImport.blocked() ? button('Trocar arquivo', 'sqlite-change') : ''}`, { subtitle: this.sqliteImport.phone || this.sqliteImport.file?.name || '' }).replace('data-close-modal', 'data-action="transfer-close"');
+        if (this.storageRequired)
+            return renderModal('session-transfer', 'Armazenamento SQLite', `${this.error ? `<p role="alert">${e(this.error)}</p>` : ''}${renderSqliteBackupAlternative(this.phone)}`, { subtitle: this.phone }).replace('data-close-modal', 'data-action="transfer-close"');
         if (this.file)
             content = `<div class="stack"><p role="status">Arquivo pronto. Confira o download antes de fechar.</p><strong>${e(this.file.fileName)}</strong>${button('Baixar novamente', 'retry-download')}${button('Fechar', 'close')}</div>`;
         else if (this.modal === 'remove')
@@ -239,7 +304,7 @@ export class SessionTransfersPanel {
         else
             content = renderMobileBackup(this.modal === 'restore', this.busy).split('.viperdevice').join('.vipersession').split('dispositivo').join('sessão').replace('data-form="mobile-', 'data-form="transfer-').replace('Limite: 16 MiB por arquivo e 10.000 registros; exceder gera erro, nunca corte silencioso.', 'Formato em blocos, sem teto fixo de chaves ou tamanho total. O arquivo depende do espaço disponível no storage; cada bloco e entrada têm limites de segurança. Em caso de falha, é recuperada a configuração anterior de conexão quando a tarefa ainda é dona da suspensão.') + (this.modal === 'backup' && this.eligible ? `<hr>${button('Remover desta instância após migração', 'remove', this.phone)}` : '');
         if (this.modal === 'restore' && !this.busy)
-            content = content.replace('name="archive"', 'name="archive" data-session-backup-file').replace('</label>', '</label><p class="muted" data-session-backup-feedback role="status">Backup em blocos: envio em partes de até 8 MiB, sem limite total de 16 MiB. Somente o formato legado tem esse limite. Selecione o arquivo, informe a senha e clique em Restaurar sessão.</p>');
+            content = content.replace('name="archive"', 'name="archive" data-session-backup-file').replace('accept=".vipersession"', 'accept=".viperstorage,.vipersession,.viperdevice"').replace('Restaure um arquivo .vipersession em uma instância compatível. A conexão automática será habilitada no destino, sem webhooks. Cadastros existentes não são sobrescritos.', 'Selecione um backup .viperstorage (SQLite), .vipersession (Redis) ou .viperdevice (dispositivo). O formato define o procedimento; SQLite restaura somente offline.').replace('</label>', '</label><p class="muted" data-session-backup-feedback role="status">SQLite: até 256 MiB, sem senha no navegador. Redis em blocos: partes de até 8 MiB, sem limite total de 16 MiB. Somente o formato legado tem esse limite. A seleção não envia o arquivo.</p>');
         if (this.modal === 'restore' && this.busy && this.progress)
             content += `<p role="status" aria-live="polite">${e(this.progress)}</p>`;
         if (this.restoreUploadId && !this.busy)

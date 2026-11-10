@@ -34,6 +34,7 @@ const normalize = (value) => value.replace(/:([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\
 const publicRoute = (route) => route.replace(/^\/v\d+(?:\.\d+)?(?=\/|$)/, '/{version}')
 
 const tagFor = (route) => {
+  if (/\/storage(?:\/|$)/.test(route)) return 'Sessões'
   if (/\/profile(?:\/|$)/.test(route)) return 'Perfil'
   if (route.startsWith('/manager/')) return 'Manager'
   if (/^\/admin\/(?:redis|rabbitmq|settings)\//.test(route)) return 'Administração'

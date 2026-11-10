@@ -1,5 +1,5 @@
 import { getConfigRedis } from './config_redis'
-import { zapoStoreRegistry } from './zapo/zapo_store_registry'
+import { sessionContacts } from './session_storage/contacts_gateway'
 import { contactPhoneLookupNumbers, normalizeContactPhoneNumber } from './zapo/zapo_contact_phone'
 
 // Blacklist identities must not turn LID digits into phone numbers.
@@ -83,5 +83,5 @@ export const resolveBlacklistAliases = async (
 async function getBlacklistContacts(session: string): Promise<BlacklistContacts | undefined> {
   const config = await getConfigRedis(session)
   if (config.provider !== 'zapo') return undefined
-  return zapoStoreRegistry.get(config).session(session).contacts
+  return sessionContacts(session, config)
 }

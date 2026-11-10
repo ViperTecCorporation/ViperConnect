@@ -10,6 +10,10 @@ import { resolveSessionProvider } from './providers/provider_resolver'
 import { normalizeWebhookConfig } from './webhook_config'
 import { normalizeHistoryMaxAgeDays } from '../utils/history'
 import { configLogSummary } from './config_log_summary'
+import { stores } from './store'
+import { dataStores } from './data_store'
+import { markSessionConfigRegistration } from './session_storage/connection_registration'
+import { storageRoot } from './session_storage/capability'
 
 const SECRET_CONFIG_KEY = /(token|password|secret|api.?key)/i
 const configForLog = (value: unknown): unknown => {
@@ -32,6 +36,8 @@ const ensureConfigSub = async () => {
     await subscribeConfigUpdates((phone: string) => {
       configs.delete(phone)
       configCacheTs.delete(phone)
+      stores.delete(phone)
+      dataStores.delete(phone)
     })
     configSubReady = true
   } catch (e) {
@@ -64,7 +70,9 @@ export const getConfigRedis: getConfig = async (phone: string): Promise<Config> 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const configRedis: any = { ...(storedConfig || {}) }
     logger.info('Retrieve config default for %s', phone)
-    const config: Config = { ...(await getConfigByEnv(phone)) }
+    // Only publish fully resolved Redis configurations. A cached ENV template
+    // could otherwise bypass registration/provider/storage guards mid-await.
+    const config: Config = { ...(await getConfigByEnv(phone, false)) }
 
     if (configRedis) {
       Object.keys(configRedis).forEach((key) => {
@@ -124,14 +132,23 @@ export const getConfigRedis: getConfig = async (phone: string): Promise<Config> 
     // Avoid sessions coming with useRedis/useS3=false due to stale values in unoapi-config
     config.useRedis = true
     config.useS3 = true
+    if (config.sessionStorage?.backend === 'sqlite' && !config.sessionStorage.fixture) config.baseStore = storageRoot()
 
     const filter: MessageFilter = new MessageFilter(phone, config)
     config.shouldIgnoreJid = filter.isIgnoreJid.bind(filter)
     config.shouldIgnoreKey = filter.isIgnoreKey.bind(filter)
     config.getStore = getStoreRedis
+    if (config.sessionStorage?.fixture) {
+      // Environment/default webhook expansion must never re-enable fixture delivery.
+      config.autoConnect = false
+      config.webhooks = []
+      config.sessionWebhook = ''
+      config.rejectCallsWebhook = ''
+    }
     if (previousGetMessageMetadata) {
       config.getMessageMetadata = previousGetMessageMetadata
     }
+    markSessionConfigRegistration(config, hasStoredConfig)
     logger.info('Config redis: %s summary=%s', phone, JSON.stringify(configLogSummary(config)))
     configs.set(phone, config)
     configCacheTs.set(phone, Date.now())

@@ -11,6 +11,13 @@ const setup = () => {
   return panel
 }
 describe('Messages panel lifecycle and pending sends', () => {
+  test('fixture message send and media download stop before issuing any API request', async () => {
+    const panel = setup(); panel.fixture = true
+    panel.api.sessionMessageMedia = jest.fn()
+    await expect(panel.send()).rejects.toThrow('conexão/envios bloqueados')
+    await expect(panel.action({ dataset: { chat: 'media', id: 'MEDIA' } })).rejects.toThrow('download de mídia bloqueado')
+    expect(panel.api.request).not.toHaveBeenCalled(); expect(panel.api.sessionMessageMedia).not.toHaveBeenCalled()
+  })
   test('closing unsubscribes and clears session data, drafts and pending requests', () => {
     const panel = setup(); const socket = panel.socket
     panel.messages = [{ text: 'private' }]; panel.drafts.set('123@lid', 'private draft')

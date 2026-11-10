@@ -12,6 +12,19 @@ describe('contact encryption recovery action', () => {
     expect(renderContactCards([contact], '')).not.toContain('data-action="recover-contact-crypto"')
     expect(renderContactCards([{ ...contact, user_id: '123@g.us' }], '5511888888888')).not.toContain('data-action="recover-contact-crypto"')
   })
+  test('recovery stays an icon-only control without a permanently overflowing label on each contact card', () => {
+    const html = renderContactCards([contact, { ...contact, user_id: '456@lid', display_name: 'Outro contato' }], '5511888888888')
+    const buttons = html.match(/<button\b[^>]*data-action="recover-contact-crypto"[\s\S]*?<\/button>/g) || []
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) {
+      expect(button).toContain('btn--icon')
+      expect(button).toContain('aria-label="Recuperar criptografia"')
+      expect(button).toContain('title="Recuperar criptografia"')
+      expect(button).toContain('<svg')
+      expect(button.replace(/<[^>]*>/g, '').trim()).toBe('')
+    }
+    expect(request).not.toHaveBeenCalled()
+  })
   test('cancels without any request', async () => {
     const confirm = jest.fn().mockReturnValue(false)
     expect(await recoverContactCrypto(api, '5511888888888', contact, confirm)).toBe(false)

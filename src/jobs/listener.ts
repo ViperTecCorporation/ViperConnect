@@ -21,6 +21,10 @@ export class ListenerJob {
   }
 
   async consume(phone: string, data: object, options?: { countRetries: number; maxRetries: number, priority: 0 }) {
+    return module.require('../services/session_storage/activity').withSessionStorageActivity(phone, () => this.consumeSession(phone, data, options))
+  }
+
+  private async consumeSession(phone: string, data: object, options?: { countRetries: number; maxRetries: number, priority: 0 }) {
     const config = await this.getConfig(phone)
     if (config.server !== UNOAPI_SERVER_NAME) {
       logger.info(`Ignore listener routing key ${phone} server ${config.server} is not server current server ${UNOAPI_SERVER_NAME}...`)

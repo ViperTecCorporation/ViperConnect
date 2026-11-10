@@ -80,8 +80,11 @@ export class MobileBackupTasks {
 }
 
 export async function createMobileBackupTasks() {
-  const { getRedis } = await import('../redis.js')
-  const { createMobileBackupService } = await import('./backup_runtime.js')
-  const { MobileDeviceService } = await import('../mobile_device_service.js')
-  return new MobileBackupTasks({ redis: await getRedis(), exists: id => new MobileDeviceService().get(id), export: async (id, body) => (await createMobileBackupService()).export(id, body) })
+  const { getRedis } = module.require('../redis.js') as typeof import('../redis')
+  const { createMobileBackupService } = module.require('./backup_runtime.js') as typeof import('./backup_runtime')
+  const { MobileDeviceService } = module.require('../mobile_device_service.js') as typeof import('../mobile_device_service')
+  return new MobileBackupTasks({ redis: await getRedis(), exists: async id => {
+    await new MobileDeviceService().get(id)
+    await (await createMobileBackupService()).assertExportable(id)
+  }, export: async (id, body) => (await createMobileBackupService()).export(id, body) })
 }

@@ -9,6 +9,8 @@ import { managerIdentity } from '../manager_identity'
 import { unoIdKey, messageStatusKey } from '../redis'
 import { normalizeContactPhoneNumber } from '../zapo/zapo_contact_phone'
 import { cachedMessageGroups, cachedMessageSenderNames } from './session_message_names'
+import { isSqliteSession, isStorageWorker, storageOwner } from '../session_storage/routing'
+import { sessionStorageRpc } from '../session_storage/rpc'
 
 export const authorizedSessionMessages = async (token: string, phone: string, load: getConfig) => {
   if (!token || !/^\d{8,15}$/.test(phone)) return false
@@ -57,6 +59,11 @@ export class SessionMessages {
   }
 
   async conversations(phone: string, query: MessageQuery) {
+    const config = await this.loadConfig(phone)
+    if (isSqliteSession(config)) {
+      if (isStorageWorker() && config.sessionStorage!.owner === storageOwner()) return new (await import('../session_storage/sqlite_queries.js')).SqliteSessionQueries(phone, config).conversations(query)
+      return sessionStorageRpc<any>(phone, config, 'query.conversations', [query])
+    }
     const index = await this.index(phone)
     const ready = await index.ensure(phone)
     const limit = messagePageLimit(query.limit, 30)
@@ -104,6 +111,11 @@ export class SessionMessages {
   }
 
   async messages(phone: string, conversationId: string, query: MessageQuery) {
+    const config = await this.loadConfig(phone)
+    if (isSqliteSession(config)) {
+      if (isStorageWorker() && config.sessionStorage!.owner === storageOwner()) return new (await import('../session_storage/sqlite_queries.js')).SqliteSessionQueries(phone, config).messages(conversationId, query)
+      return sessionStorageRpc<any>(phone, config, 'query.messages', [conversationId, query])
+    }
     if (!conversationJid(conversationId)) throw new SendError(400, 'invalid_conversation_id')
     const index = await this.index(phone)
     const limit = messagePageLimit(query.limit, 50)

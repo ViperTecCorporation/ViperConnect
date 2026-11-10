@@ -55,6 +55,29 @@ também não garante que o processamento esteja avançando.
 parar, os trabalhos aguardam; não há transferência automática para o broker.
 No modo `broker`, o próprio broker consome as duas etapas de vídeo.
 
+Os trabalhos de vídeo releem a configuração antes de acessar mídia e antes
+de publicar a próxima etapa. Sessões sintéticas/fixtures não baixam arquivos,
+acessam S3 ou executam conversão; a recusa terminal segue para `.dead`, sem
+retentativas de preparação. Uma migração ou restauração em andamento continua
+sendo uma falha temporária sujeita à política de retentativas. Recusas da
+barreira de armazenamento não geram status de mídia falsamente enviados.
+
+### Configuração por comandos de template
+
+O comando `unoapi-config` aceita um objeto YAML com campos públicos da configuração
+da sessão. Ele não permite alterar o motor, o servidor/worker responsável, o backend
+ou o descritor de armazenamento, os caminhos dos stores, nem os marcadores internos
+de conexão, transferência ou ciclo de vida do dispositivo principal. Esses ajustes
+devem passar pelos fluxos específicos do painel e da API, incluindo a migração de
+armazenamento em [Armazenamento por sessão](/guide/session-storage).
+
+Se o objeto contiver qualquer campo protegido, o comando inteiro falha com
+`commander_config_protected_fields`, antes de salvar a configuração ou publicar
+uma recarga. Um valor raiz que não seja objeto falha com `commander_config_invalid`.
+Para preservar o comportamento existente, valores públicos `false`, `null`, `0` e
+texto vazio continuam sem efeito nesse comando; não use esse caminho para limpar
+ou desativar uma opção. Os comandos de lotes e de webhooks mantêm seus contratos.
+
 ## Filas ativas, de espera e de falhas
 
 | Variante | Significado | Interpretação operacional |
@@ -122,6 +145,23 @@ nessas filas de mensagens.
 O painel requer o token administrativo global. Tokens de sessão não administram filas.
 O backend utiliza `AMQP_URL`; `RABBITMQ_MANAGEMENT_URL` permite definir um endereço
 alternativo para a API de gerenciamento. Não exponha credenciais no navegador.
+
+No painel **Redis**, as famílias internas `unoapi-config:`,
+`unoapi-session-storage:` e `unoapi-lease:` são somente leitura, inclusive em
+operações sobre seus prefixos. A visualização contém apenas metadados seguros;
+tokens, credenciais de backup/S3 e tokens de lease não são expostos. Use as telas
+oficiais de Sessões e Armazenamento para configurar, migrar ou restaurar uma
+sessão. A interface também oculta os controles de alteração quando uma resposta
+antiga não inclui `readOnly`. Isso não torna todas as chaves históricas de dados
+Redis somente leitura nem substitui as confirmações para exclusões permitidas.
+
+Quando `CONTACT_SYNC_ENABLED=true`, o agendador de contatos no processo web
+descobre as sessões pelo catálogo compartilhado. Sessões SQLite são consultadas
+por páginas no worker dono, incluindo contatos nativos e cópias preservadas,
+com expiração e deduplicação por telefone conhecido. Não se converte um LID
+opaco em telefone. Sessões Redis mantêm a leitura de dados do próprio backend;
+locks, marcadores pendentes e prazos de agendamento continuam no Redis. O fluxo
+periódico e o fluxo pendente compartilham a mesma reserva por sessão.
 
 - **Prontas (`messages_ready`)**: itens ainda não entregues a um consumidor. Em uma
   `.delayed`, podem estar apenas aguardando o prazo.

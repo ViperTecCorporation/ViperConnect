@@ -10,6 +10,7 @@ type Pending = { id: string; to: string; text: string; file?: File; reply?: stri
 
 export class SessionMessagesPanel {
   private phone = ''
+  private fixture = false
   private revision = 0
   private node?: HTMLElement
   private socket?: ChatSocket
@@ -91,8 +92,9 @@ export class SessionMessagesPanel {
     this.pictures?.forEach(url => URL.revokeObjectURL(url)); this.pictures?.clear(); this.pictureAttempts?.clear()
     this.changed.clear(); this.changedConversations.clear(); this.contactResults = []; this.contactSearch = ''; this.reloadList = false; this.live = false
   }
-  async open(phone: string) {
+  async open(phone: string, fixture = false) {
     this.close(); this.phone = phone; this.selected = ''; this.search = ''; this.kind = 'all'; this.draft = ''; this.error = ''; this.cursor = null; this.historyCursor = null; this.reply = undefined
+    this.fixture = fixture
     this.mount()
     const factory = window.io as unknown as ((url: string, options: object) => ChatSocket) | undefined
     if (factory) {
@@ -269,6 +271,7 @@ export class SessionMessagesPanel {
       if (pending) await this.send(pending)
     }
     if (action === 'media') {
+      if (this.fixture) throw new Error('Dados de teste – download de mídia bloqueado.')
       const id = button.dataset.id || ''; const revision = this.revision
       button.textContent = 'Carregando…'; button.setAttribute('disabled', '')
       try {
@@ -281,6 +284,7 @@ export class SessionMessagesPanel {
     }
   }
   private async send(retry?: Pending) {
+    if (this.fixture) throw new Error('Dados de teste – conexão/envios bloqueados.')
     if (!this.selected || this.pending.some(item => item.state === 'sending')) return
     if (!retry && this.pending.length >= 20) throw new Error('Aguarde os envios pendentes antes de enviar mais mensagens.')
     const item: Pending = retry || { id: `pending-${Date.now()}`, to: this.selected, text: this.draft, file: this.file, reply: this.reply?.reply_id || this.reply?.id, state: 'sending' }
@@ -336,7 +340,7 @@ export class SessionMessagesPanel {
         </div>
         ${this.selected ? `<div class="message-composer">${this.reply ? `<div class="message-composer__context">Respondendo: ${escapeHtml(this.reply.text.slice(0, 100))}<button class="btn btn--icon" data-chat="cancel-reply" aria-label="Cancelar resposta">${icon('close')}</button></div>` : ''}
           ${this.file ? `<div class="message-composer__context">${this.preview ? this.file.type.startsWith('image/') ? `<img src="${escapeHtml(this.preview)}" alt="Prévia do anexo">` : this.file.type.startsWith('video/') ? `<video src="${escapeHtml(this.preview)}" controls playsinline preload="metadata" aria-label="Prévia do vídeo"></video>` : `<audio src="${escapeHtml(this.preview)}" controls preload="metadata" aria-label="Prévia do áudio"></audio>` : ''}<span>${escapeHtml(this.file.name)} · ${(this.file.size / 1048576).toFixed(1)} MiB</span><button class="btn btn--icon" data-chat="cancel-file" aria-label="Remover anexo">${icon('close')}</button></div>` : ''}
-          <div class="message-composer__row"><label class="btn btn--icon" title="Anexar arquivo">${icon('plus')}<input type="file" data-chat-input="file" hidden></label><textarea data-chat-input="draft" maxlength="16000" rows="2" placeholder="Escreva uma mensagem" aria-label="Mensagem">${escapeHtml(this.draft)}</textarea><button class="btn btn--primary" data-chat="send" ${this.pending.some(item => item.state === 'sending') ? 'disabled' : ''}>${icon('send')}Enviar</button></div></div>` : ''}
+          ${this.fixture ? '<p role="alert">Dados de teste – conexão/envios bloqueados.</p>' : ''}<div class="message-composer__row"><label class="btn btn--icon" title="Anexar arquivo">${icon('plus')}<input type="file" data-chat-input="file" hidden ${this.fixture ? 'disabled' : ''}></label><textarea data-chat-input="draft" maxlength="16000" rows="2" placeholder="Escreva uma mensagem" aria-label="Mensagem" ${this.fixture ? 'disabled' : ''}>${escapeHtml(this.draft)}</textarea><button class="btn btn--primary" data-chat="send" ${this.fixture || this.pending.some(item => item.state === 'sending') ? 'disabled' : ''}>${icon('send')}Enviar</button></div></div>` : ''}
       </main>`
     const next = this.node.querySelector<HTMLElement>('.message-history')
     if (next) next.scrollTop = scroll === 'bottom' || (scroll === 'keep' && atBottom) ? next.scrollHeight : scroll === 'older' ? previousTop + next.scrollHeight - previousHeight : previousTop

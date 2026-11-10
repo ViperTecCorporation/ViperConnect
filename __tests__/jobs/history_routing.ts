@@ -1,5 +1,5 @@
 jest.mock('../../src/amqp', () => ({ amqpPublish: jest.fn() }))
-jest.mock('../../src/services/redis', () => ({ getConfig: jest.fn(async () => ({ provider: 'zapo' })) }))
+jest.mock('../../src/services/redis', () => ({ getConfig: jest.fn(async () => ({ provider: 'zapo', webhooks: [webhook] })) }))
 import { amqpPublish } from '../../src/amqp'
 import { ListenerAmqp } from '../../src/services/listener_amqp'
 import { ListenerJob } from '../../src/jobs/listener'
@@ -8,9 +8,10 @@ import { OutgoingJob } from '../../src/jobs/outgoing'
 import { isHistoryQueue, withHistoryQueue } from '../../src/services/history_queue_context'
 import { packWaMessage, unpackWaMessage } from '../../src/services/wa_message_envelope'
 import { UNOAPI_QUEUE_HISTORY_OUTGOING, UNOAPI_SERVER_NAME } from '../../src/defaults'
+import { defaultConfig } from '../../src/services/config'
 
 const phone = '5566999999999'
-const webhook = { id: 'test', url: 'https://example.test/webhook', enabled: true, sendTranscribeAudio: true }
+const webhook = { ...defaultConfig.webhooks[0], id: 'test', url: 'https://example.test/webhook', urlAbsolute: '', enabled: true, sendTranscribeAudio: true }
 const config = jest.fn().mockResolvedValue({ provider: 'zapo', server: UNOAPI_SERVER_NAME, webhooks: [webhook] })
 const message = { key: { id: 'id', remoteJid: '123@lid', fromMe: false }, message: { conversation: 'hello' } }
 const payload = { entry: [{ changes: [{ value: { messages: [{ id: 'id', from: '551234567890', type: 'text', text: { body: 'hello' } }] } }] }] }

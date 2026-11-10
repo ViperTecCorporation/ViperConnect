@@ -122,6 +122,24 @@ WhatsApp aceite o pedido.
 
 ## Limites de backup e restauração de sessões vinculadas
 
+**Compatibilidade atual:** o fluxo manual Redis usa Zapo **1.11.0** com
+`@zapo-js/store-redis` **1.3.0**. Importadores aceitam arquivos produzidos em
+1.9.0 e 1.11.0, preservando a verificação de identidade, escopo, TTL e integridade;
+não aceitam versões ou schemas desconhecidos apenas por terem extensão correta.
+Os formatos `.viperdevice` e `.vipersession` continuam criptografados por senha.
+
+**Sessões SQLite:** use **Armazenamento da sessão** e o arquivo `.viperstorage`,
+gerado no worker proprietário. O painel oferece esse caminho em vez de exportar
+chaves Redis antigas; o endpoint legado devolve 409 com
+`mobile_backup_sqlite_requires_session_storage_endpoint` ou
+`session_backup_sqlite_requires_session_storage_endpoint` antes de suspender ou
+reservar a tarefa. Renomear `.viperstorage` não torna seu conteúdo importável como
+backup Redis. Não há fallback nem conversão automática para Redis. A nova rotina
+SQLite é sem criptografia, separada destes formatos manuais: mantenha o bucket
+privado. Leia [armazenamento por sessão](/guide/session-storage) para restauração
+offline, inclusive recovery sem catálogo. Esse backup não autoriza a remoção
+legada após transferência.
+
 **Diagnóstico do dispositivo principal:** erros de backup e restore mostram o
 status HTTP e o código estável da API, mesmo quando a mensagem é traduzida.
 A restauração não mostra avisos de download. Consulte `MOBILE_BACKUP_TRANSFER_FAILED`
@@ -270,3 +288,22 @@ Para uma conta WhatsApp comum, use `--android` em vez de `--smb-android`:
 o override será `ANDROID`, não Business. As flags são mutuamente exclusivas.
 Reinicie o teste e leia um novo QR após remover o vínculo anterior; os demais
 campos do handshake continuam inalterados, inclusive a versão Web experimental.
+
+## Admin local também na porta 9876
+
+O overlay opcional `compose.lab.admin-port.yml` adiciona
+`http://127.0.0.1:9876` ao mesmo serviço web do laboratório, preservando o acesso
+pela porta 19876. Não inicia outra stack nem troca Redis, worker ou volumes.
+Na raiz do repositório, com o ambiente privado já configurado:
+
+```powershell
+docker --context desktop-linux compose --project-name viperconnect-mobile-lab --env-file "$env:LOCALAPPDATA/ViperConnect/mobile-primary.env" -f compose.lab.yml -f compose.lab.admin-port.yml up -d --no-deps --no-build web
+```
+
+Se utilizar outros overlays para o web, mantenha-os também no comando. Somente
+o web é recriado; uma migração no worker não é reiniciada. A publicação continua
+restrita ao computador local, sem liberar LAN/Internet ou alterar autenticação.
+O modo sintético e os bloqueios de conexão/envio das cópias de produção são
+preservados. Nas próximas recriações do web, inclua novamente esse overlay
+para manter o alias 9876. Isso não substitui a validação da migração SQLite;
+consulte [armazenamento por sessão](/guide/session-storage).

@@ -27,6 +27,8 @@ if operation == 'remove' and ARGV[6] == 'remove_assignment' then
   end
 end
 if operation == 'save_config' then
+  -- Validate optimistic concurrency before ANY config/index/event mutation.
+  if ARGV[8] == 'cas' and (rawConfig or '') ~= ARGV[9] then return 0 end
   local isNew = not rawConfig
   rawConfig = ARGV[6]
   -- Parse before writing so malformed input never leaves a half-created config.
@@ -150,13 +152,14 @@ export class SessionWebhookStore {
     })
   }
 
-  async saveConfig(phone: string, config: unknown, ttl: number): Promise<void> {
+  async saveConfig(phone: string, config: unknown, ttl: number, expectedRaw?: string | null): Promise<boolean> {
     const event = sessionEvent(phone, 'unavailable')
     const { destinations, states, outbox, heartbeat } = SESSION_WEBHOOK_KEYS
-    await (await this.redis()).eval(SESSION_EVENT_LUA, {
+    const saved = await (await this.redis()).eval(SESSION_EVENT_LUA, {
       keys: [destinations, states, outbox, heartbeat, configKey(phone), sessionPhoneIndexKey()],
-      arguments: ['save_config', phone, JSON.stringify(event), '', `${Date.parse(event.occurred_at)}`, JSON.stringify(config), `${ttl}`],
+      arguments: ['save_config', phone, JSON.stringify(event), '', `${Date.parse(event.occurred_at)}`, JSON.stringify(config), `${ttl}`, expectedRaw === undefined ? '' : 'cas', expectedRaw || ''],
     })
+    return Number(saved) === 1
   }
 
   async pending(cursor = 0): Promise<{ cursor: number; entries: { id: string; delivery: SessionWebhookDelivery }[] }> {

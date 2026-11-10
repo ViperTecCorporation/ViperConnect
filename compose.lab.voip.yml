@@ -3,6 +3,8 @@ x-voice-client: &voice-client
   VOIP_SERVICE_URL: http://voip:3097
   VOIP_BRIDGE_URL: ws://voip:3097/v1/bridge/zapo
   VOIP_SERVICE_TOKEN: ${LAB_VOIP_SERVICE_TOKEN:?Importe o ambiente VoIP}
+  VOIP_BACKUP_INSTANCE_ID: ${LAB_VOIP_BACKUP_INSTANCE_ID:-mobile-lab-voip}
+  VOIP_BACKUP_ENABLED: ${LAB_VOIP_BACKUP_ENABLED:-true}
 
 services:
   web:
@@ -20,7 +22,9 @@ services:
       VOIP_SERVICE_TOKEN: ${LAB_VOIP_SERVICE_TOKEN}
       VOIP_BRIDGE_TOKEN: ${LAB_VOIP_BRIDGE_TOKEN}
       # Dedicated VoIP event delivery; same existing broker, no extra service.
-      AMQP_URL: ${LAB_VOIP_AMQP_URL:-}
+      AMQP_URL: &voice-amqp amqp://lab:${LAB_RABBIT_PASSWORD:?Configure o ambiente do laboratório}@rabbitmq:5672
+      # Compatibility with the older lab image; both names use the LAB broker.
+      VOIP_AMQP_URL: *voice-amqp
       NODE_EXTRA_CA_CERTS: /home/u/app/data/dev-webhook/server.crt
       VOIP_DOMAIN: "localhost"
       VOIP_LAN_DOMAIN: ${VOIP_LAN_HOST_IP:-127.0.0.1}

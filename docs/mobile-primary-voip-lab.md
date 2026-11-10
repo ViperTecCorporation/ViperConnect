@@ -3,9 +3,10 @@
 ## Escopo
 
 O overlay `compose.lab.voip.yml` adiciona VoIP e coturn ao Docker Desktop local.
-Não modifica a VPS nem o motor de chamadas do worker. As imagens são as mesmas
-da VPS, fixadas pelo digest capturado na importação. O serviço VoIP usa a imagem
-integrada da versão 4.0.32, sem hostpatch.
+Não modifica a VPS nem o motor de chamadas do worker. As imagens vêm do arquivo
+privado de ambiente: a importação inicial fixa o digest da origem; uma imagem
+experimental local também pode ser selecionada em `LAB_VOIP_IMAGE`. Recriar os
+serviços não atualiza essa imagem automaticamente.
 
 As credenciais autorizadas de API, bridge e TURN são reaproveitadas. Banco VoIP,
 ramais, gravações e roteamento ficam no volume novo
@@ -23,23 +24,44 @@ API e bridge porque o worker atual usa o mesmo token nos dois contratos.
 `lab/lab.ps1` detecta esse arquivo ao lado de `mobile-primary.env` e inclui o
 overlay automaticamente. Use `./lab/lab.ps1 up`, `status` e `voip-smoke`.
 
+Ao recriar `web` ou `worker-zapo`, mantenha o overlay VoIP: sem ele o painel
+perde a URL da telefonia e o worker deixa de abrir a bridge, mesmo com o
+container VoIP saudável. O launcher também inclui os overlays locais de porta
+administrativa e ferramentas de storage, quando presentes, preservando a porta
+9876 e os backups Redis do laboratório. Não remova volumes ao recriar serviços.
+
+O VoIP usa o mesmo RabbitMQ **local** dos demais serviços. O overlay fornece
+`AMQP_URL` e o alias legado `VOIP_AMQP_URL` com o mesmo endereço e credencial
+do laboratório, sem importar o broker de produção. O alias atende à imagem
+experimental antiga, que registra `voip_amqp_url_required` se ele estiver vazio.
+Não basta o `/health` retornar 200: valide também a bridge autenticada e o
+transporte de eventos nos logs. Nenhuma dessas verificações comprova áudio real.
+O `voip-smoke` resolve o módulo WebRTC nos layouts antigo e atual da imagem e
+usa `coturn:3478` dentro da rede Docker quando a URL do navegador é loopback.
+Essa tradução fica somente no teste; não altera a URL entregue ao navegador.
+
 O painel consulta `http://voip:3097` internamente. O worker conecta em
 `ws://voip:3097/v1/bridge/zapo`, com autenticação obrigatória. Linhas e ramais
 automáticos são provisionados quando a bridge da sessão aparece online.
 
 | Uso | Endereço/porta local |
 | --- | --- |
-| Console e WebSocket SIP | `192.168.0.112:3097`, caminho `/sip/ws` |
-| SIP tradicional | `192.168.0.112:5060/UDP` |
+| Console e WebSocket SIP | `127.0.0.1:3097`, caminho `/sip/ws` |
+| SIP tradicional | `<VOIP_LAN_HOST_IP>:5060/UDP` |
 | Áudio SIP | `12000–12063/UDP` |
 | WebRTC | `13001–13064/UDP` |
-| STUN/TURN autenticado | `192.168.0.112:3478/UDP` e TCP |
+| STUN/TURN autenticado | `127.0.0.1:3478/UDP` e TCP |
 | Relay TURN | `14001–14064/UDP` |
 
 As faixas de mídia foram reduzidas para o laboratório. Não são uma validação de
-capacidade para produção. Os endereços pressupõem que o computador mantenha o IP
-`192.168.0.112`; ao mudar o IP, atualize binds e endereços anunciados juntos.
-As portas não são publicadas em todas as interfaces do host.
+capacidade para produção. Para testes no próprio computador, use
+`VOIP_LAN_HOST_IP=127.0.0.1` (padrão), inclusive no servidor SIP do cliente local.
+Isso independe da troca entre Wi-Fi e cabo. Para um ramal em outro aparelho,
+configure o IPv4 LAN atual do computador; loopback não funciona nesse cenário.
+Os binds internos continuam `0.0.0.0` para receber as portas publicadas pelo
+Docker, e a comunicação entre serviços continua pelos nomes `voip`/`coturn`.
+SIP e RTP são publicados nas interfaces do host; console,
+WebRTC e TURN ficam em loopback no modelo atual. Isso não habilita TURN remoto.
 
 **Acesso remoto não está configurado.** O domínio HTTPS do painel não torna o
 SIP, TURN ou áudio acessíveis pela internet. Um cliente web HTTPS também não deve
@@ -107,6 +129,26 @@ Essa validação é do cenário testado; não representa implantação na VPS.
 O perfil `wa_business` está coberto por teste automatizado; a chamada real com
 essa combinação ainda precisa ser validada. Para rollback, restaure a política
 anterior e recompile/recrie somente o worker, sem remover volumes ou credenciais.
+
+## Migração do armazenamento com telefonia
+
+A migração manual de uma sessão Zapo para SQLite recusa a operação com
+`409 session_storage_active_calls` se houver chamada iniciando, tocando,
+conectando, ativa ou aguardando outra chamada. Também recusa enquanto uma
+oferta recebida ou comando de chamada já aceito ainda estiver em processamento.
+Não encerra a ligação, não desconecta o WhatsApp e preserva o áudio existente;
+encerre a chamada normalmente e solicite a migração novamente.
+
+Sem chamadas pendentes, o plugin fecha a admissão antes de desconectar. Novos
+comandos são recusados com `session_storage_operation_in_progress`; ofertas
+recebidas nessa janela recebem confirmação e rejeição, sem criar mídia. Se a
+pausa falhar antes da desconexão, a admissão e os eventos são reabertos. Um
+worker com plugin antigo, sem essa proteção, recusa a migração com
+`session_storage_voip_gate_required` até ser atualizado.
+
+O laboratório cobre essas disputas com testes sintéticos do plugin compilado,
+bridge e store SQLite real, com transporte/criptografia de chamada simulados.
+Isso não substitui a validação de uma chamada real após migrar a sessão.
 
 ## Desativação sem perda de dados
 

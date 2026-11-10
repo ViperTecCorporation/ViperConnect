@@ -9,7 +9,8 @@ jest.mock('../../src/services/transcription_reference', () => ({ saveTranscripti
 jest.mock('../../src/utils/media_to_buffer', () => ({ __esModule: true, default: jest.fn(async () => ({ buffer: Buffer.from('audio'), link: 'test.ogg', mimeType: 'audio/ogg' })) }))
 jest.mock('fs', () => ({ ...jest.requireActual('fs'), writeFileSync: jest.fn(), rmSync: jest.fn(), mkdirSync: jest.fn() }))
 jest.mock('openai', () => ({ __esModule: true, default: jest.fn(), toFile: jest.fn(async () => new Blob(['audio'])) }))
-jest.mock('../../src/services/logger', () => ({ __esModule: true, default: { debug: jest.fn(), warn: jest.fn(), error: jest.fn() } }))
+jest.mock('../../src/services/logger', () => ({ __esModule: true, default: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() } }))
+jest.mock('../../src/services/redis', () => ({ getConfig: jest.fn(async () => ({ webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription', sendTranscribeAudio: true }] })) }))
 
 import Audio2TextJS from 'audio2textjs'
 import OpenAI from 'openai'
@@ -67,7 +68,7 @@ describe('external transcription only', () => {
 
   it('skips before downloading audio when no external provider is configured', async () => {
     const { service, job } = makeJob()
-    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(service.sendHttp).not.toHaveBeenCalled()
     expect(mediaToBuffer).not.toHaveBeenCalled()
     expect(Audio2TextJS).not.toHaveBeenCalled()
@@ -75,13 +76,13 @@ describe('external transcription only', () => {
   it('does not fall back locally on OpenAI failure', async () => {
     create.mockRejectedValue(new Error('provider failed'))
     const { service, job } = makeJob({ openaiApiKey: 'test' })
-    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(service.sendHttp).not.toHaveBeenCalled()
     expect(Audio2TextJS).not.toHaveBeenCalled()
   })
   it('preserves OpenAI transcription delivery', async () => {
     const { service, job } = makeJob({ openaiApiKey: 'test' })
-    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(service.sendHttp).toHaveBeenCalledTimes(1)
     expect(service.sendHttp.mock.calls[0][2].entry[0].changes[0].value.messages[0].text.body).toBe('Olá mundo.')
     expect(saveTranscriptionReference).toHaveBeenCalledWith('5511999999999', '5511888888888', 'audio-id')
@@ -91,20 +92,20 @@ describe('external transcription only', () => {
     const { service, job } = makeJob({ openaiApiKey: 'test' })
     const input = payload()
     ;(saveTranscriptionReference as jest.Mock).mockRejectedValueOnce(new Error('redis offline'))
-    await job.consume('5511999999999', { payload: input, webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: input, webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(service.sendHttp).not.toHaveBeenCalled()
     expect(input.entry[0].changes[0].value.messages[0].type).toBe('audio')
   })
   it.each([undefined, '', '   '])('does not send an empty transcription %p', async text => {
     create.mockResolvedValue({ text })
     const { service, job } = makeJob({ openaiApiKey: 'test' })
-    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(service.sendHttp).not.toHaveBeenCalled()
   })
   it.each([false, true])('Groq failure uses OpenAI only when configured: %s', async hasOpenAI => {
     jest.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 503, statusText: 'Unavailable', text: async () => '' } as Response)
     const { service, job } = makeJob({ groqApiKey: 'test', ...(hasOpenAI ? { openaiApiKey: 'test' } : {}) })
-    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(create).toHaveBeenCalledTimes(hasOpenAI ? 1 : 0)
     expect(service.sendHttp).toHaveBeenCalledTimes(hasOpenAI ? 1 : 0)
     expect(Audio2TextJS).not.toHaveBeenCalled()
@@ -112,7 +113,7 @@ describe('external transcription only', () => {
   it('preserves Groq as preferred provider', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ text: 'Groq text' }) } as Response)
     const { service, job } = makeJob({ groqApiKey: 'test', openaiApiKey: 'test' })
-    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default' }] })
+    await job.consume('5511999999999', { payload: payload(), webhooks: [{ id: 'default', urlAbsolute: 'https://example.test/transcription' }] })
     expect(service.sendHttp).toHaveBeenCalledTimes(1)
     expect(create).not.toHaveBeenCalled()
     expect(Audio2TextJS).not.toHaveBeenCalled()

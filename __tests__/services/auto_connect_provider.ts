@@ -5,6 +5,15 @@ import type { Listener } from '../../src/services/listener'
 import type { SessionStore } from '../../src/services/session_store'
 
 describe('autoConnect provider isolation', () => {
+  test.each(['suspended-qr', 'migrating', 'restoring', 'fixture'])('does not construct an offline or protected session placeholder (%s)', async state => {
+    const sessionStore = mockDeep<SessionStore>(); sessionStore.getPhones.mockResolvedValue(['synthetic'])
+    const getClient = jest.fn(), config: any = { ...defaultConfig, provider: 'zapo', autoConnect: state !== 'suspended-qr',
+      sessionStorage: { backend: 'sqlite', storageId: 'synthetic', owner: 'server_1', generation: 1,
+        state: state === 'migrating' || state === 'restoring' ? state : 'offline', fixture: state === 'fixture' } }
+    await autoConnect(sessionStore, mockDeep<Listener>(), async () => config, getClient, jest.fn(), 'zapo')
+    expect(getClient).not.toHaveBeenCalled()
+    if (state !== 'suspended-qr') expect(sessionStore.syncConnection).not.toHaveBeenCalled()
+  })
   test('does not construct a suspended primary on worker startup', async () => {
     const sessionStore = mockDeep<SessionStore>()
     sessionStore.getPhones.mockResolvedValue(['mobile'])

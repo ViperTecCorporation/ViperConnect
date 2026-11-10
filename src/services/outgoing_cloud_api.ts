@@ -1,4 +1,5 @@
 import { Outgoing } from './outgoing'
+import { SendError } from './send_error'
 import { createHash } from 'crypto'
 import fetch, { Response, RequestInit } from 'node-fetch'
 import { Webhook, getConfig, isWebhookEnabled } from './config'
@@ -35,35 +36,40 @@ const mapStatusMediaTypeToCloud = (rawType?: string, mimeType?: string) => {
   return undefined
 }
 
-const adaptStatusReplyMediaForChatwoot = (message: any) => {
+export const adaptStatusReplyMediaForChatwoot = (message: any, phone: string) => {
   try {
     const value = message?.entry?.[0]?.changes?.[0]?.value
     if (!Array.isArray(value?.messages) || !value.messages.length) return message
     const patched: any[] = []
     for (const original of value.messages) {
-      patched.push(original)
       const contextStatus = original?.context?.status
       const media = contextStatus?.media
       const mediaUrl = `${media?.url || ''}`.trim()
       const originalType = `${original?.type || ''}`.trim()
-      if (!mediaUrl || originalType !== 'text') continue
+      if (!mediaUrl || originalType !== 'text') { patched.push(original); continue }
       const cloudType = mapStatusMediaTypeToCloud(contextStatus?.type, media?.mime_type)
-      if (!cloudType) continue
+      if (!cloudType || !contextStatus?.id || !original?.id) { patched.push(original); continue }
       const mediaMessage: any = JSON.parse(JSON.stringify(original))
-      const baseId = `${original?.id || contextStatus?.id || ''}`.trim()
-      mediaMessage.id = baseId ? `${baseId}-status-media` : `${Date.now()}-status-media`
+      // A status is shared across chats, but each chat needs its own quoted bubble.
+      mediaMessage.id = `status-media-${createHash('sha256').update(JSON.stringify([
+        phone, contextStatus.id, original.from_user_id || original.from, original.group_id || '',
+      ])).digest('hex')}`
       mediaMessage.type = cloudType
-      const replyText = `${original?.text?.body || ''}`.trim()
       const mediaPayload: any = {
         id: `${contextStatus?.id || mediaMessage.id || ''}`.trim(),
         url: mediaUrl,
       }
-      if (replyText) mediaPayload.caption = replyText
+      mediaPayload.caption = `Status publicado por você${contextStatus.caption ? ` — ${contextStatus.caption}` : ''}`
       if (media?.mime_type) mediaPayload.mime_type = `${media.mime_type}`
       if (media?.file_name) mediaPayload.filename = `${media.file_name}`
       mediaMessage[cloudType] = mediaPayload
       try { delete mediaMessage.text } catch {}
+      delete mediaMessage.context
+      delete mediaMessage.provider_message_id
       patched.push(mediaMessage)
+      original.context = { ...original.context, id: mediaMessage.id, message_id: mediaMessage.id }
+      delete original.context.provider_message_id
+      patched.push(original)
     }
     value.messages = patched
   } catch (e) {
@@ -231,7 +237,8 @@ export class OutgoingCloudApi implements Outgoing {
     await Promise.all(promises)
   }
 
-  public async sendHttp(phone: string, webhook: Webhook, message: any, _options: Partial<PublishOption> = {}) {
+  public async sendHttp(phone: string, webhook: Webhook, message: any, _options: Partial<PublishOption> = {}, statusMediaPrepared = false) {
+    if (process.env.UNOAPI_STORAGE_SYNTHETIC_ONLY === 'true') throw new SendError(409, 'session_storage_fixture_external_effects_forbidden')
     if (!isWebhookEnabled(webhook)) {
       logger.info(`Session phone %s webhook %s configured as disabled`, phone, webhook?.id || '<none>')
       return
@@ -313,8 +320,18 @@ export class OutgoingCloudApi implements Outgoing {
       logger.info(`Session phone %s webhook %s configured to not send incoming message for this webhook`, phone, webhook.id)
       return
     }
-    if (isChatwootWebhook(webhook)) {
-      message = adaptStatusReplyMediaForChatwoot(message)
+    if (isChatwootWebhook(webhook) && !statusMediaPrepared) {
+      message = adaptStatusReplyMediaForChatwoot(message, phone)
+      const messages = message?.entry?.[0]?.changes?.[0]?.value?.messages
+      if (messages?.some((item: any) => `${item.id || ''}`.startsWith('status-media-'))) {
+        // Chatwoot consumes messages.first. Deliver the parent before its reply.
+        for (const item of messages) {
+          const single = JSON.parse(JSON.stringify(message))
+          single.entry[0].changes[0].value.messages = [item]
+          await this.sendHttp(phone, webhook, single, _options, true)
+        }
+        return
+      }
     }
     const v: any = (message as any)?.entry?.[0]?.changes?.[0]?.value || {}
     // Keep Cloud API phone fields phone-only. LID/BSUID must travel in user_id/from_user_id.

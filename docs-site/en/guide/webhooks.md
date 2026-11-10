@@ -1,5 +1,68 @@
 # Webhooks
 
+## Status replies with media context
+
+For Zapo sessions, incoming replies to the session's own image/video status
+attempt media recovery before webhook delivery. The worker reuses stored media
+or downloads through the active Zapo client and persists it in configured
+storage. No WhatsApp message is sent and the status is not modified.
+Ownership accepts a phone JID or LID. A LID is checked only against the native
+contact record stored in the same Zapo session: its associated phone must match
+the session phone. Unknown/foreign LIDs are rejected; lookup failures do not
+block the reply. No WhatsApp network lookup is performed for this check.
+
+The original reply retains its text, identity and ID. Its `context.status`
+contains `id`, `type`, `available`, `caption` and, when recovered, `media.url`,
+`media.mime_type` and `media.file_name`. For Chatwoot/ViperChat destinations
+recognized by the existing adapter, two sequential POSTs carry one message each:
+
+1. Status image/video labeled “Status publicado por você”, with a stable
+   `status-media-<hash>` ID scoped to session, status and contact/conversation.
+2. The original reply, with `context.id` and `context.message_id` referencing
+   that synthetic parent. The parent does not quote or repeat the reply.
+
+The existing receiver can render this using its quote/reply support; no
+ViperChat change is required. Other webhooks receive only the enriched reply.
+Existing credentials, filters and webhook/media authentication are unchanged.
+
+Retries and further replies to the same status in the same chat reuse the
+parent ID; receivers must deduplicate by ID. HTTP 2xx confirms acceptance, not
+the processing order of the receiver's internal jobs. HTTP failures use normal
+delivery retries without generating fresh IDs.
+
+Missing/expired media or recovery failures do not block the reply: context has
+`available=false` and no media bubble is emitted. View-once/protected ephemeral
+content and third-party statuses are not recovered. Recovery depends on an
+active client and quote/store data still being available. No historical chat
+replay occurs automatically. Both worker and delivery adapter need updating;
+local changes do not deploy this behavior to production.
+
+## Canceling queued deliveries
+
+Removing or disabling a session message webhook prevents pending deliveries
+when updated consumers process them. Before fan-out and dispatch to HTTP/CB,
+the worker reads persisted Redis configuration directly and checks the ID,
+effective URL and enabled state. Removed, disabled or replaced bindings finish
+with ACK, without HTTP, retries or dead-letter publication. Changing a URL
+does not redirect old events to its replacement.
+
+Valid bindings use current credentials, timeouts and filters. Newly added
+destinations do not receive older queued fan-outs. An explicit `webhooks: []`
+does not revive the environment default; legacy sessions without the property
+still inherit environment configuration.
+
+This applies to live and history queues, including retries. Transcription also
+checks `sendTranscribeAudio` before downloading/processing audio and again after
+processing, before publishing the result. Redis read failures remain retryable
+errors, not evidence of removal. Drop logs include the session, ID and a
+classified reason, never the URL, token or message contents.
+
+Limits: already started HTTP or AI requests cannot be canceled. Existing dead
+letters/quarantined items are not deleted. Separate session-lifecycle and VoIP
+webhooks are unchanged. Removing then recreating the same ID and URL before
+the next read is not distinguishable. No route or permission is added; source
+publication alone does not deploy this behavior to production.
+
 ## Forwarded messages
 
 When the current message received through Zapo carries

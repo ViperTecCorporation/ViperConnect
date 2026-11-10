@@ -26,6 +26,8 @@ import { SessionPhoneIndex } from './session_phone_index'
 import { sessionEvent, sessionWebhookStore } from './session_webhook_store'
 import { messageIsExpired, messageRetentionMs, messageTimestampMs, SET_RETAINED_MESSAGE_LUA } from './messages/message_retention'
 import { setRetainedMessageStatus } from './messages/message_status_retention'
+import { assertSafeSessionConfigPatch } from './session_storage/config_patch'
+import { SendError } from './send_error'
 
 const {
   signalPurgeDeviceListEnabled: SIGNAL_PURGE_DEVICE_LIST_ENABLED,
@@ -545,6 +547,8 @@ const ensureConnectCountSub = async () => {
 }
 
 export const redisGet = async (key: string) => {
+  const redirected = await module.require('./session_storage/compat_redirect').routeCompatibilityValue(key, 'get', client || await getRedis())
+  if (redirected.handled) return redirected.value
   logger.trace(`Getting ${key}`)
   try {
     return client.get(key)
@@ -597,6 +601,8 @@ export const redisTtl = async (key: string) => {
 }
 
 const redisDel = async (key: string) => {
+  const redirected = await module.require('./session_storage/compat_redirect').routeCompatibilityValue(key, 'delete', client || await getRedis())
+  if (redirected.handled) return redirected.value
   logger.trace(`Deleting ${key}`)
   try {
     return client.del(key)
@@ -613,6 +619,8 @@ const redisDel = async (key: string) => {
 export const redisDelKey = async (key: string) => redisDel(key)
 
 export const redisKeys = async (pattern: string) => {
+  const redirected = await module.require('./session_storage/compat_redirect').routeCompatibilityValue(pattern, 'keys', client || await getRedis())
+  if (redirected.handled) return redirected.value
   logger.trace(`Keys ${pattern}`)
   try {
     return await client.keys(pattern)
@@ -628,6 +636,8 @@ export const redisKeys = async (pattern: string) => {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const redisSet = async function (key: string, value: any) {
+  const redirected = await module.require('./session_storage/compat_redirect').routeCompatibilityValue(key, 'set', client || await getRedis(), String(value), -1)
+  if (redirected.handled) return redirected.value
   logger.trace(`Setting ${key} => ${(value + '').substring(0, 10)}...`)
   try {
     return client.set(key, value)
@@ -643,6 +653,8 @@ const redisSet = async function (key: string, value: any) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const redisSetAndExpire = async function (key: string, value: any, ttl: number) {
+  const redirected = await module.require('./session_storage/compat_redirect').routeCompatibilityValue(key, 'set', client || await getRedis(), String(value), ttl)
+  if (redirected.handled) return redirected.value
   logger.trace(`Setting ttl: ${ttl} ${key} -> ${(value + '').substring(0, 10)}...`)
   if (ttl < 0) {
     return redisSet(key, value)
@@ -1240,7 +1252,9 @@ export const getMessageStatus = async (phone: string, id: string) => {
 }
 
 export const setMessageStatus = async (phone: string, id: string, status: string) => {
-  const redis = await getRedis()
+  const state = /^[1-9]\d{7,14}$/.test(phone) ? await module.require('./session_storage/private_state').getSessionPrivateState(phone) : await getRedis()
+  if (typeof state.retainedStatusSet === 'function') return state.retainedStatusSet(messageStatusKey(phone, id), status)
+  const redis = typeof state.evalPreservingArity === 'function' ? { mGet: state.mGet, eval: state.evalPreservingArity } : state
   const configuredPrefix = ZAPO_REDIS_KEY_PREFIX?.trim()
   const nativePrefix = !configuredPrefix || configuredPrefix === 'unoapi-zapo:' ? 'unoapi:zapo:' : configuredPrefix
   await setRetainedMessageStatus(redis, phone, id, status, { ttlMs: DATA_TTL * 1000, nativeTtlMs: ZAPO_REDIS_MESSAGES_TTL_MS, nativePrefix })
@@ -1301,17 +1315,22 @@ export const addAuthTokensToIndex = async (tokens: string[]) => {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const setConfig = async (phone: string, value: any) => {
-  // Resuming the origin invalidates the previous migration checkpoint.
-  if (value?.autoConnect === true) await client.del(`mobile-primary:{v1}:backup-completed:${phone}`)
-  if (value?.autoConnect === true) await client.del(`session-transfer:{v1}:completed:${phone}`)
-  const currentConfig = await getConfig(phone)
-  if (value?.autoConnect === true && currentConfig?.sessionTransferDeleting) throw new Error('session_transfer_deletion_in_progress')
+export const setConfig = async (phone: string, value: any, options: { expectedAbsent?: boolean; expectedExisting?: boolean; expectedConfig?: any } = {}) => {
+  const patch = { ...value }
+  let baseline: { config: any } | undefined
+  for (let attempt = 0; attempt < 5; attempt++) {
+  const raw = await redisGet(configKey(phone)), currentConfig = raw ? JSON.parse(raw) : undefined
+  if (options.expectedAbsent && raw) throw new SendError(409, 'session_storage_configuration_changed')
+  if (options.expectedExisting && !raw) throw new SendError(409, 'session_storage_registration_required')
+  if (options.expectedConfig) assertSafeSessionConfigPatch(currentConfig, patch, { config: options.expectedConfig, strict: true })
+  assertSafeSessionConfigPatch(currentConfig, patch, baseline)
+  baseline ||= { config: currentConfig }
+  if (patch?.autoConnect === true && currentConfig?.sessionTransferDeleting) throw new Error('session_transfer_deletion_in_progress')
   const currentWebhooks: Webhook[] = currentConfig && currentConfig.webhooks || []
-  const newWebhooks: Webhook[] = value && value.webhooks || []
+  const newWebhooks: Webhook[] = patch && patch.webhooks || []
   const updatedWebooks: Webhook[] = []
-  const baseWebhook = value.overrideWebhooks || currentWebhooks.length == 0 ? newWebhooks : currentWebhooks
-  const searchWebhooks = value.overrideWebhooks ? currentWebhooks : newWebhooks
+  const baseWebhook = patch.overrideWebhooks || currentWebhooks.length == 0 ? newWebhooks : currentWebhooks
+  const searchWebhooks = patch.overrideWebhooks ? currentWebhooks : newWebhooks
   baseWebhook.forEach(n => {
     const c = searchWebhooks.find((c) => c.id === n.id)
     if (c) {
@@ -1320,18 +1339,18 @@ export const setConfig = async (phone: string, value: any) => {
       updatedWebooks.push(n)
     }
   })
-  value.webhooks = updatedWebooks
-  const config = { ...currentConfig, ...value }
-  if (currentConfig && JSON.stringify(currentWebhooks) !== JSON.stringify(updatedWebooks)) {
-    webhookHistory.capture(phone, currentConfig, 'updated')
-  }
+  const config = { ...currentConfig, ...patch, webhooks: updatedWebooks }
   delete (config as any).oneToOneAddressingMode
   // Enforce per-session storage flags to avoid false overrides via templates/UI
   // Since this setter persists to Redis, sessions using Redis must have useRedis/useS3 true
   try { (config as any).useRedis = true } catch {}
   try { (config as any).useS3 = true } catch {}
   delete config.overrideWebhooks
-  await sessionWebhookStore.saveConfig(phone, config, SESSION_TTL)
+  if (!await sessionWebhookStore.saveConfig(phone, config, SESSION_TTL, raw || null)) continue
+  if (currentConfig && JSON.stringify(currentWebhooks) !== JSON.stringify(updatedWebooks)) webhookHistory.capture(phone, currentConfig, 'updated')
+  // These checkpoints belong to the successful resume, never to a rejected CAS.
+  if (patch?.autoConnect === true) await client.del(`mobile-primary:{v1}:backup-completed:${phone}`)
+  if (patch?.autoConnect === true) await client.del(`session-transfer:{v1}:completed:${phone}`)
   try {
     const oldToken = (currentConfig as any)?.authToken
     const newToken = (config as any)?.authToken
@@ -1358,6 +1377,8 @@ export const setConfig = async (phone: string, value: any) => {
   } catch (e) { logger.debug(e as any, 'ignore setBusinessAccountIdMapping error') }
   configs.delete(phone)
   return config
+  }
+  throw new SendError(409, 'session_storage_configuration_changed')
 }
 
 export const delConfig = async (phone: string, removeAssignment = false) => {

@@ -16,6 +16,8 @@ import {
 } from './transformer'
 import { resolveUnoMessageId } from './message_id_map'
 import { addProviderMessageIds } from './messages/provider_message_identity'
+import { StatusReplyMedia } from './messages/status_reply_media'
+import { sessionContacts } from './session_storage/contacts_gateway'
 import { getPollState, setPollState } from './redis'
 import {
   normalizePollAggregateState,
@@ -50,6 +52,7 @@ const STATUS_RANK: Record<string, number> = {
  */
 export class ListenerZapo implements Listener {
   private readonly seen = new Map<string, number>()
+  private readonly statusReplyMedia = new StatusReplyMedia()
 
   constructor(
     private readonly outgoing: Outgoing,
@@ -292,6 +295,12 @@ export class ListenerZapo implements Listener {
     const [payload] = fromBaileysMessageContent(phone, normalized, config)
     if (!payload || !(await this.shouldForwardStatus(store, payload))) return
     addProviderMessageIds(payload, identities)
+    const statusContext = await this.statusReplyMedia.resolve(phone, normalized, store, this.messageMetadata,
+      async lid => (await sessionContacts(phone, config).getByJid(lid))?.phoneNumber)
+    const webhookMessage = payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]
+    if (statusContext && webhookMessage) {
+      webhookMessage.context = { ...webhookMessage.context, status: statusContext }
+    }
     if (messageType === 'pollUpdateMessage') await this.enrichPollUpdate(phone, store, normalized, payload)
     if (skipTypebot) (payload as any).__unoapiSkipTypebot = true
     await this.outgoing.send(phone, payload)

@@ -1,8 +1,15 @@
 import { Request, Response } from 'express'
 import { BASE_KEY, redisKeys, redisGet, getPnForLid, getLidForPn } from '../services/redis'
 import { JIDMAP_LIST_ENABLED } from '../defaults'
+import { SendError } from '../services/send_error'
+import { SessionStorageError } from '../services/session_storage/types'
 
 const isDigits = (s?: string) => typeof s === 'string' && /^\d+$/.test(s)
+const unavailable = (res: Response, error: unknown) => {
+  const status = error instanceof SessionStorageError ? error.status : error instanceof SendError ? error.code : 503
+  const code = error instanceof SessionStorageError ? error.code : error instanceof SendError ? error.title : ''
+  return res.status(status >= 400 && status <= 599 ? status : 503).json({ error: /^session_storage_[a-z_]+$/.test(code) ? code : 'jidmap_unavailable' })
+}
 
 export class JidMapController {
   // GET /:version/:phone/jidmap
@@ -26,36 +33,28 @@ export class JidMapController {
       // New schema
       const keysPn = await redisKeys(`${base}pn_for_lid:*`)
       for (const k of keysPn) {
-        try {
-          const lid = k.substring((`${base}pn_for_lid:`).length)
-          const pn = await redisGet(k)
-          if (lid && pn) out.pn_for_lid.push({ lid, pn })
-        } catch {}
+        const lid = k.substring((`${base}pn_for_lid:`).length)
+        const pn = await redisGet(k)
+        if (lid && pn) out.pn_for_lid.push({ lid, pn })
       }
       const keysLid = await redisKeys(`${base}lid_for_pn:*`)
       for (const k of keysLid) {
-        try {
-          const pn = k.substring((`${base}lid_for_pn:`).length)
-          const lid = await redisGet(k)
-          if (lid && pn) out.lid_for_pn.push({ pn, lid })
-        } catch {}
+        const pn = k.substring((`${base}lid_for_pn:`).length)
+        const lid = await redisGet(k)
+        if (lid && pn) out.lid_for_pn.push({ pn, lid })
       }
       // Backward-compat schema
       const keysOldPn = await redisKeys(`${base}pn:*`)
       for (const k of keysOldPn) {
-        try {
-          const lid = k.substring((`${base}pn:`).length)
-          const pn = await redisGet(k)
-          if (lid && pn && !out.pn_for_lid.find((e) => e.lid === lid)) out.pn_for_lid.push({ lid, pn })
-        } catch {}
+        const lid = k.substring((`${base}pn:`).length)
+        const pn = await redisGet(k)
+        if (lid && pn && !out.pn_for_lid.find((e) => e.lid === lid)) out.pn_for_lid.push({ lid, pn })
       }
       const keysOldLid = await redisKeys(`${base}lid:*`)
       for (const k of keysOldLid) {
-        try {
-          const pn = k.substring((`${base}lid:`).length)
-          const lid = await redisGet(k)
-          if (lid && pn && !out.lid_for_pn.find((e) => e.pn === pn)) out.lid_for_pn.push({ pn, lid })
-        } catch {}
+        const pn = k.substring((`${base}lid:`).length)
+        const lid = await redisGet(k)
+        if (lid && pn && !out.lid_for_pn.find((e) => e.pn === pn)) out.lid_for_pn.push({ pn, lid })
       }
       // Filtering by side & query substring
       const filterPair = (a: string, b: string) => (q ? (a.includes(q) || b.includes(q)) : true)
@@ -71,7 +70,7 @@ export class JidMapController {
       const lpPage = slice(lp)
       return res.json({ session, scope, side: side || 'all', q, page: { limit, offset, total }, mappings: { pn_for_lid: pfPage, lid_for_pn: lpPage } })
     } catch (e) {
-      return res.status(500).json({ error: (e as any)?.message || 'internal_error' })
+      return unavailable(res, e)
     }
   }
 
@@ -93,7 +92,7 @@ export class JidMapController {
       }
       return res.json({ session, pn, lid })
     } catch (e) {
-      return res.status(500).json({ error: (e as any)?.message || 'internal_error' })
+      return unavailable(res, e)
     }
   }
 }

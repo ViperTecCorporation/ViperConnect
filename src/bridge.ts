@@ -61,6 +61,11 @@ const startBrigde = async () => {
   }
 
   logger.info('Unoapi Cloud version %s starting bridge...', version)
+  await (await import('./services/session_storage/rpc.js')).startSessionStorageConsumer()
+  await (await import('./services/session_storage/runtime.js')).startStorageBackupScheduler()
+  ;(await import('./services/voip_backups.js')).startVoipBackupScheduler()
+  await (await import('./services/session_storage/redis_backup_runtime.js')).startRedisGlobalBackupRoutine()
+  await (await import('./services/session_storage/coordinator_maintenance.js')).startStorageMaintenanceCoordinator()
   await bindJob.startHistory()
   if (workerEngine === 'zapo') await (await import('./services/mobile_primary/companion_history_runtime.js')).startCompanionHistoryConsumer()
 

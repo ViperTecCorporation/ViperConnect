@@ -11,6 +11,11 @@ import {
 } from '../../defaults'
 import { registerZapoStatePreparation } from './zapo_persistent_state'
 import { decorateMessageBackend } from '../messages/session_message_index'
+import { decorateSqliteBackend, sqliteZapoHistoryReader } from '../session_storage/native_backend'
+import { publishSqliteMessageChange } from '../session_storage/change_events'
+import { SessionDatabase, openSessionDatabase, type SqliteSessionConfig } from '../session_storage/database'
+import { sqliteSdkConnection } from '../session_storage/native_migration'
+import { registerZapoHistoryReader } from './zapo_history'
 
 const persistentDomains = (backend: string) => ({
   auth: backend,
@@ -70,11 +75,14 @@ export type ZapoStoreConfig = {
   baseStore: string
   redisUrl?: string
   redisKeyPrefix?: string
+  sqlitePath?: string
+  sqliteSession?: { phone: string; config: SqliteSessionConfig }
 }
 
 export const createZapoStore = (config: ZapoStoreConfig): WaStore => {
   const backendName = config.useRedis ? 'redis' : 'sqlite'
   let backend: WaStoreBackend
+  let ownedSqlite: SessionDatabase | undefined
   let redisBackend: ReturnType<typeof createRedisStore> | undefined
   if (config.useRedis) {
     if (!config.redisUrl) throw new Error('REDIS_URL is required for the Zapo Redis store')
@@ -91,9 +99,16 @@ export const createZapoStore = (config: ZapoStoreConfig): WaStore => {
       ? decorateMessageBackend(redisBackend, redisBackend.redis, resolveZapoRedisKeyPrefix(config.redisKeyPrefix))
       : redisBackend
   } else {
-    const path = zapoSqlitePath(config.baseStore)
+    const path = config.sqlitePath || zapoSqlitePath(config.baseStore)
     mkdirSync(dirname(path), { recursive: true })
-    backend = createSqliteStore({ path, driver: 'auto' })
+    const database = config.sqliteSession
+      ? () => openSessionDatabase(config.sqliteSession!.phone, config.sqliteSession!.config)
+      : () => ownedSqlite ||= new SessionDatabase(path)
+    // Public caller-owned connection API. The SDK does not open its bundled
+    // better-sqlite3 engine; Uno and Zapo share the patched Node SQLite cache.
+    database()
+    backend = createSqliteStore({ connection: sqliteSdkConnection(database) })
+    if (config.sqliteSession) backend = decorateSqliteBackend(backend, config.sqliteSession.phone, config.sqliteSession.config, publishSqliteMessageChange)
   }
 
   const store = createStore({
@@ -102,5 +117,18 @@ export const createZapoStore = (config: ZapoStoreConfig): WaStore => {
     cacheProviders: cacheDomains(backendName),
   })
   if (redisBackend) registerZapoStatePreparation(store, redisBackend.redis, resolveZapoRedisKeyPrefix(config.redisKeyPrefix))
+  if (config.sqliteSession) {
+    const session = store.session.bind(store), { phone, config: selected } = config.sqliteSession
+    const read = sqliteZapoHistoryReader(phone, selected)
+    store.session = id => {
+      const result = session(id)
+      if (id === phone) registerZapoHistoryReader(result, read)
+      return result
+    }
+  }
+  if (ownedSqlite) {
+    const destroy = store.destroy.bind(store)
+    store.destroy = async () => { try { await destroy() } finally { ownedSqlite?.close() } }
+  }
   return store
 }

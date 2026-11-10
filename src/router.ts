@@ -5,6 +5,9 @@ import { Outgoing } from './services/outgoing'
 import { getConfig } from './services/config'
 import middleware from './services/middleware'
 import { SessionStore } from './services/session_store'
+import { sessionStorageRouter } from './controllers/session_storage_controller'
+import { storageRestoreRouter } from './controllers/storage_restore_controller'
+import { sessionStorageGateway } from './services/session_storage/gateway'
 import injectRoute from './services/inject_route'
 import injectRouteDummy from './services/inject_route_dummy'
 import { indexController } from './controllers/index_controller'
@@ -44,6 +47,7 @@ import { QueuesController } from './controllers/queues_controller'
 import { RedisAdminController } from './controllers/redis_admin_controller'
 import { ContactBookIncoming } from './services/contacts/contact_book_incoming'
 import { VoipController } from './controllers/voip_controller'
+import { voipBackupRouter } from './controllers/voip_backup_controller'
 import { ProfilePictureController } from './controllers/profile_picture_controller'
 import { SessionWebhooksController } from './controllers/session_webhooks_controller'
 import { WebhookHistoryController } from './controllers/webhook_history_controller'
@@ -76,7 +80,10 @@ export const router = (
   router.use(apiErrorLocalization)
   router.use('/manager/mobile-devices', mobileDeviceRouter())
   router.use('/manager/session-transfers', sessionTransferRouter())
+  router.use('/manager/storage', storageRestoreRouter())
+  router.use('/manager/voip-backups', voipBackupRouter())
   router.use('/manager', managerRouter())
+  router.use('/:version', sessionStorageRouter(sessionStorageGateway))
   router.use(managerAccess())
   installSessionMessageSocket(socket, getConfig)
   const sessionMessages = new SessionMessagesController(new SessionMessages(getConfig), getConfig)
@@ -112,7 +119,7 @@ export const router = (
   const embeddedController = new EmbeddedController()
   const passkeyBridgeController = new PasskeyBridgeController(getConfig)
   const pairingCodeController = new PairingCodeController(incoming)
-  const connectController = new ConnectController(reload)
+  const connectController = new ConnectController(reload, getConfig)
   const timerController = new TimerController()
   const queuesController = new QueuesController()
   const redisAdminController = new RedisAdminController()

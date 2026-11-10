@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { getRedis } from './redis'
+import { getSessionPrivateState } from './session_storage/private_state'
 
 export const transcriptionId = (phone: string, conversation: string, audioId: string) => {
   if (!phone || !conversation || !audioId) throw new Error('transcription_reference_required')
@@ -12,7 +13,7 @@ const referenceKey = (phone: string, id: string) => `unoapi-transcription-refere
 
 export const saveTranscriptionReference = async (phone: string, conversation: string, audioId: string) => {
   const id = transcriptionId(phone, conversation, audioId)
-  const redis = await getRedis()
+  const redis = /^[1-9]\d{7,14}$/.test(phone) ? await getSessionPrivateState(phone) : await getRedis()
   // SET without expiry also removes any previous TTL. References survive reconnects.
   await redis.set(referenceKey(phone, id), JSON.stringify({ conversation, audioId }))
   return id
@@ -20,7 +21,7 @@ export const saveTranscriptionReference = async (phone: string, conversation: st
 
 export const loadTranscriptionReference = async (phone: string, id: string): Promise<string | undefined> => {
   if (!id.startsWith('uno-transcription:')) return undefined
-  const redis = await getRedis()
+  const redis = /^[1-9]\d{7,14}$/.test(phone) ? await getSessionPrivateState(phone) : await getRedis()
   const raw = await redis.get(referenceKey(phone, id))
   if (!raw) return undefined
   const value = JSON.parse(raw)

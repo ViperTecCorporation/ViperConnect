@@ -17,6 +17,7 @@ import type { WaCallManager } from '../call/WaCallManager.js'
 import type { WaVoipDeps } from '../types.js'
 
 import { summarizeCallEnvelope } from './signaling-diagnostics.js'
+import { buildRejectStanza } from './signaling.js'
 
 const RECEIPT_CALL_TAGS = new Set([
     'offer',
@@ -84,7 +85,8 @@ export async function routeCallStanza(
     manager: WaCallManager,
     deps: WaVoipDeps,
     node: BinaryNode,
-    logger?: Logger
+    logger?: Logger,
+    allowOffers = true
 ): Promise<string | null> {
     const log = logger ?? createNoopLogger()
     const inner = getFirstNodeChild(node)
@@ -125,7 +127,12 @@ export async function routeCallStanza(
 
     switch (tag) {
         case 'offer':
-            await manager.handleCallOffer(node, normalizedPeerJid)
+            if (!allowOffers) {
+                const callId = inner.attrs?.['call-id']
+                if (callId) await deps.lowLevelCoordinator.sendNode(buildRejectStanza(
+                    peerJid, callId, inner.attrs?.['call-creator'] || normalizedPeerJid
+                ))
+            } else await manager.handleCallOffer(node, normalizedPeerJid)
             break
         case 'preaccept':
             await manager.handleCallPreaccept(node, normalizedPeerJid)

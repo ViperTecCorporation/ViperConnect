@@ -4,6 +4,8 @@ import {
   loadZapoHistoryMessages,
   normalizeHistoryMaxAgeDays,
   toUnoHistoryMessage,
+  consumeZapoHistoryBatches,
+  registerZapoHistoryReader,
 } from '../../src/services/zapo/zapo_history'
 
 describe('Zapo history', () => {
@@ -80,5 +82,28 @@ describe('Zapo history', () => {
 
     expect(messages.map((message) => message.key.id)).toEqual(['new'])
     expect(seen).toEqual(new Set(['already-seen']))
+  })
+
+  test('the official Redis-style timestamp traversal is unchanged while delivery callbacks stay at 200', async () => {
+    const store = mockDeep<WaStoreSession>(), now = Date.now(), sizes: number[] = []
+    const records = Array.from({ length: 1205 }, (_, i) => ({ id: `redis-${i}`, threadJid: '123@lid', fromMe: false, timestampMs: now - i - 1, messageBytes: proto.Message.encode({ conversation: 'synthetic' }).finish() }))
+    store.threads.list.mockResolvedValue([{ jid: '123@lid' }])
+    store.messages.listByThread.mockResolvedValueOnce(records.slice(0, 1000)).mockResolvedValueOnce(records.slice(1000))
+    const ids: string[] = []
+    expect(await consumeZapoHistoryBatches(store, 7, async batch => { sizes.push(batch.length); ids.push(...batch.map(message => message.key.id)) }, [], now)).toBe(1205)
+    expect(sizes).toEqual([200, 200, 200, 200, 200, 200, 5])
+    expect(ids).toEqual([...records].sort((left, right) => Math.floor(left.timestampMs / 1000) - Math.floor(right.timestampMs / 1000)).map(record => record.id))
+    expect(store.threads.list).toHaveBeenCalledWith(10000)
+    expect(store.messages.listByThread.mock.calls).toEqual([['123@lid', 1000, undefined], ['123@lid', 1000, records[999].timestampMs]])
+  })
+
+  test('internal oversized pages and non-advancing cursors are explicit errors, never truncation or infinite retry', async () => {
+    const store = mockDeep<WaStoreSession>(), now = Date.now(), consume = jest.fn()
+    const record = { id: 'same', threadJid: '123@lid', fromMe: false, timestampMs: now, messageBytes: proto.Message.encode({ conversation: 'synthetic' }).finish() }
+    registerZapoHistoryReader(store, async () => ({ records: Array(201).fill(record) }))
+    await expect(consumeZapoHistoryBatches(store, 7, consume, [], now)).rejects.toThrow('page_too_large')
+    expect(consume).not.toHaveBeenCalled()
+    registerZapoHistoryReader(store, async () => ({ records: [], next: { timestampMs: now, id: 'same' } }))
+    await expect(consumeZapoHistoryBatches(store, 7, consume, [], now)).rejects.toThrow('cursor_not_advancing')
   })
 })

@@ -1,0 +1,21 @@
+import { escapeHtml as e } from '../core/html.js'
+
+export interface StorageBackupFile { id: string; createdAt: string; bytes?: number; kind?: string; protection?: string }
+export interface StorageBackupFiles { latest?: StorageBackupFile; slots: Array<StorageBackupFile & { day: number }> }
+const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i
+const file = (value: any): StorageBackupFile | undefined => value && uuid.test(value.id || '') && typeof value.createdAt === 'string'
+  ? { id: value.id, createdAt: value.createdAt, ...(Number.isSafeInteger(value.bytes) && value.bytes >= 0 ? { bytes: value.bytes } : {}), ...(typeof value.kind === 'string' ? { kind: value.kind } : {}), ...(typeof value.protection === 'string' ? { protection: value.protection } : {}) } : undefined
+export function normalizeStorageBackupFiles(value: any): StorageBackupFiles {
+  const latest = file(value?.latest), slots = new Map<number, StorageBackupFile & { day: number }>()
+  for (const raw of Array.isArray(value?.slots) ? value.slots.slice(0, 7) : []) {
+    const safe = file(raw)
+    if (safe && Number.isInteger(raw.day) && raw.day >= 0 && raw.day <= 6) slots.set(raw.day, { ...safe, day: raw.day })
+  }
+  return { ...(latest ? { latest } : {}), slots: [...slots.values()].sort((a, b) => a.day - b.day) }
+}
+export function renderStorageBackupFiles(phone: string, files?: StorageBackupFiles, busy = false): string {
+  if (!files) return ''
+  const days = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+  return files.slots.length ? `<div class="stack">${files.slots.map(slot => `<div class="storage-actions"><span>${days[slot.day]} · ${e(slot.createdAt)}</span><button type="button" class="btn btn--ghost btn--small" data-action="storage-download-backup" data-id="${e(phone)}" data-backup-id="${e(slot.id)}"${busy ? ' disabled' : ''}>Baixar .viperstorage</button></div>`).join('')}</div>` : '<p class="muted">Ainda não há backups nos dias da semana.</p>'
+}
+export const validStorageBackupId = (value: string) => uuid.test(value)

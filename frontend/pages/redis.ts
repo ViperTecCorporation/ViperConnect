@@ -6,7 +6,7 @@ import { sessionLabel, sessionPhone } from '../domain/session.js'
 import type { RedisKeyDetails, RedisTreeNode, SessionConfig } from '../domain/types.js'
 
 export const redisKeyIsReadOnly = (key: string): boolean =>
-  ['manager-identity:', 'unoapi-webhook-history:'].some(prefix => key.startsWith(prefix) || prefix.startsWith(key))
+  ['manager-identity:', 'unoapi-webhook-history:', 'unoapi-config:', 'unoapi-session-storage:', 'unoapi-lease:'].some(prefix => key.startsWith(prefix) || prefix.startsWith(key))
 
 export const redisTreeFromKeys = (keys: string[]): Record<string, RedisTreeNode[]> => {
   const tree: Record<string, RedisTreeNode[]> = { '': [] }
@@ -152,7 +152,7 @@ export const renderRedisPage = (options: RedisPageOptions): string => {
         <div class="redis-tree">${treeHtml || `<div class="empty-state">${options.loading ? t('Atualizando…') : t('Nenhuma chave encontrada.')}</div>`}</div>
         <div class="redis-detail">${options.selected ? `
           <div class="section__heading"><div><h2>${escapeHtml(options.selected.key)}</h2><p class="muted">${options.selected.type} · TTL ${options.selected.ttl} · ${formatNumber(options.selected.size)} ${t('itens')}</p></div><div class="actions">${options.selected.readOnly || redisKeyIsReadOnly(options.selected.key) ? '' : `${redisValueIsRedacted(options.selected.value) ? '' : `<button class="btn btn--ghost" type="button" data-action="edit-redis-key">${icon('edit')}${t('Editar')}</button>`}<button class="btn btn--danger btn--ghost" type="button" data-action="delete-redis-key">${icon('trash')}${t('Excluir')}</button>`}</div></div>
-          ${options.selected.readOnly || redisKeyIsReadOnly(options.selected.key) ? '<p class="hint">Somente leitura. Credenciais e campos sensíveis não são exibidos. Use as telas de Usuários ou Webhooks para gerenciar esses registros.</p>' : ''}
+          ${options.selected.readOnly || redisKeyIsReadOnly(options.selected.key) ? `<p class="hint">${t('Somente leitura. Credenciais e campos sensíveis não são exibidos. Use as telas oficiais de Sessões, Armazenamento, Usuários ou Webhooks para gerenciar esses registros.')}</p>` : ''}
           ${redisValueIsRedacted(options.selected.value) ? `<p class="hint">${t('A edição foi bloqueada porque o conteúdo possui campos sensíveis mascarados.')}</p>` : ''}
           ${options.selected.truncated ? `<p class="hint">${t('Conteúdo limitado aos primeiros itens para proteger o navegador.')}</p>` : ''}
           <pre>${escapeHtml(formattedValue(options.selected.value))}</pre>` : `<div class="empty-state">${t('Selecione uma chave na árvore para visualizar o conteúdo.')}</div>`}</div>

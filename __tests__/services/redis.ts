@@ -41,6 +41,7 @@ const mockClient: any = {
       const [operation, phone] = options.arguments
       const key = options.keys[4]
       if (operation === 'save_config') {
+        if (options.arguments[7] === 'cas' && (store.get(key) || '') !== options.arguments[8]) return 0
         store.set(key, options.arguments[5])
         addSetMembers(options.keys[5], phone)
       } else {
@@ -119,6 +120,7 @@ const mockClient: any = {
 jest.mock('@redis/client', () => ({
   createClient: jest.fn(() => mockClient),
 }))
+jest.mock('../../src/amqp', () => ({ amqpPublish: jest.fn().mockResolvedValue(undefined), amqpRpc: jest.fn(), amqpConsume: jest.fn() }))
 
 process.env.REDIS_URL = 'redis://mock'
 import { webhookHistory } from '../../src/services/webhook_history'
@@ -145,7 +147,65 @@ import {
   setMessage,
   getMessage,
   getMessageWithSecretAnySession,
+  getRedis,
+  getBulkReport,
 } from '../../src/services/redis'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { configs } from '../../src/services/config'
+import { openSessionDatabase, closeAllSessionDatabases } from '../../src/services/session_storage/database'
+import { getDataStoreSqlite } from '../../src/services/session_storage/data_store_sqlite'
+import { executeSessionStateCommands } from '../../src/services/session_storage/state_commands'
+import { executeCompatibilityValue } from '../../src/services/session_storage/compat_redirect'
+import * as storageRpc from '../../src/services/session_storage/rpc'
+import * as configuration from '../../src/services/config_redis'
+import { BulkSenderJob } from '../../src/jobs/bulk_sender'
+import { BulkStatusJob } from '../../src/jobs/bulk_status'
+
+describe('SQLite campaign statuses retain their report contract', () => {
+  test.each(['worker', 'broker'])('actual campaign scheduling and classification are visible in the report through %s ownership', async role => {
+    mockClient.__reset(); await getRedis()
+    const phone = '999123456789', oldEnvironment = { ...process.env }, directory = mkdtempSync(join(tmpdir(), 'viper-bulk-flow-test-'))
+    const previous = configs.get(phone)
+    process.env.UNOAPI_PROCESS_ROLE = role; process.env.UNOAPI_SERVER_NAME = 'bulk_owner'; delete process.env.UNOAPI_STORAGE_WORKER_ID; process.env.SESSION_STORAGE_ROOT = directory
+    const config: any = { provider: 'zapo', server: 'bulk_owner', useRedis: true, baseStore: directory,
+      sessionStorage: { backend: 'sqlite', storageId: randomUUID(), owner: 'bulk_owner', generation: 1, state: 'active', fixture: true } }
+    configs.set(phone, config); store.set(`unoapi-config:${phone}`, JSON.stringify(config))
+    const db = openSessionDatabase(phone, config, { create: true }), local = await getDataStoreSqlite(phone, config)
+    const configSpy = jest.spyOn(configuration, 'getConfigRedis').mockResolvedValue(config)
+    const rpcSpy = jest.spyOn(storageRpc, 'sessionStorageRpc').mockImplementation(async (_phone, selected, operation, args) => {
+      const oldRole = process.env.UNOAPI_PROCESS_ROLE; process.env.UNOAPI_PROCESS_ROLE = 'worker'
+      try {
+        if (operation === 'state.commands') return executeSessionStateCommands(phone, selected, args![0] as any) as any
+        if (operation === 'compat.get') return executeCompatibilityValue(phone, selected, 'get', args![0] as string) as any
+        throw Error('unexpected_bulk_rpc')
+      } finally { process.env.UNOAPI_PROCESS_ROLE = oldRole }
+    })
+    try {
+      await local.setUnoId('provider-campaign', 'uno-campaign')
+      await local.setKey('uno-campaign', { id: 'provider-campaign', remoteJid: '12345@lid', fromMe: true })
+      const deadline = Date.now() + 15000
+      db.putValue(`unoapi-message:${phone}:12345@lid:provider-campaign`, 'synthetic-copy', { expiresAt: deadline })
+      const incoming: any = { send: jest.fn().mockResolvedValue({ ok: { messages: [{ id: 'uno-campaign' }] } }) }
+      const outgoing: any = { formatAndSend: jest.fn().mockResolvedValue(undefined) }
+      await new BulkSenderJob(incoming, outgoing).consume(phone, { payload: { id: 'campaign-fixture', messages: [{ payload: { to: '12345', type: 'text', text: { body: 'Synthetic only' } } }], length: 1 } })
+      expect(incoming.send).toHaveBeenCalledTimes(1)
+      expect(await getBulkReport(phone, 'campaign-fixture')).toMatchObject({ report: { '12345': 'scheduled' }, status: { scheduled: 1 } })
+      expect(db.get('SELECT expires_at FROM uno_kv WHERE key=?', [`unoapi-message-status:${phone}:uno-campaign`])?.expires_at).toBeLessThanOrEqual(deadline)
+      await new BulkStatusJob().consume(phone, { payload: { entry: [{ changes: [{ value: { statuses: [{ id: 'uno-campaign', status: 'failed', errors: [{ code: 7 }] }] } }] }] } })
+      expect(await getBulkReport(phone, 'campaign-fixture')).toMatchObject({ report: { '12345': 'invalid-phone-number' }, status: { 'invalid-phone-number': 1 } })
+      expect(await local.loadStatus('provider-campaign')).toBe('invalid-phone-number')
+      expect(store.has(`unoapi-message-status:${phone}:uno-campaign`)).toBe(false)
+      if (role === 'broker') expect(rpcSpy).toHaveBeenCalled()
+      else expect(rpcSpy).not.toHaveBeenCalled()
+    } finally {
+      rpcSpy.mockRestore(); configSpy.mockRestore(); configs.delete(phone); if (previous) configs.set(phone, previous)
+      closeAllSessionDatabases(); rmSync(directory, { recursive: true, force: true }); process.env = oldEnvironment
+    }
+  })
+})
 
 describe('compatibility message age', () => {
   beforeEach(() => mockClient.__reset())
@@ -273,6 +333,92 @@ describe('redis session phone index writes', () => {
     await expect(getConfig(phone)).resolves.toEqual(expect.objectContaining({ provider: 'zapo' }))
     expect(mockClient.scan).not.toHaveBeenCalled()
     expect(mockClient.sMembers).not.toHaveBeenCalled()
+  })
+})
+
+describe('config compare-and-set storage fences', () => {
+  beforeEach(() => { mockClient.__reset() })
+  const phone = '9990100000781', key = `unoapi-config:${phone}`
+  const descriptor = { backend: 'sqlite', storageId: '12345678-1234-4234-8234-123456789abc', owner: 'server_1', generation: 1, state: 'offline' }
+  const injectOnSave = (update: (config: any) => any) => {
+    const realEval = mockClient.eval.getMockImplementation(); let changed = false
+    mockClient.eval.mockImplementation(async (script, options) => {
+      if (!changed && options.arguments[0] === 'save_config') { changed = true; store.set(key, JSON.stringify(update(JSON.parse(store.get(key)!)))) }
+      return realEval(script, options)
+    })
+    return () => mockClient.eval.mockImplementation(realEval)
+  }
+
+  test('retries a public patch against fresh config without erasing a just-committed SQLite descriptor', async () => {
+    await setConfig(phone, { provider: 'zapo', server: 'server_1', autoConnect: false })
+    const restore = injectOnSave(config => ({ ...config, sessionStorage: descriptor }))
+    try {
+      await setConfig(phone, { label: 'concurrent public edit' })
+      expect(await getConfig(phone)).toMatchObject({ label: 'concurrent public edit', sessionStorage: descriptor })
+    } finally { restore() }
+  })
+
+  test('a lifecycle patch cannot rebase across a concurrent provision/storage commit', async () => {
+    await setConfig(phone, { provider: 'zapo', server: 'server_1', autoConnect: false })
+    const restore = injectOnSave(config => ({ ...config, sessionStorage: descriptor }))
+    try {
+      await expect(setConfig(phone, { autoConnect: true })).rejects.toThrow('session_storage_configuration_changed')
+      expect(await getConfig(phone)).toMatchObject({ autoConnect: false, sessionStorage: descriptor })
+    } finally { restore() }
+  })
+
+  test('stale full configurations cannot replace the backend or generation before the first CAS', async () => {
+    store.set(key, JSON.stringify({ provider: 'zapo', server: 'server_1', sessionStorage: { ...descriptor, generation: 2 } }))
+    await expect(setConfig(phone, { sessionStorage: descriptor })).rejects.toThrow('session_storage_configuration_changed')
+    expect((await getConfig(phone)).sessionStorage.generation).toBe(2)
+  })
+
+  test('pending bootstrap cannot be enabled, cleared or replaced by a generic config setter', async () => {
+    const pending = { id: '12345678-1234-4234-8234-123456789abc', autoConnect: true }
+    store.set(key, JSON.stringify({ provider: 'zapo', server: 'server_1', autoConnect: false, sessionStorageProvisionPending: pending }))
+    await expect(setConfig(phone, { autoConnect: true })).rejects.toThrow('session_storage_provision_unconfirmed')
+    await expect(setConfig(phone, { sessionStorageProvisionPending: null })).rejects.toThrow('session_storage_configuration_changed')
+    await expect(setConfig(phone, { sessionStorageProvisionPending: { ...pending, id: 'another' } })).rejects.toThrow('session_storage_configuration_changed')
+    expect((await getConfig(phone)).sessionStorageProvisionPending).toEqual(pending)
+  })
+
+  test('initial-only creation cannot patch an already registered session', async () => {
+    await setConfig(phone, { provider: 'zapo', label: 'keep' })
+    await expect(setConfig(phone, { label: 'replace' }, { expectedAbsent: true })).rejects.toThrow('session_storage_configuration_changed')
+    expect((await getConfig(phone)).label).toBe('keep')
+  })
+
+  test('required-existing callbacks cannot recreate a lost config or cross the selected storage generation', async () => {
+    await expect(setConfig(phone, { authToken: 'synthetic' }, { expectedExisting: true })).rejects.toThrow('registration_required')
+    expect(await getConfig(phone)).toBeUndefined()
+    const previous = { provider: 'zapo', server: 'server_1', autoConnect: true, sessionStorage: descriptor }
+    store.set(key, JSON.stringify({ ...previous, autoConnect: false, sessionStorage: { ...descriptor, generation: 2 } }))
+    await expect(setConfig(phone, { authToken: 'synthetic' }, { expectedExisting: true, expectedConfig: previous })).rejects.toThrow('configuration_changed')
+    expect(await getConfig(phone)).toMatchObject({ autoConnect: false, sessionStorage: { generation: 2 } })
+    expect((await getConfig(phone)).authToken).toBeUndefined()
+  })
+
+  test('a retry never recreates a session removed concurrently with a public patch', async () => {
+    await setConfig(phone, { provider: 'zapo', label: 'old' })
+    const evaluate = mockClient.eval.getMockImplementation(); let removed = false
+    mockClient.eval.mockImplementation(async (script, options) => {
+      if (!removed && options.arguments[0] === 'save_config') { removed = true; store.delete(key) }
+      return evaluate(script, options)
+    })
+    try {
+      await expect(setConfig(phone, { label: 'stale edit' })).rejects.toThrow('session_storage_configuration_changed')
+      expect(await getConfig(phone)).toBeUndefined(); expect(store.has(key)).toBe(false)
+    } finally { mockClient.eval.mockImplementation(evaluate) }
+  })
+
+  test('CAS retry is bounded and a rejected webhook change is not archived as applied', async () => {
+    await setConfig(phone, { provider: 'zapo', webhooks: [{ id: 'a', url: 'https://example.test/a' }] })
+    const realEval = mockClient.eval.getMockImplementation(), capture = jest.spyOn(webhookHistory, 'capture').mockImplementation(() => {})
+    mockClient.eval.mockImplementation(async (script, options) => options.arguments[0] === 'save_config' ? 0 : realEval(script, options))
+    try {
+      await expect(setConfig(phone, { webhooks: [{ id: 'b', url: 'https://example.test/b' }], overrideWebhooks: true })).rejects.toThrow('session_storage_configuration_changed')
+      expect(capture).not.toHaveBeenCalled(); expect((await getConfig(phone)).webhooks[0].id).toBe('a')
+    } finally { mockClient.eval.mockImplementation(realEval); capture.mockRestore() }
   })
 })
 

@@ -9,6 +9,7 @@ import { setConfig } from '../services/redis'
 import { UNOAPI_QUEUE_BULK_REPORT } from '../defaults'
 import logger from '../services/logger'
 import { providerQueueName } from '../services/providers/provider_queue'
+import { commanderConfigPatch } from '../services/commander_config_policy'
 
 export class YamlParseError extends Error {
   readonly errors: YAMLError[]
@@ -101,16 +102,8 @@ export class CommanderJob {
         if (doc.errors.length) {
           throw new YamlParseError(doc.errors)
         }
-        const configParsed = doc.toJS() || {}
-        logger.debug('Config template parsed %s', phone, JSON.stringify(configParsed))
-        const keys = Object.keys(configParsed)
-        const configToUpdate = keys.reduce((acc, key) => {
-          if (configParsed[key]) {
-            acc[key] = configParsed[key]
-          }
-          return acc
-        }, {})
-        logger.debug('Config template to update %s', phone, JSON.stringify(configToUpdate))
+        const configToUpdate = commanderConfigPatch(doc.toJS())
+        logger.debug('Config template validated phone=%s fields=%s', phone, Object.keys(configToUpdate).length)
         await setConfig(phone, configToUpdate)
         await amqpPublish(
           UNOAPI_EXCHANGE_BROKER_NAME,

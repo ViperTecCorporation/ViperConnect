@@ -3,9 +3,10 @@ import type Redis from 'ioredis'
 import { MobileDeviceError } from '../mobile_device_service'
 import { backupRecordKey, BackupRecord, BackupMode } from '../mobile_primary/backup_manifest'
 import { AUTH_SUFFIXES, validateStreamRecord } from './stream_records'
+import { isBackupZapoVersion, type BackupZapoVersion } from '../mobile_primary/backup_compatibility'
 
 export interface StreamSessionMeta {
-  kind: 'linked-session'; version: 2; zapo: '1.9.0'; redisStore: '1.3.0'
+  kind: 'linked-session'; version: 2; zapo: BackupZapoVersion; redisStore: '1.3.0'
   phone: string; name: string; identityJid: string; mode: BackupMode; createdAt: string
 }
 /** Match only the BR mobile ninth-digit alias; keep the native JID unchanged. */
@@ -21,7 +22,7 @@ function matchesSessionIdentity(phone: string, identityJid: unknown): boolean {
 }
 export function validateStreamMeta(value: any): asserts value is StreamSessionMeta {
   if (!value || Object.keys(value).sort().join(',') !== 'createdAt,identityJid,kind,mode,name,phone,redisStore,version,zapo'
-    || value.kind !== 'linked-session' || value.version !== 2 || value.zapo !== '1.9.0' || value.redisStore !== '1.3.0'
+    || value.kind !== 'linked-session' || value.version !== 2 || !isBackupZapoVersion(value.zapo) || value.redisStore !== '1.3.0'
     || typeof value.phone !== 'string' || !/^[1-9]\d{7,14}$/.test(value.phone) || typeof value.name !== 'string' || value.name.length > 80
     || !matchesSessionIdentity(value.phone, value.identityJid)
     || !['credentials', 'complete'].includes(value.mode) || !Number.isFinite(Date.parse(value.createdAt))) throw new MobileDeviceError(400, 'session_backup_incompatible')

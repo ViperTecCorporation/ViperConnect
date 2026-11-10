@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.WaVoipCoordinator = void 0;
 const protocol_1 = require("zapo-js/protocol");
 const WaCallManager_js_1 = require("./call/WaCallManager.js");
+const call_admission_js_1 = require("./call/call-admission.js");
 const bridge_js_1 = require("./signaling/bridge.js");
 /**
  * WaClient-facing VOIP coordinator. Owns a {@link WaCallManager}, registers
@@ -15,6 +16,7 @@ class WaVoipCoordinator {
     deps;
     logger;
     unregisterHandlers = [];
+    admission = new call_admission_js_1.CallAdmission();
     constructor(ctx, options = {}) {
         this.deps = ctx.deps;
         this.logger = ctx.logger.child({ scope: '@zapo-js/voip' }, { level: options.logLevel });
@@ -35,14 +37,14 @@ class WaVoipCoordinator {
      * concurrent-call limit or if the offer fails to send.
      */
     async startCall(options) {
-        return this.manager.startCall(options);
+        return this.admission.run(() => this.manager.startCall(options));
     }
     /**
      * Accept a ringing incoming call. Throws if `callId` is unknown or not in
      * an acceptable state.
      */
     async acceptCall(callId) {
-        return this.manager.acceptCall(callId);
+        return this.admission.run(() => this.manager.acceptCall(callId));
     }
     /**
      * Reject a ringing incoming call, optionally with an {@link EndCallReason}
@@ -50,7 +52,7 @@ class WaVoipCoordinator {
      * down.
      */
     async rejectCall(callId, reason) {
-        return this.manager.rejectCall(callId, reason);
+        return this.admission.run(() => this.manager.rejectCall(callId, reason));
     }
     /**
      * End an active or connecting call, optionally with an {@link EndCallReason}
@@ -58,7 +60,7 @@ class WaVoipCoordinator {
      * call down. No-op if the call is unknown or already ended.
      */
     async endCall(callId, reason) {
-        return this.manager.endCall(callId, reason);
+        return this.admission.run(() => this.manager.endCall(callId, reason));
     }
     /**
      * Preload an audio file (decoded via ffmpeg) as the outbound audio for
@@ -67,10 +69,11 @@ class WaVoipCoordinator {
      * ffmpeg on PATH; throws if the file is missing or ffmpeg is unavailable.
      */
     async loadAudio(callId, audioPath) {
-        return this.manager.loadAudio(callId, audioPath);
+        return this.admission.run(() => this.manager.loadAudio(callId, audioPath));
     }
     /** Mute or unmute the local outbound audio for `callId`. */
     setMute(callId, muted) {
+        this.admission.assertOpen();
         this.manager.setMute(callId, muted);
     }
     /**
@@ -79,6 +82,7 @@ class WaVoipCoordinator {
      * instead of a preloaded file. Disable to return to preloaded playback.
      */
     setExternalAudioMode(callId, enabled) {
+        this.admission.assertOpen();
         this.manager.setExternalAudioMode(callId, enabled);
     }
     /**
@@ -119,6 +123,11 @@ class WaVoipCoordinator {
     getCalls() {
         return this.manager.getCalls();
     }
+    /** Atomically refuse migration if a call or accepted call operation exists.
+     * Returns rollback only; keep admission closed until disconnect on success. */
+    pauseForStorageMigration() {
+        return this.admission.pause(() => this.manager.getCalls().some(call => !call.isEnded));
+    }
     /**
      * Subscribe directly to a low-level {@link CallManagerEvents} event. Most
      * consumers should use the client-level `client.on('voip_*')` events
@@ -144,6 +153,7 @@ class WaVoipCoordinator {
      * system on client disconnect; not normally called directly.
      */
     dispose() {
+        this.admission.close();
         for (const unregister of this.unregisterHandlers.splice(0)) {
             unregister();
         }
@@ -154,7 +164,10 @@ class WaVoipCoordinator {
             tag: 'call',
             prepend: true,
             handler: async (node) => {
-                const tag = await (0, bridge_js_1.routeCallStanza)(this.manager, this.deps, node, this.logger);
+                const route = () => (0, bridge_js_1.routeCallStanza)(this.manager, this.deps, node, this.logger, !this.admission.isPaused());
+                // Closed admission still acknowledges/rejects fresh offers,
+                // without allocating a call or starting crypto/media work.
+                const tag = await (this.admission.isPaused() ? route() : this.admission.run(route));
                 return tag !== null;
             }
         }), ctx.registerIncomingHandler({
@@ -164,7 +177,8 @@ class WaVoipCoordinator {
                 if (node.attrs.class !== 'call') {
                     return false;
                 }
-                await (0, bridge_js_1.routeCallAck)(this.manager, node, this.logger);
+                if (!this.admission.isPaused())
+                    await this.admission.run(() => (0, bridge_js_1.routeCallAck)(this.manager, node, this.logger));
                 return true;
             }
         }), ctx.registerIncomingHandler({

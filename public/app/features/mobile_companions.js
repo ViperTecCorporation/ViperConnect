@@ -1,4 +1,4 @@
-import { escapeHtml } from '../core/html.js?v=4.0.41-0f2cc5a1';
+import { escapeHtml } from '../core/html.js?v=4.0.41-39b50dec';
 export function renderMobileCompanions(session, restricted) {
     if (!session.mobilePrimaryDraftId)
         return '';

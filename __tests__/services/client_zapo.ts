@@ -5,6 +5,9 @@ jest.mock('@vipertec/zapo-voip', () => ({
 jest.mock('@zapo-js/media-utils', () => ({
   createMediaProcessor: jest.fn().mockReturnValue({ process: jest.fn() }),
 }))
+jest.mock('../../src/services/session_lifecycle_observer', () => ({
+  SessionLifecycleObserver: jest.fn().mockImplementation(() => ({ observe: jest.fn(), stop: jest.fn() })),
+}))
 jest.mock('../../src/services/passkey_bridge', () => ({
   createPasskeyBridgeSession: jest.fn().mockResolvedValue({ status: 'request' }),
   updatePasskeyBridgeSession: jest.fn().mockResolvedValue({ status: 'response-sent' }),
@@ -35,6 +38,7 @@ import { voipPlugin } from '@vipertec/zapo-voip'
 import { zapoUsernameIndex } from '../../src/services/zapo/zapo_username_index'
 import { decryptZapoPollVoteWithJidFallback } from '../../src/services/zapo/zapo_poll_addon_decrypt'
 import { registerZapoStatePreparation } from '../../src/services/zapo/zapo_persistent_state'
+import { registerZapoHistoryReader } from '../../src/services/zapo/zapo_history'
 import logger from '../../src/services/logger'
 import * as proxyOptions from '../../src/services/zapo/zapo_proxy'
 
@@ -80,6 +84,7 @@ describe('ClientZapo', () => {
       return client
     }) as never)
     client.connect.mockResolvedValue(undefined)
+    ;(client.voip as any).pauseForStorageMigration = jest.fn(() => jest.fn())
     client.getState.mockReturnValue({ connected: true, registered: true, hasQr: false, hasPairingCode: false })
     client.message.send.mockResolvedValue({ id: 'zapo-message-1' } as never)
     client.profile.getLidsByPhoneNumbers.mockResolvedValue([
@@ -116,6 +121,93 @@ describe('ClientZapo', () => {
       await expect(service.recoverContactCrypto('123@lid')).rejects.toThrow('409: zapo_client_not_connected')
       expect(recover).not.toHaveBeenCalled()
     } finally { recover.mockRestore() }
+  })
+
+  test.each(['migrating', 'restoring', 'fixture'])('fresh connect rejects the actual %s config before loading any store', async (state) => {
+    config.sessionStorage = { backend: 'redis', storageId: '12345678-1234-4234-8234-123456789abc', owner: 'server_1', generation: 1,
+      state: state === 'restoring' ? 'restoring' : state === 'migrating' ? 'migrating' : 'offline', ...(state === 'fixture' ? { fixture: true } : {}) }
+    await expect(service.connect(1)).rejects.toThrow(state === 'fixture' ? 'external_effects_forbidden' : 'operation_in_progress')
+    expect(config.getStore).not.toHaveBeenCalled(); expect(client.connect).not.toHaveBeenCalled()
+  })
+
+  test('migration beginning while acquiring ownership fences socket construction', async () => {
+    config.useRedis = true; stubRedisOwnership()
+    ;(service as any).leaseFactory.mockReturnValue({ acquire: async () => {
+      config.sessionStorage = { backend: 'redis', storageId: '12345678-1234-4234-8234-123456789abc', owner: 'server_1', generation: 1, state: 'migrating' }
+      return true
+    }, renew: async () => true, release: async () => true })
+    await expect(service.connect(1)).rejects.toThrow('operation_in_progress')
+    expect((service as any).clientFactory).not.toHaveBeenCalled(); expect(client.connect).not.toHaveBeenCalled()
+  })
+
+  test('generation changing during client construction closes the unused client without connecting', async () => {
+    config.sessionStorage = { backend: 'redis', storageId: '12345678-1234-4234-8234-123456789abc', owner: 'server_1', generation: 1, state: 'active' }
+    ;(service as any).clientFactory.mockImplementation(() => { config.sessionStorage = { ...config.sessionStorage!, generation: 2 }; return client })
+    await expect(service.connect(1)).rejects.toThrow('generation_changed')
+    expect(client.disconnect).toHaveBeenCalledTimes(1); expect(client.connect).not.toHaveBeenCalled()
+  })
+
+  test('storage pause finishes accepted messages with metadata socket available before disconnecting', async () => {
+    await service.connect(1)
+    let finish!: () => void
+    const learn = jest.spyOn(service as any, 'learnMessageUsername').mockImplementation(() => new Promise<void>(resolve => { finish = resolve }))
+    jest.spyOn(service as any, 'enrichMessageUsername').mockResolvedValue(undefined)
+    jest.spyOn(service as any, 'enrichDirectPhoneAlias').mockResolvedValue(undefined)
+    const message = handlers.message({ key: { id: 'accepted-before-pause', remoteJid: '123@lid', fromMe: true }, message: { conversation: 'synthetic' }, timestampSeconds: 1 })
+    while (!finish) await Promise.resolve()
+    expect(service.hasPendingStorageEvents()).toBe(true)
+    listener.process.mockImplementationOnce(async () => { expect((service as any).socket).toBe(client) })
+    const paused = service.pauseForStorageMigration()
+    await Promise.resolve(); expect(client.disconnect).not.toHaveBeenCalled()
+    await handlers.message({ key: { id: 'not-admitted', remoteJid: '123@lid', fromMe: true }, message: { conversation: 'synthetic' }, timestampSeconds: 1 })
+    expect(learn).toHaveBeenCalledTimes(1)
+    finish(); await message; await paused
+    expect(service.hasPendingStorageEvents()).toBe(false)
+    expect(dataStore.setMessage).toHaveBeenCalledWith('123@lid', expect.objectContaining({ key: expect.objectContaining({ id: 'accepted-before-pause' }) }))
+    expect(listener.process.mock.invocationCallOrder.at(-1)).toBeLessThan(client.disconnect.mock.invocationCallOrder[0])
+  })
+
+  test('refuses migration before suppressing events or disconnecting a session with a live call', async () => {
+    await service.connect(1)
+    const stop = jest.fn(), feed = jest.fn()
+    ;(service as any).voiceBridge = { stop, publishInboundAudio: feed }
+    ;(client.voip as any).pauseForStorageMigration.mockImplementation(() => {
+      throw Object.assign(new Error('session_storage_active_calls'), { code: 'session_storage_active_calls' })
+    })
+    await expect(service.pauseForStorageMigration()).rejects.toMatchObject({ status: 409, code: 'session_storage_active_calls' })
+    expect(client.disconnect).not.toHaveBeenCalled(); expect(stop).not.toHaveBeenCalled()
+    expect((service as any).acceptingEvents).toBe(true)
+    await handlers.voip_call_inbound_audio({ call: { callId: 'live-call' }, pcm: new Float32Array(960) })
+    expect(feed).toHaveBeenCalledWith('live-call', expect.any(Float32Array))
+  })
+
+  test('aborting callback drain restores call admission and event handling without disconnecting', async () => {
+    await service.connect(1)
+    const resume = jest.fn()
+    ;(client.voip as any).pauseForStorageMigration.mockReturnValue(resume)
+    const failure = jest.spyOn((service as any).acceptedEvents, 'drain').mockRejectedValueOnce(new Error('synthetic-drain-failed'))
+    await expect(service.pauseForStorageMigration()).rejects.toThrow('synthetic-drain-failed')
+    expect(resume).toHaveBeenCalledTimes(1); expect(client.disconnect).not.toHaveBeenCalled()
+    expect((service as any).acceptingEvents).toBe(true)
+    failure.mockRestore()
+    const feed = jest.fn(); (service as any).voiceBridge = { stop: jest.fn(), publishInboundAudio: feed }
+    await handlers.voip_call_inbound_audio({ call: { callId: 'restored' }, pcm: new Float32Array(960) })
+    expect(feed).toHaveBeenCalledTimes(1)
+  })
+
+  test('successful pause never reopens call admission after the native socket is disposed', async () => {
+    await service.connect(1)
+    const resume = jest.fn()
+    ;(client.voip as any).pauseForStorageMigration.mockReturnValue(resume)
+    await service.pauseForStorageMigration()
+    expect(client.disconnect).toHaveBeenCalledTimes(1); expect(resume).not.toHaveBeenCalled()
+  })
+
+  test('an old plugin without the migration fence is refused before disconnect', async () => {
+    await service.connect(1)
+    ;(client.voip as any).pauseForStorageMigration = undefined
+    await expect(service.pauseForStorageMigration()).rejects.toMatchObject({ status: 409, code: 'session_storage_voip_gate_required' })
+    expect(client.disconnect).not.toHaveBeenCalled(); expect((service as any).acceptingEvents).toBe(true)
   })
 
   test('manual encryption recovery delegates only while both connection states are online', async () => {
@@ -175,7 +267,7 @@ describe('ClientZapo', () => {
   test.each([false, true])('online presence respects normal config and forces mobile available (mobile=%s)', async (mobile) => {
     jest.useFakeTimers()
     config.markOnlineOnConnect = false
-    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
+    if (mobile) { config.mobilePrimaryDraftId = 'test-mobile'; config.mobilePrimaryImported = true }
     await service.connect(1)
     expect(client.presence.send).not.toHaveBeenCalled()
     await handlers.connection({ status: 'open' })
@@ -319,7 +411,7 @@ describe('ClientZapo', () => {
     ['wa_business', true, true],
   ] as const)('selects relay port policy for profile=%s mobile-primary=%s', async (profile, mobile, preferWebRelayPort) => {
     config.zapoWebClientProfile = profile
-    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
+    if (mobile) { config.mobilePrimaryDraftId = 'test-mobile'; config.mobilePrimaryImported = true }
 
     await service.connect(1)
 
@@ -387,7 +479,7 @@ describe('ClientZapo', () => {
   })
 
   test.each([false, true])('persists incoming names only for mobile primary=%s', async (mobile) => {
-    if (mobile) config.mobilePrimaryDraftId = 'test-mobile'
+    if (mobile) { config.mobilePrimaryDraftId = 'test-mobile'; config.mobilePrimaryImported = true }
     await service.connect(1)
     await handlers.message({
       key: { id: 'named-message', remoteJid: '111@lid', fromMe: false },
@@ -400,6 +492,7 @@ describe('ClientZapo', () => {
 
   test('a mobile contact storage failure does not discard the incoming message', async () => {
     config.mobilePrimaryDraftId = 'test-mobile'
+    config.mobilePrimaryImported = true
     session.contacts.upsert.mockRejectedValue(new Error('storage unavailable'))
     await service.connect(1)
     await handlers.message({
@@ -706,6 +799,26 @@ describe('ClientZapo', () => {
     })], 'history')
   })
 
+  test('SQLite replay forwards bounded pages and acknowledges only callbacks that completed', async () => {
+    const now = Date.now(), records = Array.from({ length: 453 }, (_, index) => ({ id: `page-${String(index).padStart(4, '0')}`, threadJid: '111@lid', fromMe: false, timestampMs: now - 1000,
+      messageBytes: proto.Message.encode({ conversation: `synthetic-${index}` }).finish() }))
+    registerZapoHistoryReader(session, async (_cutoff, cursor) => {
+      const after = cursor ? records.findIndex(record => record.id === cursor.id) + 1 : 0, page = records.slice(after, after + 200), last = page.at(-1)
+      return { records: page, ...(after + 200 < records.length && last ? { next: { timestampMs: last.timestampMs, id: last.id } } : {}) }
+    })
+    jest.spyOn(service as any, 'enrichMessageUsername').mockImplementation(async value => value)
+    listener.process.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('synthetic-page-failure')).mockResolvedValue(undefined)
+    await service.connect(1)
+    await expect(service.fetchMessageHistory({ replay_stored: true, days: 7 })).rejects.toThrow('synthetic-page-failure')
+    expect(listener.process.mock.calls.map(([, messages]) => messages.length)).toEqual([200, 200])
+    expect((service as any).forwardedHistoryIds.size).toBe(200)
+    listener.process.mockClear()
+    await expect(service.fetchMessageHistory({ replay_stored: true, days: 7 })).resolves.toEqual({ forwarded: 253 })
+    expect(listener.process.mock.calls.map(([, messages]) => messages.length)).toEqual([200, 53])
+    expect((service as any).forwardedHistoryIds.size).toBe(453)
+    expect(client.message.requestHistorySync).not.toHaveBeenCalled(); expect(client.message.send).not.toHaveBeenCalled()
+  })
+
   test('waits for the final Zapo history chunk before forwarding persisted messages', async () => {
     config.ignoreHistoryMessages = false
     session.threads.list.mockResolvedValue([])
@@ -974,6 +1087,21 @@ describe('ClientZapo', () => {
 
     await handlers.auth_paired({ credentials: { meJid: '111@lid' } })
     expect(updatePasskeyBridgeSession).toHaveBeenCalledWith(bridgeId, { status: 'completed' })
+  })
+
+  test('a stale bridge id cannot resolve a different pending signer or confirm another bridge', async () => {
+    await service.connect(1)
+    const factoryOptions = (service as any).clientFactory.mock.calls[0][0]
+    const assertion = factoryOptions.signPasskeyAssertion(Uint8Array.from([7, 8]))
+    await new Promise(resolve => setImmediate(resolve))
+    const bridgeId = (service as any).pendingPasskey.bridgeId
+    const payload = { credentialId: Buffer.from([1, 2]), assertionJson: '{}' }
+    await expect(service.sendPasskeyResponse(payload, 'stale-bridge')).rejects.toThrow('passkey_bridge_session_mismatch')
+    expect((service as any).pendingPasskey.bridgeId).toBe(bridgeId)
+    await expect(service.sendPasskeyConfirmation('stale-bridge')).rejects.toThrow('passkey_bridge_session_mismatch')
+    await service.sendPasskeyResponse(payload, bridgeId)
+    await expect(assertion).resolves.toMatchObject({ credentialId: Uint8Array.from([1, 2]) })
+    await expect(service.sendPasskeyConfirmation(bridgeId)).resolves.toMatchObject({ ok: { provider_managed_confirmation: true } })
   })
 
   test('forwards protocol messages such as edits and revokes', async () => {

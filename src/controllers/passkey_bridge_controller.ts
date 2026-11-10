@@ -1,7 +1,6 @@
 import { Request, Response } from 'express'
 import { UNOAPI_AUTH_TOKEN } from '../defaults'
 import { getConfig } from '../services/config'
-import { clients } from '../services/client'
 import { getAuthHeaderToken } from '../services/security'
 import { managerAdmin } from '../services/manager_access'
 import { sendGraphError } from '../services/graph_error'
@@ -10,8 +9,10 @@ import {
   fromBase64Url,
   getPasskeyBridgeSession,
   listPasskeyBridgeSessions,
-  updatePasskeyBridgeSession,
 } from '../services/passkey_bridge'
+import { sessionStorageRpc } from '../services/session_storage/rpc'
+import type { PasskeyBridgeResult } from '../services/passkey_bridge_operation'
+import { SendError } from '../services/send_error'
 import { isEmbeddedAccessToken } from '../services/embedded_tokens'
 import logger from '../services/logger'
 
@@ -85,20 +86,17 @@ export class PasskeyBridgeController {
         return sendGraphError(res, 400, 'credential_id and assertion_json are required.', { code: 100, type: 'OAuthException' })
       }
 
-      const client = clients.get(session.phone)
-      const sendPasskeyResponse = client?.sendPasskeyResponse
-      if (!sendPasskeyResponse) return sendGraphError(res, 409, 'Passkey response is unavailable for this connected session.', { code: 131016, type: 'GraphMethodException' })
-
       const assertionPayload = typeof assertionJson === 'string' ? assertionJson : JSON.stringify(assertionJson)
-      await sendPasskeyResponse.call(client, {
+      const config = await this.getConfig(session.phone)
+      const result = await sessionStorageRpc<PasskeyBridgeResult>(session.phone, config, 'passkey.assertion', [bridgeId, {
         credentialId: fromBase64Url(credentialIdRaw),
         assertionJson: assertionPayload,
-      })
-      const updated = await updatePasskeyBridgeSession(bridgeId, { status: 'response-sent' })
-      return res.status(200).json({ ok: true, bridge_id: bridgeId, status: updated?.status || 'response-sent' })
+      }])
+      if (result?.bridgeId !== bridgeId || !['response-sent', 'completed'].includes(result.status)) throw new SendError(502, 'passkey_bridge_result_unconfirmed')
+      return res.status(200).json({ ok: true, bridge_id: bridgeId, status: result.status })
     } catch (error) {
       logger.warn(error as any, 'PASSKEY bridge assertion failed')
-      return sendGraphError(res, 500, error.message, { code: 131016, type: 'GraphMethodException' })
+      return sendGraphError(res, error instanceof SendError ? error.code : 503, error instanceof SendError ? error.title : 'passkey_bridge_result_unconfirmed', { code: 131016, type: 'GraphMethodException' })
     }
   }
 
@@ -113,24 +111,19 @@ export class PasskeyBridgeController {
       if (!session) return sendGraphError(res, 404, 'Passkey bridge request not found or expired.', { code: 131016, type: 'GraphMethodException' })
       if (!await this.authorize(req, session.phone)) return sendGraphError(res, 403, 'Unsupported post request.', { code: 10, type: 'OAuthException' })
 
-      const client = clients.get(session.phone)
-      const sendPasskeyConfirmation = client?.sendPasskeyConfirmation
-      if (!sendPasskeyConfirmation) return sendGraphError(res, 409, 'Passkey confirmation is unavailable for this connected session.', { code: 131016, type: 'GraphMethodException' })
-
-      const result = await sendPasskeyConfirmation.call(client)
-      const providerManaged = !!(result as any)?.ok?.provider_managed_confirmation
-      const updated = providerManaged
-        ? await getPasskeyBridgeSession(bridgeId)
-        : await updatePasskeyBridgeSession(bridgeId, { status: 'completed' })
+      const config = await this.getConfig(session.phone)
+      const result = await sessionStorageRpc<PasskeyBridgeResult>(session.phone, config, 'passkey.confirm', [bridgeId])
+      if (result?.bridgeId !== bridgeId || !['response-sent', 'confirmation', 'completed'].includes(result.status) || typeof result.providerManagedConfirmation !== 'boolean'
+        || !result.providerManagedConfirmation && result.status !== 'completed') throw new SendError(502, 'passkey_bridge_result_unconfirmed')
       return res.status(200).json({
         ok: true,
         bridge_id: bridgeId,
-        status: updated?.status || session.status,
-        provider_managed_confirmation: providerManaged,
+        status: result.status,
+        provider_managed_confirmation: result.providerManagedConfirmation,
       })
     } catch (error) {
       logger.warn(error as any, 'PASSKEY bridge confirm failed')
-      return sendGraphError(res, 500, error.message, { code: 131016, type: 'GraphMethodException' })
+      return sendGraphError(res, error instanceof SendError ? error.code : 503, error instanceof SendError ? error.title : 'passkey_bridge_result_unconfirmed', { code: 131016, type: 'GraphMethodException' })
     }
   }
 

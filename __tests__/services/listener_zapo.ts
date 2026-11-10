@@ -9,6 +9,7 @@ import type { Store } from '../../src/services/store'
 import type { ZapoMessageMetadataResolver } from '../../src/services/zapo/zapo_message_metadata'
 import { MessageFilter } from '../../src/services/message_filter'
 import { getPollState, setPollState } from '../../src/services/redis'
+import { zapoStoreRegistry } from '../../src/services/zapo/zapo_store_registry'
 
 jest.mock('../../src/services/redis', () => ({
   ...jest.requireActual('../../src/services/redis'),
@@ -52,6 +53,26 @@ describe('ListenerZapo', () => {
     expect(message.context).toEqual(expect.objectContaining({ id: 'uno-quoted-id', message_id: 'uno-quoted-id', forwarded: true }))
     expect(message.text.body).toBe('Mensagem recebida')
     expect(message.id).not.toBe('provider-forward')
+  })
+
+  test.each(['556696269251@s.whatsapp.net', '94047083475061@lid'])('enriches own status reply with participant %s before outgoing', async participant => {
+    const getByJid = jest.fn().mockResolvedValue({ phoneNumber: '556696269251@s.whatsapp.net' })
+    const session = jest.fn().mockReturnValue({ contacts: { getByJid } })
+    const registry = jest.spyOn(zapoStoreRegistry, 'get').mockReturnValue({ session } as any)
+    ;(store.mediaStore.getMedia as jest.Mock).mockResolvedValue({ url: 'https://storage.test/status.mp4', mime_type: 'video/mp4' })
+    await service.process('5566996269251', [{ key: { id: 'reply-status', remoteJid: '123@lid', remoteJidAlt: '5566999838791@s.whatsapp.net', fromMe: false },
+      message: { extendedTextMessage: { text: '😂', contextInfo: { stanzaId: 'own-status', remoteJid: 'status@broadcast', participant,
+        quotedMessage: { videoMessage: { mimetype: 'video/mp4', mediaKey: Buffer.alloc(32), directPath: '/media' } } } } }, messageTimestamp: 1793849677 }], 'notify')
+    const value = (outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value
+    expect(value.messages).toHaveLength(1)
+    expect(value.messages[0]).toMatchObject({ text: { body: '😂' }, provider_message_id: 'reply-status',
+      context: { status: { id: 'own-status', available: true, type: 'videoMessage', media: { url: 'https://storage.test/status.mp4' } } } })
+    expect(value.messages[0].id).not.toBe('reply-status')
+    if (participant.endsWith('@lid')) {
+      expect(session).toHaveBeenCalledWith('5566996269251')
+      expect(getByJid).toHaveBeenCalledWith(participant)
+    } else expect(getByJid).not.toHaveBeenCalled()
+    registry.mockRestore()
   })
 
   test('maps the official Zapo id to an external Uno id and forwards the webhook', async () => {

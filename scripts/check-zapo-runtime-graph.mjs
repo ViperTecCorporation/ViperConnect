@@ -28,6 +28,17 @@ const importViolations = javascriptFiles
   .map((file) => path.relative(runtimeRoot, file))
 const artifactViolations = forbiddenArtifacts.filter((file) => fs.existsSync(path.join(runtimeRoot, file)))
 
+// These private lazy-loaded entries are outside cloud.ts's static dependency
+// graph. A passing typecheck alone does not prove they were emitted.
+const requiredStorageEntries = [
+  'controllers/storage_restore_controller.js',
+  'services/session_storage/standalone_web.js',
+  'services/session_storage/standalone_web_worker.js',
+  'services/session_storage/standalone_staging.js',
+]
+const missingStorageEntries = requiredStorageEntries.filter(file => !fs.existsSync(path.join(runtimeRoot, file)))
+if (missingStorageEntries.length) throw new Error(`Storage restore runtime entries missing: ${missingStorageEntries.join(', ')}`)
+
 if (importViolations.length || artifactViolations.length) {
   const violations = [
     ...importViolations.map((file) => `static Baileys import: ${file}`),

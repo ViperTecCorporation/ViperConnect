@@ -74,11 +74,11 @@ export class ZapoProfilePictures {
     this.checkedAt = new BoundedTtlMap(memoryCacheOptions)
     this.webhookPictures = new BoundedTtlMap(memoryCacheOptions)
     this.webhookMarker = new ProfilePictureWebhookMarker({
-      useRedis: options.store.dataStore.type === 'redis',
+      useRedis: ['redis', 'sqlite', 'sqlite-remote'].includes(options.store.dataStore.type),
       intervalSeconds: options.webhookIntervalSeconds,
     })
     this.missCache = new ProfilePictureMissCache({
-      useRedis: options.store.dataStore.type === 'redis',
+      useRedis: ['redis', 'sqlite', 'sqlite-remote'].includes(options.store.dataStore.type),
       ttlSeconds: options.notFoundTtlSeconds,
     })
   }

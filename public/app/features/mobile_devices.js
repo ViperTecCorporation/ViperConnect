@@ -1,10 +1,10 @@
-import { ApiError } from '../core/api.js?v=4.0.41-0f2cc5a1';
-import { escapeHtml as e } from '../core/html.js?v=4.0.41-0f2cc5a1';
-import { renderModal } from '../components/modal.js?v=4.0.41-0f2cc5a1';
-import { icon } from '../components/icons.js?v=4.0.41-0f2cc5a1';
-import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js?v=4.0.41-0f2cc5a1';
-import { sessionPhone } from '../domain/session.js?v=4.0.41-0f2cc5a1';
-import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError } from './mobile_backup.js?v=4.0.41-0f2cc5a1';
+import { ApiError } from '../core/api.js?v=4.0.41-39b50dec';
+import { escapeHtml as e } from '../core/html.js?v=4.0.41-39b50dec';
+import { renderModal } from '../components/modal.js?v=4.0.41-39b50dec';
+import { icon } from '../components/icons.js?v=4.0.41-39b50dec';
+import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js?v=4.0.41-39b50dec';
+import { sessionPhone } from '../domain/session.js?v=4.0.41-39b50dec';
+import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError, manualBackupNeedsStorage, renderSqliteBackupAlternative } from './mobile_backup.js?v=4.0.41-39b50dec';
 const reason = 'O registro SMS exige habilitação; o cadastro não conecta automaticamente a Zapo nem altera sessões vinculadas.';
 const button = (label, action, id = '') => `<button type="button" class="btn btn--ghost" data-action="mobile-${action}" data-id="${e(id)}">${action === 'new' ? icon('devicePlus') : ''}${e(label)}</button>`;
 export class MobileDevicesPanel {
@@ -20,6 +20,8 @@ export class MobileDevicesPanel {
         this.busy = false;
         this.transferEligible = false;
         this.backupTasks = [];
+        this.sqliteSessions = new Map();
+        this.backupStorageRequired = false;
         this.generation = 0;
         this.values = { phone: '', name: '', platform: 'android', accountType: 'personal', labConsent: false };
     }
@@ -34,6 +36,8 @@ export class MobileDevicesPanel {
         this.transferEligible = false;
         this.backupDownload = undefined;
         this.backupTasks = [];
+        this.sqliteSessions.clear();
+        this.backupStorageRequired = false;
         this.devices = [];
         this.query = '';
         this.statusFilter = 'all';
@@ -76,6 +80,7 @@ export class MobileDevicesPanel {
         if (!this.enabled || this.busy)
             return;
         this.error = '';
+        this.backupStorageRequired = false;
         if (action === 'mobile-backups-refresh') {
             void this.refreshBackups().then(() => this.render());
             return;
@@ -307,8 +312,10 @@ export class MobileDevicesPanel {
             }
         }
         catch (error) {
-            if (generation === this.generation)
+            if (generation === this.generation) {
+                this.backupStorageRequired = manualBackupNeedsStorage(error);
                 this.error = mobileBackupError(error, form === 'mobile-restore');
+            }
         }
         finally {
             if (generation === this.generation) {
@@ -557,6 +564,12 @@ export class MobileDevicesPanel {
         });
     }
     renderGrid(sessions = []) {
+        this.sqliteSessions.clear();
+        for (const device of this.devices) {
+            const session = mobileGridSession(device, sessions);
+            if (session?.sessionStorage?.backend === 'sqlite')
+                this.sqliteSessions.set(device.id, sessionPhone(session));
+        }
         if (!this.enabled)
             return this.error ? `<p role="alert">${e(this.error)}</p>` : '';
         const backups = this.backupTasks.length ? `<section class="mobile-overview__section" aria-label="Backups de dispositivos"><div class="mobile-overview__status"><h3>Backups de dispositivos</h3>${button('Atualizar backups', 'backups-refresh')}</div>${this.backupTasks.map(task => {
@@ -582,6 +595,8 @@ export class MobileDevicesPanel {
       <p><button class="btn" ${this.busy ? 'disabled' : ''}>Salvar rascunho</button></p></form><hr><p>Já possui um backup deste dispositivo?</p>${button('Restaurar dispositivo', 'restore')}`;
         else if (this.modal === 'backup' && this.backupDownload)
             content = `<div class="stack"><h3 role="status">Backup gerado. Origem suspensa.</h3><p>O download foi solicitado ao navegador. Confira se o arquivo foi salvo antes de fechar esta janela.</p><p><strong>${e(this.backupDownload.fileName)}</strong></p><p>Se não baixou automaticamente, clique abaixo. Não é necessário gerar outro backup.</p>${button('Baixar arquivo .viperdevice', 'backup-download')}${button('Fechar', 'close')}</div>`;
+        else if ((this.modal === 'backup' && this.sqliteSessions.has(this.selected?.id || '')) || this.backupStorageRequired)
+            content = renderSqliteBackupAlternative(this.sqliteSessions.get(this.selected?.id || '') || this.connection?.phone || this.selected?.phone || '');
         else if (this.modal === 'restore' || this.modal === 'backup')
             content = renderMobileBackup(this.modal === 'restore', this.busy);
         else if (this.selected) {

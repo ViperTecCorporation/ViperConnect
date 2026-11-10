@@ -130,13 +130,13 @@ describe('Zapo message mapper', () => {
     await expect(toZapoMessageContent(client, {
       type: 'text',
       text: {
-        body: 'Veja https://example.test/oferta',
+        body: 'Veja https://example.com/oferta',
         ...(previewUrl === undefined ? {} : { preview_url: previewUrl }),
       },
     })).resolves.toEqual({
       content: {
         type: 'text',
-        text: 'Veja https://example.test/oferta',
+        text: 'Veja https://example.com/oferta',
         linkPreview: true,
       },
       options: {},
@@ -154,6 +154,34 @@ describe('Zapo message mapper', () => {
       options: {},
     })
     expect(mapped.content).not.toHaveProperty('linkPreview')
+  })
+
+  test.each(['carlos.vv', 'cert.pfx', 'interno@bminformatica.com.br'])('preserves %s in Zapo content without enabling a preview', async body => {
+    await expect(toZapoMessageContent(client, { type: 'text', text: { body } })).resolves.toEqual({
+      content: { type: 'text', text: body }, options: {},
+    })
+  })
+
+  test('still normalizes an unrelated public website for Zapo', async () => {
+    await expect(toZapoMessageContent(client, { type: 'text', text: { body: 'oi.com' } })).resolves.toEqual({
+      content: { type: 'text', text: 'https://oi.com', linkPreview: true }, options: {},
+    })
+  })
+
+  test.each([undefined, true, false])('explicitly disables SDK previews for Pix regardless of preview_url=%s', async previewUrl => {
+    const body = '00020101021226830014br.gov.bcb.pix2561api.pagseguro.com/pix/v2/58F020CC-DC0B-4796-865F-543711E1872E5204899953039865802BR5922SAFE2PAY INTERMEDIACAO6012Porto Alegre62070503***63049F0F'
+    const resolver = jest.fn()
+    const mapped = await toZapoMessageContent(client, { type: 'text', text: { body, preview_url: previewUrl } }, text => text, resolver)
+    expect(mapped).toEqual({ content: { type: 'text', text: body, linkPreview: false }, options: {} })
+    expect(resolver).not.toHaveBeenCalled()
+  })
+
+  test('does not consult YouTube or enable SDK previews when a Pix message also contains a URL', async () => {
+    const body = '00020126830014br.gov.bcb.pix2561https://novo-banco.com/cobranca\nhttps://youtube.com/watch?v=example'
+    const resolver = jest.fn()
+    expect((await toZapoMessageContent(client, { type: 'text', text: { body } }, text => text, resolver)).content)
+      .toEqual({ type: 'text', text: body, linkPreview: false })
+    expect(resolver).not.toHaveBeenCalled()
   })
 
   test('adds HTTPS to a valid bare domain before asking Zapo for the preview', async () => {

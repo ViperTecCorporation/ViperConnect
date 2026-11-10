@@ -15,6 +15,12 @@ import logger from './logger'
 import type { OnNewLogin } from './login_types'
 import type { Store } from './store'
 import { SendError } from './send_error'
+import { assertSessionEffectsAllowed } from './session_storage/routing'
+import { SessionStorageError } from './session_storage/types'
+import { readSessionLifecycleConfig, sessionLifecycleIdentity } from './session_storage/lifecycle_transition'
+import { SessionEventBarrier } from './session_storage/event_barrier'
+import { beginStorageDrain, finishStorageDrain, observeStorageDrain } from './session_storage/drain'
+import { assertSessionConfigRegistered } from './session_storage/connection_registration'
 import { zapoStoreRegistry, type ZapoStoreRegistry } from './zapo/zapo_store_registry'
 import { ZapoGroups } from './zapo/zapo_groups'
 import { ZapoPresenceHeartbeat } from './zapo/zapo_presence_heartbeat'
@@ -49,7 +55,7 @@ import {
 import { createPasskeyBridgeSession, updatePasskeyBridgeSession } from './passkey_bridge'
 import { RedisLease } from './redis_lease'
 import { zapoRedisMaintenance, type ZapoRedisMaintenance } from './zapo/zapo_redis_maintenance'
-import { loadZapoHistoryMessages } from './zapo/zapo_history'
+import { consumeZapoHistoryBatches } from './zapo/zapo_history'
 import { ZapoProfilePictures } from './zapo/zapo_profile_pictures'
 import { createPairingCodeImageDataUrl } from './zapo/pairing_code_image'
 import { resolveZapoPollVoteOptionNames } from './zapo/zapo_poll_votes'
@@ -85,11 +91,11 @@ type ClientFactory = (options: ConstructorParameters<typeof ZapoWaClient>[0]) =>
 type LeaseFactory = (phone: string) => RedisLease
 
 const defaultClientFactory: ClientFactory = (options) =>
-  new ZapoWaClient(options, companionDiagnosticLogger(
+  new ZapoWaClient(options, observeStorageDrain(companionDiagnosticLogger(
     new PinoLogger(logger.child({ scope: 'zapo' }), 'error'),
     !!options.companionHost && process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true',
     options.sessionId || '',
-  )) as ZapoClient
+  ), options.sessionId || '')) as ZapoClient
 const mediaMessageKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage', 'ptvMessage'] as const
 const ZAPO_HISTORY_DEDUP_MAX_IDS = 100_000
 const ZAPO_HISTORY_DEDUP_TTL_MS = 30 * 24 * 60 * 60 * 1_000
@@ -134,6 +140,8 @@ export class ClientZapo implements Client {
   private readonly lifecycleObserver = new SessionLifecycleObserver()
   private readonly transportWatchdog = new ZapoTransportWatchdog()
   private transportRecovery?: Promise<void>
+  private readonly acceptedEvents = new SessionEventBarrier()
+  private acceptingEvents = true
 
   constructor(
     private readonly phone: string,
@@ -234,17 +242,16 @@ export class ClientZapo implements Client {
   private async forwardStoredHistory(maxAgeDays = this.config.historyMaxAgeDays, forceReplay = false) {
     if (!this.zapoSession) throw new SendError(409, 'zapo_client_not_connected')
     if (forceReplay) this.forwardedHistoryIds.clear()
-    const messages = await loadZapoHistoryMessages(this.zapoSession, maxAgeDays, this.forwardedHistoryIds)
-    logger.info('Zapo forwarding history phone=%s days=%s messages=%s', this.phone, maxAgeDays, messages.length)
-    if (messages.length) {
+    const forwarded = await consumeZapoHistoryBatches(this.zapoSession, maxAgeDays, async messages => {
       await Promise.all(messages.map((message) => this.enrichMessageUsername(message)))
       await this.listener.process(this.phone, messages, 'history')
       for (const message of messages) {
         const id = `${message.key.id || ''}`.trim()
         if (id) this.forwardedHistoryIds.add(id)
       }
-    }
-    return messages.length
+    }, this.forwardedHistoryIds)
+    logger.info('Zapo forwarding history phone=%s days=%s messages=%s', this.phone, maxAgeDays, forwarded)
+    return forwarded
   }
 
   private async handleConnectionFailure(client: ZapoClient, error: unknown) {
@@ -327,7 +334,7 @@ export class ClientZapo implements Client {
   }
 
   private async processAddonEvent(event: any) {
-    await recordSessionMessageEvent(this.phone, event, 'addon')
+    await recordSessionMessageEvent(this.phone, event, 'addon', this.config)
     if (event.key.id) this.decryptedAddonIds.add(event.key.id)
     const resolved = await resolveZapoPollVoteOptionNames(event, this.zapoSession)
     if (resolved.decrypted.kind === 'poll_vote' && !resolved.decrypted.selectedOptionNames?.length) {
@@ -392,31 +399,30 @@ export class ClientZapo implements Client {
     const isCurrent = () => this.socket === client && this.connectionGeneration === generation && !this.intentionalDisconnect
     const onCurrent = (event: any, handler: (...args: any[]) => any) =>
       client.on(event, (...args: any[]) => {
-        if (!isCurrent()) return
-        return handler(...args)
+        if (!isCurrent() || !this.acceptingEvents) return
+        return this.acceptedEvents.run(() => handler(...args))
       })
 
     onCurrent('auth_qr', ({ qr }) => {
       resolvePrompt()
       if (this.config.connectionType === 'pairing_code') {
-        void this.beginPairingCodeRequest(client)?.catch((error) => {
+        return this.beginPairingCodeRequest(client)?.catch((error) => {
           logger.warn(error as any, 'Could not request Zapo pairing code for %s', this.phone)
         })
-        return
       }
-      void this.emitQr(qr, isCurrent).catch((error) => logger.warn(error as any, 'Could not emit Zapo QR for %s', this.phone))
+      return this.emitQr(qr, isCurrent).catch((error) => logger.warn(error as any, 'Could not emit Zapo QR for %s', this.phone))
     })
     onCurrent('auth_pairing_required', ({ forceManual }) => {
       resolvePrompt()
       if (this.config.connectionType !== 'pairing_code') return
-      void this.beginPairingCodeRequest(client, forceManual)?.catch((error) => {
+      return this.beginPairingCodeRequest(client, forceManual)?.catch((error) => {
         logger.warn(error as any, 'Could not request Zapo pairing code for %s', this.phone)
       })
     })
     onCurrent('auth_pairing_code', ({ code }) => {
       resolvePrompt()
       this.pairingCodeIssued = true
-      void this.emitPairingCode(code, isCurrent).catch((error) => logger.warn(error as any, 'Could not emit Zapo pairing code for %s', this.phone))
+      return this.emitPairingCode(code, isCurrent).catch((error) => logger.warn(error as any, 'Could not emit Zapo pairing code for %s', this.phone))
     })
     onCurrent('auth_paired', async ({ credentials }) => {
       await Promise.resolve(this.zapoSession?.auth.save(credentials)).catch((error) => {
@@ -432,7 +438,7 @@ export class ClientZapo implements Client {
     })
     onCurrent('auth_passkey_required', ({ hasSigner }) => {
       resolvePrompt()
-      void Promise.resolve(
+      return Promise.resolve(
         this.listener.process(
           this.phone,
           [
@@ -479,7 +485,7 @@ export class ClientZapo implements Client {
         await this.emitStatus(`Connected with ${this.phone} using Zapo`).catch((error) => {
           logger.warn(error as any, 'Could not emit Zapo connected status for %s', this.phone)
         })
-        void this.syncGroupCache(client).catch((error) => logger.warn(error as any, 'Zapo group cache sync failed for %s', this.phone))
+        void this.acceptedEvents.run(() => this.syncGroupCache(client).catch((error) => logger.warn(error as any, 'Zapo group cache sync failed for %s', this.phone)))
         if (event.isNewLogin) await this.onNewLogin(this.phone)
         return
       }
@@ -570,9 +576,9 @@ export class ClientZapo implements Client {
           .map((jid) => `${jid || ''}`)
           .filter((jid) => jid.endsWith('@s.whatsapp.net'))
         if (recipientAliases.length) {
-          void statusRecipients.touch(this.phone, recipientAliases).catch((error) => {
+          void this.acceptedEvents.run(() => statusRecipients.touch(this.phone, recipientAliases).catch((error) => {
             logger.warn(error as any, 'Zapo status recipient index update failed for %s', this.phone)
-          })
+          }))
         }
       }
       if (message.key.remoteJid && message.key.id) {
@@ -596,7 +602,7 @@ export class ClientZapo implements Client {
       this.messages?.sentArchive.capture(event)
     })
     onCurrent('receipt', async (event) => {
-      await recordSessionMessageEvent(this.phone, event, 'receipt')
+      await recordSessionMessageEvent(this.phone, event, 'receipt', this.config)
       const isGroup = `${event.chatJid || ''}`.endsWith('@g.us')
       const receiptLid = [event.participantJid, event.chatJid].map((value) => `${value || ''}`).find((value) => value.endsWith('@lid'))
       if (event.participantUsername && receiptLid) {
@@ -702,16 +708,16 @@ export class ClientZapo implements Client {
         )
       }
     })
-    onCurrent('group', (event) => {
+    onCurrent('group', async (event) => {
       const jid = event.groupJid || event.chatJid
-      if (jid) void this.syncGroupCache(client, jid).catch((error) => logger.warn(error as any, 'Zapo group event sync failed for %s', jid))
+      if (jid) await this.syncGroupCache(client, jid).catch((error) => logger.warn(error as any, 'Zapo group event sync failed for %s', jid))
       for (const participant of event.participants || []) {
         const lid = participant.lidJid || (participant.jid?.endsWith('@lid') ? participant.jid : undefined)
-        if (participant.username && lid) void zapoUsernameIndex.touch(this.phone, participant.username, lid)
+        if (participant.username && lid) await zapoUsernameIndex.touch(this.phone, participant.username, lid)
       }
     })
     onCurrent('picture', (event) => {
-      void this.profilePictures?.handleEvent(event).catch((error) => {
+      return this.profilePictures?.handleEvent(event).catch((error) => {
         logger.warn(error as any, 'Zapo profile picture event failed for %s', this.phone)
       })
     })
@@ -994,6 +1000,7 @@ export class ClientZapo implements Client {
   }
 
   async connect(time: number) {
+    assertSessionEffectsAllowed(this.config)
     void time
     if (this.connectTask) return this.connectTask
     this.connectTask = this.connectInternal()
@@ -1012,16 +1019,29 @@ export class ClientZapo implements Client {
 
   private async connectInternal() {
     this.intentionalDisconnect = false
-    this.config = await this.getConfig(this.phone)
+    this.acceptingEvents = true
+    const preparationGeneration = this.connectionGeneration
+    this.config = await readSessionLifecycleConfig(this.phone, this.getConfig)
+    assertSessionConfigRegistered(this.config)
+    if (!this.config.autoConnect) throw new SendError(409, 'session_storage_session_suspended')
+    const expectedConfig = sessionLifecycleIdentity(this.config)
+    const checkPreparation = async () => {
+      this.config = await readSessionLifecycleConfig(this.phone, this.getConfig, expectedConfig)
+      assertSessionConfigRegistered(this.config)
+      if (!this.config.autoConnect) throw new SendError(409, 'session_storage_session_suspended')
+      if (this.intentionalDisconnect || preparationGeneration !== this.connectionGeneration) throw new Error('zapo_operation_cancelled')
+      if (this.lease && !await this.lease.renew()) throw new SendError(409, 'session_storage_lease_lost')
+    }
+    if (this.intentionalDisconnect || preparationGeneration !== this.connectionGeneration) throw new Error('zapo_operation_cancelled')
     this.unoStore = await this.config.getStore(this.phone, this.config)
     const sessionStore = this.unoStore.sessionStore
     await sessionStore.syncConnection(this.phone)
     if (this.socket && this.messages) return
     await this.acquireRuntimeOwnership()
+    await checkPreparation()
     await sessionStore.setStatus(this.phone, 'connecting')
 
-    const zapoStore = this.storeRegistry.get(this.config)
-    const preparationGeneration = this.connectionGeneration
+    const zapoStore = this.storeRegistry.get(this.config, this.phone)
     await prepareZapoState(zapoStore)
     if (this.intentionalDisconnect || preparationGeneration !== this.connectionGeneration) {
       throw new Error('zapo_operation_cancelled')
@@ -1063,6 +1083,7 @@ export class ClientZapo implements Client {
       if (companionHost.includePem) logger.info({ phone: this.phone, includePem: true }, 'MOBILE_COMPANION_PEM_LAB_ENABLED')
       companionRuntime = { startCompanionWorker, fence, operations: new MobileCompanionOperations(redis, vault, this.config.mobilePrimaryDraftId) }
     }
+    await checkPreparation()
     const client = await withZapoWebClientProfile(this.config.zapoWebClientProfile, async () => this.clientFactory({
       store: zapoStore,
       sessionId: this.phone,
@@ -1090,6 +1111,8 @@ export class ClientZapo implements Client {
           || this.config.zapoWebClientProfile === 'wa_business',
       })],
     }))
+    try { await checkPreparation() }
+    catch (error) { await Promise.resolve(client.disconnect()).catch(() => undefined); throw error }
     const generation = ++this.connectionGeneration
     const voiceBridgeUrl = resolveZapoVoiceBridgeUrl(VOIP_SERVICE_URL, VOIP_BRIDGE_URL)
     this.voiceBridge =
@@ -1163,6 +1186,40 @@ export class ClientZapo implements Client {
     return this.disconnectTransport()
   }
 
+  hasPendingStorageEvents() { return this.acceptedEvents.hasPending() }
+
+  async pauseForStorageMigration() {
+    const socket = this.socket
+    let resumeCalls: (() => void) | undefined
+    if (socket) {
+      const coordinator = socket.voip as typeof socket.voip & { pauseForStorageMigration?: () => () => void }
+      if (typeof coordinator?.pauseForStorageMigration !== 'function') throw new SessionStorageError(409, 'session_storage_voip_gate_required')
+      try { resumeCalls = coordinator.pauseForStorageMigration() }
+      catch (error) {
+        const title = (error as any)?.code === 'session_storage_active_calls' ? 'session_storage_active_calls' : 'session_storage_operation_in_progress'
+        throw new SessionStorageError(409, title)
+      }
+    }
+    const acceptingEvents = this.acceptingEvents
+    beginStorageDrain(this.phone)
+    this.acceptingEvents = false
+    this.acceptedEvents.beginDrain()
+    try {
+      await this.acceptedEvents.drain()
+      await this.disconnectTransport()
+      if (!finishStorageDrain(this.phone)) throw new SendError(409, 'session_storage_pending_native_writes')
+    } catch (error) {
+      // Refusing/aborting before disconnect keeps the same socket, events and
+      // audio usable. A disposed/failed transport must never be reopened here.
+      if (this.socket === socket && !this.intentionalDisconnect) {
+        this.acceptingEvents = acceptingEvents
+        this.acceptedEvents.cancelDrain()
+        resumeCalls?.()
+      }
+      throw error
+    } finally { finishStorageDrain(this.phone) }
+  }
+
   private async disconnectTransport(recoveryReason?: string) {
     this.transportWatchdog.stop()
     if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, { intentional: !recoveryReason, reconnect_expected: !!recoveryReason, ...(recoveryReason ? { reason: recoveryReason } : {}) }, false)
@@ -1186,15 +1243,15 @@ export class ClientZapo implements Client {
     this.catalog = undefined
     this.pairingCodeRequest = undefined
     this.pairingCodeIssued = false
-    this.pendingIncoming.clear()
-    this.decryptedAddonIds.clear()
-    this.forwardedHistoryIds.clear()
     try {
       if (socket) await zapoOperationDeadline(
         Promise.resolve(socket.disconnect()), 10_000,
         new AbortController().signal, 'zapo_disconnect_timeout',
       )
     } finally {
+      this.pendingIncoming.clear()
+      this.decryptedAddonIds.clear()
+      this.forwardedHistoryIds.clear()
       await pendingConnect?.catch(() => undefined)
       clients.delete(this.phone)
       configs.delete(this.phone)
@@ -1257,9 +1314,10 @@ export class ClientZapo implements Client {
     return this.messages.recoverDelivery(payload, options)
   }
 
-  async sendPasskeyResponse(payload: { credentialId: Buffer; assertionJson: Buffer | string }) {
+  async sendPasskeyResponse(payload: { credentialId: Buffer; assertionJson: Buffer | string }, expectedBridgeId?: string) {
     const pending = this.pendingPasskey
     if (!pending) throw new SendError(409, 'zapo_passkey_assertion_not_pending')
+    if (expectedBridgeId && pending.bridgeId !== expectedBridgeId) throw new SendError(409, 'passkey_bridge_session_mismatch')
     pending.resolve({
       credentialId: Uint8Array.from(payload.credentialId),
       webauthnAssertion: Uint8Array.from(Buffer.isBuffer(payload.assertionJson) ? payload.assertionJson : Buffer.from(payload.assertionJson)),
@@ -1267,8 +1325,9 @@ export class ClientZapo implements Client {
     return { ok: { success: true, bridge_id: pending.bridgeId } }
   }
 
-  async sendPasskeyConfirmation() {
-    return { ok: { success: true, provider_managed_confirmation: true } }
+  async sendPasskeyConfirmation(expectedBridgeId?: string) {
+    if (expectedBridgeId && this.activePasskeyBridgeId !== expectedBridgeId) throw new SendError(409, 'passkey_bridge_session_mismatch')
+    return { ok: { success: true, provider_managed_confirmation: true, ...(expectedBridgeId ? { bridge_id: expectedBridgeId } : {}) } }
   }
 
   async getMessageMetadata<T>(message: T) {

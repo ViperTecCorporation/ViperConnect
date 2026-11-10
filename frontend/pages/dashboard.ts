@@ -1,7 +1,7 @@
 import { escapeHtml } from '../core/html.js'
 import { icon } from '../components/icons.js'
 import { renderStatus } from '../components/status.js'
-import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js'
+import { filterSessions, isLegacySession, isOnlineStatus, isSessionStorageFixture, sessionLabel, sessionPhone } from '../domain/session.js'
 import type { SessionConfig } from '../domain/types.js'
 import { t } from '../core/i18n.js'
 
@@ -79,6 +79,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
                       const phone = sessionPhone(session)
                       const onlineSession = isOnlineStatus(session.status)
                       const legacySession = isLegacySession(session)
+                      const fixture = isSessionStorageFixture(session)
                       return `<tr>
                 <td><div class="session-identity"><span class="session-identity__icon">${icon('whatsapp', 'WhatsApp')}</span><span><strong>${escapeHtml(sessionLabel(session))}</strong><small>${escapeHtml(phone)}</small></span></div></td>
                 <td>${renderStatus(session.status)}</td>
@@ -89,8 +90,8 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
                     legacySession
                       ? `<span class="legacy-label">${t('Baileys desativada')}</span>`
                       : onlineSession
-                        ? `<button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(phone)}" aria-label="${t('Testar mensagem')}">${icon('send')}</button>`
-                        : `<button class="btn" type="button" data-action="connect-session" data-phone="${escapeHtml(phone)}">${icon('link')}${t('Conectar')}</button>`
+                        ? `<button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(phone)}" aria-label="${t('Testar mensagem')}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('send')}</button>`
+                        : `<button class="btn" type="button" data-action="connect-session" data-phone="${escapeHtml(phone)}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('link')}${t('Conectar')}</button>`
                   }
                 </div></td>
               </tr>`

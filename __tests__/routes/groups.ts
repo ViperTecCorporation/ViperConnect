@@ -59,6 +59,7 @@ const loadApp = async (
   jest.doMock('../../src/services/redis', () => ({
     __esModule: true,
     BASE_KEY: 'unoapi-',
+    sessionStatusKey: (phone: string) => `unoapi-status:${phone}`,
     redisKeys: jest.fn(),
     getGroup: jest.fn(),
     getContactName: jest.fn(),
@@ -1086,6 +1087,21 @@ describe('groups routes', () => {
     expect(patchRes.status).toEqual(200)
     expect(incoming.groupUpdateDescription).toHaveBeenCalledWith(phone, groupJid, 'Descricao via patch')
     expect(patchRes.body).toEqual(expect.objectContaining({ id: groupJid, description: 'Descricao via patch', updated: true }))
+  })
+
+  test.each(['cycle', 'long-chain', 'name-on-alias'])('join request names have bounded PN/LID traversal (%s)', async scenario => {
+    const phone = '556600000000', groupJid = '120363040468224422@g.us', pn = '556677777777@s.whatsapp.net', lid = '987654321012345@lid'
+    const { app, incoming, redis } = await loadApp(true, undefined, 'zapo')
+    incoming.groupRequestParticipantsList = jest.fn().mockResolvedValue([{ jid: pn, lid, username: '@fallback' }])
+    redis.getContactName.mockResolvedValue(undefined)
+    redis.getLidForPn.mockImplementation(async (_phone, value) => scenario === 'long-chain' ? `${value.replace(/\D/g, '')}1@lid` : lid)
+    redis.getPnForLid.mockImplementation(async (_phone, value) => scenario === 'long-chain' ? `${value.replace(/\D/g, '')}2@s.whatsapp.net` : pn)
+    if (scenario === 'name-on-alias') redis.getContactName.mockImplementation(async (_phone, value) => value === lid ? 'Nome preservado' : undefined)
+    const result = await request(app.server).get(`/v15.0/${phone}/groups/${groupJid}/join_requests`)
+    expect(result.status).toBe(200)
+    expect(result.body.join_requests[0].name).toBe(scenario === 'name-on-alias' ? 'Nome preservado' : '@fallback')
+    expect(redis.getContactName.mock.calls.length).toBeLessThanOrEqual(4)
+    expect(redis.getLidForPn.mock.calls.length + redis.getPnForLid.mock.calls.length).toBeLessThanOrEqual(4)
   })
 
   test('join requests list approve and reject map Baileys calls', async () => {

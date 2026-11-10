@@ -1,0 +1,7 @@
+# DEV-only overlay: retain the already installed native WebRTC/FFmpeg runtime.
+ARG VOIP_LAB_BASE=viperconnect-voip-lab:webhook-dev-20261022
+FROM ${VOIP_LAB_BASE}
+USER root
+COPY --chown=u:u dist/ /home/u/app/dist/
+COPY --chown=u:u package.json /home/u/app/package.json
+USER u

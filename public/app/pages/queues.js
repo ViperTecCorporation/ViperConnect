@@ -1,10 +1,10 @@
-import { renderInfoTooltip } from '../components/form_controls.js?v=4.0.41-0f2cc5a1';
-import { icon } from '../components/icons.js?v=4.0.41-0f2cc5a1';
-import { renderModal } from '../components/modal.js?v=4.0.41-0f2cc5a1';
-import { escapeHtml } from '../core/html.js?v=4.0.41-0f2cc5a1';
-import { formatNumber, t } from '../core/i18n.js?v=4.0.41-0f2cc5a1';
-import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.41-0f2cc5a1';
-import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js?v=4.0.41-0f2cc5a1';
+import { renderInfoTooltip } from '../components/form_controls.js?v=4.0.41-39b50dec';
+import { icon } from '../components/icons.js?v=4.0.41-39b50dec';
+import { renderModal } from '../components/modal.js?v=4.0.41-39b50dec';
+import { escapeHtml } from '../core/html.js?v=4.0.41-39b50dec';
+import { formatNumber, t } from '../core/i18n.js?v=4.0.41-39b50dec';
+import { sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.41-39b50dec';
+import { parseRabbitQueueName, rabbitQueueScopeLabels } from '../domain/rabbit_queue.js?v=4.0.41-39b50dec';
 export const queueDescriptionKey = (name) => {
     if (parseRabbitQueueName(name).family === 'voip_webhooks')
         return 'Eventos VoIP para o ViperChat. Retentativas persistem na outbox do serviço; esta tela é somente leitura.';

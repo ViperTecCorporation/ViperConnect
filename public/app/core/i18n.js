@@ -429,6 +429,7 @@ const english = {
     'Nome da fila não confere.': 'Queue name does not match.',
     'Mensagens removidas: {count}.': 'Messages removed: {count}.',
     'Chaves e conteúdo': 'Keys and content',
+    'Somente leitura. Credenciais e campos sensíveis não são exibidos. Use as telas oficiais de Sessões, Armazenamento, Usuários ou Webhooks para gerenciar esses registros.': 'Read only. Credentials and sensitive fields are not displayed. Use the official Sessions, Storage, Users or Webhooks screens to manage these records.',
     'Exploração segura do cache e estado persistido do ViperConnect': 'Safe exploration of ViperConnect cache and persisted state',
     'Adicionar chave': 'Add key',
     'Árvore de chaves': 'Key tree',

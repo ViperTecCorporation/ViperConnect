@@ -1,7 +1,7 @@
 import { icon } from '../components/icons.js'
 import { renderStatus } from '../components/status.js'
 import { escapeHtml } from '../core/html.js'
-import { isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js'
+import { isLegacySession, isOnlineStatus, isSessionStorageFixture, sessionLabel, sessionPhone } from '../domain/session.js'
 import type { ContactDirectoryItem, GroupSummary, SessionConfig, SessionTab } from '../domain/types.js'
 import { CONTACT_SEARCH_MIN_LENGTH, renderContactCards, renderGroupCards } from '../features/entities.js'
 import { renderSessionConfig } from '../features/session_config.js'
@@ -27,6 +27,9 @@ interface SessionPageOptions {
   companionsHtml?: string
   profileHtml?: string
   messagesHtml?: string
+  storageHtml?: string
+  storageFixture?: boolean
+  storageBackend?: 'redis' | 'sqlite'
 }
 
 const tabs: Array<[SessionTab, TranslationKey]> = [
@@ -75,7 +78,7 @@ const renderWhatsAppIntegration = (session: SessionConfig): string => {
   `
 }
 
-const renderOverview = (session: SessionConfig, contactCount: number | undefined): string => `
+const renderOverview = (session: SessionConfig, contactCount: number | undefined, fixture = false): string => `
   <section class="stats" aria-label="${t('Resumo da sessão')}">
     <article class="stat-card"><span>Status</span><strong class="stat-card__status">${renderStatus(session.status)}</strong><small>${escapeHtml(session.server || 'server_1')}</small></article>
     <article class="stat-card"><span>${t('Contatos')}</span><strong>${contactCount === undefined ? '—' : formatNumber(contactCount)}</strong><small>${t('armazenados no cache Zapo')}</small></article>
@@ -85,8 +88,8 @@ const renderOverview = (session: SessionConfig, contactCount: number | undefined
   <section class="section">
     <div class="section__heading"><div><h2>${t('Ações da sessão')}</h2><p class="muted">${escapeHtml(t('Toda operação abaixo usa o telefone {phone}.', { phone: sessionPhone(session) }))}</p></div></div>
     <div class="action-grid">
-      <button class="action-card" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone(session))}">${icon('send')}<span><strong>${t('Testar mensagem')}</strong><small>${t('Enviar texto pela API')}</small></span></button>
-      <button class="action-card" type="button" data-action="connect-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('link')}<span><strong>${session.mobilePrimaryDraftId ? t('Visão geral do dispositivo') : isOnlineStatus(session.status) ? t('Ver conexão') : t('Conectar')}</strong><small>${session.mobilePrimaryDraftId ? t('Credenciais salvas; conexão pela Zapo, sem QR Code') : t('QR Code ou código de pareamento')}</small></span></button>
+      <button class="action-card" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone(session))}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('send')}<span><strong>${t('Testar mensagem')}</strong><small>${t('Enviar texto pela API')}</small></span></button>
+      <button class="action-card" type="button" data-action="connect-session" data-phone="${escapeHtml(sessionPhone(session))}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('link')}<span><strong>${session.mobilePrimaryDraftId ? t('Visão geral do dispositivo') : isOnlineStatus(session.status) ? t('Ver conexão') : t('Conectar')}</strong><small>${session.mobilePrimaryDraftId ? t('Credenciais salvas; conexão pela Zapo, sem QR Code') : t('QR Code ou código de pareamento')}</small></span></button>
       <button class="action-card action-card--danger" type="button" data-action="deregister-session" data-phone="${escapeHtml(sessionPhone(session))}">${icon('trash')}<span><strong>${t('Desconectar')}</strong><small>${session.mobilePrimaryDraftId ? t('Suspender conexão e remover webhooks; preservar credenciais') : t('Remover vínculo e exigir novo pareamento')}</small></span></button>
     </div>
   </section>
@@ -127,6 +130,8 @@ const renderGroups = (session: SessionConfig, groups: GroupSummary[], hasMore: b
 `
 
 const renderPanel = (options: SessionPageOptions): string => {
+  const fixture = options.storageFixture || isSessionStorageFixture(options.session)
+  const sqlite = options.storageBackend === 'sqlite' || (options.session.sessionStorage as { backend?: string } | undefined)?.backend === 'sqlite'
   if (options.tab === 'messages') return options.messagesHtml || '<section class="section">Carregando mensagens…</section>'
   if (options.tab === 'profile') return options.profileHtml || '<section class="section">Consultando perfil…</section>'
   if (options.tab === 'devices' && options.session.mobilePrimaryDraftId) return options.companionsHtml || renderMobileCompanions(options.session, !!options.restricted)
@@ -138,12 +143,13 @@ const renderPanel = (options: SessionPageOptions): string => {
   if (options.tab === 'groups') {
     return renderGroups(options.session, options.groups, options.groupsHasMore, options.loadingSection, options.sectionError, options.groupsQuery)
   }
-  return renderOverview(options.session, options.contactCount) + (options.canManageUsers && !options.session.mobilePrimaryDraftId && !isLegacySession(options.session) ? `<section class="section"><h2>Backup e migração</h2><p class="muted">Transfira as credenciais desta sessão Zapo para outra instância. O backup suspende a origem; não use as duas instâncias simultaneamente.</p><button type="button" class="btn" data-action="transfer-open" data-id="${escapeHtml(sessionPhone(options.session))}">Backup e migração da sessão</button></section><section class="mobile-overview__danger"><div><h3>Excluir sessão desta instância</h3><p>Após validar o backup no destino, remova somente o cadastro e as credenciais locais, sem logout remoto.</p></div><button type="button" class="btn btn--danger" data-action="transfer-remove" data-id="${escapeHtml(sessionPhone(options.session))}">Excluir desta instância</button></section>` : '')
+  return renderOverview(options.session, options.contactCount, fixture) + (options.canManageUsers ? options.storageHtml || '' : '') + (options.canManageUsers && !sqlite && !options.session.mobilePrimaryDraftId && !isLegacySession(options.session) ? `<section class="section"><h2>Backup e migração</h2><p class="muted">Transfira as credenciais desta sessão Zapo para outra instância. O backup suspende a origem; não use as duas instâncias simultaneamente.</p><button type="button" class="btn" data-action="transfer-open" data-id="${escapeHtml(sessionPhone(options.session))}">Backup e migração da sessão</button></section><section class="mobile-overview__danger"><div><h3>Excluir sessão desta instância</h3><p>Após validar o backup no destino, remova somente o cadastro e as credenciais locais, sem logout remoto.</p></div><button type="button" class="btn btn--danger" data-action="transfer-remove" data-id="${escapeHtml(sessionPhone(options.session))}">Excluir desta instância</button></section>` : '')
 }
 
 export const renderSessionPage = (options: SessionPageOptions): string => {
   const { session, tab } = options
   const legacySession = isLegacySession(session)
+  const fixture = options.storageFixture || isSessionStorageFixture(session)
   return `
     <header class="page-header session-header">
       <div class="session-header__title">
@@ -155,7 +161,7 @@ export const renderSessionPage = (options: SessionPageOptions): string => {
         ${
           legacySession
             ? ''
-            : `<button class="btn" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone(session))}">${icon('send')}${t('Testar mensagem')}</button>`
+            : `<button class="btn" type="button" data-action="test-message" data-phone="${escapeHtml(sessionPhone(session))}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('send')}${t('Testar mensagem')}</button>`
         }
       </div>
     </header>

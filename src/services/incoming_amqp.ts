@@ -16,6 +16,7 @@ import { SendError } from './send_error'
 import type { SaveContactInput, SaveContactResponse } from './contacts/contact_book_types'
 import { resolveWhatsAppEngine } from './providers/provider_resolver'
 import { UNOAPI_MEDIA_STORAGE_KEY, UNOAPI_MESSAGE_ID } from './messages/outgoing_media_input'
+import { assertSessionConfigRegistered } from './session_storage/connection_registration'
 
 type GroupManagementAction =
   | 'groupCreate'
@@ -95,6 +96,7 @@ export class IncomingAmqp implements Incoming {
 
   public async requestPairingCode(phone: string) {
     const config = await this.getConfig(phone)
+    assertSessionConfigRegistered(config)
     return amqpRpc<string>(
       UNOAPI_EXCHANGE_BRIDGE_NAME,
       this.queue(config),

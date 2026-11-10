@@ -1,8 +1,8 @@
-import { escapeHtml } from '../core/html.js?v=4.0.41-0f2cc5a1';
-import { icon } from '../components/icons.js?v=4.0.41-0f2cc5a1';
-import { renderStatus } from '../components/status.js?v=4.0.41-0f2cc5a1';
-import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.41-0f2cc5a1';
-import { t } from '../core/i18n.js?v=4.0.41-0f2cc5a1';
+import { escapeHtml } from '../core/html.js?v=4.0.41-39b50dec';
+import { icon } from '../components/icons.js?v=4.0.41-39b50dec';
+import { renderStatus } from '../components/status.js?v=4.0.41-39b50dec';
+import { filterSessions, isLegacySession, isOnlineStatus, isSessionStorageFixture, sessionLabel, sessionPhone } from '../domain/session.js?v=4.0.41-39b50dec';
+import { t } from '../core/i18n.js?v=4.0.41-39b50dec';
 export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', mobileSessionPhones = [] }) => {
     const excluded = new Set(canCreate && mobileGrid ? mobileSessionPhones : []);
     const filtered = filterSessions(sessions.filter(session => !excluded.has(sessionPhone(session))), query, status);
@@ -61,6 +61,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
             const phone = sessionPhone(session);
             const onlineSession = isOnlineStatus(session.status);
             const legacySession = isLegacySession(session);
+            const fixture = isSessionStorageFixture(session);
             return `<tr>
                 <td><div class="session-identity"><span class="session-identity__icon">${icon('whatsapp', 'WhatsApp')}</span><span><strong>${escapeHtml(sessionLabel(session))}</strong><small>${escapeHtml(phone)}</small></span></div></td>
                 <td>${renderStatus(session.status)}</td>
@@ -70,8 +71,8 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
                   ${legacySession
                 ? `<span class="legacy-label">${t('Baileys desativada')}</span>`
                 : onlineSession
-                    ? `<button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(phone)}" aria-label="${t('Testar mensagem')}">${icon('send')}</button>`
-                    : `<button class="btn" type="button" data-action="connect-session" data-phone="${escapeHtml(phone)}">${icon('link')}${t('Conectar')}</button>`}
+                    ? `<button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(phone)}" aria-label="${t('Testar mensagem')}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('send')}</button>`
+                    : `<button class="btn" type="button" data-action="connect-session" data-phone="${escapeHtml(phone)}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('link')}${t('Conectar')}</button>`}
                 </div></td>
               </tr>`;
         })

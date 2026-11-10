@@ -1,10 +1,26 @@
 # Laboratório local mobile-primary
 
+## Modo sintético e liberação explícita do DEV
+
+O Compose mantém `LAB_STORAGE_SYNTHETIC_ONLY=true` por padrão. Esse valor é
+repassado como `UNOAPI_STORAGE_SYNTHETIC_ONLY` a web, broker e workers para
+bloquear efeitos externos dos ensaios de armazenamento. Para usar uma sessão
+real autorizada, primeiro revise e remova as cópias de produção importadas para
+teste. Depois, com autorização explícita, altere apenas o ENV privado do
+laboratório para `LAB_STORAGE_SYNTHETIC_ONLY=false` e aplique a configuração aos
+processos correspondentes. Não versionar nem imprimir esse arquivo.
+
+O modo normal não remove o guard de `sessionStorage.fixture=true`: essas sessões
+continuam sem conexão, envio ou download de mídia real. Não converter uma cópia
+de produção em conta normal retirando sua marcação. Essa liberação não implica
+envio de mensagens, replay ou alteração em produção. Mais detalhes em
+[Armazenamento por sessão](https://viperconnect.vipertec.net/guide/session-storage).
+
 ## Excluir um dispositivo
 
 Cada cartão possui **Excluir dispositivo**, também disponível na visão geral. Para confirmar, digite o número exibido e marque os dois avisos: exclusão definitiva e necessidade de novo SMS. O painel usa `DELETE /manager/mobile-devices/{id}/full` com `confirm`, `acknowledgeNewSms` e `phone`.
 
-A exclusão bloqueia novas operações de registro, invalida gravações de tentativas anteriores, suspende o socket e aguarda a posse exclusiva do store. Só então remove credenciais e dados nativos Zapo, configuração ativa, registro SMS cifrado e cadastro. Não executa exclusão da conta no WhatsApp nem contorna os prazos remotos de registro. Para usar o número novamente, será necessário cadastrá-lo e realizar um novo registro por SMS.
+A exclusão bloqueia novas operações de registro, invalida gravações de tentativas anteriores, suspende o socket e aguarda a posse exclusiva do store. Só então limpa credenciais e caches de conexão, encerra a configuração ativa e remove registro SMS cifrado e cadastro. Em SQLite por sessão, preserva arquivo, histórico nativo, contatos e referências UnoID ↔ provider ID; a configuração permanece offline e desvinculada para novo pareamento explícito. Não executa exclusão da conta no WhatsApp nem contorna os prazos remotos de registro. Para voltar a usar o número como Mobile Primary, será necessário cadastrá-lo e realizar um novo registro por SMS.
 
 Mídias armazenadas, histórico de webhooks e atribuições históricas não são apagados por esta ação. Falhas parciais mantêm o cartão em exclusão para repetir e concluir; se o worker ainda estiver encerrando, aguarde e tente novamente. Não solicite SMS nesse estado. A antiga remoção somente de rascunho continua protegida contra registros já iniciados.
 
@@ -221,6 +237,22 @@ Não conectar o mesmo número simultaneamente no worker e em ferramentas externa
 
 ## Backup e restauração de dispositivos principais
 
+O runtime manual atual exige Zapo **1.11.0** e store-redis **1.3.0**; os leitores
+aceitam arquivos de origem 1.9.0 e 1.11.0, sem relaxar identidade, escopo ou TTL.
+`.viperdevice` e `.vipersession` continuam criptografados por senha. Não confundir
+com os novos backups SQLite `.viperstorage`, sem criptografia no bucket privado.
+
+Se o dispositivo usa SQLite, abra **Armazenamento da sessão**. Exportação direta
+e tarefa de backup antigas retornam 409
+`mobile_backup_sqlite_requires_session_storage_endpoint` antes de suspender ou
+reservar a tarefa. Sessões vinculadas usam o erro equivalente
+`session_backup_sqlite_requires_session_storage_endpoint`. O painel apresenta
+a ação correta e recusa arquivo SQLite enviado ao importador Redis, inclusive
+renomeado. Não converte nem retorna ao Redis silenciosamente. Restauração em
+outro worker deve seguir o procedimento offline de
+[armazenamento por sessão](/guide/session-storage); esse backup
+não habilita o checkpoint de remoção legado após transferência.
+
 Em **Gerenciar**, dispositivos principais têm a aba **Dispositivos conectados**
 imediatamente após **Visão geral**. É a área da F6 para vínculos por
 imagem/câmera ou código, listagem e revogação. Os controles estão ligados ao
@@ -262,7 +294,7 @@ conversas, arquivos de mídia, webhooks, usuários, atribuições ou credenciais
 infraestrutura. O registro é cifrado novamente com a chave local do destino.
 As chaves criptográficas restauradas ficam sem TTL, seguindo a política atual.
 
-Limites desta primeira versão: laboratório `mobile_lab`, Redis, Zapo 1.9.0,
+Limites do formato manual: Redis, Zapo 1.11.0,
 store-redis 1.3.0, mesmo prefixo Redis, formato DUMP compatível, até 50.000 chaves
 e arquivo de até 16 MiB (conteúdo interno limitado a 8 MiB). SQLite e backups
 de sessões companion/QR não são suportados. Cadastros ou credenciais existentes

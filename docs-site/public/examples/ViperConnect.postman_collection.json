@@ -28,6 +28,11 @@
   ],
   "variable": [
     {
+      "key": "Content-Length",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "If-None-Match",
       "value": "",
       "type": "string"
@@ -68,6 +73,11 @@
       "type": "string"
     },
     {
+      "key": "bridgeId",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "callId",
       "value": "",
       "type": "string"
@@ -79,6 +89,21 @@
     },
     {
       "key": "company_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "confirm",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "confirmOriginOffline",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "contact",
       "value": "",
       "type": "string"
     },
@@ -188,7 +213,22 @@
       "type": "string"
     },
     {
+      "key": "mode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "offset",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "operation",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "owner",
       "value": "",
       "type": "string"
     },
@@ -238,6 +278,11 @@
       "type": "string"
     },
     {
+      "key": "q",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "queue",
       "value": "",
       "type": "string"
@@ -263,6 +308,11 @@
       "type": "string"
     },
     {
+      "key": "scope",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "search",
       "value": "",
       "type": "string"
@@ -275,6 +325,11 @@
     {
       "key": "session",
       "value": "5511999999999",
+      "type": "string"
+    },
+    {
+      "key": "side",
+      "value": "",
       "type": "string"
     },
     {
@@ -303,7 +358,17 @@
       "type": "string"
     },
     {
+      "key": "table",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "task",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "taskId",
       "value": "",
       "type": "string"
     },
@@ -349,6 +414,1456 @@
     }
   ],
   "item": [
+    {
+      "name": "VoIP",
+      "item": [
+        {
+          "name": "Consultar capacidade, destino S3, slots e estado dos backups VoIP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/voip-backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "voip-backups"
+              ],
+              "query": []
+            },
+            "description": "Administrador com login do Manager, não usuário ou chave API/pessoal. Base SQLite/configurações/áudios de espera; arquivos de gravação ficam fora. S3 privado em backups/voip/{instancia}/; padrão voip-main, sete slots semanais, rotina por janela de 12h. VOIP_BACKUP_ENABLED=false desativa somente agendamento. Redis permanece necessário. Resultado incerto de restore é reconciliado pelo recibo persistido no VoIP; não repetir automaticamente.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "enabled, reason, capability, instanceId, bucket, prefix, slotsPrefix, files e state; sem credenciais ou conteúdo do arquivo",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/voip-backups",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "voip-backups"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador com login do Manager, não usuário ou chave API/pessoal. Base SQLite/configurações/áudios de espera; arquivos de gravação ficam fora. S3 privado em backups/voip/{instancia}/; padrão voip-main, sete slots semanais, rotina por janela de 12h. VOIP_BACKUP_ENABLED=false desativa somente agendamento. Redis permanece necessário. Resultado incerto de restore é reconciliado pelo recibo persistido no VoIP; não repetir automaticamente.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "enabled, reason, capability, instanceId, bucket, prefix, slotsPrefix, files e state; sem credenciais ou conteúdo do arquivo",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Gerar e verificar backup VoIP no S3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/voip-backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "voip-backups"
+              ],
+              "query": []
+            },
+            "description": "Snapshot consistente SQLite/WAL e cópia dos áudios de espera referenciados, sem gravações. Mutex/lease compartilhada, upload e leitura de verificação SHA-256/tamanho antes da publicação do manifesto e slot semanal. Arquivo .vipervoip sem criptografia contém credenciais: manter privado. Não altera chamadas nem conecta sessões.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Manifesto ready com uploadVerified=true e objectKey no bucket privado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/voip-backups",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "voip-backups"
+                  ],
+                  "query": []
+                },
+                "description": "Snapshot consistente SQLite/WAL e cópia dos áudios de espera referenciados, sem gravações. Mutex/lease compartilhada, upload e leitura de verificação SHA-256/tamanho antes da publicação do manifesto e slot semanal. Arquivo .vipervoip sem criptografia contém credenciais: manter privado. Não altera chamadas nem conecta sessões.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"confirm\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Manifesto ready com uploadVerified=true e objectKey no bucket privado",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Baixar arquivo privado de backup VoIP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/voip-backups/{{id}}/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "voip-backups",
+                "{{id}}",
+                "download"
+              ],
+              "query": []
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restaurar a base VoIP a partir de um backup S3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/voip-backups/restore",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "voip-backups",
+                "restore"
+              ],
+              "query": []
+            },
+            "description": "Administrador, confirmação e serviço ocioso. Faz backup verificado do destino antes de restaurar. Arquivo/schema/hashes validados; transação pela fila global de configuração e barreira de chamadas/background. Mantém endereços SIP e diretório local de gravações do destino; realoca áudios; remove registros SIP e desativa webhooks para revisão. Não reproduz filas/outbox, não restaura gravações e invalida cursors REST anteriores. Chamadas abertas no snapshot são encerradas como failed/backup_restored. Não há retry automático; restore incerto bloqueia outro restore até conferir o recibo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"backupId\": \"string\",\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "restored=true, beforeBackupId, recordingsRestored=false e webhooksEnabled=false",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/voip-backups/restore",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "voip-backups",
+                    "restore"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador, confirmação e serviço ocioso. Faz backup verificado do destino antes de restaurar. Arquivo/schema/hashes validados; transação pela fila global de configuração e barreira de chamadas/background. Mantém endereços SIP e diretório local de gravações do destino; realoca áudios; remove registros SIP e desativa webhooks para revisão. Não reproduz filas/outbox, não restaura gravações e invalida cursors REST anteriores. Chamadas abertas no snapshot são encerradas como failed/backup_restored. Não há retry automático; restore incerto bloqueia outro restore até conferir o recibo.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"backupId\": \"string\",\n  \"confirm\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "restored=true, beforeBackupId, recordingsRestored=false e webhooksEnabled=false",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Restaurar VoIP por arquivo, inclusive em outro servidor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              },
+              {
+                "key": "Content-Length",
+                "value": "{{Content-Length}}",
+                "description": "",
+                "disabled": false
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/voip-backups/restore-upload?confirm={{confirm}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "voip-backups",
+                "restore-upload"
+              ],
+              "query": [
+                {
+                  "key": "confirm",
+                  "value": "{{confirm}}",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Mesmo fluxo e barreiras do restore S3, sem exigir catálogo antigo. Upload .vipervoip de até 256 MiB; pacote limitado a 512 MiB de arquivos/100 áudios WAV/MP3. Exige backup verificado do destino no S3 antes de aplicar. .sqlite isolado e .viperstorage não substituem esse pacote. Mantém transporte do destino, webhooks desativados e nenhum replay.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Restauração confirmada com backup anterior",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/octet-stream"
+                  },
+                  {
+                    "key": "Content-Length",
+                    "value": "{{Content-Length}}",
+                    "description": "",
+                    "disabled": false
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/voip-backups/restore-upload?confirm={{confirm}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "voip-backups",
+                    "restore-upload"
+                  ],
+                  "query": [
+                    {
+                      "key": "confirm",
+                      "value": "{{confirm}}",
+                      "description": "",
+                      "disabled": false
+                    }
+                  ]
+                },
+                "description": "Mesmo fluxo e barreiras do restore S3, sem exigir catálogo antigo. Upload .vipervoip de até 256 MiB; pacote limitado a 512 MiB de arquivos/100 áudios WAV/MP3. Exige backup verificado do destino no S3 antes de aplicar. .sqlite isolado e .viperstorage não substituem esse pacote. Mantém transporte do destino, webhooks desativados e nenhum replay.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "file",
+                  "file": {
+                    "src": ""
+                  }
+                }
+              },
+              "status": "Restauração confirmada com backup anterior",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Listar modelos atuais do OpenRouter para IA pós-chamada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/voip/console/ai/models?provider={{provider}}&purpose={{purpose}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "voip",
+                "console",
+                "ai",
+                "models"
+              ],
+              "query": [
+                {
+                  "key": "provider",
+                  "value": "{{provider}}",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "purpose",
+                  "value": "{{purpose}}",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Modelos compatíveis com a finalidade solicitada",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/voip/console/ai/models?provider={{provider}}&purpose={{purpose}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "voip",
+                    "console",
+                    "ai",
+                    "models"
+                  ],
+                  "query": [
+                    {
+                      "key": "provider",
+                      "value": "{{provider}}",
+                      "description": "",
+                      "disabled": false
+                    },
+                    {
+                      "key": "purpose",
+                      "value": "{{purpose}}",
+                      "description": "",
+                      "disabled": false
+                    }
+                  ]
+                },
+                "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Modelos compatíveis com a finalidade solicitada",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sessões",
+      "item": [
+        {
+          "name": "Listar workers autorizados para restaurar uma sessão nova",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/storage/workers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "storage",
+                "workers"
+              ],
+              "query": []
+            },
+            "description": "Somente administrador com token de login, não chave pessoal de API. Consulta capacidade pelo RPC do dono sem cadastrar sessão. Workers vêm do UNOAPI_SERVER_NAME, donos persistidos e SESSION_STORAGE_RESTORE_WORKERS opcional (nomes separados por vírgulas). Ausente ou indisponível aparece available=false; não existe fallback para outro worker ou Redis.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Capacidade dos workers configurados",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/storage/workers",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "storage",
+                    "workers"
+                  ],
+                  "query": []
+                },
+                "description": "Somente administrador com token de login, não chave pessoal de API. Consulta capacidade pelo RPC do dono sem cadastrar sessão. Workers vêm do UNOAPI_SERVER_NAME, donos persistidos e SESSION_STORAGE_RESTORE_WORKERS opcional (nomes separados por vírgulas). Ausente ou indisponível aparece available=false; não existe fallback para outro worker ou Redis.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Capacidade dos workers configurados",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Restaurar arquivo SQLite como sessão ausente no destino",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              },
+              {
+                "key": "Content-Length",
+                "value": "{{Content-Length}}",
+                "description": "",
+                "disabled": false
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/manager/storage/restore-upload?phone={{phone}}&owner={{owner}}&confirmOriginOffline={{confirmOriginOffline}}&mode={{mode}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "storage",
+                "restore-upload"
+              ],
+              "query": [
+                {
+                  "key": "phone",
+                  "value": "{{phone}}",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "owner",
+                  "value": "{{owner}}",
+                  "description": "Worker autorizado e com volume SQLite disponível",
+                  "disabled": false
+                },
+                {
+                  "key": "confirmOriginOffline",
+                  "value": "{{confirmOriginOffline}}",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "mode",
+                  "value": "{{mode}}",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Upload administrativo .viperstorage para servidor novo. Não exige cadastro prévio: exige que a sessão e identidades correlatas estejam ausentes no Redis de destino. A confirmação de origem parada é operacional, não verifica o servidor antigo. Stream privado S3, tarefa durável e claim idempotente no worker escolhido; perde-resposta RPC não autoriza reenviar o arquivo ou criar outra tarefa. Confere todas as frames, integridade, telefone, banco, IDs e suplemento Primary antes de publicar novo UUID/dono. Resultado permanece offline, autoConnect=false, webhooks desativados, sem replay. Preserva o token da sessão do snapshot: revisar a credencial no destino. Novos arquivos não exigem senha; legados exigem chave no worker. Mobile Primary exige MOBILE_REGISTRATION_KEY válida no destino, não enviada pelo navegador. Mídias S3 não acompanham o pacote. Redis compartilhado contendo a origem gera conflito; não transfere dono automaticamente.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Tarefa durável recebida; consultar até estado terminal antes de nova tentativa",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/octet-stream"
+                  },
+                  {
+                    "key": "Content-Length",
+                    "value": "{{Content-Length}}",
+                    "description": "",
+                    "disabled": false
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/manager/storage/restore-upload?phone={{phone}}&owner={{owner}}&confirmOriginOffline={{confirmOriginOffline}}&mode={{mode}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "storage",
+                    "restore-upload"
+                  ],
+                  "query": [
+                    {
+                      "key": "phone",
+                      "value": "{{phone}}",
+                      "description": "",
+                      "disabled": false
+                    },
+                    {
+                      "key": "owner",
+                      "value": "{{owner}}",
+                      "description": "Worker autorizado e com volume SQLite disponível",
+                      "disabled": false
+                    },
+                    {
+                      "key": "confirmOriginOffline",
+                      "value": "{{confirmOriginOffline}}",
+                      "description": "",
+                      "disabled": false
+                    },
+                    {
+                      "key": "mode",
+                      "value": "{{mode}}",
+                      "description": "",
+                      "disabled": false
+                    }
+                  ]
+                },
+                "description": "Upload administrativo .viperstorage para servidor novo. Não exige cadastro prévio: exige que a sessão e identidades correlatas estejam ausentes no Redis de destino. A confirmação de origem parada é operacional, não verifica o servidor antigo. Stream privado S3, tarefa durável e claim idempotente no worker escolhido; perde-resposta RPC não autoriza reenviar o arquivo ou criar outra tarefa. Confere todas as frames, integridade, telefone, banco, IDs e suplemento Primary antes de publicar novo UUID/dono. Resultado permanece offline, autoConnect=false, webhooks desativados, sem replay. Preserva o token da sessão do snapshot: revisar a credencial no destino. Novos arquivos não exigem senha; legados exigem chave no worker. Mobile Primary exige MOBILE_REGISTRATION_KEY válida no destino, não enviada pelo navegador. Mídias S3 não acompanham o pacote. Redis compartilhado contendo a origem gera conflito; não transfere dono automaticamente.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "file",
+                  "file": {
+                    "src": ""
+                  }
+                }
+              },
+              "status": "Tarefa durável recebida; consultar até estado terminal antes de nova tentativa",
+              "code": 202,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"phone\": \"string\",\n  \"status\": \"queued\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Acompanhar restauração de sessão nova mesmo antes de existir cadastro",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/storage/restores/{{phone}}/{{id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "storage",
+                "restores",
+                "{{phone}}",
+                "{{id}}"
+              ],
+              "query": []
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Estado durável; ready não significa sessão conectada",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/storage/restores/{{phone}}/{{id}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "storage",
+                    "restores",
+                    "{{phone}}",
+                    "{{id}}"
+                  ],
+                  "query": []
+                },
+                "description": "",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Estado durável; ready não significa sessão conectada",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"phone\": \"string\",\n  \"status\": \"queued\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Listar último backup e slots semanais para baixar pelo painel",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/storage/{{phone}}/backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "storage",
+                "{{phone}}",
+                "backups"
+              ],
+              "query": []
+            },
+            "description": "Somente metadados verificados: id, createdAt, bytes, kind, protection e day nos slots. Sem URLs assinadas, credenciais ou conteúdo do pacote. Consulta manifestos privados S3; não gera backup nem executa restore.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Objeto com latest opcional e slots disponíveis",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/manager/storage/{{phone}}/backups",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "manager",
+                    "storage",
+                    "{{phone}}",
+                    "backups"
+                  ],
+                  "query": []
+                },
+                "description": "Somente metadados verificados: id, createdAt, bytes, kind, protection e day nos slots. Sem URLs assinadas, credenciais ou conteúdo do pacote. Consulta manifestos privados S3; não gera backup nem executa restore.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{manager_login_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Objeto com latest opcional e slots disponíveis",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
+            }
+          ]
+        },
+        {
+          "name": "Baixar .viperstorage privado por ID ou último backup",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/manager/storage/{{phone}}/backups/{{id}}/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "manager",
+                "storage",
+                "{{phone}}",
+                "backups",
+                "{{id}}",
+                "download"
+              ],
+              "query": []
+            },
+            "description": "Administrador com login. Retorna stream application/octet-stream e Content-Disposition attachment, sem expor URL S3/token na query. id aceita UUID ou latest. Não suspende, conecta nem restaura a sessão. Guarde o arquivo privado: contém credenciais.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{manager_login_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar armazenamento e capacidade SQLite da sessão",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage"
+              ],
+              "query": []
+            },
+            "description": "Administrativo. Consulta backend, dono, geração, tarefa, manutenção, reconciliação e último backup. Novas sessões usam SQLite por padrão na raiz /app/session-data somente com mount persistente gravável e motor compatível confirmados pelo worker. ENVs ROOT/DEFAULT/PERSISTENT são opcionais; DEFAULT=redis mantém novas sessões em Redis, PERSISTENT=false desabilita SQLite. Sem volume válido novas sessões usam Redis e o painel alerta como configurar; uma pasta ou ENV não prova persistência. Sessões Redis existentes não migram automaticamente. Redis e REDIS_URL continuam obrigatórios com SQLite para catálogo, autenticação/autorização do painel/API, configuração, leases e roteamento; SQLite não é modo de operação sem Redis. Worker deve confirmar Redis/SQLite antes de conectar: timeout não é fallback. Sessão já migrada com volume ausente falha sem recriar banco vazio ou voltar ao Redis. Exibe bucket/prefixo/slots sem credenciais. connectionStatus difere do estado do storage; restoreUpload.available exige offline real e autoConnect=false. GET não executa manutenção. Em validação DEV; não implanta produção."
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar migração manual Redis para SQLite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/migrations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "migrations"
+              ],
+              "query": []
+            },
+            "description": "Pausa somente esta sessão sem logout, prepara snapshot no volume do worker dono e valida IDs, conteúdo e expiração antes do cutover por geração. Exige S3, mas não exige chave: após commit verifica novo backup sem criptografia por leitura de volta/restauração e remove somente as chaves Redis de origem cujo conteúdo/TTL permanecem iguais, sob a mesma lease. Arquivo contém credenciais; mantenha bucket e downloads restritos. Configuração e coordenação permanecem. sourcePreserved=false e sourceCleanup confirmam finalização; falha mantém SQLite offline, sem rollback silencioso. Só solicita retomada após finalização/lease liberada se autoConnect=true, status online/connecting e cliente local anterior no dono. Fixtures e guard global não retomam. result.reconnect=requested não confirma Online. Sem retry por timeout. HTTP aceito não é conclusão. Não altera outras sessões.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target\": \"sqlite\",\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar tarefa de migração, backup, restore ou limpeza da origem",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/tasks/{{taskId}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "tasks",
+                "{{taskId}}"
+              ],
+              "query": []
+            },
+            "description": "Correlaciona tarefa e sessão lendo o recibo do plano de controle Redis, sem depender da geração alterada pelo cutover nem da disponibilidade do worker dono. O recibo não comprova saúde atual do SQLite. Sucesso somente em estado terminal ready no worker ou succeeded quando normalizado pelo gateway; interrupted exige reconciliação sem repetição automática do POST. O painel limita a consulta automática e oferece consulta manual. Não retorna segredos nem mensagens."
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar snapshot verificado do SQLite da sessão sem exigir chave",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/backups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "backups"
+              ],
+              "query": []
+            },
+            "description": "Snapshot WAL-consistente, sem criptografia e sem chave, destinado ao S3 privado configurado. Manifesto novo informa protection=none. Só publica ready após readback, checksum do stream/metadados, SHA-256 e integridade SQLite; checksum não oferece sigilo nem autenticação contra alteração maliciosa. Arquivo inclui credenciais, configuração e suplemento Mobile Primary; mantenha acesso restrito. Controles compartilhados são revalidados ao redor do snapshot, até três tentativas limitadas. Restore existente não reaplica configuração automaticamente. Agenda por janela de 12 horas; falha permite retry na mesma janela. Rotação weekly mantém sete slots no fuso configurado, com CAS/readback e grace de 15 minutos antes de aposentar backups novos sem referência. Arquivos criptografados legados e a chave existente são preservados, fora dessa remoção automática; continuam restauráveis com sua chave. Backup não é failover nem comprova credenciais aceitas no WhatsApp.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restaurar backup SQLite da sessão em modo offline",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/restores",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "restores"
+              ],
+              "query": []
+            },
+            "description": "Login Manager admin obrigatório. Restaura sessão SQLite existente offline em novo UUID, preservando arquivo anterior; autoConnect=false e posse exclusiva obrigatórios. Runtime recusa destino Redis, sem mesclar dados. Detecta backup novo sem chave ou legado criptografado: somente o legado exige sua chave no worker e falha explicitamente se ausente. Valida arquivo inteiro, checksum, identidade, integridade, versão e IDs vivos nas duas direções antes de publicar o storage. Mobile Primary exige suplemento idêntico ao estado Redis atual; divergência gera session_storage_primary_state_changed. Destino permanece offline, sem conexão ou replay. Aceite HTTP não confirma restore; não comprova recuperação real de aparelho.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"backupId\": \"BACKUP_ID\",\n  \"mode\": \"offline\",\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Restaurar arquivo de backup SQLite enviado pelo administrador",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              },
+              {
+                "key": "Content-Length",
+                "value": "{{Content-Length}}",
+                "description": "",
+                "disabled": false
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/restore-upload?confirm={{confirm}}&mode={{mode}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "restore-upload"
+              ],
+              "query": [
+                {
+                  "key": "confirm",
+                  "value": "{{confirm}}",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "mode",
+                  "value": "{{mode}}",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Arquivo .viperstorage novo sem chave ou legado criptografado, corpo binário por streaming, até 256 MiB com Content-Length. Não usar JSON/base64/multipart nem enviar senha. Exige login Manager admin, sessão SQLite existente realmente offline, autoConnect=false, S3 e volume; novos backups não exigem chave no worker. Somente arquivos legados criptografados exigem a chave antiga e falham explicitamente se ausente. Arquivo contém credenciais: acesso restrito. Staging privado no mesmo bucket; dono revalida estado/tarefa/lease, arquivo completo/checksum/SHA-256/identidade/IDs/primário antes de promover novo UUID, preservando anterior. Sem conexão, replay ou sobreposição da configuração. Consultar tasks até terminal; timeout não autoriza retry automático. Uploads incertos expiram após 24 horas; êxito remove staging. Para perda do catálogo Redis usar a CLI offline documentada.",
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Finalizar migração removendo somente a origem Redis verificada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/source-cleanup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "source-cleanup"
+              ],
+              "query": []
+            },
+            "description": "Operação destrutiva administrativa explícita, separada do cutover. Exige sessão SQLite offline, autoConnect=false, dono correto, geração atual e manifesto de backup ready. Restaura o backup em temporário e compara SHA-256 dos fingerprints; somente legado criptografado exige chave antiga. Cada lote atômico Redis revalida catálogo, geração, posse, manifesto, bytes e TTL antes de UNLINK; conteúdo ou expiração alterados permanecem. Preserva plano de controle, chaves globais e SQLite. Contagem/bytes não comprovam redução imediata de RSS. Sem retry automático.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirm\": true,\n  \"backupId\": \"12345678-1234-4234-8234-123456789abc\",\n  \"generation\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar métricas do worker e armazenamento da sessão",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "metrics"
+              ],
+              "query": []
+            },
+            "description": "Somente leitura. RSS, heap e externa são do processo inteiro compartilhado, não RAM exclusiva da sessão. SQLite/WAL/SHM são bytes em disco. Redis por sessão é estimativa amostrada. Origem preservada continua consumindo memória. Painel consulta a cada cinco segundos: RSS/arquivos atualizam por consulta; contagens, estimativas e metadados SQL podem ser cacheados por 60 segundos. Orçamento soft de cache de 1 MiB por banco aberto, conexão node:sqlite compartilhada entre Uno e SDK; não é RAM medida ou teto por sessão. Não baixa mensagens nem conecta ao WhatsApp."
+          },
+          "response": []
+        },
+        {
+          "name": "Explorar tabelas e registros do SQLite da sessão",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/explorer?table={{table}}&search={{search}}&cursor={{cursor}}&limit={{limit}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "explorer"
+              ],
+              "query": [
+                {
+                  "key": "table",
+                  "value": "{{table}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "{{search}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "{{cursor}}",
+                  "description": "Cursor vinculado a sessão",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Login de administrador, nunca chave pessoal/API. Consulta no worker dono, com geração e volume validados, conexão somente leitura e sem SQL livre. Sem table retorna catálogo; tabelas internas/credenciais são protegidas. Página de até 50 registros, varre no máximo 200 rowids; uma busca vazia pode ter continuação. Busca em chaves/identificadores, não conteúdo. Segredos, protobuf e URLs de mídia não são expostos; mensagem binária tem prévia pública. Campos acima de 64 KiB não são carregados. Não conecta ou envia ao WhatsApp. Redis da sessão continua no explorador Redis separado."
+          },
+          "response": []
+        },
+        {
+          "name": "Criar, editar ou excluir registro SQLite com backup e confirmação",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/storage/explorer",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "storage",
+                "explorer"
+              ],
+              "query": []
+            },
+            "description": "CRUD administrativo do armazenamento, não edição/envio no WhatsApp. Sessão offline, autoConnect=false, sem cliente ou chamadas ativos; mutex de storage, lease WhatsApp, barreira de callbacks e seleção fresca. Antes da escrita exige backup S3 verificado; erro de backup não altera registros. UPDATE/DELETE exigem rowId+etag da consulta, recusando dados modificados. Transação atômica, pares UnoID/provider ID mantidos juntos. Tabelas internas/credenciais e chaves de outra sessão são protegidas. Sem SQL livre ou edição de schema. Não há retry automático; resultado ambíguo exige consultar antes de repetir. Logs não incluem conteúdo. Novos backups contêm credenciais sem criptografia: mantenha o bucket privado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"create\",\n  \"table\": \"string\",\n  \"generation\": 1,\n  \"confirm\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar sessões/configurações visíveis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "sessions"
+              ],
+              "query": []
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Abrir UI de conexão de uma sessão cadastrada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/connect/{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "connect",
+                "{{phone}}"
+              ],
+              "query": []
+            },
+            "description": "Não cadastra telefone implicitamente. Na stack Redis-backed exige configuração persistida pelo register/Primary com backend confirmado; não inicia Redis por fora do provisionamento SQLite."
+          },
+          "response": []
+        },
+        {
+          "name": "UI de sessão (QR/Config)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sessions/{{phone}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "sessions",
+                "{{phone}}"
+              ],
+              "query": []
+            },
+            "description": "Exige telefone já cadastrado na stack Redis-backed; não cria sessão implicitamente. Register confirma o backend antes da primeira conexão. Sessões existentes preservam Redis ou SQLite."
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar código de pareamento",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{phone}}/request_code",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{phone}}",
+                "request_code"
+              ],
+              "query": []
+            },
+            "description": "Solicita um pairing code ao motor da sessão. No motor Zapo, a resposta HTTP contém o código puro e o Socket.IO também publica uma imagem com o código legível pelo contrato compatível `broadcast`, usando `type: qrcode`. A aplicação pode continuar exibindo `content` em uma tag `img`, sem criar um evento específico para pairing code. Exige cadastro confirmado pelo register/Primary antes de conectar; não cadastra uma sessão Redis implicitamente quando SQLite é o padrão."
+          },
+          "response": []
+        },
+        {
+          "name": "Entregar assertion WebAuthn ao signer pendente no worker dono",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/passkey-bridge/{{bridgeId}}/assertion",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "passkey-bridge",
+                "{{bridgeId}}",
+                "assertion"
+              ],
+              "query": []
+            },
+            "description": "Exige token autorizado para o telefone do bridge. Web e worker podem ser processos distintos, em Redis ou SQLite. RPC revalida dono/geração, bridge, expiração e signer corrente. Não conecta sessão offline nem cria cliente. response-sent confirma somente entrega ao signer; apenas auth_paired confirma completed. Não repetir automaticamente após timeout.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"credential_id\": \"string\",\n  \"assertion_json\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar ou entregar confirmação ao provider no worker dono",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/passkey-bridge/{{bridgeId}}/confirm",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "passkey-bridge",
+                "{{bridgeId}}",
+                "confirm"
+              ],
+              "query": []
+            },
+            "description": "Mesma autorização e validade da assertion. Na Zapo a confirmação é controlada pelo provider; uma resposta HTTP não conclui o pareamento nem reabre conexão. Preserva a expiração absoluta e estados terminais."
+          },
+          "response": []
+        },
+        {
+          "name": "Registrar/atualizar configuração da sessão",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "register"
+              ],
+              "query": []
+            },
+            "description": "Novo cadastro Zapo permanece com autoConnect=false enquanto o worker dono prepara o backend. A confirmação depende de recibo persistido da mesma tentativa e dono, com backend e UUID/geração aplicáveis. Timeout não confirma fallback para Redis: sem recibo retorna 503 e mantém a sessão suspensa. Repetir register retoma a tentativa pendente; resposta RPC perdida pode ser resolvida por recibo já persistido de SQLite ou Redis escolhido explicitamente. Não recria banco vazio nem troca backend confirmado. Alterações de configuração são comparadas antes da gravação, preservando o descritor atual; conflitos incompatíveis retornam 409. Mudança real de intenção de conexão não é suprimida pelo debounce, e o worker serializa reload/inicialização por sessão. Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS somente se a importação já estiver confirmada e o registro for válido. Importação pendente usa o fluxo administrativo do dispositivo principal. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online. Após deregister SQLite confirmado, preserva o banco histórico e permite novo perfil QR/tipo de pareamento somente no estado interno desvinculado e offline. A aplicação não pode enviar sessionStorage, sessionStorageUnlinked, sessionStorageTaskId, sessionStorageProvisionPending ou sessionStorageProvisioned nem alterar worker/provedor da sessão SQLite por esta rota. Suspensão de primário não limpa suas credenciais nem equivale à remoção completa do dispositivo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"zapo\",\n  \"zapoWebClientProfile\": \"default\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
     {
       "name": "Mensagens",
       "item": [
@@ -400,7 +1915,7 @@
                 }
               ]
             },
-            "description": "Zapo/Redis apenas. Token global, da sessão ou Manager autorizado. Sem consulta ao WhatsApp, recibo de leitura ou renovação do TTL. Inicialização do índice em background (indexing=true). Busca examina até 200 resumos por página; página vazia pode ter continuação. Não retorna contagem global. Exclui Status/newsletters."
+            "description": "Zapo/Redis ou SQLite por sessão. SQLite é consultado no worker dono por RPC, sem abrir arquivo no web nem fallback para cópia Redis. Token global, da sessão ou Manager autorizado. Sem consulta ao WhatsApp, recibo de leitura ou renovação do TTL. Em Redis, inicialização do índice em background (indexing=true) e busca de até 200 resumos por página; página vazia pode ter continuação. Não retorna contagem global. Exclui Status/newsletters."
           },
           "response": []
         },
@@ -477,7 +1992,7 @@
               ],
               "query": []
             },
-            "description": "Consulta a mensagem na sessão antes de acessar storage. Reutiliza mídia interna; quando ausente, download/decrypt oficial Zapo sem abrir socket WhatsApp, respeitando proxy/família IP. Máximo 256 MiB/60s; concorrência deduplicada por processo. Mídia expirada pode falhar; nunca expõe view_once ou mídia removida. Sem predownload/reupload automático. Cache-Control no-store, attachment e nosniff."
+            "description": "Consulta a mensagem na sessão antes de acessar o storage. Redis e SQLite aceitam ID do provedor ou seu alias UnoID, resolvido por mapeamento recíproco válido da mesma sessão, sem varredura nem reconstrução de referência expirada. A rota exige autorização da sessão e não recebe um parâmetro adicional de conversa. Conteúdo expirado, removido ou view_once é bloqueado pelos dois IDs antes de acessar cache ou CDN. Mapeamento inconsistente retorna erro explícito. SQLite usa o worker dono para registro/estado/IDs e exige S3 compartilhado; RPC retorna somente chave interna, MIME e nome, nunca bytes, protobuf ou chaves. Reutiliza mídia interna; quando ausente, download/decrypt oficial Zapo por stream ao storage sem abrir socket WhatsApp, respeitando proxy e família IP. Máximo 256 MiB/60s; consultas simultâneas pelos dois IDs compartilham o download no processo responsável, sem reenviar a mensagem. Fixtures e transições de armazenamento são bloqueadas. Sem predownload/reupload automático. Cache-Control no-store, attachment e nosniff."
           },
           "response": []
         },
@@ -503,7 +2018,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Conheça o ViperConnect: github.com/ViperTecCorporation/ViperConnect\"\n  }\n}",
@@ -538,7 +2053,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"text\",\n  \"ttl\": 86400,\n  \"text\": {\n    \"body\": \"Esta mensagem expira em 24 horas.\"\n  }\n}",
@@ -573,7 +2088,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": \"{{to}}\",\n  \"type\": \"location\",\n  \"location\": {\n    \"latitude\": -15.601,\n    \"longitude\": -56.0974,\n    \"name\": \"Praça em Cuiabá\",\n    \"address\": \"Cuiabá, MT\"\n  }\n}",
@@ -608,7 +2123,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Aviso @todos\"\n  }\n}",
@@ -643,7 +2158,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Oi @5511999999999 e @5511888888888\"\n  }\n}",
@@ -678,7 +2193,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"message_edit\",\n  \"context\": {\n    \"message_id\": \"uno-message-id-original\"\n  },\n  \"text\": {\n    \"body\": \"Texto editado\"\n  }\n}",
@@ -713,7 +2228,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://exemplo.com/imagem.jpg\",\n    \"caption\": \"Legenda opcional\"\n  }\n}",
@@ -748,7 +2263,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"base64\": \"/9j/4AAQSkZJRgABAQ...\",\n    \"mime_type\": \"image/jpeg\",\n    \"filename\": \"foto.jpg\",\n    \"caption\": \"Legenda opcional\"\n  }\n}",
@@ -783,7 +2298,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://exemplo.com/imagem.jpg\",\n    \"view_once\": true\n  }\n}",
@@ -818,7 +2333,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"link\": \"https://exemplo.com/arquivo.pdf\",\n    \"filename\": \"contrato.pdf\",\n    \"caption\": \"Contrato para conferência\",\n    \"mime_type\": \"application/pdf\"\n  }\n}",
@@ -853,7 +2368,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"audio\",\n  \"audio\": {\n    \"link\": \"https://exemplo.com/audio.ogg\",\n    \"mime_type\": \"audio/ogg\",\n    \"ptt\": true\n  }\n}",
@@ -888,7 +2403,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"video\",\n  \"video\": {\n    \"link\": \"https://exemplo.com/video.mp4\",\n    \"caption\": \"Vídeo curto\"\n  }\n}",
@@ -923,7 +2438,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://vipertec.com.br/_content/ViperERP/img/FullCam08.jpg\",\n    \"caption\": \"Novidade\"\n  },\n  \"statusJidList\": [\n    \"5511999999999\",\n    \"5500000000002\"\n  ]\n}",
@@ -958,7 +2473,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"contacts\",\n  \"contacts\": [\n    {\n      \"name\": {\n        \"formatted_name\": \"Contato Exemplo\"\n      },\n      \"phones\": [\n        {\n          \"wa_id\": \"5500000000002\",\n          \"phone\": \"+55 00 00000-0002\"\n        }\n      ]\n    }\n  ]\n}",
@@ -993,7 +2508,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"reaction\",\n  \"reaction\": {\n    \"message_id\": \"MESSAGE_ID\",\n    \"emoji\": \"👍\"\n  }\n}",
@@ -1028,7 +2543,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"poll\",\n  \"poll\": {\n    \"name\": \"Qual plano você prefere?\",\n    \"options\": [\n      \"Básico\",\n      \"Profissional\"\n    ],\n    \"selectable_count\": 1,\n    \"allow_add_option\": false\n  }\n}",
@@ -1063,7 +2578,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"poll_vote\",\n  \"poll_vote\": {\n    \"message_id\": \"MESSAGE_ID_DA_ENQUETE\",\n    \"selected_options\": [\n      \"Profissional\"\n    ]\n  }\n}",
@@ -1098,7 +2613,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"sticker\",\n  \"sticker\": {\n    \"link\": \"https://example.com/sticker.png\"\n  }\n}",
@@ -1133,7 +2648,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"Escolha uma opção\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"btn_1\",\n            \"title\": \"Opção 1\"\n          }\n        },\n        {\n          \"type\": \"reply\",\n          \"reply\": {\n            \"id\": \"btn_2\",\n            \"title\": \"Opção 2\"\n          }\n        }\n      ]\n    }\n  }\n}",
@@ -1168,7 +2683,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"Acesse ou fale com a equipe\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"cta_url\",\n          \"url\": {\n            \"title\": \"Abrir site\",\n            \"link\": \"https://facebook.com.br\"\n          }\n        },\n        {\n          \"type\": \"cta_call\",\n          \"call\": {\n            \"title\": \"Ligar\",\n            \"phone_number\": \"+5511999999999\"\n          }\n        },\n        {\n          \"type\": \"cta_copy\",\n          \"copy_code\": {\n            \"title\": \"ChavePix\",\n            \"code\": \"0000000055442\"\n          }\n        }\n      ]\n    }\n  }\n}",
@@ -1203,7 +2718,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n\n\nAbertura dentro do WhatsApp confirmada pelo usuario no iPhone em conversa individual e no Android em testes enviados a dois grupos, usando full e true com https://vipertec.com.br. Versoes de sistema e aplicativo nao registradas. Nao garante todos os clientes, carrosseis ou callback de formulario; delivered sozinho nao prova WebView.",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n\n\nAbertura dentro do WhatsApp confirmada pelo usuario no iPhone em conversa individual e no Android em testes enviados a dois grupos, usando full e true com https://vipertec.com.br. Versoes de sistema e aplicativo nao registradas. Nao garante todos os clientes, carrosseis ou callback de formulario; delivered sozinho nao prova WebView.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"body\": {\n      \"text\": \"Abra o formulario pelo botao.\"\n    },\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"cta_url\",\n          \"url\": {\n            \"title\": \"Abrir formulario\",\n            \"link\": \"https://example.com/form\",\n            \"webview_presentation\": \"full\",\n            \"webview_interaction\": true\n          }\n        }\n      ]\n    }\n  }\n}",
@@ -1238,7 +2753,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"list\",\n    \"header\": {\n      \"type\": \"text\",\n      \"text\": \"Menu\"\n    },\n    \"body\": {\n      \"text\": \"Escolha uma opção\"\n    },\n    \"footer\": {\n      \"text\": \"Unoapi\"\n    },\n    \"action\": {\n      \"button\": \"Ver opções\",\n      \"sections\": [\n        {\n          \"title\": \"Planos\",\n          \"rows\": [\n            {\n              \"id\": \"plan_basic\",\n              \"title\": \"Básico\",\n              \"description\": \"R$ 10\"\n            },\n            {\n              \"id\": \"plan_pro\",\n              \"title\": \"Pro\",\n              \"description\": \"R$ 20\"\n            }\n          ]\n        }\n      ]\n    }\n  }\n}",
@@ -1273,7 +2788,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"carousel\",\n    \"body\": {\n      \"text\": \"Conheça nossos planos\"\n    },\n    \"action\": {\n      \"carousel\": {\n        \"cards\": [\n          {\n            \"header\": {\n              \"type\": \"image\",\n              \"image\": {\n                \"link\": \"https://vipertec.com.br/_content/ViperERP/img/FullCam08.jpg\"\n              }\n            },\n            \"body\": {\n              \"text\": \"Plano Básico\"\n            },\n            \"footer\": {\n              \"text\": \"Para começar\"\n            },\n            \"action\": {\n              \"buttons\": [\n                {\n                  \"type\": \"reply\",\n                  \"reply\": {\n                    \"id\": \"plan_basic\",\n                    \"title\": \"Escolher\"\n                  }\n                }\n              ]\n            }\n          },\n          {\n            \"header\": {\n              \"type\": \"image\",\n              \"image\": {\n                \"link\": \"https://vipertec.com.br/_content/ViperERP/img/FullCam08.jpg\"\n              }\n            },\n            \"body\": {\n              \"text\": \"Plano Profissional\"\n            },\n            \"footer\": {\n              \"text\": \"Mais recursos\"\n            },\n            \"action\": {\n              \"buttons\": [\n                {\n                  \"type\": \"cta_url\",\n                  \"url\": {\n                    \"title\": \"Ver detalhes\",\n                    \"link\": \"https://vipertec.com.br\"\n                  }\n                }\n              ]\n            }\n          }\n        ]\n      }\n    }\n  }\n}",
@@ -1308,7 +2823,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"button\",\n    \"action\": {\n      \"buttons\": [\n        {\n          \"type\": \"payment_request\",\n          \"payment_setting\": {\n            \"type\": \"pix_static_code\",\n            \"pix_static_code\": {\n              \"merchant_name\": \"Minha Empresa\",\n              \"key\": \"financeiro@minhaempresa.com.br\",\n              \"key_type\": \"EMAIL\"\n            }\n          }\n        }\n      ]\n    }\n  }\n}",
@@ -1343,7 +2858,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_details\",\n    \"body\": {\n      \"text\": \"Pague R$ 149,90 via PIX\"\n    },\n    \"action\": {\n      \"name\": \"review_and_pay\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"type\": \"digital-goods\",\n        \"payment_type\": \"br\",\n        \"payment_settings\": [\n          {\n            \"type\": \"pix_dynamic_code\",\n            \"pix_dynamic_code\": {\n              \"code\": \"000201010212...\",\n              \"merchant_name\": \"Minha Empresa\",\n              \"key\": \"12345678000199\",\n              \"key_type\": \"CNPJ\"\n            }\n          }\n        ],\n        \"currency\": \"BRL\",\n        \"total_amount\": {\n          \"value\": 14990,\n          \"offset\": 100\n        }\n      }\n    }\n  }\n}",
@@ -1378,7 +2893,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_details\",\n    \"header\": {\n      \"type\": \"image\",\n      \"image\": {\n        \"link\": \"https://vipertec.com.br/_content/ViperERP/img/FullCam08.jpg\"\n      }\n    },\n    \"body\": {\n      \"text\": \"Revise e pague seu pedido\"\n    },\n    \"action\": {\n      \"name\": \"review_and_pay\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"type\": \"physical-goods\",\n        \"payment_type\": \"br\",\n        \"payment_settings\": [\n          {\n            \"type\": \"pix_dynamic_code\",\n            \"pix_dynamic_code\": {\n              \"code\": \"000201010212...\",\n              \"merchant_name\": \"Minha Empresa\",\n              \"key\": \"12345678000199\",\n              \"key_type\": \"CNPJ\"\n            }\n          }\n        ],\n        \"currency\": \"BRL\",\n        \"total_amount\": {\n          \"value\": 50000,\n          \"offset\": 100\n        },\n        \"order\": {\n          \"status\": \"pending\",\n          \"tax\": {\n            \"value\": 0,\n            \"offset\": 100,\n            \"description\": \"Sem impostos adicionais\"\n          },\n          \"items\": [\n            {\n              \"retailer_id\": \"produto-1\",\n              \"name\": \"Produto\",\n              \"amount\": {\n                \"value\": 50000,\n                \"offset\": 100\n              },\n              \"quantity\": 1\n            }\n          ],\n          \"subtotal\": {\n            \"value\": 50000,\n            \"offset\": 100\n          }\n        }\n      }\n    }\n  }\n}",
@@ -1413,7 +2928,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_details\",\n    \"body\": {\n      \"text\": \"Finalize seu pagamento\"\n    },\n    \"action\": {\n      \"name\": \"review_and_pay\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"type\": \"digital-goods\",\n        \"payment_type\": \"br\",\n        \"payment_settings\": [\n          {\n            \"type\": \"payment_link\",\n            \"payment_link\": {\n              \"uri\": \"https://pagamentos.example.com/pedido-124\"\n            }\n          }\n        ],\n        \"currency\": \"BRL\",\n        \"total_amount\": {\n          \"value\": 1500,\n          \"offset\": 100\n        }\n      }\n    }\n  }\n}",
@@ -1448,7 +2963,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_details\",\n    \"body\": {\n      \"text\": \"Pague o boleto de R$ 88,48\"\n    },\n    \"action\": {\n      \"name\": \"review_and_pay\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"type\": \"digital-goods\",\n        \"payment_type\": \"br\",\n        \"payment_settings\": [\n          {\n            \"type\": \"boleto\",\n            \"boleto\": {\n              \"digitable_line\": \"03399026944140000002628346101018898510000008848\"\n            }\n          }\n        ],\n        \"currency\": \"BRL\",\n        \"total_amount\": {\n          \"value\": 8848,\n          \"offset\": 100\n        }\n      }\n    }\n  }\n}",
@@ -1483,7 +2998,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_details\",\n    \"body\": {\n      \"text\": \"Confirme o pagamento de R$ 149,90\"\n    },\n    \"action\": {\n      \"name\": \"review_and_pay\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"type\": \"digital-goods\",\n        \"payment_type\": \"br\",\n        \"payment_settings\": [\n          {\n            \"type\": \"offsite_card_pay\",\n            \"offsite_card_pay\": {\n              \"last_four_digits\": \"5235\",\n              \"credential_id\": \"credencial-123\"\n            }\n          }\n        ],\n        \"currency\": \"BRL\",\n        \"total_amount\": {\n          \"value\": 14990,\n          \"offset\": 100\n        }\n      }\n    }\n  }\n}",
@@ -1518,7 +3033,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_details\",\n    \"header\": {\n      \"type\": \"image\",\n      \"image\": {\n        \"link\": \"https://vipertec.com.br/_content/ViperERP/img/FullCam08.jpg\"\n      }\n    },\n    \"body\": {\n      \"text\": \"Boleto nº 1033239253 referente à assinatura de Câmera Comodato Mensal — 1 unidade. Vencimento: 10/07/2026. Valor: R$ 60,00.\"\n    },\n    \"action\": {\n      \"name\": \"review_and_pay\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"type\": \"digital-goods\",\n        \"payment_type\": \"br\",\n        \"payment_settings\": [\n          {\n            \"type\": \"boleto\",\n            \"boleto\": {\n              \"digitable_line\": \"36490000920005525230800000010918900000000006000\"\n            }\n          },\n          {\n            \"type\": \"pix_dynamic_code\",\n            \"pix_dynamic_code\": {\n              \"code\": \"00020101021226940014BR.GOV.BCB.PIX2572qrcodespix.sejaefi.com.br/bolix/v2/cobv/663b44b6c993415e9e09f92c106d48865204000053039865802BR5905EFISA6008SAOPAULO62070503***63047595\",\n              \"merchant_name\": \"EFISA\",\n              \"key\": \"663b44b6c993415e9e09f92c106d4886\",\n              \"key_type\": \"EVP\"\n            }\n          }\n        ],\n        \"currency\": \"BRL\",\n        \"total_amount\": {\n          \"value\": 6000,\n          \"offset\": 100\n        },\n        \"order\": {\n          \"status\": \"pending\",\n          \"tax\": {\n            \"value\": 0,\n            \"offset\": 100,\n            \"description\": \"Sem impostos adicionais\"\n          },\n          \"items\": [\n            {\n              \"retailer_id\": \"camera-comodato-mensal\",\n              \"name\": \"Câmera Comodato Mensal\",\n              \"amount\": {\n                \"value\": 6000,\n                \"offset\": 100\n              },\n              \"quantity\": 1\n            }\n          ],\n          \"subtotal\": {\n            \"value\": 6000,\n            \"offset\": 100\n          }\n        }\n      }\n    }\n  }\n}",
@@ -1553,7 +3068,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_status\",\n    \"body\": {\n      \"text\": \"Pagamento confirmado para o boleto nº 1033239253.\"\n    },\n    \"footer\": {\n      \"text\": \"Assinatura confirmada\"\n    },\n    \"action\": {\n      \"name\": \"review_order\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"order\": {\n          \"status\": \"processing\",\n          \"description\": \"Pagamento confirmado. Pedido em preparação.\"\n        },\n        \"payment\": {\n          \"status\": \"captured\",\n          \"timestamp\": {{unix_timestamp}}\n        }\n      }\n    }\n  }\n}",
@@ -1588,7 +3103,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{to}}\",\n  \"type\": \"interactive\",\n  \"interactive\": {\n    \"type\": \"order_status\",\n    \"body\": {\n      \"text\": \"Pedido concluído.\"\n    },\n    \"action\": {\n      \"name\": \"review_order\",\n      \"parameters\": {\n        \"reference_id\": \"{{payment_reference_id}}\",\n        \"order\": {\n          \"status\": \"completed\",\n          \"description\": \"Pagamento confirmado e pedido concluído.\"\n        },\n        \"payment\": {\n          \"status\": \"captured\",\n          \"timestamp\": {{unix_timestamp}}\n        }\n      }\n    }\n  }\n}",
@@ -1623,7 +3138,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"read\",\n  \"message_id\": \"MESSAGE_ID\"\n}",
@@ -1658,7 +3173,7 @@
               ],
               "query": []
             },
-            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+            "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"status\": \"deleted\",\n  \"message_id\": \"MESSAGE_ID\"\n}",
@@ -3009,7 +4524,7 @@
               ],
               "query": []
             },
-            "description": "Administrador autenticado. Suspende a origem e gera arquivo criptografado stream-v2 em blocos, disponível no storage por 24 horas. Sem teto global de registros ou bytes; depende da capacidade do Redis e storage. Blocos de até 4 MiB e DUMP base64 de até 2000000 caracteres por registro. Sem truncamento. Falha recupera autoConnect anterior se a tarefa ainda controlar a configuração; sucesso mantém origem suspensa.",
+            "description": "Administrador autenticado. Fluxo manual Redis: runtime Zapo 1.11.0 e store-redis 1.3.0; restaura arquivos com origem Zapo 1.9.0 ou 1.11.0. SQLite é recusado antes de suspender com session_backup_sqlite_requires_session_storage_endpoint; usar /{version}/{phone}/storage/backups e restores para .viperstorage. Suspende a origem Redis e gera .vipersession criptografado stream-v2 em blocos, disponível por 24 horas. Sem teto global; blocos de até 4 MiB e DUMP base64 até 2000000 caracteres. Não trunca. Falha recupera autoConnect anterior se ainda controlar a configuração; sucesso mantém a origem suspensa.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3558,7 +5073,7 @@
               ],
               "query": []
             },
-            "description": "Somente administrador. Uma tarefa simultânea. Senha apenas em memória durante execução; arquivo criptografado disponível por 24 horas após conclusão. Reinício durante geração não retoma automaticamente; após 10 minutos aparece interrupted. Mantém somente o último resultado por dispositivo.",
+            "description": "Somente administrador. Exportação manual Redis em .viperdevice; runtime Zapo 1.11.0 e store-redis 1.3.0. SQLite retorna mobile_backup_sqlite_requires_session_storage_endpoint antes de suspender; utilizar o painel Armazenamento da sessão e o formato .viperstorage. Uma tarefa simultânea. Senha apenas em memória; arquivo cifrado disponível por 24 horas. Reinício não retoma automaticamente; após dez minutos aparece interrupted. Mantém o último resultado por dispositivo.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3857,7 +5372,7 @@
               ],
               "query": []
             },
-            "description": "Somente administrador em qualquer servidor configurado. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura com autoConnect=true e sem webhooks; solicita conexão ao worker após liberar a trava. Não solicita SMS nem garante validade remota de credenciais revogadas. Exige confirmação da origem desligada. Falha de publicação retorna warning restore_connection_dispatch_failed sem desfazer a restauração.",
+            "description": "Somente administrador em qualquer servidor configurado. .viperdevice até 16 MiB; aceita origem Zapo 1.9.0 ou 1.11.0 e store-redis 1.3.0, no runtime Zapo 1.11.0, mesmo prefixo Redis e DUMP compatível. Destino deste formato permanece Redis, mesmo se o padrão de novas sessões for SQLite; não converte nem mistura formatos. Para .viperstorage usar restore de armazenamento da sessão. Recusa cadastro, configuração ou credenciais preexistentes. Reprotege registro com a chave da stack de destino. Restaura autoConnect=true sem webhooks e solicita conexão ao worker após liberar trava. Exige confirmação da origem desligada; não garante validade remota. Falha de publicação informa warning restore_connection_dispatch_failed sem desfazer a restauração.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3901,7 +5416,7 @@
                   ],
                   "query": []
                 },
-                "description": "Somente administrador em qualquer servidor configurado. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura com autoConnect=true e sem webhooks; solicita conexão ao worker após liberar a trava. Não solicita SMS nem garante validade remota de credenciais revogadas. Exige confirmação da origem desligada. Falha de publicação retorna warning restore_connection_dispatch_failed sem desfazer a restauração.",
+                "description": "Somente administrador em qualquer servidor configurado. .viperdevice até 16 MiB; aceita origem Zapo 1.9.0 ou 1.11.0 e store-redis 1.3.0, no runtime Zapo 1.11.0, mesmo prefixo Redis e DUMP compatível. Destino deste formato permanece Redis, mesmo se o padrão de novas sessões for SQLite; não converte nem mistura formatos. Para .viperstorage usar restore de armazenamento da sessão. Recusa cadastro, configuração ou credenciais preexistentes. Reprotege registro com a chave da stack de destino. Restaura autoConnect=true sem webhooks e solicita conexão ao worker após liberar trava. Exige confirmação da origem desligada; não garante validade remota. Falha de publicação informa warning restore_connection_dispatch_failed sem desfazer a restauração.",
                 "auth": {
                   "type": "bearer",
                   "bearer": [
@@ -4030,7 +5545,7 @@
               ],
               "query": []
             },
-            "description": "Disponível no servidor configurado. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
+            "description": "Disponível no servidor configurado. Exige registro concluído e confirmação explícita. Primeiro prepara o armazenamento no worker dono, com tentativa e recibo persistido vinculados a backend, dono e UUID/geração aplicáveis. Resposta RPC perdida só é resolvida pelo recibo da mesma tentativa, inclusive quando o worker escolheu Redis intencionalmente. Importa auth nativo somente se vazio e compatível, por RPC privado ao dono; o processo HTTP não abre o SQLite do worker. Mantém a sessão suspensa e renova a lease de 60 segundos a cada 15 segundos. Habilita autoConnect somente após conferir auth e confirmar configuração, registro, dono e lease por comparação atômica. Retry não substitui auth existente ou chaves atualizadas. Cadastro parcial antigo sem armazenamento confirmado retorna mobile_storage_selection_required; não converte implicitamente para Redis. Primários já importados seguem o descritor atual após migração/restore, sem exigir recibo antigo de criação. Nunca restaura auth removido após importação. HTTP 202 não significa conectado; consultar GET. Não envia mensagens de teste nem retorna credenciais ao navegador.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -7418,112 +8933,6 @@
                 }
               ],
               "body": "{\n  \"error\": \"invalid_credentials\"\n}"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "VoIP",
-      "item": [
-        {
-          "name": "Listar modelos atuais do OpenRouter para IA pós-chamada",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/admin/voip/console/ai/models?provider={{provider}}&purpose={{purpose}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "admin",
-                "voip",
-                "console",
-                "ai",
-                "models"
-              ],
-              "query": [
-                {
-                  "key": "provider",
-                  "value": "{{provider}}",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "purpose",
-                  "value": "{{purpose}}",
-                  "description": "",
-                  "disabled": false
-                }
-              ]
-            },
-            "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "response": [
-            {
-              "name": "Modelos compatíveis com a finalidade solicitada",
-              "originalRequest": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{base_url}}/admin/voip/console/ai/models?provider={{provider}}&purpose={{purpose}}",
-                  "host": [
-                    "{{base_url}}"
-                  ],
-                  "path": [
-                    "admin",
-                    "voip",
-                    "console",
-                    "ai",
-                    "models"
-                  ],
-                  "query": [
-                    {
-                      "key": "provider",
-                      "value": "{{provider}}",
-                      "description": "",
-                      "disabled": false
-                    },
-                    {
-                      "key": "purpose",
-                      "value": "{{purpose}}",
-                      "description": "",
-                      "disabled": false
-                    }
-                  ]
-                },
-                "description": "Catálogo público consultado pelo serviço VoIP, sem enviar chave ou áudio. Somente administradores. Listas separadas para áudio/transcrição e texto/resumo; a tela permite atualizar sem perder o modelo salvo. Novas seleções também são validadas no PUT da empresa. Não valida crédito nem acesso da chave ao modelo.",
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{token}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              },
-              "status": "Modelos compatíveis com a finalidade solicitada",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{}"
             }
           ]
         }
@@ -24028,105 +25437,6 @@
       ]
     },
     {
-      "name": "Sessões",
-      "item": [
-        {
-          "name": "Listar sessões/configurações visíveis",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/sessions",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "sessions"
-              ],
-              "query": []
-            },
-            "description": ""
-          },
-          "response": []
-        },
-        {
-          "name": "UI de sessão (QR/Config)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/sessions/{{phone}}",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "sessions",
-                "{{phone}}"
-              ],
-              "query": []
-            },
-            "description": ""
-          },
-          "response": []
-        },
-        {
-          "name": "Solicitar código de pareamento",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/{{phone}}/request_code",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "{{phone}}",
-                "request_code"
-              ],
-              "query": []
-            },
-            "description": "Solicita um pairing code ao motor da sessão. No motor Zapo, a resposta HTTP contém o código puro e o Socket.IO também publica uma imagem com o código legível pelo contrato compatível `broadcast`, usando `type: qrcode`. A aplicação pode continuar exibindo `content` em uma tag `img`, sem criar um evento específico para pairing code."
-          },
-          "response": []
-        },
-        {
-          "name": "Registrar/atualizar configuração da sessão",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/{{version}}/{{phone}}/register",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "{{version}}",
-                "{{phone}}",
-                "register"
-              ],
-              "query": []
-            },
-            "description": "Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS enquanto o registro for válido. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"provider\": \"zapo\",\n  \"zapoWebClientProfile\": \"default\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
       "name": "Grupos",
       "item": [
         {
@@ -24426,7 +25736,7 @@
                 }
               ]
             },
-            "description": ""
+            "description": "Leitura isolada da sessão. Em SQLite, consulta o worker proprietário com prazo de 15s para leituras leves. Consulta vencida na fila retorna 503 sem efeitos. Erros de RPC/storage retornam resposta controlada sem derrubar o processo web; não há recuperação de criptografia ou reenvio automático."
           },
           "response": []
         },
@@ -24566,6 +25876,80 @@
                 }
               }
             }
+          },
+          "response": []
+        },
+        {
+          "name": "Listar mapeamentos PN e LID persistidos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/jidmap?scope={{scope}}&side={{side}}&q={{q}}&limit={{limit}}&offset={{offset}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "jidmap"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "{{scope}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "side",
+                  "value": "{{side}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "{{q}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "{{limit}}",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "{{offset}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Requer JIDMAP_LIST_ENABLED e autorização da sessão. scope=session usa o backend selecionado e RPC do owner em SQLite; scope=global consulta o índice compartilhado Redis. Cache ausente é omitido. Erro de leitura/RPC/geração falha a requisição inteira, nunca retorna 200 parcial nem consulta WhatsApp."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar mapeamento PN e LID de um contato",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{version}}/{{phone}}/jidmap/{{contact}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "{{version}}",
+                "{{phone}}",
+                "jidmap",
+                "{{contact}}"
+              ],
+              "query": []
+            },
+            "description": "Consulta somente dados persistidos do backend da sessão; ausência não fabrica identidade. Falha de armazenamento retorna erro explícito."
           },
           "response": []
         }

@@ -1,8 +1,33 @@
-import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError } from '../../frontend/features/mobile_backup'
+import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError, manualBackupNeedsStorage, renderSqliteBackupAlternative, isSqliteStorageBackup } from '../../frontend/features/mobile_backup'
 import { ApiError } from '../../frontend/core/api'
 import { MobileDevicesPanel } from '../../frontend/features/mobile_devices'
 
 const form = () => { const data = new FormData(); data.set('password', 'test-backup-password'); data.set('passwordConfirmation', 'test-backup-password'); data.set('confirm', 'on'); return data }
+
+test('SQLite backups are detected by extension or bounded header and never sent to the Redis mobile importer', async () => {
+  const api = { request: jest.fn() }, input = form()
+  input.set('archive', new Blob(['{"format":"viperconnect-storage-backup-stream"}\n']), 'renamed.viperdevice')
+  let failure: unknown
+  try { await transferMobileBackup(api as any, true, undefined, input) } catch (error) { failure = error }
+  expect(manualBackupNeedsStorage(failure)).toBe(true); expect(mobileBackupError(failure, true)).toContain('Armazenamento da sessão')
+  expect(api.request).not.toHaveBeenCalled()
+  expect(await isSqliteStorageBackup(Object.assign(new Blob(['legacy-encrypted']), { name: 'legacy.viperstorage' }))).toBe(true)
+  expect(await isSqliteStorageBackup(new Blob(['not-json']))).toBe(false)
+  expect(manualBackupNeedsStorage(new Error('unrelated'))).toBe(false)
+  expect(renderSqliteBackupAlternative('999123456789')).toContain('data-action="storage-open"')
+  expect(renderSqliteBackupAlternative('<bad>')).not.toContain('data-action="storage-open"')
+})
+
+test('primary SQLite backup modal offers the existing owner storage panel instead of a Redis export form', () => {
+  const api = { request: jest.fn() }, panel = new MobileDevicesPanel(api as any, jest.fn())
+  panel.enabled = true; panel.devices = [{ id: 'device', phone: '5566999554300', name: 'Synthetic' } as any]
+  panel.renderGrid([{ phone: '556699554300', mobilePrimaryDraftId: 'device', sessionStorage: { backend: 'sqlite' } }])
+  panel.action('mobile-backup', 'device')
+  expect(panel.renderDialog()).toContain('data-id="556699554300"')
+  expect(panel.renderDialog()).toContain('data-action="storage-open"')
+  expect(panel.renderDialog()).not.toContain('data-form="mobile-backup"')
+  expect(api.request).not.toHaveBeenCalled()
+})
 test('progress replaces empty fields and registration failure is readable', () => {
   expect(renderMobileBackup(false, true)).toContain('Gerando backup…')
   expect(renderMobileBackup(false, true)).not.toContain('name="password"')

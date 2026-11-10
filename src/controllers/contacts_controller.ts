@@ -82,7 +82,10 @@ export class ContactsController {
       if (error instanceof SendError && error.code >= 400 && error.code <= 599) {
         return res.status(error.code).send({ error: error.title })
       }
-      throw error
+      // Express 4 does not consume rejected async route promises. A transport
+      // failure must fail this request, not terminate the entire web process.
+      logger.warn({ phone: req.params.phone, code: 'contact_directory_unavailable' }, 'Contact directory unavailable')
+      return res.status(503).send({ error: 'contact_directory_unavailable' })
     }
   }
 

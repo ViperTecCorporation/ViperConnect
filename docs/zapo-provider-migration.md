@@ -359,6 +359,12 @@ host malformado, e recebe `https://` antes do envio para que a Zapo possa buscar
 os metadados. A decisão não depende de `text.preview_url`; clientes antigos que
 ainda enviem esse campo não alteram o comportamento automático.
 
+Exceção de segurança: Pix copia e cola reconhecido pelo cabeçalho BR Code
+`000201` seguido de `0014br.gov.bcb.pix` mantém todo o texto intacto e envia
+`linkPreview:false` explicitamente à Zapo. Não depende de domínio/banco ou CRC
+válido, não visita URLs da cobrança e suprime também links separados na mesma
+mensagem, evitando seleção automática de um domínio interno pelo SDK.
+
 Como o HTML do YouTube pode posicionar Open Graph depois do limite genérico de
 leitura da Zapo, links `youtube.com` (incluindo Shorts) e `youtu.be` usam um
 resolvedor `oEmbed` limitado por tempo e tamanho. A miniatura só é aceita por

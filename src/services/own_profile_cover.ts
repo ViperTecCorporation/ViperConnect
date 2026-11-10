@@ -2,10 +2,16 @@ import { randomUUID } from 'crypto'
 import type { MediaStore } from './media_store'
 import { BASE_KEY, getRedis } from './redis'
 import { SendError } from './send_error'
+import { getSessionPrivateState } from './session_storage/private_state'
 
 /** Permanent local record, independent of the 24h profile snapshot. */
 export class OwnProfileCover {
-  constructor(private readonly phone: string, private readonly media: MediaStore, private readonly redis: () => Promise<any> = getRedis) {}
+  private readonly state: (phone: string) => Promise<any>
+  constructor(private readonly phone: string, private readonly media: MediaStore, private readonly redis: () => Promise<any> = getRedis,
+    state?: (phone: string) => Promise<any>) {
+    // Existing injected Redis factories remain the legacy contract for callers/tests.
+    this.state = state || (redis === getRedis ? getSessionPrivateState : redis)
+  }
   private key() { return `${BASE_KEY}own-profile-cover:v1:${this.phone}` }
   private prefix() { return `${this.phone}/own-profile-cover/` }
   private async locked<T>(fn: (redis: any, token: string) => Promise<T>): Promise<T> {
@@ -16,7 +22,7 @@ export class OwnProfileCover {
   }
 
   async preview() {
-    const raw = await (await this.redis()).get(this.key())
+    const raw = await (await this.state(this.phone)).get(this.key())
     if (!raw) return null
     const record = JSON.parse(raw)
     if (!record.id || typeof record.object_key !== 'string' || !record.object_key.startsWith(this.prefix())) return null
@@ -26,7 +32,8 @@ export class OwnProfileCover {
   async upload(image: Buffer, send: () => Promise<{ id: string }>) {
     if (this.media.type !== 's3') throw new SendError(409, 'profile_cover_requires_s3')
     return this.locked(async (redis, token) => {
-    const previous = await redis.get(this.key())
+    const state = await this.state(this.phone)
+    const previous = await state.get(this.key())
     const object_key = `${this.prefix()}${randomUUID()}.jpeg`
     if (!await this.media.saveMediaBuffer(object_key, image, 'image/jpeg', false)) throw new SendError(502, 'profile_cover_storage_failed')
     let id: string
@@ -37,9 +44,12 @@ export class OwnProfileCover {
       throw error
     }
     try {
-      const saved = await redis.eval("if redis.call('GET', KEYS[2]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2]); return 1 end return 0", {
-        keys: [this.key(), `${this.key()}:lock`], arguments: [token, JSON.stringify({ id, object_key, updated_at: new Date().toISOString() })],
-      })
+      const value = JSON.stringify({ id, object_key, updated_at: new Date().toISOString() })
+      const saved = typeof state.compareSet === 'function'
+        ? await redis.get(`${this.key()}:lock`) === token && await state.compareSet(this.key(), previous ?? null, value)
+        : await state.eval("if redis.call('GET', KEYS[2]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2]); return 1 end return 0", {
+          keys: [this.key(), `${this.key()}:lock`], arguments: [token, value],
+        })
       if (!saved) throw new Error('cover_lock_lost')
     } catch {
       // The remote mutation succeeded. Never claim failure and invite duplicate uploads.
@@ -54,14 +64,16 @@ export class OwnProfileCover {
   }
 
   async remove(id: string, send: () => Promise<void>) {
-    return this.locked(async redis => {
-    const raw = await redis.get(this.key())
+    return this.locked(async () => {
+    const state = await this.state(this.phone)
+    const raw = await state.get(this.key())
     await send()
     if (raw) {
       try {
         const record = JSON.parse(raw)
         if (record.id === id) {
-          const removed = await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", { keys: [this.key()], arguments: [raw] })
+          const removed = typeof state.compareDelete === 'function' ? await state.compareDelete(this.key(), raw)
+            : await state.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", { keys: [this.key()], arguments: [raw] })
           if (removed && typeof record.object_key === 'string' && record.object_key.startsWith(this.prefix())) await this.media.removeMedia(record.object_key)
         }
       } catch { return { success: true, warning: 'profile_cover_cleanup_failed' } }

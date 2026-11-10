@@ -1,20 +1,23 @@
 import type { Server, Socket } from 'socket.io'
-import type Redis from 'ioredis'
+import Redis from 'ioredis'
 import type { getConfig } from '../config'
 import { authorizedSessionMessages, SessionMessages } from './session_messages'
 import { MESSAGE_CHANGE_CHANNEL } from './session_message_index'
+import { REDIS_URL } from '../../defaults'
+import { isSqliteSession } from '../session_storage/routing'
+import { validateStorageDescriptor } from '../session_storage/types'
 
 const installed = new WeakSet<Server>()
-export const installSessionMessageSocket = (io: Server, load: getConfig) => {
+export const installSessionMessageSocket = (io: Server, load: getConfig, sqliteSubscriber: () => Redis = () => new Redis(REDIS_URL, { lazyConnect: true, maxRetriesPerRequest: 1 })) => {
   if (installed.has(io)) return
   installed.add(io)
   const subscriptions = new Map<Socket, { phone: string; token: string }>()
   let subscriber: Redis | undefined
   let starting: Promise<void> | undefined
-  const subscribeRedis = (redis: Redis) => {
+  const subscribeRedis = (create: () => Redis) => {
     if (starting) return starting
     starting = (async () => {
-      subscriber = redis.duplicate()
+      subscriber = create()
       subscriber.on('error', () => { /* HTTP reads remain available; Socket.IO reconnect reloads. */ })
       subscriber.on('message', async (_channel, raw) => {
         let parsed: any
@@ -49,8 +52,15 @@ export const installSessionMessageSocket = (io: Server, load: getConfig) => {
         const phone = typeof payload?.phone === 'string' ? payload.phone.trim() : ''
         const token = typeof payload?.token === 'string' && payload.token.length <= 512 ? payload.token : ''
         if (!await authorizedSessionMessages(token, phone, load)) throw new Error('session_messages_forbidden')
-        const index = await new SessionMessages(load).index(phone)
-        await subscribeRedis(index.redis)
+        const config = await load(phone)
+        if (config && isSqliteSession(config)) {
+          if (config.provider !== 'zapo') throw new Error('session_messages_requires_zapo')
+          validateStorageDescriptor(config.sessionStorage)
+          await subscribeRedis(sqliteSubscriber)
+        } else {
+          const index = await new SessionMessages(load).index(phone)
+          await subscribeRedis(() => index.redis.duplicate())
+        }
         if (revision !== request || !socket.connected) return
         subscriptions.set(socket, { phone, token })
         ack?.({ subscribed: true })

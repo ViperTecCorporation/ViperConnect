@@ -7,10 +7,12 @@ import logger from './logger'
 import { stores } from './store'
 import { dataStores } from './data_store'
 import { mediaStores } from './media_store'
-import { delConfig, delSessionStatus, delSessionTransientKeys, delZapoSessionRuntimeLease } from './redis'
+import { delConfig, delSessionStatus, delSessionTransientKeys, delZapoSessionRuntimeLease, setConfig } from './redis'
 import { resolveWhatsAppEngine } from './providers/provider_resolver'
 import { clearZapoSession } from './zapo/zapo_session_cleanup'
 import { zapoStoreRegistry, type ZapoStoreRegistry } from './zapo/zapo_store_registry'
+import type { Config } from './config'
+import { withSessionLifecycleTransition, type LifecycleCheck } from './session_storage/lifecycle_transition'
 
 export class LogoutBaileys implements Logout {
   private getClient: getClient
@@ -32,7 +34,10 @@ export class LogoutBaileys implements Logout {
   }
 
   async run(phone: string) {
-    const config = await this.getConfig(phone)
+    return withSessionLifecycleTransition(phone, this.getConfig, (config, check) => this.runCurrent(phone, config, check))
+  }
+
+  private async runCurrent(phone: string, config: Config, check: LifecycleCheck) {
     if (config.mobilePrimaryDraftId) {
       // Generic logout jobs are never allowed to destroy a primary registration.
       logger.warn('Ignore destructive logout for mobile primary phone=%s; use integration suspension', phone)
@@ -48,6 +53,7 @@ export class LogoutBaileys implements Logout {
       await sessionStore.isStatusOnline(phone) ||
       await sessionStore.isStatusConnecting(phone) ||
       await sessionStore.isStatusRestartRequired(phone)
+    await check()
 
     if (shouldForceLogout) {
       try {
@@ -57,19 +63,22 @@ export class LogoutBaileys implements Logout {
           getConfig: this.getConfig,
           onNewLogin: this.onNewLogin,
         })
+        await check()
         await client.logout()
       } catch (e) {
         const error = e instanceof Error ? e : new Error(String(e))
         logger.warn(error, 'Ignore error while forcing %s logout for %s', provider, phone)
       }
     }
+    await check()
     if (provider === 'baileys') {
       await dataStore.cleanSession(true)
     } else {
       // Server logout is asynchronous and may not emit its final close event
       // before the socket disconnects. Always wipe the Zapo store locally so
       // deregistration cannot silently reconnect with stale credentials.
-      const cleanup = await clearZapoSession(this.zapoStores.get(config).session(phone))
+      const cleanup = await clearZapoSession(this.zapoStores.get(config, phone).session(phone), { preserveHistory: true })
+      if (config.sessionStorage?.backend === 'sqlite') await this.zapoStores.release(config)
       for (const failure of cleanup.cacheFailures) {
         logger.warn(
           failure.error as any,
@@ -80,7 +89,9 @@ export class LogoutBaileys implements Logout {
       }
       // Legacy DataStore owns Baileys auth and remains available for rollback.
       if (config.useRedis) {
-        await delConfig(phone)
+        if (config.sessionStorage?.backend === 'sqlite') {
+          await setConfig(phone, { autoConnect: false, sessionStorageUnlinked: true, sessionStorage: { ...config.sessionStorage, state: 'offline' } })
+        } else await delConfig(phone)
         await delSessionStatus(phone)
         await delSessionTransientKeys(phone)
         // Deregistration is an explicit destructive action. Dropping the lease

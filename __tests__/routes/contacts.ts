@@ -52,6 +52,20 @@ describe('contacts directory route', () => {
     expect(directory.list).not.toHaveBeenCalled()
   })
 
+  test('returns a controlled 503 for RPC timeouts and keeps serving other requests', async () => {
+    const directory: ContactDirectory = { list: jest.fn().mockRejectedValueOnce(new Error('timeout 450000 rpc private queue details'))
+      .mockResolvedValueOnce({ contacts: [], next_cursor: '0', has_more: false, total_count: 0, raw_total_count: 0, ignored_count: 0 }) }
+    const controller = new ContactsController(mock<Contact>(), directory)
+    const app = express()
+    app.get('/:phone/contacts', controller.get.bind(controller))
+    app.get('/ping', (_req, res) => res.sendStatus(200))
+    const response = await request(app).get('/5566/contacts').expect(503)
+    expect(response.body).toEqual({ error: 'contact_directory_unavailable' })
+    expect(JSON.stringify(response.body)).not.toContain('private queue')
+    await request(app).get('/ping').expect(200)
+    await request(app).get('/5566/contacts').expect(200)
+  })
+
   test('saves a contact through POST /:phone/contacts/import', async () => {
     const contactBook: ContactBook = {
       save: jest.fn().mockResolvedValue({

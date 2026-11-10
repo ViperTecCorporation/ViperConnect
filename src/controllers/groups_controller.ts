@@ -369,9 +369,10 @@ const managementWebhook = (phone: string, field: string, value: any) => ({
   ],
 })
 
-const resolveNameForJid = async (phone: string, jid: string): Promise<string> => {
+const resolveNameForJid = async (phone: string, jid: string, visited = new Set<string>()): Promise<string> => {
   const clean = `${jid || ''}`.trim()
-  if (!clean) return ''
+  if (!clean || visited.has(clean) || visited.size >= 4) return ''
+  visited.add(clean)
   let name = ''
   try {
     name = `${(await getContactName(phone, clean)) || ''}`.trim()
@@ -387,12 +388,12 @@ const resolveNameForJid = async (phone: string, jid: string): Promise<string> =>
   if (clean.endsWith('@lid')) {
     try {
       const pnJid = await getPnForLid(phone, clean)
-      if (pnJid) return await resolveNameForJid(phone, pnJid)
+      if (pnJid) return await resolveNameForJid(phone, pnJid, visited)
     } catch {}
   } else if (clean.endsWith('@s.whatsapp.net')) {
     try {
       const lidJid = await getLidForPn(phone, clean)
-      if (lidJid) return await resolveNameForJid(phone, lidJid)
+      if (lidJid) return await resolveNameForJid(phone, lidJid, visited)
     } catch {}
   }
   return ''

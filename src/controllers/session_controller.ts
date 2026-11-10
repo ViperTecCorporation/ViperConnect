@@ -2,13 +2,15 @@ import { Request, Response } from 'express'
 import { Config, defaultConfig, getConfig } from '../services/config'
 import logger from '../services/logger'
 import { Reload } from '../services/reload'
+import { assertSessionConfigRegistered } from '../services/session_storage/connection_registration'
+import { SendError } from '../services/send_error'
 
 const configuration = async (phone: string, getConfig: getConfig) => {
   const config = await getConfig(phone)
   const store = await config.getStore(phone, config)
   const { sessionStore } = store
   const keysToIgnore = ['getStore', 'baseStore', 'shouldIgnoreKey', 'shouldIgnoreJid', 'webhooks', 'getMessageMetadata', 'authToken', 'proxyUrl']
-  const keys = Object.keys(defaultConfig).filter((k) => !keysToIgnore.includes(k))
+  const keys = Object.keys(defaultConfig).filter((k) => !keysToIgnore.includes(k) && !/^(sessionStorage|mobilePrimary)/.test(k))
   const getTypeofProperty = <T, K extends keyof T>(o: T, name: K) => typeof o[name]
   /* eslint-disable indent */
   return `<!DOCTYPE html>
@@ -77,6 +79,10 @@ export class SessionController {
     logger.debug('session body %s', JSON.stringify(req.body))
     const { phone } = req.params
     const config = await this.getConfig(phone)
+    try { assertSessionConfigRegistered(config) }
+    catch (error) {
+      return res.status(error instanceof SendError ? error.code : 503).json({ error: error instanceof SendError ? error.title : 'session_storage_unavailable' })
+    }
     const store = await config.getStore(phone, config)
     const { sessionStore } = store
 

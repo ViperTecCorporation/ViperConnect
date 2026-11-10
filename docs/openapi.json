@@ -3,7 +3,7 @@
   "info": {
     "title": "ViperConnect API",
     "version": "4.0.41",
-    "description": "API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.\n- Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).\n- Suporta envios de texto, mídia (imagem/áudio/documento/vídeo), contatos e mensagens interativas (botões/listas).\n"
+    "description": "API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.\n- Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).\n- Suporta envios de texto, mídia (imagem/áudio/documento/vídeo), contatos e mensagens interativas (botões/listas).\n- Respostas recebidas a status próprios de imagem/vídeo incluem context.status com available e mídia recuperada quando possível. O adapter Chatwoot entrega primeiro a mídia sintética e depois a resposta referenciando-a; outros destinos recebem somente a resposta enriquecida. Veja o guia de webhooks para limites e deduplicação.\n"
   },
   "servers": [
     {
@@ -16,6 +16,1525 @@
     }
   ],
   "paths": {
+    "/manager/voip-backups": {
+      "get": {
+        "tags": [
+          "VoIP"
+        ],
+        "operationId": "listVoipBackups",
+        "summary": "Consultar capacidade, destino S3, slots e estado dos backups VoIP",
+        "description": "Administrador com login do Manager, não usuário ou chave API/pessoal. Base SQLite/configurações/áudios de espera; arquivos de gravação ficam fora. S3 privado em backups/voip/{instancia}/; padrão voip-main, sete slots semanais, rotina por janela de 12h. VOIP_BACKUP_ENABLED=false desativa somente agendamento. Redis permanece necessário. Resultado incerto de restore é reconciliado pelo recibo persistido no VoIP; não repetir automaticamente.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "enabled, reason, capability, instanceId, bucket, prefix, slotsPrefix, files e state; sem credenciais ou conteúdo do arquivo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "503": {
+            "description": "Redis",
+            "VoIP ou S3 indisponível": null
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "VoIP"
+        ],
+        "operationId": "createVoipBackup",
+        "summary": "Gerar e verificar backup VoIP no S3",
+        "description": "Snapshot consistente SQLite/WAL e cópia dos áudios de espera referenciados, sem gravações. Mutex/lease compartilhada, upload e leitura de verificação SHA-256/tamanho antes da publicação do manifesto e slot semanal. Arquivo .vipervoip sem criptografia contém credenciais: manter privado. Não altera chamadas nem conecta sessões.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Manifesto ready com uploadVerified=true e objectKey no bucket privado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação inválida"
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "409": {
+            "description": "VoIP sem SQLite",
+            "recurso ocupado ou configuração incompatível": null
+          },
+          "503": {
+            "description": "Exportação",
+            "volume": null,
+            "S3 ou verificação falhou": null
+          }
+        }
+      }
+    },
+    "/manager/voip-backups/{id}/download": {
+      "get": {
+        "tags": [
+          "VoIP"
+        ],
+        "operationId": "downloadVoipBackup",
+        "summary": "Baixar arquivo privado de backup VoIP",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arquivo .vipervoip privado",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID inválido"
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "404": {
+            "description": "Backup não encontrado no escopo da instância"
+          },
+          "503": {
+            "description": "S3 indisponível"
+          }
+        }
+      }
+    },
+    "/manager/voip-backups/restore": {
+      "post": {
+        "tags": [
+          "VoIP"
+        ],
+        "operationId": "restoreVoipBackup",
+        "summary": "Restaurar a base VoIP a partir de um backup S3",
+        "description": "Administrador, confirmação e serviço ocioso. Faz backup verificado do destino antes de restaurar. Arquivo/schema/hashes validados; transação pela fila global de configuração e barreira de chamadas/background. Mantém endereços SIP e diretório local de gravações do destino; realoca áudios; remove registros SIP e desativa webhooks para revisão. Não reproduz filas/outbox, não restaura gravações e invalida cursors REST anteriores. Chamadas abertas no snapshot são encerradas como failed/backup_restored. Não há retry automático; restore incerto bloqueia outro restore até conferir o recibo.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "backupId",
+                  "confirm"
+                ],
+                "properties": {
+                  "backupId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "restored=true, beforeBackupId, recordingsRestored=false e webhooksEnabled=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação ou pacote inválido"
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "404": {
+            "description": "Backup não encontrado"
+          },
+          "409": {
+            "description": "Chamadas",
+            "jobs": null,
+            "lock": null,
+            "schema incompatível ou restore pendente de confirmação": null
+          },
+          "503": {
+            "description": "Backup anterior",
+            "S3 ou serviço indisponível": null
+          },
+          "504": {
+            "description": "Resposta incerta; consultar estado",
+            "não repetir": null
+          }
+        }
+      }
+    },
+    "/manager/voip-backups/restore-upload": {
+      "post": {
+        "tags": [
+          "VoIP"
+        ],
+        "operationId": "uploadVoipBackupRestore",
+        "summary": "Restaurar VoIP por arquivo, inclusive em outro servidor",
+        "description": "Mesmo fluxo e barreiras do restore S3, sem exigir catálogo antigo. Upload .vipervoip de até 256 MiB; pacote limitado a 512 MiB de arquivos/100 áudios WAV/MP3. Exige backup verificado do destino no S3 antes de aplicar. .sqlite isolado e .viperstorage não substituem esse pacote. Mantém transporte do destino, webhooks desativados e nenhum replay.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          },
+          {
+            "name": "Content-Length",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 268435456
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Restauração confirmada com backup anterior",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Upload",
+            "confirmação ou arquivo inválido": null
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "409": {
+            "description": "Serviço ocupado",
+            "schema incompatível ou confirmação pendente": null
+          },
+          "413": {
+            "description": "Arquivo acima do limite"
+          },
+          "503": {
+            "description": "S3",
+            "volume ou VoIP indisponível": null
+          }
+        }
+      }
+    },
+    "/manager/storage/workers": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "listStorageRestoreWorkers",
+        "summary": "Listar workers autorizados para restaurar uma sessão nova",
+        "description": "Somente administrador com token de login, não chave pessoal de API. Consulta capacidade pelo RPC do dono sem cadastrar sessão. Workers vêm do UNOAPI_SERVER_NAME, donos persistidos e SESSION_STORAGE_RESTORE_WORKERS opcional (nomes separados por vírgulas). Ausente ou indisponível aparece available=false; não existe fallback para outro worker ou Redis.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capacidade dos workers configurados",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "owner": {
+                            "type": "string"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login ausente ou inválido"
+          },
+          "403": {
+            "description": "Exige administrador com token de login"
+          },
+          "503": {
+            "description": "Catálogo ou coordenação indisponível"
+          }
+        }
+      }
+    },
+    "/manager/storage/restore-upload": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "uploadNewSessionStorageRestore",
+        "summary": "Restaurar arquivo SQLite como sessão ausente no destino",
+        "description": "Upload administrativo .viperstorage para servidor novo. Não exige cadastro prévio: exige que a sessão e identidades correlatas estejam ausentes no Redis de destino. A confirmação de origem parada é operacional, não verifica o servidor antigo. Stream privado S3, tarefa durável e claim idempotente no worker escolhido; perde-resposta RPC não autoriza reenviar o arquivo ou criar outra tarefa. Confere todas as frames, integridade, telefone, banco, IDs e suplemento Primary antes de publicar novo UUID/dono. Resultado permanece offline, autoConnect=false, webhooks desativados, sem replay. Preserva o token da sessão do snapshot: revisar a credencial no destino. Novos arquivos não exigem senha; legados exigem chave no worker. Mobile Primary exige MOBILE_REGISTRATION_KEY válida no destino, não enviada pelo navegador. Mídias S3 não acompanham o pacote. Redis compartilhado contendo a origem gera conflito; não transfere dono automaticamente.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]{7,14}$"
+            }
+          },
+          {
+            "name": "owner",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,80}$"
+            },
+            "description": "Worker autorizado e com volume SQLite disponível"
+          },
+          {
+            "name": "confirmOriginOffline",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "offline"
+              ]
+            }
+          },
+          {
+            "name": "Content-Length",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 268435456
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa durável recebida; consultar até estado terminal antes de nova tentativa",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação",
+            "telefone": null,
+            "cabeçalhos ou arquivo inválidos": null
+          },
+          "401": {
+            "description": "Login ausente ou inválido"
+          },
+          "403": {
+            "description": "Exige administrador com token de login"
+          },
+          "409": {
+            "description": "Destino existente",
+            "ocupado": null,
+            "identidade divergente ou worker sem volume; nada sobrescrito": null
+          },
+          "413": {
+            "description": "Arquivo fora do limite de 256 MiB"
+          },
+          "503": {
+            "description": "S3 ou worker indisponível; consultar tarefa existente antes de repetir"
+          }
+        }
+      }
+    },
+    "/manager/storage/restores/{phone}/{id}": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "getNewSessionStorageRestoreTask",
+        "summary": "Acompanhar restauração de sessão nova mesmo antes de existir cadastro",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado durável; ready não significa sessão conectada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login ausente ou inválido"
+          },
+          "403": {
+            "description": "Exige administrador com token de login"
+          },
+          "404": {
+            "description": "Tarefa não encontrada"
+          },
+          "503": {
+            "description": "Redis indisponível"
+          }
+        }
+      }
+    },
+    "/manager/storage/{phone}/backups": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "listSessionStorageBackupSlots",
+        "summary": "Listar último backup e slots semanais para baixar pelo painel",
+        "description": "Somente metadados verificados: id, createdAt, bytes, kind, protection e day nos slots. Sem URLs assinadas, credenciais ou conteúdo do pacote. Consulta manifestos privados S3; não gera backup nem executa restore.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Objeto com latest opcional e slots disponíveis",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "latest": {
+                      "type": "object"
+                    },
+                    "slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login ausente ou inválido"
+          },
+          "403": {
+            "description": "Exige administrador com token de login"
+          },
+          "409": {
+            "description": "Manifesto ou ponteiro inconsistente"
+          },
+          "503": {
+            "description": "S3 ou Redis indisponível"
+          }
+        }
+      }
+    },
+    "/manager/storage/{phone}/backups/{id}/download": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "downloadSessionStorageBackup",
+        "summary": "Baixar .viperstorage privado por ID ou último backup",
+        "description": "Administrador com login. Retorna stream application/octet-stream e Content-Disposition attachment, sem expor URL S3/token na query. id aceita UUID ou latest. Não suspende, conecta nem restaura a sessão. Guarde o arquivo privado: contém credenciais.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "UUID do backup ou latest"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arquivo privado",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Telefone ou ID inválido"
+          },
+          "401": {
+            "description": "Login ausente ou inválido"
+          },
+          "403": {
+            "description": "Exige administrador com token de login"
+          },
+          "404": {
+            "description": "Backup não encontrado"
+          },
+          "503": {
+            "description": "S3 indisponível; download interrompido não é arquivo validado"
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "getSessionStorage",
+        "summary": "Consultar armazenamento e capacidade SQLite da sessão",
+        "description": "Administrativo. Consulta backend, dono, geração, tarefa, manutenção, reconciliação e último backup. Novas sessões usam SQLite por padrão na raiz /app/session-data somente com mount persistente gravável e motor compatível confirmados pelo worker. ENVs ROOT/DEFAULT/PERSISTENT são opcionais; DEFAULT=redis mantém novas sessões em Redis, PERSISTENT=false desabilita SQLite. Sem volume válido novas sessões usam Redis e o painel alerta como configurar; uma pasta ou ENV não prova persistência. Sessões Redis existentes não migram automaticamente. Redis e REDIS_URL continuam obrigatórios com SQLite para catálogo, autenticação/autorização do painel/API, configuração, leases e roteamento; SQLite não é modo de operação sem Redis. Worker deve confirmar Redis/SQLite antes de conectar: timeout não é fallback. Sessão já migrada com volume ausente falha sem recriar banco vazio ou voltar ao Redis. Exibe bucket/prefixo/slots sem credenciais. connectionStatus difere do estado do storage; restoreUpload.available exige offline real e autoConnect=false. GET não executa manutenção. Em validação DEV; não implanta produção.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catálogo e capacidade do worker",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial ausente ou inválida"
+          },
+          "403": {
+            "description": "Requer administrador autorizado"
+          },
+          "409": {
+            "description": "Catálogo ou configuração incompatível"
+          },
+          "503": {
+            "description": "Worker",
+            "volume ou coordenação indisponível": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/migrations": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "migrateSessionStorage",
+        "summary": "Solicitar migração manual Redis para SQLite",
+        "description": "Pausa somente esta sessão sem logout, prepara snapshot no volume do worker dono e valida IDs, conteúdo e expiração antes do cutover por geração. Exige S3, mas não exige chave: após commit verifica novo backup sem criptografia por leitura de volta/restauração e remove somente as chaves Redis de origem cujo conteúdo/TTL permanecem iguais, sob a mesma lease. Arquivo contém credenciais; mantenha bucket e downloads restritos. Configuração e coordenação permanecem. sourcePreserved=false e sourceCleanup confirmam finalização; falha mantém SQLite offline, sem rollback silencioso. Só solicita retomada após finalização/lease liberada se autoConnect=true, status online/connecting e cliente local anterior no dono. Fixtures e guard global não retomam. result.reconnect=requested não confirma Online. Sem retry por timeout. HTTP aceito não é conclusão. Não altera outras sessões.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "target",
+                  "confirm"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": [
+                      "sqlite"
+                    ]
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "target": "sqlite",
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa aceita; acompanhar até estado terminal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação ou destino inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Requer administrador autorizado"
+          },
+          "409": {
+            "description": "Migração em andamento",
+            "dono alterado": null,
+            "backend incompatível ou S3 não configurado. Chamada ativa ou operação VoIP em andamento gera session_storage_active_calls antes de desconectar; quando detectado após aceite consultar error na tarefa.": null
+          },
+          "503": {
+            "description": "Volume persistente",
+            "worker ou Redis indisponível": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/tasks/{taskId}": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "getSessionStorageTask",
+        "summary": "Consultar tarefa de migração, backup, restore ou limpeza da origem",
+        "description": "Correlaciona tarefa e sessão lendo o recibo do plano de controle Redis, sem depender da geração alterada pelo cutover nem da disponibilidade do worker dono. O recibo não comprova saúde atual do SQLite. Sucesso somente em estado terminal ready no worker ou succeeded quando normalizado pelo gateway; interrupted exige reconciliação sem repetição automática do POST. O painel limita a consulta automática e oferece consulta manual. Não retorna segredos nem mensagens.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado e progresso da tarefa",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Identificador inválido"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Requer administrador autorizado"
+          },
+          "404": {
+            "description": "Tarefa ausente ou expirada"
+          },
+          "409": {
+            "description": "Tarefa fora do escopo da sessão"
+          },
+          "503": {
+            "description": "Plano de controle Redis indisponível"
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/backups": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "backupSessionStorage",
+        "summary": "Solicitar snapshot verificado do SQLite da sessão sem exigir chave",
+        "description": "Snapshot WAL-consistente, sem criptografia e sem chave, destinado ao S3 privado configurado. Manifesto novo informa protection=none. Só publica ready após readback, checksum do stream/metadados, SHA-256 e integridade SQLite; checksum não oferece sigilo nem autenticação contra alteração maliciosa. Arquivo inclui credenciais, configuração e suplemento Mobile Primary; mantenha acesso restrito. Controles compartilhados são revalidados ao redor do snapshot, até três tentativas limitadas. Restore existente não reaplica configuração automaticamente. Agenda por janela de 12 horas; falha permite retry na mesma janela. Rotação weekly mantém sete slots no fuso configurado, com CAS/readback e grace de 15 minutos antes de aposentar backups novos sem referência. Arquivos criptografados legados e a chave existente são preservados, fora dessa remoção automática; continuam restauráveis com sua chave. Backup não é failover nem comprova credenciais aceitas no WhatsApp.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa aceita; consultar resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação inválida"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Requer administrador autorizado"
+          },
+          "409": {
+            "description": "Backend incompatível ou operação em andamento"
+          },
+          "503": {
+            "description": "Snapshot",
+            "verificação": null,
+            "destino ou worker indisponível": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/restores": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "restoreSessionStorage",
+        "summary": "Restaurar backup SQLite da sessão em modo offline",
+        "description": "Login Manager admin obrigatório. Restaura sessão SQLite existente offline em novo UUID, preservando arquivo anterior; autoConnect=false e posse exclusiva obrigatórios. Runtime recusa destino Redis, sem mesclar dados. Detecta backup novo sem chave ou legado criptografado: somente o legado exige sua chave no worker e falha explicitamente se ausente. Valida arquivo inteiro, checksum, identidade, integridade, versão e IDs vivos nas duas direções antes de publicar o storage. Mobile Primary exige suplemento idêntico ao estado Redis atual; divergência gera session_storage_primary_state_changed. Destino permanece offline, sem conexão ou replay. Aceite HTTP não confirma restore; não comprova recuperação real de aparelho.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "backupId",
+                  "mode",
+                  "confirm"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "backupId": {
+                    "type": "string",
+                    "description": "Identificador do backup pertencente à sessão"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "offline"
+                    ]
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "backupId": "BACKUP_ID",
+                "mode": "offline",
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa aceita; consultar resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação",
+            "modo ou backup inválido": null
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Requer login Manager de administrador"
+          },
+          "404": {
+            "description": "Backup ausente"
+          },
+          "409": {
+            "description": "Identidade",
+            "geração": null,
+            "versão ou exclusividade incompatíveis": null
+          },
+          "503": {
+            "description": "Destino",
+            "volume ou worker indisponível; legado criptografado pode exigir sua chave": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/restore-upload": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "uploadSessionStorageRestore",
+        "summary": "Restaurar arquivo de backup SQLite enviado pelo administrador",
+        "description": "Arquivo .viperstorage novo sem chave ou legado criptografado, corpo binário por streaming, até 256 MiB com Content-Length. Não usar JSON/base64/multipart nem enviar senha. Exige login Manager admin, sessão SQLite existente realmente offline, autoConnect=false, S3 e volume; novos backups não exigem chave no worker. Somente arquivos legados criptografados exigem a chave antiga e falham explicitamente se ausente. Arquivo contém credenciais: acesso restrito. Staging privado no mesmo bucket; dono revalida estado/tarefa/lease, arquivo completo/checksum/SHA-256/identidade/IDs/primário antes de promover novo UUID, preservando anterior. Sem conexão, replay ou sobreposição da configuração. Consultar tasks até terminal; timeout não autoriza retry automático. Uploads incertos expiram após 24 horas; êxito remove staging. Para perda do catálogo Redis usar a CLI offline documentada.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "enum": [
+                true
+              ]
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "offline"
+              ]
+            }
+          },
+          {
+            "name": "Content-Length",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 268435456
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "Arquivo .viperstorage novo sem chave ou legado criptografado; não SQLite puro"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Upload recebido e tarefa aceita; consultar até estado terminal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação",
+            "formato ou arquivo incompleto/incompatível": null
+          },
+          "401": {
+            "description": "Credencial ausente ou inválida"
+          },
+          "403": {
+            "description": "Requer login Manager de administrador"
+          },
+          "409": {
+            "description": "Sessão online",
+            "autoConnect ativo": null,
+            "tarefa concorrente ou exclusividade incompatível": null
+          },
+          "413": {
+            "description": "Content-Length ausente/inválido ou arquivo acima de 256 MiB"
+          },
+          "503": {
+            "description": "S3",
+            "worker ou volume indisponível; consultar tarefa antes de repetir": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/source-cleanup": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "cleanupSessionStorageSource",
+        "summary": "Finalizar migração removendo somente a origem Redis verificada",
+        "description": "Operação destrutiva administrativa explícita, separada do cutover. Exige sessão SQLite offline, autoConnect=false, dono correto, geração atual e manifesto de backup ready. Restaura o backup em temporário e compara SHA-256 dos fingerprints; somente legado criptografado exige chave antiga. Cada lote atômico Redis revalida catálogo, geração, posse, manifesto, bytes e TTL antes de UNLINK; conteúdo ou expiração alterados permanecem. Preserva plano de controle, chaves globais e SQLite. Contagem/bytes não comprovam redução imediata de RSS. Sem retry automático.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm",
+                  "backupId",
+                  "generation"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "backupId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Geração atual do catálogo SQLite"
+                  }
+                }
+              },
+              "example": {
+                "confirm": true,
+                "backupId": "12345678-1234-4234-8234-123456789abc",
+                "generation": 3
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tarefa aceita; consultar até estado terminal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageTask"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Confirmação ou identificadores inválidos"
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Requer login Manager de administrador"
+          },
+          "404": {
+            "description": "Backup ou snapshot de origem ausente"
+          },
+          "409": {
+            "description": "Sessão online",
+            "geração divergente": null,
+            "origem alterada ou backup não verificado": null
+          },
+          "503": {
+            "description": "Coordenação",
+            "backup ou volume indisponível": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/metrics": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "getSessionStorageMetrics",
+        "summary": "Consultar métricas do worker e armazenamento da sessão",
+        "description": "Somente leitura. RSS, heap e externa são do processo inteiro compartilhado, não RAM exclusiva da sessão. SQLite/WAL/SHM são bytes em disco. Redis por sessão é estimativa amostrada. Origem preservada continua consumindo memória. Painel consulta a cada cinco segundos: RSS/arquivos atualizam por consulta; contagens, estimativas e metadados SQL podem ser cacheados por 60 segundos. Orçamento soft de cache de 1 MiB por banco aberto, conexão node:sqlite compartilhada entre Uno e SDK; não é RAM medida ou teto por sessão. Não baixa mensagens nem conecta ao WhatsApp.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Métricas com escopos explícitos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStorageMetrics"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credencial inválida"
+          },
+          "403": {
+            "description": "Requer administrador autorizado"
+          },
+          "503": {
+            "description": "Worker",
+            "volume ou coordenação indisponível": null
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/storage/explorer": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "exploreSessionSqlite",
+        "summary": "Explorar tabelas e registros do SQLite da sessão",
+        "description": "Login de administrador, nunca chave pessoal/API. Consulta no worker dono, com geração e volume validados, conexão somente leitura e sem SQL livre. Sem table retorna catálogo; tabelas internas/credenciais são protegidas. Página de até 50 registros, varre no máximo 200 rowids; uma busca vazia pode ter continuação. Busca em chaves/identificadores, não conteúdo. Segredos, protobuf e URLs de mídia não são expostos; mensagem binária tem prévia pública. Campos acima de 64 KiB não são carregados. Não conecta ou envia ao WhatsApp. Redis da sessão continua no explorador Redis separado.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "table",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "description": "Cursor vinculado a sessão",
+            "banco": null,
+            "geração": null,
+            "tabela e busca": null
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catálogo ou página com columns, rows (id/key/etag/cells), hasMore, nextCursor e scanned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Filtro ou cursor inválido"
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido ou tabela protegida"
+          },
+          "409": {
+            "description": "Backend",
+            "estado": null,
+            "identidade ou geração incompatível": null
+          },
+          "503": {
+            "description": "Worker ou volume indisponível"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "operationId": "mutateSessionSqliteRecord",
+        "summary": "Criar, editar ou excluir registro SQLite com backup e confirmação",
+        "description": "CRUD administrativo do armazenamento, não edição/envio no WhatsApp. Sessão offline, autoConnect=false, sem cliente ou chamadas ativos; mutex de storage, lease WhatsApp, barreira de callbacks e seleção fresca. Antes da escrita exige backup S3 verificado; erro de backup não altera registros. UPDATE/DELETE exigem rowId+etag da consulta, recusando dados modificados. Transação atômica, pares UnoID/provider ID mantidos juntos. Tabelas internas/credenciais e chaves de outra sessão são protegidas. Sem SQL livre ou edição de schema. Não há retry automático; resultado ambíguo exige consultar antes de repetir. Logs não incluem conteúdo. Novos backups contêm credenciais sem criptografia: mantenha o bucket privado.",
+        "security": [
+          {
+            "ManagerLoginToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action",
+                  "table",
+                  "generation",
+                  "confirm"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "update",
+                      "delete"
+                    ]
+                  },
+                  "table": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "rowId": {
+                    "type": "string",
+                    "description": "Obrigatório em update/delete"
+                  },
+                  "etag": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "Obrigatório em update/delete"
+                  },
+                  "values": {
+                    "type": "object",
+                    "description": "Campos em create/update. Strings, números ou null; BLOB como {utf8: texto} ou {base64: dados}. Omitidos são preservados em update. session_id é fixo à sessão."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alteração persistida com action, table, rowId, changed=true e backupId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Valores",
+            "confirmação ou formato inválido": null
+          },
+          "401": {
+            "description": "Login inválido"
+          },
+          "403": {
+            "description": "Administrador exigido ou dado protegido"
+          },
+          "404": {
+            "description": "Registro não encontrado"
+          },
+          "409": {
+            "description": "Sessão ativa/autoConnect, lock, conflito etag/IDs ou geração incompatível"
+          },
+          "413": {
+            "description": "Conteúdo acima do limite"
+          },
+          "503": {
+            "description": "Backup",
+            "worker": null,
+            "volume ou controle indisponível": null
+          }
+        }
+      }
+    },
     "/{version}/{phone}/conversations": {
       "get": {
         "tags": [
@@ -23,7 +1542,7 @@
         ],
         "operationId": "listSessionConversations",
         "summary": "Listar conversas do histórico local da sessão",
-        "description": "Zapo/Redis apenas. Token global, da sessão ou Manager autorizado. Sem consulta ao WhatsApp, recibo de leitura ou renovação do TTL. Inicialização do índice em background (indexing=true). Busca examina até 200 resumos por página; página vazia pode ter continuação. Não retorna contagem global. Exclui Status/newsletters.",
+        "description": "Zapo/Redis ou SQLite por sessão. SQLite é consultado no worker dono por RPC, sem abrir arquivo no web nem fallback para cópia Redis. Token global, da sessão ou Manager autorizado. Sem consulta ao WhatsApp, recibo de leitura ou renovação do TTL. Em Redis, inicialização do índice em background (indexing=true) e busca de até 200 resumos por página; página vazia pode ter continuação. Não retorna contagem global. Exclui Status/newsletters.",
         "parameters": [
           {
             "name": "version",
@@ -289,7 +1808,7 @@
         ],
         "operationId": "downloadSessionMessageMedia",
         "summary": "Carregar mídia autorizada sob demanda",
-        "description": "Consulta a mensagem na sessão antes de acessar storage. Reutiliza mídia interna; quando ausente, download/decrypt oficial Zapo sem abrir socket WhatsApp, respeitando proxy/família IP. Máximo 256 MiB/60s; concorrência deduplicada por processo. Mídia expirada pode falhar; nunca expõe view_once ou mídia removida. Sem predownload/reupload automático. Cache-Control no-store, attachment e nosniff.",
+        "description": "Consulta a mensagem na sessão antes de acessar o storage. Redis e SQLite aceitam ID do provedor ou seu alias UnoID, resolvido por mapeamento recíproco válido da mesma sessão, sem varredura nem reconstrução de referência expirada. A rota exige autorização da sessão e não recebe um parâmetro adicional de conversa. Conteúdo expirado, removido ou view_once é bloqueado pelos dois IDs antes de acessar cache ou CDN. Mapeamento inconsistente retorna erro explícito. SQLite usa o worker dono para registro/estado/IDs e exige S3 compartilhado; RPC retorna somente chave interna, MIME e nome, nunca bytes, protobuf ou chaves. Reutiliza mídia interna; quando ausente, download/decrypt oficial Zapo por stream ao storage sem abrir socket WhatsApp, respeitando proxy e família IP. Máximo 256 MiB/60s; consultas simultâneas pelos dois IDs compartilham o download no processo responsável, sem reenviar a mensagem. Fixtures e transições de armazenamento são bloqueadas. Sem predownload/reupload automático. Cache-Control no-store, attachment e nosniff.",
         "parameters": [
           {
             "name": "version",
@@ -310,7 +1829,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "ID de provider devolvido na listagem"
+            "description": "ID do provedor ou alias UnoID com mapeamento recíproco válido na própria sessão"
           }
         ],
         "responses": {
@@ -338,13 +1857,16 @@
             "description": "Mensagem expirada/ausente ou sem mídia"
           },
           "409": {
-            "description": "Store não Zapo/Redis"
+            "description": "Backend incompatível",
+            "SQLite sem S3 compartilhado": null,
+            "fixture ou transição de armazenamento": null
           },
           "502": {
             "description": "Falha no stream do storage"
           },
           "503": {
-            "description": "Falha de download/decrypt ou Redis"
+            "description": "Falha de download/decrypt",
+            "coordenação indisponível ou session_storage_media_id_mapping_invalid para mapeamento de IDs inconsistente; não inicia download com referência inconsistente": null
           }
         }
       }
@@ -1989,7 +3511,7 @@
             "AdminToken": []
           }
         ],
-        "description": "Administrador autenticado. Suspende a origem e gera arquivo criptografado stream-v2 em blocos, disponível no storage por 24 horas. Sem teto global de registros ou bytes; depende da capacidade do Redis e storage. Blocos de até 4 MiB e DUMP base64 de até 2000000 caracteres por registro. Sem truncamento. Falha recupera autoConnect anterior se a tarefa ainda controlar a configuração; sucesso mantém origem suspensa.",
+        "description": "Administrador autenticado. Fluxo manual Redis: runtime Zapo 1.11.0 e store-redis 1.3.0; restaura arquivos com origem Zapo 1.9.0 ou 1.11.0. SQLite é recusado antes de suspender com session_backup_sqlite_requires_session_storage_endpoint; usar /{version}/{phone}/storage/backups e restores para .viperstorage. Suspende a origem Redis e gera .vipersession criptografado stream-v2 em blocos, disponível por 24 horas. Sem teto global; blocos de até 4 MiB e DUMP base64 até 2000000 caracteres. Não trunca. Falha recupera autoConnect anterior se ainda controlar a configuração; sucesso mantém a origem suspensa.",
         "requestBody": {
           "$ref": "#/paths/~1manager~1mobile-devices~1{id}~1backup-tasks/post/requestBody"
         },
@@ -2627,7 +4149,7 @@
             "AdminToken": []
           }
         ],
-        "description": "Somente administrador. Uma tarefa simultânea. Senha apenas em memória durante execução; arquivo criptografado disponível por 24 horas após conclusão. Reinício durante geração não retoma automaticamente; após 10 minutos aparece interrupted. Mantém somente o último resultado por dispositivo.",
+        "description": "Somente administrador. Exportação manual Redis em .viperdevice; runtime Zapo 1.11.0 e store-redis 1.3.0. SQLite retorna mobile_backup_sqlite_requires_session_storage_endpoint antes de suspender; utilizar o painel Armazenamento da sessão e o formato .viperstorage. Uma tarefa simultânea. Senha apenas em memória; arquivo cifrado disponível por 24 horas. Reinício não retoma automaticamente; após dez minutos aparece interrupted. Mantém o último resultado por dispositivo.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2674,7 +4196,7 @@
             "description": "Confirmação ou senha inválida"
           },
           "409": {
-            "description": "Já existe uma tarefa em execução"
+            "description": "Tarefa em execução ou mobile_backup_sqlite_requires_session_storage_endpoint; usar backup de armazenamento SQLite"
           }
         }
       }
@@ -2949,7 +4471,7 @@
           "Manager"
         ],
         "summary": "Restaurar dispositivo principal a partir de backup criptografado",
-        "description": "Somente administrador em qualquer servidor configurado. Arquivo até 16 MiB; Zapo 1.9.0, store-redis 1.3.0, mesmo prefixo Redis e formato DUMP compatível. Recusa cadastro, configuração ou credenciais preexistentes para o número. Reprotege o registro com a chave da stack de destino. Restaura com autoConnect=true e sem webhooks; solicita conexão ao worker após liberar a trava. Não solicita SMS nem garante validade remota de credenciais revogadas. Exige confirmação da origem desligada. Falha de publicação retorna warning restore_connection_dispatch_failed sem desfazer a restauração.",
+        "description": "Somente administrador em qualquer servidor configurado. .viperdevice até 16 MiB; aceita origem Zapo 1.9.0 ou 1.11.0 e store-redis 1.3.0, no runtime Zapo 1.11.0, mesmo prefixo Redis e DUMP compatível. Destino deste formato permanece Redis, mesmo se o padrão de novas sessões for SQLite; não converte nem mistura formatos. Para .viperstorage usar restore de armazenamento da sessão. Recusa cadastro, configuração ou credenciais preexistentes. Reprotege registro com a chave da stack de destino. Restaura autoConnect=true sem webhooks e solicita conexão ao worker após liberar trava. Exige confirmação da origem desligada; não garante validade remota. Falha de publicação informa warning restore_connection_dispatch_failed sem desfazer a restauração.",
         "security": [
           {
             "AdminToken": []
@@ -3113,7 +4635,7 @@
           "Manager"
         ],
         "summary": "Importar registro e conectar dispositivo principal à Zapo",
-        "description": "Disponível no servidor configurado. Exige registro concluído e confirmação explícita. Preserva o registro cifrado, importa auth nativo somente se vazio e compatível, usa lease da sessão e publica a conexão para o worker existente. Habilita autoConnect somente após importação. Nunca sobrescreve auth atualizado nem restaura auth removido após importação. Uma resposta 202 não significa conectado; consultar GET. Não envia mensagens de teste.",
+        "description": "Disponível no servidor configurado. Exige registro concluído e confirmação explícita. Primeiro prepara o armazenamento no worker dono, com tentativa e recibo persistido vinculados a backend, dono e UUID/geração aplicáveis. Resposta RPC perdida só é resolvida pelo recibo da mesma tentativa, inclusive quando o worker escolheu Redis intencionalmente. Importa auth nativo somente se vazio e compatível, por RPC privado ao dono; o processo HTTP não abre o SQLite do worker. Mantém a sessão suspensa e renova a lease de 60 segundos a cada 15 segundos. Habilita autoConnect somente após conferir auth e confirmar configuração, registro, dono e lease por comparação atômica. Retry não substitui auth existente ou chaves atualizadas. Cadastro parcial antigo sem armazenamento confirmado retorna mobile_storage_selection_required; não converte implicitamente para Redis. Primários já importados seguem o descritor atual após migração/restore, sem exigir recibo antigo de criação. Nunca restaura auth removido após importação. HTTP 202 não significa conectado; consultar GET. Não envia mensagens de teste nem retorna credenciais ao navegador.",
         "security": [
           {
             "AdminToken": []
@@ -3169,8 +4691,7 @@
             "description": "Administrador obrigatório"
           },
           "409": {
-            "description": "Registro incompleto",
-            "sessão em uso ou conflito de identidade": null
+            "description": "Registro incompleto, sessão em uso ou identidade conflitante; mobile_storage_selection_required para cadastro parcial antigo; session_storage_provision_unconfirmed, mobile_auth_import_unconfirmed ou mobile_storage_selection_invalid exigem consultar o estado antes de retomar. Nada autoriza sobrescrever credenciais existentes."
           },
           "503": {
             "description": "Falha de armazenamento ou publicação; consultar estado antes de repetir"
@@ -9603,9 +11124,35 @@
         }
       }
     },
+    "/connect/{phone}": {
+      "get": {
+        "tags": [
+          "Sessões"
+        ],
+        "summary": "Abrir UI de conexão de uma sessão cadastrada",
+        "description": "Não cadastra telefone implicitamente. Na stack Redis-backed exige configuração persistida pelo register/Primary com backend confirmado; não inicia Redis por fora do provisionamento SQLite.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML de acompanhamento do QR e solicitação de reload; não comprova conexão"
+          },
+          "409": {
+            "description": "session_storage_registration_required; primeiro executar POST /v15.0/{phone}/register"
+          },
+          "503": {
+            "description": "Configuração ou coordenação indisponível"
+          }
+        }
+      }
+    },
     "/sessions/{phone}": {
       "get": {
         "summary": "UI de sessão (QR/Config)",
+        "description": "Exige telefone já cadastrado na stack Redis-backed; não cria sessão implicitamente. Register confirma o backend antes da primeira conexão. Sessões existentes preservam Redis ou SQLite.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -9621,6 +11168,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "session_storage_registration_required; primeiro executar POST /v15.0/{phone}/register"
           }
         }
       }
@@ -9733,7 +11283,7 @@
     "/v15.0/{phone}/messages": {
       "post": {
         "summary": "Enviar mensagem (WhatsApp Cloud shape)",
-        "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
+        "description": "- Em caso de falha de envio, a API responde 200 com corpo OK e o erro é enviado ao webhook de saída.\n- Para mensagens temporárias, informe `ttl` na raiz com o tempo de expiração em segundos.\n- A primeira URL ou domínio público válido gera prévia automaticamente; não é necessário definir uma flag no payload. Domínios sem protocolo são normalizados para `https://` antes do envio.\n- A terminação precisa constar no snapshot local da lista IANA; e-mails, extensões de arquivo bloqueadas, sufixos desconhecidos/reservados (ex. carlos.vv, cert.pfx, .local, .test) não ativam prévia nem recebem https. oi.com continua válido. Não consulta DNS para essa decisão nem comprova existência ou propriedade do site.\n- Pix copia e cola (cabeçalho BR Code 000201 seguido do identificador 0014br.gov.bcb.pix) preserva o texto integral e desativa a prévia de toda a mensagem, inclusive links separados. Independente de banco/provedor; não acrescenta https nem consulta URLs do código. Proteção de transporte, não validação de pagamento/beneficiário/CRC; códigos truncados também são preservados.\n- Para publicar Status/Stories, use o modelo específico com `to: status@broadcast`.\n- Mídias preservam o formato Cloud API por `link`. Como extensão ViperConnect, também podem usar `base64` puro ou Data URI; a UnoAPI persiste os bytes antes de enfileirar e nunca encaminha o Base64 ao RabbitMQ ou aos webhooks.\n- PDFs Oracle Reports legados são detectados e normalizados automaticamente antes do upload ao WhatsApp, tanto por `link` quanto por `base64`. O original permanece intacto; PDFs comuns, criptografados, assinados ou com formulário não são convertidos.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -11174,6 +12724,7 @@
     "/{phone}/contacts": {
       "get": {
         "summary": "Listar contatos armazenados da sessão Zapo",
+        "description": "Leitura isolada da sessão. Em SQLite, consulta o worker proprietário com prazo de 15s para leituras leves. Consulta vencida na fila retorna 503 sem efeitos. Erros de RPC/storage retornam resposta controlada sem derrubar o processo web; não há recuperação de criptografia ou reenvio automático.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -11220,6 +12771,9 @@
           },
           "409": {
             "description": "A sessão não utiliza o provider Zapo"
+          },
+          "503": {
+            "description": "Diretório ou worker indisponível; error_code estável contact_directory_unavailable, session_storage_worker_unavailable ou session_storage_request_expired"
           }
         }
       },
@@ -11515,7 +13069,7 @@
     "/{phone}/request_code": {
       "post": {
         "summary": "Solicitar código de pareamento",
-        "description": "Solicita um pairing code ao motor da sessão. No motor Zapo, a resposta HTTP contém o código puro e o Socket.IO também publica uma imagem com o código legível pelo contrato compatível `broadcast`, usando `type: qrcode`. A aplicação pode continuar exibindo `content` em uma tag `img`, sem criar um evento específico para pairing code.",
+        "description": "Solicita um pairing code ao motor da sessão. No motor Zapo, a resposta HTTP contém o código puro e o Socket.IO também publica uma imagem com o código legível pelo contrato compatível `broadcast`, usando `type: qrcode`. A aplicação pode continuar exibindo `content` em uma tag `img`, sem criar um evento específico para pairing code. Exige cadastro confirmado pelo register/Primary antes de conectar; não cadastra uma sessão Redis implicitamente quando SQLite é o padrão.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -11544,6 +13098,279 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "session_storage_registration_required, sessão suspensa ou transição de armazenamento em andamento; sem código ou conexão nova"
+          },
+          "503": {
+            "description": "Worker ou coordenação indisponível"
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/jidmap": {
+      "get": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Listar mapeamentos PN e LID persistidos",
+        "description": "Requer JIDMAP_LIST_ENABLED e autorização da sessão. scope=session usa o backend selecionado e RPC do owner em SQLite; scope=global consulta o índice compartilhado Redis. Cache ausente é omitido. Erro de leitura/RPC/geração falha a requisição inteira, nunca retorna 200 parcial nem consulta WhatsApp.",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "session",
+                "global"
+              ],
+              "default": "session"
+            }
+          },
+          {
+            "name": "side",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "pn_for_lid",
+                "lid_for_pn"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "default": 200
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "session, scope, side, q, page e mappings com pn_for_lid/lid_for_pn"
+          },
+          "403": {
+            "description": "Listagem desabilitada ou acesso não autorizado"
+          },
+          "409": {
+            "description": "Geração ou estado do armazenamento alterado"
+          },
+          "503": {
+            "description": "jidmap_unavailable ou código session_storage de indisponibilidade; sem resultado parcial"
+          }
+        }
+      }
+    },
+    "/{version}/{phone}/jidmap/{contact}": {
+      "get": {
+        "tags": [
+          "Contatos"
+        ],
+        "summary": "Consultar mapeamento PN e LID de um contato",
+        "description": "Consulta somente dados persistidos do backend da sessão; ausência não fabrica identidade. Falha de armazenamento retorna erro explícito.",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "default": "v15.0"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/PhonePath"
+          },
+          {
+            "name": "contact",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "PN em dígitos",
+            "PN JID ou LID JID": null
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Telefone da sessão e campos pn/lid disponíveis"
+          },
+          "400": {
+            "description": "Identidade inválida"
+          },
+          "409": {
+            "description": "Geração ou estado do armazenamento alterado"
+          },
+          "503": {
+            "description": "Armazenamento ou RPC indisponível"
+          }
+        }
+      }
+    },
+    "/passkey-bridge/{bridgeId}/assertion": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "summary": "Entregar assertion WebAuthn ao signer pendente no worker dono",
+        "description": "Exige token autorizado para o telefone do bridge. Web e worker podem ser processos distintos, em Redis ou SQLite. RPC revalida dono/geração, bridge, expiração e signer corrente. Não conecta sessão offline nem cria cliente. response-sent confirma somente entrega ao signer; apenas auth_paired confirma completed. Não repetir automaticamente após timeout.",
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bridgeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "credential_id",
+                  "assertion_json"
+                ],
+                "properties": {
+                  "credential_id": {
+                    "type": "string",
+                    "description": "ID da credencial em base64url"
+                  },
+                  "assertion_json": {
+                    "description": "Assertion WebAuthn como objeto ou JSON serializado",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok, bridge_id e status confirmado response-sent ou completed"
+          },
+          "400": {
+            "description": "Credencial ou assertion ausente/inválida"
+          },
+          "403": {
+            "description": "Token sem autorização para o telefone"
+          },
+          "404": {
+            "description": "Bridge ausente ou expirado"
+          },
+          "409": {
+            "description": "Signer inexistente/divergente",
+            "sessão offline": null,
+            "geração alterada ou operação incompatível": null
+          },
+          "502": {
+            "description": "Resultado não confirmado pelo worker"
+          },
+          "503": {
+            "description": "RPC ou armazenamento indisponível"
+          }
+        }
+      }
+    },
+    "/passkey-bridge/{bridgeId}/confirm": {
+      "post": {
+        "tags": [
+          "Sessões"
+        ],
+        "summary": "Consultar ou entregar confirmação ao provider no worker dono",
+        "description": "Mesma autorização e validade da assertion. Na Zapo a confirmação é controlada pelo provider; uma resposta HTTP não conclui o pareamento nem reabre conexão. Preserva a expiração absoluta e estados terminais.",
+        "security": [
+          {
+            "ApiToken": []
+          },
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bridgeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok, bridge_id, status e provider_managed_confirmation confirmados pelo worker"
+          },
+          "403": {
+            "description": "Token sem autorização para o telefone"
+          },
+          "404": {
+            "description": "Bridge ausente ou expirado"
+          },
+          "409": {
+            "description": "Signer inexistente/divergente",
+            "sessão offline ou geração incompatível": null
+          },
+          "502": {
+            "description": "Resultado não confirmado pelo worker"
+          },
+          "503": {
+            "description": "RPC ou armazenamento indisponível"
           }
         }
       }
@@ -11625,7 +13452,7 @@
     "/v15.0/{phone}/register": {
       "post": {
         "summary": "Registrar/atualizar configuração da sessão",
-        "description": "Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS enquanto o registro for válido. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online.",
+        "description": "Novo cadastro Zapo permanece com autoConnect=false enquanto o worker dono prepara o backend. A confirmação depende de recibo persistido da mesma tentativa e dono, com backend e UUID/geração aplicáveis. Timeout não confirma fallback para Redis: sem recibo retorna 503 e mantém a sessão suspensa. Repetir register retoma a tentativa pendente; resposta RPC perdida pode ser resolvida por recibo já persistido de SQLite ou Redis escolhido explicitamente. Não recria banco vazio nem troca backend confirmado. Alterações de configuração são comparadas antes da gravação, preservando o descritor atual; conflitos incompatíveis retornam 409. Mudança real de intenção de conexão não é suprimida pelo debounce, e o worker serializa reload/inicialização por sessão. Em mobile primary, preserva credenciais, ativa autoConnect e solicita reconexão sem QR/SMS somente se a importação já estiver confirmada e o registro for válido. Importação pendente usa o fluxo administrativo do dispositivo principal. Webhooks recebidos são adicionados ou atualizados por ID antes da reconexão; destinos omitidos permanecem. Sem webhooks no corpo, preserva os existentes. HTTP 200 não confirma conexão online. Após deregister SQLite confirmado, preserva o banco histórico e permite novo perfil QR/tipo de pareamento somente no estado interno desvinculado e offline. A aplicação não pode enviar sessionStorage, sessionStorageUnlinked, sessionStorageTaskId, sessionStorageProvisionPending ou sessionStorageProvisioned nem alterar worker/provedor da sessão SQLite por esta rota. Suspensão de primário não limpa suas credenciais nem equivale à remoção completa do dispositivo.",
         "parameters": [
           {
             "$ref": "#/components/parameters/PhonePath"
@@ -11653,7 +13480,13 @@
             }
           },
           "400": {
-            "description": "Erro ao aplicar configuração"
+            "description": "Erro ao aplicar configuração ou tentativa de enviar campos internos somente de leitura (session_storage_internal_fields)"
+          },
+          "409": {
+            "description": "Conflito de configuração/armazenamento ou importação pendente de dispositivo principal; error_code preserva session_storage_configuration_changed, session_storage_operation_in_progress, session_storage_provision_unconfirmed ou mobile_auth_import_required conforme a causa. Não autoriza trocar backend nem sobrescrever auth."
+          },
+          "503": {
+            "description": "session_storage_provision_unconfirmed; o worker não confirmou recibo válido desta tentativa. A sessão permanece suspensa, sem fallback implícito para Redis."
           }
         }
       }
@@ -15661,6 +17494,826 @@
       }
     },
     "schemas": {
+      "SessionStorageStatus": {
+        "type": "object",
+        "required": [
+          "backend",
+          "owner",
+          "state",
+          "generation",
+          "capability"
+        ],
+        "properties": {
+          "backend": {
+            "type": "string",
+            "enum": [
+              "redis",
+              "sqlite"
+            ]
+          },
+          "owner": {
+            "type": "string",
+            "description": "Identificador estável do worker responsável",
+            "example": "lab-worker-1"
+          },
+          "state": {
+            "type": "string",
+            "example": "active",
+            "description": "Estado operacional do armazenamento; offline não confirma o estado do socket WhatsApp"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fixture": {
+            "type": "boolean",
+            "description": "Sessão sintética; bloquear conexão",
+            "envio e mídia reais": null
+          },
+          "autoConnect": {
+            "type": "boolean",
+            "description": "Intenção atual de conexão automática",
+            "não confirmação de saúde": null
+          },
+          "connectionStatus": {
+            "type": "string",
+            "description": "Estado canônico da conexão separado do armazenamento",
+            "example": "offline"
+          },
+          "restoreUpload": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean",
+                "description": "Disponível com sessão offline",
+                "sem cliente local e autoConnect=false": null,
+                "SQLite/S3/volume configurados. Chave não é requisito; apenas arquivos criptografados antigos a exigem durante a leitura": null
+              }
+            }
+          },
+          "maintenance": {
+            "type": "object",
+            "description": "Último recibo do coordenador da mesma identidade e geração, sem manutenção disparada por GET; poda limitada, sem VACUUM nem exclusão de auth/Signal.",
+            "properties": {
+              "at": {
+                "type": "integer"
+              },
+              "totalDeleted": {
+                "type": "integer"
+              },
+              "rowBudget": {
+                "type": "integer",
+                "maximum": 1000
+              },
+              "budgetReached": {
+                "type": "boolean"
+              },
+              "freedPages": {
+                "type": "integer"
+              },
+              "fileShrunk": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "authCryptoPreserved": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            }
+          },
+          "recovery": {
+            "type": "object",
+            "description": "Reconciliação conservadora sem conectar ou apagar arquivos; ambiguidade exige inspeção manual.",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "not_needed",
+                  "waiting",
+                  "repaired",
+                  "recovery_required"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string"
+              },
+              "transportEffects": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              }
+            }
+          },
+          "currentTask": {
+            "$ref": "#/components/schemas/SessionStorageTask"
+          },
+          "backupPolicy": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervalHours": {
+                "type": "integer",
+                "enum": [
+                  12
+                ]
+              },
+              "destination": {
+                "type": "string",
+                "enum": [
+                  "s3"
+                ]
+              },
+              "protection": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ],
+                "description": "Novos backups sem criptografia e sem chave; arquivo contém credenciais",
+                "restringir bucket/downloads": null
+              },
+              "location": {
+                "type": "object",
+                "description": "Localização no bucket configurado; não contém endpoint autenticado, URL assinada, chave ou caminho local.",
+                "properties": {
+                  "bucket": {
+                    "type": "string",
+                    "example": "viperconnect-lab"
+                  },
+                  "prefix": {
+                    "type": "string",
+                    "example": "backups/session-storage/5566999999999/"
+                  },
+                  "slotsPrefix": {
+                    "type": "string",
+                    "example": "backups/session-storage/5566999999999/slots/"
+                  }
+                }
+              },
+              "retention": {
+                "type": "object",
+                "properties": {
+                  "strategy": {
+                    "type": "string",
+                    "enum": [
+                      "retain-all",
+                      "weekday-slots"
+                    ]
+                  },
+                  "slots": {
+                    "type": "integer",
+                    "enum": [
+                      7
+                    ]
+                  },
+                  "timeZone": {
+                    "type": "string",
+                    "example": "America/Cuiaba"
+                  },
+                  "replacement": {
+                    "type": "string",
+                    "enum": [
+                      "latest-verified"
+                    ]
+                  }
+                }
+              },
+              "schedule": {
+                "type": "object",
+                "description": "Estado seguro da agenda; sucesso só após upload e leitura de volta verificados. Falhas permitem nova tentativa na mesma janela.",
+                "properties": {
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "ready",
+                      "failed",
+                      "interrupted"
+                    ]
+                  },
+                  "window": {
+                    "type": "integer"
+                  },
+                  "updatedAt": {
+                    "type": "integer"
+                  },
+                  "lastSuccess": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "integer"
+                      },
+                      "window": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "lastError": {
+                    "type": "object",
+                    "properties": {
+                      "at": {
+                        "type": "integer"
+                      },
+                      "window": {
+                        "type": "integer"
+                      },
+                      "code": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "lastBackup": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "bytes": {
+                "type": "integer"
+              },
+              "objectKey": {
+                "type": "string",
+                "description": "Caminho privado relativo ao bucket; não é URL pública nem autenticada"
+              },
+              "protection": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "aes-256-gcm"
+                ],
+                "description": "none para novos backups; aes-256-gcm identifica o legado",
+                "cuja chave existente continua necessária para restauração": null
+              },
+              "status": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "error": {
+                "type": "string"
+              }
+            }
+          },
+          "capability": {
+            "type": "object",
+            "required": [
+              "sqliteAvailable",
+              "defaultBackend"
+            ],
+            "properties": {
+              "sqliteAvailable": {
+                "type": "boolean",
+                "description": "Capacidade validada do worker; não implica que SQLite seja o padrão nem substitui a dependência do Redis"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "defaultBackend": {
+                "type": "string",
+                "enum": [
+                  "redis",
+                  "sqlite"
+                ],
+                "description": "SQLite por padrão com volume persistente gravável validado; Redis sem capacidade válida ou com DEFAULT=redis. Raiz padrão /app/session-data. Não muda backend de sessões existentes"
+              },
+              "workerIdentity": {
+                "type": "object",
+                "properties": {
+                  "valid": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "server": {
+                    "type": "string"
+                  },
+                  "worker": {
+                    "type": "string"
+                  }
+                }
+              },
+              "documentation": {
+                "type": "string",
+                "example": "/guide/session-storage"
+              },
+              "configurationExample": {
+                "type": "object",
+                "description": "Somente exemplo sem segredos; não é a configuração real da stack",
+                "properties": {
+                  "env": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "Exemplo ENV sem segredos"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "compose": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "SessionStorageTask": {
+        "type": "object",
+        "required": [
+          "id",
+          "phone",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "migration",
+              "backup",
+              "restore",
+              "source-cleanup"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "migration",
+              "backup",
+              "restore",
+              "source-cleanup"
+            ],
+            "description": "Nome da operação devolvido pelo worker; kind é o alias do gateway quando presente"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "ready",
+              "failed",
+              "interrupted"
+            ],
+            "description": "succeeded no gateway ou ready no worker indicam conclusão da operação de armazenamento; não confirmam conexão WhatsApp. running não indica sucesso"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "object",
+            "properties": {
+              "phase": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "error": {
+            "type": "string",
+            "description": "Código seguro sem conteúdo de mensagens ou credenciais"
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Resultado específico da operação; backup, restore e limpeza também podem devolver outros campos. Migração pode informar intenção de conexão e resultado da publicação, sem comprovar estado Online.",
+            "properties": {
+              "sourcePreserved": {
+                "type": "boolean",
+                "description": "false nas novas migrações concluídas; origem removida após validação e backup verificado"
+              },
+              "protection": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "aes-256-gcm"
+                ],
+                "description": "Proteção do arquivo quando o resultado é um manifesto de backup; novos arquivos usam none"
+              },
+              "backupId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sourceCleanup": {
+                "type": "object",
+                "properties": {
+                  "deleted": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "missing": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "retainedControl": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Controles Redis legítimos encontrados em snapshots antigos; preservados sem contar como divergência"
+                  },
+                  "skipped": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Divergências impedem conclusão e reconexão da migração"
+                  }
+                }
+              },
+              "autoConnect": {
+                "type": "boolean",
+                "description": "Intenção de conexão automática informada pelo fluxo de migração/restore, não confirmação de socket conectado. Pode ser true mesmo quando a publicação da reconexão falha; em erro de coordenação, reconciliar com a configuração atual."
+              },
+              "reconnect": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": true,
+                "description": "Resultado da tentativa de solicitar retomada após migração já confirmada. requested não significa Online; falha não desfaz o banco migrado.",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "requested",
+                      "skipped",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Motivo seguro quando aplicável; por exemplo previously_offline",
+                    "fixture": null,
+                    "external_effects_blocked ou dispatch_failed": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "SessionStorageMetrics": {
+        "type": "object",
+        "properties": {
+          "worker": {
+            "type": "object",
+            "description": "Processo inteiro compartilhado; não dividir RSS pelo número de sessões para declarar custo individual",
+            "properties": {
+              "rssBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "heapUsedBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "externalBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "sessionCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Alias da quantidade de clientes carregados no processo; não conta bancos SQLite offline"
+              },
+              "sharedSessionCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Quantidade de clientes carregados; não permite atribuir RAM individual"
+              },
+              "sharedProcess": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "attributedToSession": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "container": {
+                "type": "object",
+                "description": "Opcional em Linux cgroup v2; compartilhado por todos os processos do container, inclui cache de arquivos. Não somar ao RSS ou atribuir à sessão.",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "cgroup-v2"
+                    ]
+                  },
+                  "currentBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "anonBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "fileBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Inclui arquivos e memória compartilhada; não é tudo RAM livre"
+                  },
+                  "inactiveFileBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Indicador de cache inativo",
+                    "não garantia de liberação": null
+                  },
+                  "shmemBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Subconjunto de fileBytes",
+                    "não somar novamente": null
+                  },
+                  "kernelBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "slabBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Subconjunto de kernelBytes",
+                    "não somar novamente": null
+                  },
+                  "limitBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Ausente quando não há limite numérico"
+                  },
+                  "sampledAt": {
+                    "type": "integer"
+                  },
+                  "sharedAcrossProcesses": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "attributedToSession": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "sampledAt": {
+            "type": "integer",
+            "description": "Instante da consulta em milissegundos UTC; RSS e arquivos atualizados"
+          },
+          "storageSampledAt": {
+            "type": "integer",
+            "description": "Instante da amostra de dados/metadados; cache de até 60 segundos"
+          },
+          "storage": {
+            "type": "object",
+            "description": "Medição nativa do worker. Disco para SQLite; memória estimada para chaves Redis. Não é RAM residente exclusiva da sessão.",
+            "properties": {
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "redis",
+                  "sqlite"
+                ]
+              },
+              "partial": {
+                "type": "boolean"
+              },
+              "estimated": {
+                "type": "boolean"
+              },
+              "estimatedBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Memória de chaves Redis estimada por amostragem"
+              },
+              "sampledKeys": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "scannedKeys": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "estimatedLogicalBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Tamanho lógico SQL amostrado",
+                "não RAM": null
+              },
+              "records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cacheBudgetBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Orçamento configurado",
+                "não uso observado": null
+              },
+              "cacheBudgetIsMeasurement": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
+              },
+              "sqliteEngine": {
+                "type": "string",
+                "enum": [
+                  "node:sqlite"
+                ]
+              },
+              "sqliteVersion": {
+                "type": "string",
+                "description": "Versão real do SQLite em uso; WAL exige 3.51.3 ou superior"
+              },
+              "cacheBudget": {
+                "type": "object",
+                "description": "Orçamento soft da conexão compartilhada; não RAM atribuída à sessão",
+                "properties": {
+                  "unoBytes": {
+                    "type": "integer",
+                    "enum": [
+                      1048576
+                    ]
+                  },
+                  "sdkBytes": {
+                    "type": "integer",
+                    "enum": [
+                      0
+                    ]
+                  },
+                  "sharedConnection": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "soft": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "measuredUsage": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  }
+                }
+              },
+              "fileSampledAt": {
+                "type": "integer",
+                "description": "Instante da medição dos arquivos em milissegundos UTC"
+              },
+              "files": {
+                "type": "object",
+                "properties": {
+                  "databaseBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "walBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "shmBytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "backend": {
+                "type": "string",
+                "enum": [
+                  "redis",
+                  "sqlite"
+                ]
+              },
+              "sqliteBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Disco",
+                "não RAM": null
+              },
+              "walBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Disco",
+                "não RAM": null
+              },
+              "shmBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Disco",
+                "não RAM": null
+              },
+              "logicalBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "redisEstimatedBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Estimativa amostrada de memória de chaves"
+              },
+              "redisSampledKeys": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cacheBudgetBytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "migration": {
+            "type": "object",
+            "properties": {
+              "startedAt": {
+                "oneOf": [
+                  {
+                    "type": "integer",
+                    "description": "Milissegundos UTC"
+                  },
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                ]
+              },
+              "durationMs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "beforeRedisEstimatedBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "afterSqliteBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Bytes em disco; não é RAM depois"
+              },
+              "sourcePreserved": {
+                "type": "boolean"
+              },
+              "before": {
+                "type": "object",
+                "description": "Snapshot das métricas do worker e storage antes do cutover",
+                "additionalProperties": true
+              },
+              "after": {
+                "type": "object",
+                "description": "Snapshot das métricas do worker e storage depois do cutover",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
       "VoipWebhookEnvelope": {
         "type": "object",
         "description": "Snapshot canônico persistido na outbox; o mesmo event_id e conteúdo são usados no POST ao ViperChat e na consolidação REST. Revisões obsoletas não devem regredir o estado da chamada.",
@@ -19057,7 +21710,7 @@
         }
       },
       "RegisterConfig": {
-        "description": "Configuração da sessão. Campos variam por provedor.",
+        "description": "Configuração pública da sessão. Campos variam por provedor. sessionStorage, sessionStorageUnlinked, sessionStorageTaskId, sessionStorageProvisionPending e sessionStorageProvisioned são controles internos somente de leitura, rejeitados no corpo do register. As ações administrativas de armazenamento e dispositivo controlam suas transições.",
         "type": "object",
         "additionalProperties": true,
         "properties": {
@@ -22462,6 +25115,44 @@
               },
               "provider_message_id": {
                 "$ref": "#/components/schemas/ProviderMessageId"
+              },
+              "status": {
+                "type": "object",
+                "description": "Contexto de resposta a status próprio de imagem/vídeo. Recuperação indisponível não bloqueia a resposta. No adapter Chatwoot, a mídia gera uma mensagem sintética antes da resposta, que a referencia por context.id/message_id; deduplicar pelo ID estável. Não envia nada ao WhatsApp.",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "ID do status original"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "imageMessage",
+                      "videoMessage"
+                    ]
+                  },
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "caption": {
+                    "type": "string"
+                  },
+                  "media": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "mime_type": {
+                        "type": "string"
+                      },
+                      "file_name": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
               }
             }
           },

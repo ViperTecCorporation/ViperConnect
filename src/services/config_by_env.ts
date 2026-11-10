@@ -1,5 +1,5 @@
 import { MessageFilter } from './message_filter'
-import { getConfig, defaultConfig, Config, configs, connectionType } from './config'
+import { defaultConfig, Config, configs, connectionType } from './config'
 import { getStoreRedis } from './store_redis'
 import { RATE_LIMIT_BLOCK_SECONDS, RATE_LIMIT_GLOBAL_PER_MINUTE, RATE_LIMIT_PER_TO_PER_MINUTE, OUTGOING_IDEMPOTENCY_ENABLED } from '../defaults'
 import { GROUP_IGNORE_INDIVIDUAL_RECEIPTS, GROUP_ONLY_DELIVERED_STATUS } from '../defaults'
@@ -63,10 +63,11 @@ import {
 import { resolveSessionProvider } from './providers/provider_resolver'
 import { BAILEYS_CONNECTION_POLICY } from './baileys_connection_policy'
 
-export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> => {
-  if (!configs.has(phone)) {
+export const getConfigByEnv = async (phone: string, cache = true): Promise<Config> => {
+  if (!cache || !configs.has(phone)) {
     const config: Config = {
       ...defaultConfig,
+      webhooks: defaultConfig.webhooks.map(webhook => ({ ...webhook })),
       webhookForward: { ...defaultConfig.webhookForward },
     }
     config.logLevel = LOG_LEVEL as Level
@@ -152,7 +153,8 @@ export const getConfigByEnv: getConfig = async (phone: string): Promise<Config> 
     config.shouldIgnoreJid = filter.isIgnoreJid.bind(filter)
     config.shouldIgnoreKey = filter.isIgnoreKey.bind(filter)
     logger.info('Config by env: %s summary=%s', phone, JSON.stringify(configLogSummary(config)))
-    configs.set(phone, config)
+    if (cache) configs.set(phone, config)
+    return config
   }
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return configs.get(phone)!

@@ -1,4 +1,4 @@
-import { t } from '../core/i18n.js?v=4.0.41-0f2cc5a1';
+import { t } from '../core/i18n.js?v=4.0.41-39b50dec';
 const phoneCandidates = (session) => [
     session.id,
     session.phone,
@@ -11,6 +11,10 @@ export const normalizedStatus = (status) => `${status || 'offline'}`.trim().toLo
 export const isOnlineStatus = (status) => normalizedStatus(status) === 'online';
 export const isConnectingStatus = (status) => normalizedStatus(status) === 'connecting';
 export const isLegacySession = (session) => session.provider === 'baileys' || session.provider === 'forwarder';
+export const isSessionStorageFixture = (session) => {
+    const descriptor = session?.sessionStorage;
+    return descriptor?.fixture === true || session?.fixture === true;
+};
 export const filterSessions = (sessions, query, status) => {
     const needle = query.trim().toLowerCase();
     const wantedStatus = status.trim().toLowerCase();

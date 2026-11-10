@@ -1,7 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    "src/cloud.ts"
+    "src/cloud.ts",
+    "src/services/session_storage/standalone_recovery.ts",
+    "src/services/session_storage/standalone_web.ts",
+    "src/services/session_storage/standalone_web_worker.ts",
+    "src/services/session_storage/standalone_staging.ts"
   ],
   "exclude": [
     "./coverage",

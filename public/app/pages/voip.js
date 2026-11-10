@@ -1,9 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.41-0f2cc5a1';
-import { renderModal } from '../components/modal.js?v=4.0.41-0f2cc5a1';
-import { renderStatus } from '../components/status.js?v=4.0.41-0f2cc5a1';
-import { escapeHtml } from '../core/html.js?v=4.0.41-0f2cc5a1';
-import { aiProviderOptions, inferAiProvider } from '../domain/ai_providers.js?v=4.0.41-0f2cc5a1';
-import { renderVoipWebhookFields } from '../domain/voip_webhook.js?v=4.0.41-0f2cc5a1';
+import { icon } from '../components/icons.js?v=4.0.41-39b50dec';
+import { renderModal } from '../components/modal.js?v=4.0.41-39b50dec';
+import { renderStatus } from '../components/status.js?v=4.0.41-39b50dec';
+import { escapeHtml } from '../core/html.js?v=4.0.41-39b50dec';
+import { aiProviderOptions, inferAiProvider } from '../domain/ai_providers.js?v=4.0.41-39b50dec';
+import { renderVoipWebhookFields } from '../domain/voip_webhook.js?v=4.0.41-39b50dec';
 const labels = {
     companies: 'Empresas',
     accounts: 'Linhas Zapo',
@@ -357,7 +357,7 @@ export const renderVoipPage = (state, loading, error = '', renderOptions = {}) =
                     : tab === 'calls' ? renderCalls(state, renderOptions.recordingUrls || {})
                         : tab === 'companies' ? resourceGrid(state, 'companies', [['Empresa', item => `<strong>${escapeHtml(item.label || item.id)}</strong><br><span class="muted">${escapeHtml(item.id)}</span>`], ['Fuso horário', item => escapeHtml(item.timeZone || '—')], ['IA pós-chamada', item => item.aiSummary?.enabled ? badge('Ativa', 'success') : badge('Inativa')], ['Status', item => item.enabled ? badge('Ativa', 'success') : badge('Inativa')]])
                             : renderSettings(state);
-    return `<header class="page-header"><div><span class="eyebrow">Telefonia</span><h1>Manager VoIP</h1><p class="muted">Linhas Zapo, empresas, roteamento, ramais, chamadas e gravações.</p></div><button class="btn btn--ghost" type="button" data-action="refresh-voip">${icon('refresh')}${loading ? 'Atualizando…' : 'Atualizar'}</button></header>
+    return `<header class="page-header"><div><span class="eyebrow">Telefonia</span><h1>Manager VoIP</h1><p class="muted">Linhas Zapo, empresas, roteamento, ramais, chamadas e gravações.</p></div><div class="row-actions"><button class="btn btn--ghost" type="button" data-action="voip-backup-open">Backups</button><button class="btn btn--ghost" type="button" data-action="refresh-voip">${icon('refresh')}${loading ? 'Atualizando…' : 'Atualizar'}</button></div></header>
     ${error ? `<div class="form-error" role="alert">${escapeHtml(error)}</div>` : ''}
     <nav class="tabs" aria-label="Áreas da telefonia">${tabs.map(([value, label]) => `<button class="tab ${tab === value ? 'tab--active' : ''}" type="button" data-action="voip-tab" data-tab="${value}" aria-selected="${tab === value}">${escapeHtml(label)}</button>`).join('')}</nav>${search}${body}`;
 };

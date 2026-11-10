@@ -37,6 +37,28 @@ because it lacks an engine suffix. A consumer count alone does not prove progres
 With `UNOAPI_VIDEO_WORKER_MODE=dedicated`, a stopped video worker leaves jobs waiting;
 there is no automatic fallback to the broker. Mode `broker` runs both video stages there.
 
+Video jobs reread configuration before accessing media and before publishing
+the next stage. Synthetic/fixture sessions do not download files, access S3 or
+run conversion; terminal refusal goes to `.dead` without preparation retries.
+An ongoing migration or restore remains a temporary failure subject to the
+existing retry policy. Storage-policy refusals do not emit misleading media
+failure statuses or webhooks.
+
+### Configuration through template commands
+
+The `unoapi-config` command accepts a YAML object containing public session
+configuration fields. It cannot change the provider, owning server/worker, storage
+backend or descriptor, store paths, or internal connection, transfer and primary
+device lifecycle markers. Those changes must use their dedicated dashboard/API
+flows, including storage migration under [Session storage](/en/guide/session-storage).
+
+If any protected field is present, the whole command fails with
+`commander_config_protected_fields` before saving configuration or publishing a
+reload. A non-object root value fails with `commander_config_invalid`. To preserve
+existing behavior, public values `false`, `null`, `0` and empty strings still have
+no effect in this command; do not use it to clear or disable an option. Bulk and
+webhook commands retain their existing contracts.
+
 ## Active, delayed and dead-letter queues
 
 - No suffix: work available for processing. Ready items without consumers require investigation.
@@ -87,6 +109,22 @@ travel through these message queues.
 Administration requires the global administrative token, not a session token.
 The backend uses `AMQP_URL`; `RABBITMQ_MANAGEMENT_URL` can override the management
 API address. Do not expose credentials in the browser.
+
+In the **Redis** panel, internal families `unoapi-config:`,
+`unoapi-session-storage:` and `unoapi-lease:` are read-only, including prefix
+operations. Previews show safe metadata only; tokens, backup/S3 credentials and
+lease tokens are not exposed. Use the official Sessions and Storage screens to
+configure, migrate or restore sessions. The interface also hides mutation
+controls when an older response omits `readOnly`. This does not make all legacy
+Redis session data read-only or remove confirmation for permitted deletions.
+
+When `CONTACT_SYNC_ENABLED=true`, the web process's contact scheduler discovers
+sessions through the shared catalog. SQLite sessions are read in pages on their
+owner, covering native contacts and preserved copies with expiry checks and
+deduplication by known phone number. Opaque LIDs are never converted into phone
+numbers. Redis sessions keep reading their own backend; locks, pending markers
+and scheduling deadlines remain in Redis. Periodic and pending synchronization
+share the same per-session reservation.
 
 - `messages_ready`: not yet delivered to consumers; delayed items may simply be waiting.
 - `messages_unacknowledged` (`unacked`): delivered but not yet acknowledged as completed.

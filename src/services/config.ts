@@ -84,6 +84,12 @@ export type Config = {
   mobilePrimaryDraftId?: string
   mobilePrimaryImported?: boolean
   mobilePrimaryDeleting?: boolean
+  /** Persistence location is independent of Redis control-plane/leases. */
+  sessionStorage?: import('./session_storage/types').SessionStorageDescriptor
+  /** Internal: native link cleared, historical SQLite retained for an explicit relink. */
+  sessionStorageUnlinked?: boolean
+  sessionStorageProvisionPending?: import('./session_storage/provisioning').ProvisionPending | null
+  sessionStorageProvisioned?: import('./session_storage/provisioning').ProvisionReceipt
   retryRequestDelayMs: number
   rejectCalls: string
   throwWebhookError: boolean
@@ -135,6 +141,10 @@ export type Config = {
 }
 
 export const defaultConfig: Config = {
+  sessionStorage: undefined,
+  sessionStorageUnlinked: false,
+  sessionStorageProvisionPending: undefined,
+  sessionStorageProvisioned: undefined,
   ignoreGroupMessages: true,
   ignoreNewsletterMessages: true,
   ignoreBroadcastStatuses: true,
