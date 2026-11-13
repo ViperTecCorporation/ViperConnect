@@ -55,6 +55,60 @@ da telefonia `v0.1.61` e da imagem unificada `v4.0.15`. A configuração públic
 por família, Coturn e os testes de aceite estão em
 [VoIP dual-stack IPv4 e IPv6](/guide/voip-ipv6).
 
+## Compatibilidade SIP/WebRTC e reconexão
+
+O tratamento de reconexão não substitui SIP/WebRTC por um protocolo fechado.
+O ViperChat usa SIP.js no navegador e o motor SIP nativo nos aplicativos com
+capacidade e cadastro nativos habilitados. Registro, chamadas de entrada/saída
+e áudio continuam usando os protocolos negociados com a central.
+
+Para esses clientes, a central precisa oferecer SIP sobre **WSS**, certificado
+TLS confiável, autenticação, mídia **ICE/DTLS-SRTP** e codecs compatíveis.
+Configure STUN/TURN e as portas de mídia conforme a topologia. Disponibilizar
+somente SIP/UDP não atende esse caminho WebRTC. O Asterisk pode oferecer essa
+base, mas compatibilidade de protocolo não equivale a homologação de qualquer
+versão ou configuração: veja a [configuração WebRTC oficial do Asterisk](https://docs.asterisk.org/Configuration/WebRTC/Configuring-Asterisk-for-WebRTC-Clients/).
+
+| Recurso | Central SIP/WebRTC compatível | Nosso VoIP + aplicativos nativos compatíveis |
+| --- | --- | --- |
+| Registro, chamadas e áudio básicos | Dependem de configuração, autenticação, codecs e conectividade compatíveis | Preservam os protocolos básicos; não exigem o contrato de recuperação |
+| Recuperar a mesma chamada ao trocar Wi-Fi/4G | Não há garantia; depende do cliente e da central | Retenção e retomada autenticada por até 60 segundos |
+| Avisar que o parceiro está reconectando | Não é consequência automática de SIP, ICE ou REGISTER | INFO específico para indicador/bipe na ponta nativa compatível |
+| Receber com o app suspenso ou tela bloqueada | Registrar um ramal não habilita push sozinho | Exige também cadastro do aparelho, ofertas e integração APNs/FCM do ViperChat |
+
+### O que depende da nossa integração
+
+A retomada usa `X-ViperChat-Recovery`, prova privada por instância do motor,
+além da autenticação do ramal. O serviço preserva o mesmo diálogo por uma
+janela absoluta de até 60 segundos; novas tentativas não renovam o prazo.
+BYE explícito e revogação continuam encerrando imediatamente. O retorno exige
+renegociação e RTP seguro novo nos dois sentidos, não somente REGISTER.
+
+Para os diálogos nativos pareados, a ponta saudável recebe SIP INFO com
+`Content-Type: application/vnd.viperchat.recovery+json` e corpo
+`{"version":1,"reconnecting":true}` ou `{"version":1,"reconnecting":false}`.
+O aplicativo atualizado gera
+o aviso local, sem enviá-lo ao microfone/RTP e sem reiniciar o ICE da ponta
+saudável. Isso não é um webhook HTTP nem uma opção nova de configuração.
+
+Uma central Asterisk padrão não implementa automaticamente esse contrato.
+Adaptá-la é tecnicamente possível, mas não foi implementado nem homologado
+nesta entrega. Sem integração compatível, a chamada pode cair na mudança de
+rede e o parceiro pode ficar sem aviso. Clientes sem opt-in no nosso serviço
+mantêm o comportamento anterior; não recebem retenção de 60 segundos por padrão.
+
+**O quadro de recuperação avançada se refere ao motor nativo Android/iOS.**
+O Web/PWA mantém o cliente SIP.js: mostrar “Reconectando” ou recuperar o registro
+não comprova o mesmo tratamento de chamada ativa nem o bipe nativo no navegador.
+Atualizar só a central não atualiza os aplicativos, e atualizar só o aplicativo
+não acrescenta o contrato a outra central.
+
+Para homologar uma central externa, valide entrada e saída com áudio nos dois
+sentidos, encerramento, NAT/TURN, Wi-Fi/4G e atendimento em foreground/background.
+Histórico, webhooks, gravações e push exigem suas integrações próprias; não são
+habilitados apenas porque o registro SIP funcionou. Consulte também
+[rede e limites de validação](/guide/voip-ipv6).
+
 ## Proxy SIP/SBC com relay RTP privado
 
 Por segurança, quando um peer público anuncia um endereço privado em
