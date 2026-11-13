@@ -1,7 +1,7 @@
-import { renderStorageDialog, renderStorageMetrics, renderStorageOverview, storageRestoreAvailable } from './session_storage_view.js?v=4.0.41-39b50dec';
-import { downloadMobileBackup } from './mobile_backup.js?v=4.0.41-39b50dec';
-import { normalizeStorageBackupFiles, validStorageBackupId } from './session_storage_downloads.js?v=4.0.41-39b50dec';
-import { SessionStorageExplorer } from './session_storage_explorer.js?v=4.0.41-39b50dec';
+import { renderStorageDialog, renderStorageMetrics, renderStorageOverview, storageRestoreAvailable } from './session_storage_view.js?v=4.0.42-39b50dec';
+import { downloadMobileBackup } from './mobile_backup.js?v=4.0.42-39b50dec';
+import { normalizeStorageBackupFiles, validStorageBackupId } from './session_storage_downloads.js?v=4.0.42-39b50dec';
+import { SessionStorageExplorer } from './session_storage_explorer.js?v=4.0.42-39b50dec';
 export function normalizeStorageMetrics(value) {
     const stored = value?.storage, migrated = value?.migration;
     return {

@@ -1,6 +1,6 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.41-39b50dec';
-import { renderModal } from '../components/modal.js?v=4.0.41-39b50dec';
-import { renderStorageBackupFiles } from './session_storage_downloads.js?v=4.0.41-39b50dec';
+import { escapeHtml as e } from '../core/html.js?v=4.0.42-39b50dec';
+import { renderModal } from '../components/modal.js?v=4.0.42-39b50dec';
+import { renderStorageBackupFiles } from './session_storage_downloads.js?v=4.0.42-39b50dec';
 const bytes = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? `${(value / 1048576).toFixed(1)} MiB` : '—';
 const states = { active: 'Disponível', offline: 'Offline', migrating: 'Em migração', restoring: 'Restaurando', backing_up: 'Gerando backup' };
 const phases = { queued: 'Preparando', draining: 'Pausando a sessão', copy: 'Copiando dados', native: 'Convertendo dados', validating: 'Validando dados', backup: 'Verificando backup no S3', source_cleanup: 'Liberando dados antigos do Redis', ready: 'Concluído' };

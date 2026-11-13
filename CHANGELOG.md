@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and follows SemVer when applicable.
 
+## [4.0.42] - Prepared, not tagged or released
+
+- Add per-session SQLite storage, controlled migration, session metrics and protected administrative CRUD; keep Redis required for shared coordination and the existing Redis flow when SQLite is unavailable for new sessions.
+- Add session, Redis and VoIP S3 backup/restore with twelve-hour scheduling and seven weekday slots. VoIP packages include configuration and hold audio, not call recordings.
+- Preserve correlated Status reply media, reject Pix payloads as preview URLs and revalidate queued webhook bindings.
+- Prepare unified-image VoIP 0.1.70 pinned to `76e83b7755c59cd851df8b77bfbb15a330db39be`, with authenticated bounded dialog recovery and current-generation ICE/SDP defaults. Compatible applications are required for native reconnection cues.
+- Update PT/EN installation guides and API version metadata. No tag, release, image publication, production deployment or hostpath removal in this preparation. Known opt-in WebRTC teardown SIGSEGV remains unresolved.
+
 ## [4.0.41] - 2026-11-02
 
 - Upgrade Zapo from 1.10.0 to 1.11.0 without changing the dedicated VoIP plugin.

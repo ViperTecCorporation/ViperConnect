@@ -3,7 +3,7 @@
 # ViperConnect
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-orange)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0.30-blue)](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.30)
+[![Version](https://img.shields.io/badge/version-4.0.42%20prepared-blue)](./docs/release-4.0.42.md)
 [![Docker](https://img.shields.io/badge/GHCR-viperconnect-blue)](https://github.com/ViperTecCorporation/ViperConnect/pkgs/container/viperconnect)
 [![Documentação](https://img.shields.io/badge/docs-viperconnect.vipertec.net-9d3836)](https://viperconnect.vipertec.net/)
 
@@ -38,7 +38,8 @@ This project is maintained by ViperTec Corporation and is based on the original 
 - Webhooks por sessão, com suporte a múltiplos endpoints.
 - Controle para desabilitar um webhook específico sem remover a configuração.
 - Integração com Chatwoot e Typebot.
-- Redis/Valkey obrigatório para sessões, cache, configurações, IDs e coordenação dos workers.
+- SQLite por sessão com volume persistente, migração manual e backup/restauração S3; fallback Redis para novas sessões sem capacidade SQLite.
+- Redis/Valkey continua obrigatório para autenticação, configuração e coordenação compartilhada dos workers.
 - RabbitMQ para processamento assíncrono.
 - Storage S3 compatível para mídias.
 - Normalização PN/LID para reduzir problemas de endereçamento no WhatsApp.

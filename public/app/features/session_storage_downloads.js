@@ -1,4 +1,4 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.41-39b50dec';
+import { escapeHtml as e } from '../core/html.js?v=4.0.42-39b50dec';
 const uuid = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i;
 const file = (value) => value && uuid.test(value.id || '') && typeof value.createdAt === 'string'
     ? { id: value.id, createdAt: value.createdAt, ...(Number.isSafeInteger(value.bytes) && value.bytes >= 0 ? { bytes: value.bytes } : {}), ...(typeof value.kind === 'string' ? { kind: value.kind } : {}), ...(typeof value.protection === 'string' ? { protection: value.protection } : {}) } : undefined;

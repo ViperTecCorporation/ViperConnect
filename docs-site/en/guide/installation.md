@@ -41,6 +41,24 @@ and telephony process. Native Linux packages are also available.
 Do not publish Valkey or RabbitMQ to the internet. Terminate TLS at your edge
 proxy and use strong, unique tokens for every installation.
 
+## Version 4.0.42 preparation
+
+Version 4.0.42 brings per-session SQLite, controlled migration, metrics, an
+administrative explorer and S3 backup/restore for sessions and the VoIP database.
+New sessions use SQLite only with valid persistent storage and worker capability;
+otherwise they keep using Redis and the panel shows a configuration warning.
+Redis remains required for coordination, authentication and shared configuration.
+Existing Redis sessions are not migrated automatically.
+
+The unified-image workflow pins VoIP **0.1.70** to revision
+`76e83b7755c59cd851df8b77bfbb15a330db39be`, including native-call recovery.
+Reconnection cues also require updated compatible applications. See
+[session storage](/en/guide/session-storage),
+[VoIP backups](/en/guide/voip-backups) and the
+[preparation notes](https://github.com/ViperTecCorporation/ViperConnect/blob/mobile-primary/docs/release-4.0.42.md).
+Versions and the source pin are prepared in code only: this stage publishes no
+new tag/release or 4.0.42 image and does not deploy to production.
+
 ## Version 4.0.41
 
 Version 4.0.41 upgrades Zapo to 1.11.0 and adds per-contact crypto recovery,

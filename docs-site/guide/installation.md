@@ -65,6 +65,24 @@ token, os volumes são persistentes e os workers necessários estão saudáveis.
 Telefonia e worker de vídeo podem ser validados separadamente do primeiro envio
 de texto.
 
+## Preparação da versão 4.0.42
+
+A 4.0.42 reúne armazenamento SQLite por sessão, migração controlada, métricas,
+explorador administrativo e backup/restauração S3 de sessões e da base VoIP.
+Novas sessões usam SQLite somente com volume persistente e capacidade válidos;
+sem isso continuam no Redis, com alerta no painel. Redis permanece obrigatório
+para coordenação, autenticação e configuração compartilhada. Sessões Redis
+existentes não são migradas automaticamente.
+
+O workflow da imagem unificada fixa o VoIP **0.1.70** na revisão
+`76e83b7755c59cd851df8b77bfbb15a330db39be`, incluindo recuperação de chamadas
+nativas. O aviso de reconexão também exige aplicativos compatíveis atualizados.
+Veja [armazenamento por sessão](/guide/session-storage),
+[backups VoIP](/guide/voip-backups) e as
+[notas preparatórias](https://github.com/ViperTecCorporation/ViperConnect/blob/mobile-primary/docs/release-4.0.42.md).
+Versões e referência estão preparadas em código: não há nova tag/release ou
+imagem 4.0.42 publicada nesta etapa, nem implantação em produção.
+
 ## Versão 4.0.41
 
 A 4.0.41 atualiza a Zapo para 1.11.0 e inclui recuperação de criptografia por

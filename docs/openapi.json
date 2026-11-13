@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "ViperConnect API",
-    "version": "4.0.41",
+    "version": "4.0.42",
     "description": "API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.\n- Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).\n- Suporta envios de texto, mídia (imagem/áudio/documento/vídeo), contatos e mensagens interativas (botões/listas).\n- Respostas recebidas a status próprios de imagem/vídeo incluem context.status com available e mídia recuperada quando possível. O adapter Chatwoot entrega primeiro a mídia sintética e depois a resposta referenciando-a; outros destinos recebem somente a resposta enriquecida. Veja o guia de webhooks para limites e deduplicação.\n"
   },
   "servers": [

@@ -1,6 +1,6 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.41-39b50dec';
-import { historyControls, historyTable } from './voip.js?v=4.0.41-39b50dec';
-import { scopedHistoryItems } from '../domain/voip_history.js?v=4.0.41-39b50dec';
+import { escapeHtml as e } from '../core/html.js?v=4.0.42-39b50dec';
+import { historyControls, historyTable } from './voip.js?v=4.0.42-39b50dec';
+import { scopedHistoryItems } from '../domain/voip_history.js?v=4.0.42-39b50dec';
 export const scopedExtensions = (state) => {
     if (!state.capabilities?.automaticExtensions)
         return [];
