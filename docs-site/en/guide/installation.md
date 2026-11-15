@@ -59,6 +59,10 @@ Reconnection cues also require updated compatible applications. See
 Check workflows and artifacts on the
 [release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.42)
 before deploying. Publication does not deploy to production or remove hostpaths.
+Documentation-only corrections can rebuild `viperconnect-docs:4.0.42` through
+the manual **Documentation Docker Image** action with `image_version=4.0.42`;
+the value must match `package.json`. This does not move the Git tag or the
+application image; documentation image labels identify their own revision.
 
 ## Version 4.0.41
 

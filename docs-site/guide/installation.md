@@ -83,6 +83,10 @@ Veja [armazenamento por sessão](/guide/session-storage),
 Confira os workflows e os artefatos na
 [release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.42)
 antes de implantar. Publicação não faz deploy em produção nem remove hostpaths.
+Correções somente documentais podem reconstruir `viperconnect-docs:4.0.42`
+pela ação manual **Documentation Docker Image**, com `image_version=4.0.42`;
+o valor deve coincidir com `package.json`. Isso não move a tag Git nem a imagem
+da aplicação; a imagem documental identifica sua própria revisão nas labels.
 
 ## Versão 4.0.41
 

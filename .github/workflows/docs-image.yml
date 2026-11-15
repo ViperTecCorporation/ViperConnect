@@ -2,6 +2,12 @@ name: Documentation Docker Image
 
 on:
   workflow_dispatch:
+    inputs:
+      image_version:
+        description: Versão documental a publicar (deve coincidir com package.json; não move tags Git)
+        required: false
+        default: ''
+        type: string
   push:
     branches: [main, develop]
     tags:
@@ -41,6 +47,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Validate explicit documentation image version
+        if: github.event_name == 'workflow_dispatch' && inputs.image_version != ''
+        env:
+          IMAGE_VERSION: ${{ inputs.image_version }}
+        run: |
+          node -e 'const v = process.env.IMAGE_VERSION; if (!/^\d+\.\d+\.\d+$/.test(v) || v !== require("./package.json").version) throw new Error("documentation_image_version_mismatch")'
+
       - name: Validate Docker Swarm examples
         run: |
           docker stack config -c docs/examples/docker-stack.unoapi-nginx.yml >/dev/null
@@ -58,7 +71,8 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.image_version != '') }}
+            type=raw,value=${{ inputs.image_version }},priority=1000,enable=${{ github.event_name == 'workflow_dispatch' && inputs.image_version != '' }}
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
