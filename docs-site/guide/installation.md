@@ -65,7 +65,7 @@ token, os volumes são persistentes e os workers necessários estão saudáveis.
 Telefonia e worker de vídeo podem ser validados separadamente do primeiro envio
 de texto.
 
-## Preparação da versão 4.0.42
+## Versão 4.0.42
 
 A 4.0.42 reúne armazenamento SQLite por sessão, migração controlada, métricas,
 explorador administrativo e backup/restauração S3 de sessões e da base VoIP.
@@ -74,14 +74,15 @@ sem isso continuam no Redis, com alerta no painel. Redis permanece obrigatório
 para coordenação, autenticação e configuração compartilhada. Sessões Redis
 existentes não são migradas automaticamente.
 
-O workflow da imagem unificada fixa o VoIP **0.1.70** na revisão
-`76e83b7755c59cd851df8b77bfbb15a330db39be`, incluindo recuperação de chamadas
+O workflow da imagem unificada fixa o VoIP **0.1.71** na revisão
+`b56747dbbc79a10c76e836c631b51cb63934b11c`, incluindo recuperação de chamadas
 nativas. O aviso de reconexão também exige aplicativos compatíveis atualizados.
 Veja [armazenamento por sessão](/guide/session-storage),
 [backups VoIP](/guide/voip-backups) e as
-[notas preparatórias](https://github.com/ViperTecCorporation/ViperConnect/blob/mobile-primary/docs/release-4.0.42.md).
-Versões e referência estão preparadas em código: não há nova tag/release ou
-imagem 4.0.42 publicada nesta etapa, nem implantação em produção.
+[notas da versão](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.42/docs/release-4.0.42.md).
+Confira os workflows e os artefatos na
+[release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.42)
+antes de implantar. Publicação não faz deploy em produção nem remove hostpaths.
 
 ## Versão 4.0.41
 
