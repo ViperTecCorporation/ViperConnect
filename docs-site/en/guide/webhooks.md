@@ -1,5 +1,25 @@
 # Webhooks
 
+## Zapo delivery and read occurrence times
+
+For Zapo receipts, `statuses[].timestamp` carries the explicit occurrence time
+from the stanza's `t` attribute, in Unix seconds. Every ID in a batch receives
+that time. Only positive valid integers up to five minutes in the future are
+accepted; missing, invalid or millisecond values omit the field. Message creation
+time and webhook arrival time are never substituted.
+
+Timestamped `sent`, `delivered` and `read` receipts may arrive after an equal or
+more advanced status. They are forwarded without regressing the stored message
+state. Repeated/regressive callbacks without a timestamp remain suppressed.
+Consumers must idempotently merge occurrences by ID/provider/stage and retain
+the earliest valid occurrence, since timestamped receipts may be repeated.
+A read confirmation does not automatically provide a delivery occurrence time.
+
+No additional permission or configuration is needed. This does not create
+messages, resend calls or backfill unknown historical times. It requires the
+updated worker; local source/documentation do not prove deployment or delivery
+to the real receiver.
+
 ## Status replies with media context
 
 For Zapo sessions, incoming replies to the session's own image/video status

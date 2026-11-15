@@ -8385,6 +8385,77 @@ paths:
       description: "Liberar todas as reservas de uma chamada\n\nAcesso: administrador autenticado (token global da stack ou login Manager com papel admin). Usuários comuns não recebem acesso global. Fluxos legados OAuth/QR/socket permanecem inalterados; não é garantia de isolamento multitenant completo. Atenção: executar altera o estado real. Revise IDs, corpo e impacto antes de enviar; não execute coleções inteiras automaticamente."
       x-destructive: true
 
+  /admin/resources:
+    get:
+      tags: [Administração]
+      operationId: getResourceMetrics
+      summary: Consultar RAM e disco dos serviços e total observado
+      description: 'Administrador global/Manager. Coleta por minuto de processos cloud, Redis e VoIP configurado. Deduplica containers no total; não representa RAM do host. Redis mantém buffer máximo de 120 pontos por componente; histórico privado no S3. Em perda do Redis tenta a última amostra S3, marcada live=false com timestamp original. Ausência não é zero. Sem mensagens, credenciais ou conteúdo de arquivos.'
+      security: [{AdminToken: []}]
+      responses:
+        '200':
+          description: Resumo observado, sem cache HTTP
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sampledAt: { type: integer, format: int64 }
+                  intervalSeconds: { type: integer, example: 60 }
+                  redisUnavailable: { type: boolean }
+                  archiveUnavailable: { type: boolean }
+                  archiveEnabled: { type: boolean }
+                  prefix: { type: string, example: metrics/v1/unoapi/ }
+                  components: { type: array, items: { $ref: '#/components/schemas/ResourceSample' } }
+        '401': { description: Credencial inválida }
+        '403': { description: Administrador exigido }
+        '503': { description: Consulta indisponível }
+  /admin/resources/{component}/history:
+    get:
+      tags: [Administração]
+      operationId: getResourceHistory
+      summary: Consultar histórico agregado de RAM e disco no Redis e S3
+      description: 'Administrador. No máximo 600 pontos, médias ponderadas/picos e último tamanho de disco. Resolução minuto/hora/dia/mês conforme período. Em falha de uma fonte tenta a outra e retorna warnings/partial; sem preencher lacunas com zero. Máx corresponde ao histórico efetivamente arquivado desde a ativação. Sem crescimento ilimitado do Redis.'
+      security: [{AdminToken: []}]
+      parameters:
+        - { name: component, in: path, required: true, schema: { type: string, pattern: '^[a-f0-9]{24}$' } }
+        - { name: range, in: query, schema: { type: string, enum: [1d, 7d, 30d, 90d, max], default: 1d } }
+      responses:
+        '200':
+          description: Pontos disponíveis e indicação de degradação; no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  range: { type: string }
+                  from: { type: integer, format: int64 }
+                  to: { type: integer, format: int64 }
+                  resolution: { type: string, enum: [minute, hour, day, month] }
+                  partial: { type: boolean }
+                  archiveEnabled: { type: boolean }
+                  warnings: { type: array, items: { type: string, enum: [s3_unavailable, s3_not_configured, redis_unavailable] } }
+                  points: { type: array, maxItems: 600, items: { $ref: '#/components/schemas/ResourcePoint' } }
+        '400': { description: ID ou período inválido }
+        '401': { description: Credencial inválida }
+        '403': { description: Administrador exigido }
+        '503': { description: Consulta indisponível }
+  /v1/resources/metrics:
+    servers:
+      - url: http://localhost:3097
+        description: Serviço VoIP direto; substituir pelo VOIP_SERVICE_URL da instalação
+    get:
+      tags: [VoIP]
+      operationId: getVoipResourceMetrics
+      summary: Medir recursos no serviço VoIP direto
+      description: 'Endpoint interno do serviço VoIP, não da porta HTTP ViperConnect. Exige VOIP_SERVICE_TOKEN. Leitura numérica local, sem conteúdo de chamadas/credenciais. Disco limitado/cacheado; não altera SIP, áudio ou configuração. O coletor ViperConnect persiste o histórico.'
+      security: [{VoipServiceToken: []}]
+      responses:
+        '200': { description: Amostra do processo/container e disco, no-store, content: { application/json: { schema: { $ref: '#/components/schemas/ResourceSample' } } } }
+        '401': { description: Token de serviço inválido }
+        '503': { description: Token não configurado ou medição indisponível }
+
 components:
   securitySchemes:
     VoipServiceToken:
@@ -8433,6 +8504,73 @@ components:
         enum: [companies, accounts, lineGroups, extensionGroups, sessions, extensions]
 
   schemas:
+    ResourcePoint:
+      type: object
+      required: [t, n]
+      properties:
+        t: { type: integer, format: int64, description: Início UTC do intervalo em epoch milliseconds }
+        end: { type: integer, format: int64, description: Última observação incluída no intervalo }
+        n: { type: integer, minimum: 0 }
+        ramBytes: { type: number, minimum: 0, description: Média ponderada de RAM observada }
+        ramMaxBytes: { type: number, minimum: 0 }
+        cpuPercent: { type: number, minimum: 0, description: CPU média do intervalo; 100% equivale a um núcleo e pode ultrapassar 100. Ausente até existir delta válido }
+        cpuMaxPercent: { type: number, minimum: 0, description: Maior percentual observado nas coletas do intervalo; não pico instantâneo }
+        cpuN: { type: integer, minimum: 0, description: Número de observações com CPU na agregação, excluindo amostras antigas sem esse campo }
+        cpuPartial: { type: boolean, description: CPU parcial por ausência de medição de algum serviço ou de observações no intervalo agregado }
+        rssBytes: { type: number, minimum: 0 }
+        diskBytes: { type: number, minimum: 0, description: Último tamanho observado; não RAM ou bytes escritos }
+        diskMaxBytes: { type: number, minimum: 0 }
+        diskFreeBytes: { type: number, minimum: 0, description: RabbitMQ - menor espaço livre entre nós; última observação do intervalo, não tamanho dos dados }
+        diskFreeMinBytes: { type: number, minimum: 0, description: RabbitMQ - mínimo observado de espaço livre no intervalo }
+        partial: { type: boolean }
+    ResourceSample:
+      allOf:
+        - { $ref: '#/components/schemas/ResourcePoint' }
+        - type: object
+          properties:
+            id: { type: string, pattern: '^[a-f0-9]{24}$' }
+            name: { type: string }
+            kind: { type: string }
+            live: { type: boolean, description: Presente no resumo; falso quando recuperado do S3 }
+            source: { type: string, enum: [redis, s3] }
+            memorySource: { type: string, enum: [container-working-set, process-rss, redis-rss, rabbitmq-node] }
+            memoryGroup: { type: string, description: Identificador usado para não duplicar o mesmo container }
+            cpuGroup: { type: string, description: Identificador de deduplicação de CPU do container }
+            cpuSource: { type: string, enum: [container, process, redis-process, rabbitmq-runtime, sum] }
+            heapUsedBytes: { type: number }
+            externalBytes: { type: number }
+            containerBytes: { type: number }
+            cacheBytes: { type: number }
+            limitBytes: { type: number }
+            redisUsedBytes: { type: number }
+            redisDatasetBytes: { type: number }
+            redisOverheadBytes: { type: number }
+            redisPeakBytes: { type: number }
+            redisFragmentation: { type: number }
+            redisKeys: { type: integer }
+            rabbitNodes: { type: integer, minimum: 0 }
+            rabbitRunningNodes: { type: integer, minimum: 0 }
+            rabbitMemoryAlarm: { type: boolean }
+            rabbitDiskAlarm: { type: boolean }
+            rabbitMemoryStrategy: { type: string, enum: [rss, allocated, mixed-or-unknown] }
+            rabbitMemoryLimitBytes: { type: number, minimum: 0, description: Soma dos limites de memória dos nós em execução }
+            rabbitDiskFreeLimitBytes: { type: number, minimum: 0, description: Menor limite de espaço livre dos nós em execução }
+            rabbitQueues: { type: integer, minimum: 0, description: Total global do cluster, não restrito ao vhost/prefixo da stack }
+            rabbitConnections: { type: integer, minimum: 0 }
+            rabbitChannels: { type: integer, minimum: 0 }
+            rabbitConsumers: { type: integer, minimum: 0 }
+            rabbitMessagesReady: { type: integer, minimum: 0 }
+            rabbitMessagesUnacked: { type: integer, minimum: 0 }
+            rabbitPublishRate: { type: number, minimum: 0 }
+            rabbitDeliverRate: { type: number, minimum: 0 }
+            diskPartial: { type: boolean }
+            diskShared: { type: boolean }
+            diskSampledAt: { type: integer, format: int64 }
+            fsUsedBytes: { type: number, description: Capacidade usada compartilhada do filesystem; não somar entre serviços }
+            fsTotalBytes: { type: number }
+            archiveState: { type: string, enum: [ready, disabled, error] }
+            archivedAt: { type: integer, format: int64 }
+            droppedPoints: { type: integer }
     SessionStorageStatus:
       type: object
       required: [backend, owner, state, generation, capability]
@@ -11649,7 +11787,11 @@ components:
                               recipient_id: { type: string }
                               provider_message_id: { $ref: '#/components/schemas/ProviderMessageId' }
                               status: { type: string, example: delivered }
-                              timestamp: { type: integer }
+                              timestamp:
+                                description: 'Ocorrência explícita em segundos Unix, quando disponível. Zapo usa t do stanza; não usa criação da mensagem nem chegada do webhook. Recibos com horário podem ser tardios/repetidos sem regredir o estado; o consumidor deve mesclar por ID/provedor/etapa idempotentemente. Ausência não comprova um horário.'
+                                oneOf:
+                                  - { type: string, pattern: '^[0-9]+$' }
+                                  - { type: integer, minimum: 1 }
                               warnings:
                                 type: array
                                 items: { $ref: '#/components/schemas/MessageWarning' }

@@ -93,6 +93,11 @@
       "type": "string"
     },
     {
+      "key": "component",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "confirm",
       "value": "",
       "type": "string"
@@ -284,6 +289,11 @@
     },
     {
       "key": "queue",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "range",
       "value": "",
       "type": "string"
     },
@@ -933,6 +943,37 @@
               "body": "{}"
             }
           ]
+        },
+        {
+          "name": "Medir recursos no serviço VoIP direto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{voip_base_url}}/v1/resources/metrics",
+              "host": [
+                "{{voip_base_url}}"
+              ],
+              "path": [
+                "v1",
+                "resources",
+                "metrics"
+              ],
+              "query": []
+            },
+            "description": "Endpoint interno do serviço VoIP, não da porta HTTP ViperConnect. Exige VOIP_SERVICE_TOKEN. Leitura numérica local, sem conteúdo de chamadas/credenciais. Disco limitado/cacheado; não altera SIP, áudio ou configuração. O coletor ViperConnect persiste o histórico.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{voip_service_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -8933,6 +8974,162 @@
                 }
               ],
               "body": "{\n  \"error\": \"invalid_credentials\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar RAM e disco dos serviços e total observado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/resources",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "resources"
+              ],
+              "query": []
+            },
+            "description": "Administrador global/Manager. Coleta por minuto de processos cloud, Redis e VoIP configurado. Deduplica containers no total; não representa RAM do host. Redis mantém buffer máximo de 120 pontos por componente; histórico privado no S3. Em perda do Redis tenta a última amostra S3, marcada live=false com timestamp original. Ausência não é zero. Sem mensagens, credenciais ou conteúdo de arquivos.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Resumo observado, sem cache HTTP",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/resources",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "resources"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador global/Manager. Coleta por minuto de processos cloud, Redis e VoIP configurado. Deduplica containers no total; não representa RAM do host. Redis mantém buffer máximo de 120 pontos por componente; histórico privado no S3. Em perda do Redis tenta a última amostra S3, marcada live=false com timestamp original. Ausência não é zero. Sem mensagens, credenciais ou conteúdo de arquivos.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Resumo observado, sem cache HTTP",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"intervalSeconds\": 60,\n  \"prefix\": \"metrics/v1/unoapi/\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar histórico agregado de RAM e disco no Redis e S3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/resources/{{component}}/history?range={{range}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "resources",
+                "{{component}}",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "range",
+                  "value": "{{range}}",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Administrador. No máximo 600 pontos, médias ponderadas/picos e último tamanho de disco. Resolução minuto/hora/dia/mês conforme período. Em falha de uma fonte tenta a outra e retorna warnings/partial; sem preencher lacunas com zero. Máx corresponde ao histórico efetivamente arquivado desde a ativação. Sem crescimento ilimitado do Redis.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Pontos disponíveis e indicação de degradação; no-store",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/resources/{{component}}/history?range={{range}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "resources",
+                    "{{component}}",
+                    "history"
+                  ],
+                  "query": [
+                    {
+                      "key": "range",
+                      "value": "{{range}}",
+                      "description": "",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "description": "Administrador. No máximo 600 pontos, médias ponderadas/picos e último tamanho de disco. Resolução minuto/hora/dia/mês conforme período. Em falha de uma fonte tenta a outra e retorna warnings/partial; sem preencher lacunas com zero. Máx corresponde ao histórico efetivamente arquivado desde a ativação. Sem crescimento ilimitado do Redis.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Pontos disponíveis e indicação de degradação; no-store",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{}"
             }
           ]
         }

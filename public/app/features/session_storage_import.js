@@ -1,5 +1,5 @@
-import { ApiError } from '../core/api.js?v=4.0.42-39b50dec';
-import { escapeHtml as e } from '../core/html.js?v=4.0.42-39b50dec';
+import { ApiError } from '../core/api.js?v=4.0.42-d963f113';
+import { escapeHtml as e } from '../core/html.js?v=4.0.42-d963f113';
 const base = '/manager/storage';
 const maximum = 256 * 1024 * 1024;
 const terminal = (task) => !!task && ['ready', 'failed', 'interrupted'].includes(task.status);

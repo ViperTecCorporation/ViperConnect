@@ -16,10 +16,11 @@ interface DashboardOptions {
   mobileButton?: string
   mobileGrid?: string
   backupPanel?: string
+  canManageResources?: boolean
   mobileSessionPhones?: string[]
 }
 
-export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', mobileSessionPhones = [] }: DashboardOptions): string => {
+export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', canManageResources = false, mobileSessionPhones = [] }: DashboardOptions): string => {
   const excluded = new Set(canCreate && mobileGrid ? mobileSessionPhones : [])
   const filtered = filterSessions(sessions.filter(session => !excluded.has(sessionPhone(session))), query, status)
   const visible = filtered.slice(0, visibleLimit)
@@ -51,7 +52,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
 
     <section class="dashboard-refresh" aria-label="${t('Atualização')}">
         <p class="muted" aria-live="polite">${loading ? t('Atualizando…') : `${t(canCreate && mobileGrid ? 'Atualização automática de dispositivos e sessões em' : 'Atualização automática de sessões em')} <span data-refresh-countdown>${refreshIn}s</span>`}</p>
-        <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh" ${loading ? 'disabled' : ''}>${icon('refresh')}${t('Atualizar agora')}</button></div>
+        <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh" ${loading ? 'disabled' : ''}>${icon('refresh')}${t('Atualizar agora')}</button>${canManageResources ? `<button class="btn btn--ghost" type="button" data-action="open-resources">${icon('resources')}${t('Gerenciador de recursos')}</button>` : ''}</div>
     </section>
 
     ${canCreate ? mobileGrid : ''}

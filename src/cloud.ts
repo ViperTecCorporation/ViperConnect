@@ -6,6 +6,7 @@ import { resolveCloudProcessRole, resolveVideoWorkerMode } from './services/prov
 import { ensureRequiredRedis } from './services/redis_runtime'
 import { initializeManagedRegistrationKey } from './services/mobile_primary/managed_registration_key'
 import { disconnectActiveClients } from './services/graceful_shutdown'
+import { startResourceMetrics } from './services/resource_metrics/runtime'
 logger.info('Starting...')
 
 const role = resolveCloudProcessRole(process.env.UNOAPI_PROCESS_ROLE)
@@ -19,7 +20,7 @@ const shutdown = (signal: NodeJS.Signals) => {
     const disconnected = await disconnectActiveClients()
     logger.info('Graceful shutdown completed signal=%s role=%s disconnected=%s', signal, role, disconnected)
   })()
-    .catch(error => logger.error(error, 'Graceful shutdown failed signal=%s role=%s', signal, role))
+    .catch((error) => logger.error(error, 'Graceful shutdown failed signal=%s role=%s', signal, role))
     .finally(() => process.exit(0))
 }
 
@@ -28,6 +29,7 @@ process.once('SIGINT', () => shutdown('SIGINT'))
 
 const start = async () => {
   await ensureRequiredRedis()
+  startResourceMetrics(role)
   if (role !== 'broker' && role !== 'video') await initializeManagedRegistrationKey()
   if (role === 'web') return import('./web.js')
   if (role === 'broker') return Promise.all([import('./broker.js'), import('./bulker.js')])

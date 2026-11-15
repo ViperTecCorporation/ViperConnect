@@ -1,9 +1,9 @@
-# ViperConnect 4.0.42 — preparação de versão
+# ViperConnect 4.0.42 — SQLite, recuperação nativa e gerenciador de recursos
 
 Consolidação sobre a 4.0.41, com Zapo 1.11.0 e VoIP **0.1.70**.
-Somente versões, documentação e referência imutável são preparadas e enviadas
-às branches existentes. **Sem nova tag, release, imagem publicada ou deploy
-nesta etapa.**
+A publicação da tag inicia os workflows de testes, imagem unificada e
+documentação multiarch. Cada artefato deve ser conferido após o build;
+publicar código, imagens ou pacotes não faz deploy na VPS.
 
 ## Armazenamento por sessão
 
@@ -42,11 +42,33 @@ nesta etapa.**
   payloads Pix copia e cola; não acrescenta `https` a um código Pix.
 - Revalidação de webhooks enfileirados evita insistir em configuração removida
   ou desabilitada. Aceitação em fila não é confirmação de entrega no receptor.
+- Recibos Zapo preservam o horário explícito de entrega/leitura recebido do
+  provider, sem inventar datas ausentes. Ocorrências atrasadas com horário válido
+  seguem ao consumidor sem regredir o estado persistido; consumidores devem
+  fazer merge idempotente por ID/provedor/etapa.
+
+## Gerenciador de recursos
+
+- Tela administrativa dedicada, acessível pelo botão ao lado de Atualizar agora,
+  com layout desktop/mobile e gráficos de 1, 7, 30, 90 dias e máximo disponível.
+- RAM/CPU/disco dos processos cloud, Redis, RabbitMQ e VoIP, com total dos
+  serviços observados, sem duplicar containers compartilhados. Não é total do host.
+- CPU 100% equivale a um núcleo. Redis usa `INFO cpu`; RabbitMQ usa contadores
+  runtime/wall-clock do plugin Prometheus quando disponível. Ausência não vira zero.
+- RabbitMQ inclui alarmes, nós ativos, contadores globais de filas/conexões e
+  disco livre (não tamanho das filas). Redis informa AOF em disco, leitura parcial.
+- Buffer Redis limitado a 120 amostras por serviço; histórico privado em JSON no
+  S3. Em falha de coleta/Redis, tenta a última amostra S3 com data e origem reais,
+  sem apresentá-la como leitura ao vivo. Credenciais Manager continuam exigindo Redis.
+- Coleta a cada minuto; polling do navegador apenas na tela visível, com pausas
+  durante o detalhe. O endpoint VoIP autenticado não altera chamadas ou áudio.
+  Configuração, permissões e limites no [guia PT](../docs-site/guide/resource-metrics.md)
+  e [guia EN](../docs-site/en/guide/resource-metrics.md).
 
 ## Telefonia incorporada
 
 - VoIP **0.1.70**, SHA imutável
-  `76e83b7755c59cd851df8b77bfbb15a330db39be`, fixado nos dois caminhos de checkout
+  `9126509a175e6ad500e730426785a45ce4db3d44`, fixado nos dois caminhos de checkout
   do workflow da imagem unificada. Não altera o número de versão da Zapo.
 - SDP/ICE alinhados à geração atual e recuperação autenticada do mesmo diálogo
   por até 60 segundos; BYE explícito continua encerrando imediatamente.
@@ -68,6 +90,15 @@ nesta etapa.**
   lint e build frontend aprovados. As contagens são execuções distintas, não uma soma.
 - Guias PT/EN, OpenAPI e Postman integrados: 67 páginas, 166 caminhos e
   213 operações. Esta preparação de versão não muda contratos de API.
+- A inclusão posterior do gerenciador acrescenta duas rotas administrativas e
+  a rota interna VoIP: documentação regenerada com 69 páginas, 169 caminhos e
+  216 operações. Regressões de métricas/frontend: 657 testes aprovados;
+  VoIP com métricas: 425 aprovados / 5 ignorados no Windows. São execuções
+  focadas/distintas; a suíte completa e o build Linux são verificados no workflow.
+- Revalidação completa de 15/11/2026 no Windows: 4.820 testes aprovados e
+  22 ignorados em 464 suítes aprovadas; frontend/runtime compilados, lint,
+  lock Baileys e runtime mobile aprovados. Essa execução não substitui o CI
+  Linux, que também executa integrações FFmpeg indisponíveis neste Windows.
 - Antes de uma implantação futura, comparar os hostpaths/hotfixes ativos com o
   código incorporado e retirar somente os equivalentes, coordenadamente.
   Hotfix copiado ao filesystem pode se perder ao recriar o container antigo.

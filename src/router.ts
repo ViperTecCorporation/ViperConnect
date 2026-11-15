@@ -45,6 +45,7 @@ import { PasskeyBridgeController } from './controllers/passkey_bridge_controller
 import { ZapoContactDirectory } from './services/zapo/zapo_contact_directory'
 import { QueuesController } from './controllers/queues_controller'
 import { RedisAdminController } from './controllers/redis_admin_controller'
+import { ResourceMetricsController } from './controllers/resource_metrics_controller'
 import { ContactBookIncoming } from './services/contacts/contact_book_incoming'
 import { VoipController } from './controllers/voip_controller'
 import { voipBackupRouter } from './controllers/voip_backup_controller'
@@ -177,6 +178,9 @@ export const router = (
   router.delete('/passkey-bridge/:bridgeId', passkeyBridgeController.cancel.bind(passkeyBridgeController))
   router.get('/ping', indexController.ping)
   router.get('/version', middleware, indexController.versionStatus.bind(indexController))
+  const resources = new ResourceMetricsController()
+  router.get('/admin/resources', middleware, resources.handle.bind(resources))
+  router.get('/admin/resources/:component/history', middleware, resources.handle.bind(resources))
   router.get('/admin/rabbitmq/queues', middleware, queuesController.list.bind(queuesController))
   router.get('/admin/rabbitmq/queues/:queue/messages', middleware, queuesController.preview.bind(queuesController))
   router.delete('/admin/rabbitmq/queues/:queue/messages', middleware, queuesController.purge.bind(queuesController))

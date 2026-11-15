@@ -168,7 +168,15 @@ export class ListenerZapo implements Listener {
     const previous = await store.dataStore.loadStatus(status.id)
     const oldRank = STATUS_RANK[`${previous || ''}`] ?? -1
     const newRank = STATUS_RANK[`${status.status}`] ?? -1
-    if (previous && oldRank >= newRank) return false
+    if (previous && oldRank >= newRank) {
+      // Receipt occurrence times are independent per stage. Forward evidence
+      // to idempotent consumers without regressing the latest provider state.
+      const rawTimestamp = `${status.timestamp ?? ''}`
+      const seconds = Number(rawTimestamp)
+      return ['sent', 'delivered', 'read'].includes(status.status)
+        && /^\d+$/.test(rawTimestamp) && Number.isSafeInteger(seconds)
+        && seconds > 0 && seconds <= Math.floor(Date.now() / 1000) + 300
+    }
     await store.dataStore.setStatus(status.id, status.status)
     return true
   }

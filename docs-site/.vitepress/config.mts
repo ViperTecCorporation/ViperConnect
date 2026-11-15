@@ -58,6 +58,7 @@ const portugueseTheme = {
       collapsed: true,
       items: [
         { text: 'RabbitMQ e filas', link: '/guide/rabbitmq' },
+        { text: 'Gerenciador de recursos', link: '/guide/resource-metrics' },
         { text: 'Usuários do Manager', link: '/guide/manager-users' },
         { text: 'Erros e solução de problemas', link: '/guide/troubleshooting' },
         { text: 'Arquitetura e cobertura', link: '/guide/architecture' },
@@ -146,6 +147,7 @@ const englishTheme = {
       collapsed: true,
       items: [
         { text: 'RabbitMQ and queues', link: '/en/guide/rabbitmq' },
+        { text: 'Resource manager', link: '/en/guide/resource-metrics' },
         { text: 'Manager users', link: '/en/guide/manager-users' },
         { text: 'Errors and troubleshooting', link: '/en/guide/troubleshooting' },
         { text: 'Architecture and coverage', link: '/en/guide/architecture' },

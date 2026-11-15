@@ -139,6 +139,17 @@ export class RabbitManagement {
       .sort((left, right) => right.messages - left.messages || left.name.localeCompare(right.name))
   }
 
+  /** Aggregated, read-only monitoring: never fetch messages or per-queue bodies. */
+  async resourceSnapshot(): Promise<{ nodes: any[]; overview: any }> {
+    const columns = 'name,running,mem_used,mem_limit,mem_alarm,mem_calculation_strategy,disk_free,disk_free_limit,disk_free_alarm,fd_used,fd_total,sockets_used,sockets_total'
+    const [nodes, overview] = await Promise.all([
+      this.request<any[]>(`/api/nodes?columns=${columns}`),
+      this.request<any>('/api/overview?columns=queue_totals,object_totals,message_stats'),
+    ])
+    if (!Array.isArray(nodes) || !nodes.length || nodes.length > 128 || !overview || typeof overview !== 'object') throw new RabbitManagementError(502, 'rabbit_metrics_invalid')
+    return { nodes, overview }
+  }
+
   async previewMessages(name: string, count = 20, session = ''): Promise<RabbitQueueMessage[]> {
     this.assertQueueName(name, true)
     const safeCount = Math.min(200, Math.max(1, Number(count) || 20))

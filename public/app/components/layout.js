@@ -1,6 +1,6 @@
-import { icon } from './icons.js?v=4.0.42-39b50dec';
-import { escapeHtml } from '../core/html.js?v=4.0.42-39b50dec';
-import { getLocale, t } from '../core/i18n.js?v=4.0.42-39b50dec';
+import { icon } from './icons.js?v=4.0.42-d963f113';
+import { escapeHtml } from '../core/html.js?v=4.0.42-d963f113';
+import { getLocale, t } from '../core/i18n.js?v=4.0.42-d963f113';
 const renderVersionStatus = (status) => {
     const installed = status.installed_version ? `v${status.installed_version.replace(/^v/i, '')}` : t('Versão');
     if (status.status === 'update_available') {
@@ -23,7 +23,7 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <span class="brand__copy"><strong>ViperConnect</strong><small>WhatsApp Hub</small></span>
       </div>
       <nav class="sidebar__nav">
-        <button class="nav-item ${activeView === 'dashboard' ? 'nav-item--active' : ''}" type="button" data-action="go-dashboard" title="Dashboard">
+        <button class="nav-item ${activeView === 'dashboard' || activeView === 'resources' ? 'nav-item--active' : ''}" type="button" data-action="go-dashboard" title="Dashboard">
           ${icon('dashboard')}<span>Dashboard</span>
         </button>
         ${identity?.role !== 'user' ? `<button class="nav-item ${activeView === 'queues' ? 'nav-item--active' : ''}" type="button" data-action="open-queues" title="${t('Filas')}">

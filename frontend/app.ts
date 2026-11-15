@@ -36,6 +36,7 @@ import { sessionConfigPayload } from './features/session_config.js'
 import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js'
 import { renderWebhookModal, webhookPayload } from './features/webhooks.js'
 import { renderDashboard } from './pages/dashboard.js'
+import { renderResourcesPage } from './pages/resources.js'
 import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js'
 import { renderSessionPage } from './pages/session.js'
 import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js'
@@ -56,6 +57,7 @@ import { MobileDevicesPanel } from './features/mobile_devices.js'
 import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js'
 import { SessionStoragePanel } from './features/session_storage.js'
 import { VoipBackupPanel } from './features/voip_backups.js'
+import { ResourceMetricsPanel } from './features/resource_metrics.js'
 import type { ManagerIdentity } from './domain/manager_types.js'
 import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js'
 import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js'
@@ -133,6 +135,7 @@ export class ViperConnectApp {
   private readonly sessionTransfers: SessionTransfersPanel
   private readonly sessionStorage: SessionStoragePanel
   private readonly voipBackups: VoipBackupPanel
+  private readonly resources: ResourceMetricsPanel
   private readonly mobileCompanions: MobileCompanionsPanel
   private readonly ownProfile: OwnProfilePanel
   private readonly messages: SessionMessagesPanel
@@ -154,7 +157,7 @@ export class ViperConnectApp {
   private groupsHasMore = false
   private groupsQuery = ''
   private sessionVisibleLimit = PAGE_SIZE
-  private view: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps' = 'dashboard'
+  private view: 'dashboard' | 'resources' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps' = 'dashboard'
   private sessionDestinations: SessionDestination[] = []
   private editingSessionDestination = ''
   private sessionDestinationError = ''
@@ -225,6 +228,9 @@ export class ViperConnectApp {
     this.mobileDevices = new MobileDevicesPanel(api, () => this.render())
     this.sessionTransfers = new SessionTransfersPanel(api, () => this.render())
     this.voipBackups = new VoipBackupPanel(api, () => this.render())
+    this.resources = new ResourceMetricsPanel(api, () => {
+      if (this.view === 'resources' && !this.modal && !this.manager?.pending && !this.sessionStorage?.modal && !this.voipBackups?.open && !this.mobileDevices?.modal && !this.sessionTransfers?.modal) this.render()
+    })
     this.sessionStorage = new SessionStoragePanel(api, () => this.render(), 120, () => this.view === 'dashboard' && this.tab === 'overview' && this.selectedPhone === this.sessionStorage?.phone && document.visibilityState !== 'hidden')
     this.mobileCompanions = new MobileCompanionsPanel(api, () => this.render(), this.root)
     this.ownProfile = new OwnProfilePanel(api, () => this.render(), this.root)
@@ -332,6 +338,7 @@ export class ViperConnectApp {
         this.render()
         return
       }
+      if (event.key === 'Escape' && this.resources?.open) { void this.resources.action('resources-close'); return }
       if (event.key === 'Escape' && this.modal) this.closeModal()
     })
   }
@@ -354,6 +361,11 @@ export class ViperConnectApp {
     if (!actionElement) return
 
     const action = actionElement.dataset.action || ''
+    if (action === 'open-resources' && this.identity?.role !== 'admin') return
+    if (action.startsWith('resources-')) {
+      if (this.identity?.role === 'admin') await this.resources.action(action, actionElement.dataset.id || '')
+      return
+    }
     this.root?.querySelectorAll?.<HTMLElement>('.profile-image-menu:not([hidden])').forEach(menu => {
       if (!menu.parentElement?.contains(actionElement)) {
         menu.hidden = true; menu.parentElement?.querySelector('[aria-expanded]')?.setAttribute('aria-expanded', 'false')
@@ -486,8 +498,8 @@ export class ViperConnectApp {
       if (phone && this.view === 'users' && this.identity?.role === 'admin') this.manager.focusAssignment(phone)
       return
     }
-    if (['go-dashboard', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session'].includes(action)) this.manager?.reset()
-    if (['go-dashboard', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session', 'open-users'].includes(action)) { this.sessionStorage?.reset(); this.voipBackups?.reset() }
+    if (['go-dashboard', 'open-resources', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session'].includes(action)) this.manager?.reset()
+    if (['go-dashboard', 'open-resources', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session', 'open-users'].includes(action)) { this.sessionStorage?.reset(); this.voipBackups?.reset() }
     if (action === 'load-webhook-history') {
       await this.loadWebhookHistory()
     } else if (action === 'open-session-webhooks' || action === 'refresh-session-webhooks') {
@@ -528,6 +540,14 @@ export class ViperConnectApp {
       this.tab = 'overview'
       this.mobileOpen = false
       this.render()
+      globalThis.window?.scrollTo?.({ top: 0, left: 0 })
+    } else if (action === 'open-resources') {
+      this.selectedPhone = ''
+      this.view = 'resources'
+      this.mobileOpen = false
+      this.render()
+      globalThis.window?.scrollTo?.({ top: 0, left: 0 })
+      await this.resources.refresh()
     } else if (action === 'open-queues') {
       this.selectedPhone = ''
       this.view = 'queues'
@@ -1422,6 +1442,7 @@ export class ViperConnectApp {
     this.api.setToken('')
     this.identity = null
     this.voipBackups?.reset()
+    this.resources?.reset()
     this.manager.reset()
     this.contacts = emptyContactState()
     this.mobileDevices?.reset()
@@ -1521,6 +1542,10 @@ export class ViperConnectApp {
   }
 
   private tickRefresh(): void {
+    if (this.view === 'resources') {
+      if (this.api.getToken() && this.identity?.role === 'admin' && !this.resources?.open && !this.modal && document.visibilityState !== 'hidden') void this.resources?.refresh()
+      return
+    }
     if (!this.api.getToken() || this.modal || this.sessionStorage?.modal || this.voipBackups?.open || this.manager?.pending || this.mobileDevices.modal || this.mobileDevices.busy || this.sessionTransfers.modal || this.sessionTransfers.busy) return
     // Preserve the iframe navigation and scroll position while reading docs.
     if (this.view === 'documentation' || this.view === 'session-webhooks' || this.view === 'users' || this.view === 'account' || this.view === 'google-maps') return
@@ -2240,11 +2265,13 @@ export class ViperConnectApp {
       this.root.innerHTML = renderLogin(escapeHtml(this.loginError))
       return
     }
-    if (this.identity?.role !== 'admin' && ['users', 'google-maps'].includes(this.view)) this.view = 'dashboard'
+    if (this.identity?.role !== 'admin' && ['users', 'google-maps', 'resources'].includes(this.view)) this.view = 'dashboard'
+    if (this.view !== 'resources') this.resources?.reset()
     if (this.identity?.role === 'user' && ['queues', 'redis', 'session-webhooks'].includes(this.view)) this.view = 'dashboard'
     const selected = this.findSession(this.selectedPhone)
     const content =
       this.view === 'google-maps' ? renderSettings('google-maps', renderGoogleMapsSettings())
+        : this.view === 'resources' ? renderResourcesPage(this.resources.html())
         : this.view === 'users' ? renderSettings('users', this.manager.renderPage(true))
         : this.view === 'account'
         ? this.manager.renderPage(this.identity?.role === 'admin')
@@ -2318,6 +2345,7 @@ export class ViperConnectApp {
                     sectionError: this.sectionError,
                   })
                 : renderDashboard({
+                    canManageResources: this.identity?.role === 'admin',
                     mobileButton: this.identity?.role === 'admin' ? this.mobileDevices.renderButton() : '',
                     mobileGrid: this.identity?.role === 'admin' ? this.mobileDevices.renderGrid(this.sessions) : '',
                     backupPanel: this.identity?.role === 'admin' ? this.sessionTransfers.html() : '',
@@ -2347,6 +2375,7 @@ export class ViperConnectApp {
       this.sessionTransfers.dialog() +
       this.sessionStorage.dialog() +
       (this.voipBackups?.dialog() || '') +
+      (this.resources?.dialog() || '') +
       this.renderToastHtml()
     if (this.identity?.role === 'admin' && this.view === 'dashboard' && this.tab === 'profile') this.ownProfile?.mountMap()
     if (this.view === 'dashboard' && this.tab === 'messages') this.messages?.mount()

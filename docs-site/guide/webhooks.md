@@ -1,5 +1,24 @@
 # Webhooks
 
+## Horários de entrega e leitura Zapo
+
+Nos recibos Zapo, `statuses[].timestamp` transporta o horário explícito da
+ocorrência recebido no atributo `t` do stanza, em segundos Unix. Cada ID de um
+lote recebe esse horário. O mapper aceita somente inteiros positivos válidos,
+até cinco minutos no futuro; sem horário, ou com valor inválido/milissegundos,
+omite o campo. Não substitui por criação da mensagem ou chegada do webhook.
+
+Recibos `sent`, `delivered` e `read` com horário válido podem chegar depois de
+um status igual ou mais avançado. São encaminhados sem regredir o estado salvo
+da mensagem; callbacks sem horário mantêm a supressão de status repetidos ou
+regressivos. O consumidor deve mesclar idempotentemente as ocorrências por
+ID/provedor/etapa e preservar a primeira ocorrência válida, pois um recibo com
+horário pode ser repetido. Ler não fornece automaticamente o horário de entrega.
+
+Não exige novas permissões ou configurações. Não cria mensagens, reenvia chamadas
+nem faz backfill de horários antigos desconhecidos. Requer o worker atualizado;
+código/documentação locais não comprovam implantação ou entrega real ao receptor.
+
 ## Respostas a status com mídia de contexto
 
 Nas sessões Zapo, uma resposta recebida a um status de imagem ou vídeo publicado
