@@ -263,8 +263,15 @@ endpoint. Chaves são ocultadas nas respostas e no painel. Somente administrador
 gerenciam essa configuração e consultam `GET /admin/voip/console/ai/models`.
 
 OpenRouter recebe o áudio MP3/WAV como JSON base64 em `/audio/transcriptions`
-e o texto em `/chat/completions`. Limite local conservador: 25 MiB por áudio.
-Chamadas longas podem exceder limites/tempo do provedor; não há divisão automática.
+e o texto em `/chat/completions`. O preparo local limita cada envio a 20 MiB;
+gravações maiores ou em outros formatos são divididas em PCM sem perdas, em
+partes de até 600 segundos, e cada parte é codificada independentemente em MP3
+mono 16 kHz/32 kbit/s. Isso evita perder áudio nas junções; o original é preservado.
+O limite é 1 GiB de origem, 128 partes e 180 segundos para todo o preparo.
+O worker exige FFmpeg e disco temporário disponível: a expansão PCM pode chegar
+a aproximadamente 2,46 GB, além da origem e dos MP3s, sem carregar tudo na RAM.
+Temporários são removidos após uso/erro. Chamadas longas ainda podem exceder
+limites/tempo do provedor; falhas de preparação são explícitas, sem sucesso parcial.
 Saldo insuficiente, modelo incompatível e outros erros seguem a fila/retry existente,
 sem fallback para outro provedor. Áudio e transcrição saem do servidor para o
 provedor escolhido: revise custos e política de dados antes de ativar.

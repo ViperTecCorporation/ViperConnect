@@ -1,6 +1,6 @@
 # ViperConnect 4.0.42 — SQLite, recuperação nativa e gerenciador de recursos
 
-Consolidação sobre a 4.0.41, com Zapo 1.11.0 e VoIP **0.1.70**.
+Consolidação sobre a 4.0.41, com Zapo 1.11.0 e VoIP **0.1.71**.
 A publicação da tag inicia os workflows de testes, imagem unificada e
 documentação multiarch. Cada artefato deve ser conferido após o build;
 publicar código, imagens ou pacotes não faz deploy na VPS.
@@ -67,9 +67,13 @@ publicar código, imagens ou pacotes não faz deploy na VPS.
 
 ## Telefonia incorporada
 
-- VoIP **0.1.70**, SHA imutável
-  `9126509a175e6ad500e730426785a45ce4db3d44`, fixado nos dois caminhos de checkout
+- VoIP **0.1.71**, SHA imutável
+  `b56747dbbc79a10c76e836c631b51cb63934b11c`, fixado nos dois caminhos de checkout
   do workflow da imagem unificada. Não altera o número de versão da Zapo.
+- Preparação de gravações grandes para IA divide PCM sem perdas antes de
+  codificar cada MP3 independentemente; a regressão Linux exige todas as
+  10.560.000 amostras de uma gravação sintética de 660 segundos, sem perda nas
+  junções. O limite continua 20 MiB por envio; não altera SIP/RTP nem o original.
 - SDP/ICE alinhados à geração atual e recuperação autenticada do mesmo diálogo
   por até 60 segundos; BYE explícito continua encerrando imediatamente.
 - Recuperação exige negociação e RTP novo nos dois sentidos. O aviso à ponta
@@ -107,4 +111,4 @@ publicar código, imagens ou pacotes não faz deploy na VPS.
 
 Guias: [armazenamento por sessão](../docs-site/guide/session-storage.md),
 [backup VoIP](../docs-site/guide/voip-backups.md) e
-[notas VoIP 0.1.70](https://github.com/ViperTecCorporation/viperconnect-voip-service/blob/codex/zapo-uno-voice-bridge/docs/release-0.1.70.md).
+[notas VoIP 0.1.71](https://github.com/ViperTecCorporation/viperconnect-voip-service/blob/v0.1.71/docs/release-0.1.71.md).

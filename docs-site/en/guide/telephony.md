@@ -173,8 +173,15 @@ Changing endpoint/provider clears an old secret unless a new key is supplied;
 blank fields preserve secrets only for the same endpoint. A transcription key
 can serve summaries only when both endpoints match. Secrets remain redacted.
 OpenRouter receives MP3/WAV as base64 JSON on `/audio/transcriptions`, then text
-on `/chat/completions`. The local conservative audio cap is 25 MiB; long calls
-may exceed upstream processing limits. Automatic audio splitting is not implemented.
+on `/chat/completions`. Local preparation caps each upload at 20 MiB. Larger
+recordings or other formats are split into lossless PCM parts of up to 600 seconds,
+then each part is independently encoded as mono 16 kHz/32 kbit/s MP3. This avoids
+losing audio at boundaries and leaves the original unchanged. Limits are 1 GiB
+per source, 128 parts and 180 seconds for the complete preparation. The worker
+requires FFmpeg and temporary disk space: PCM expansion can reach approximately
+2.46 GB, plus source and MP3 files, without keeping it all in RAM. Temporary files
+are removed after use/errors. Long calls may still exceed upstream time/size
+limits; preparation errors are explicit, with no partial success.
 Errors use the existing retry queue, without switching providers. Review costs
 and data policies: recordings/transcripts are sent to the selected provider.
 This does not implement a realtime voice agent or IVR; those remain future work.
