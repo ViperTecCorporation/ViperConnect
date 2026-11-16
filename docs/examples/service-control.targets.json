@@ -1,0 +1,4 @@
+[
+  { "component": "aaaaaaaaaaaaaaaaaaaaaaaa", "name": "Worker Zapo", "backend": "docker", "target": "viperconnect-worker-1" },
+  { "component": "bbbbbbbbbbbbbbbbbbbbbbbb", "name": "VoIP nativo", "backend": "systemd", "target": "viperconnect-voip.service" }
+]

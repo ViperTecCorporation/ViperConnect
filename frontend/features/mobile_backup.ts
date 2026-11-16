@@ -1,4 +1,20 @@
 import { ApiClient, ApiError } from '../core/api.js'
+import { escapeHtml } from '../core/html.js'
+
+export function manualBackupNeedsStorage(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false
+  const code = error.code || (error.payload as { error?: string } | undefined)?.error
+  return code === 'mobile_backup_sqlite_requires_session_storage_endpoint' || code === 'session_backup_sqlite_requires_session_storage_endpoint'
+}
+
+export function renderSqliteBackupAlternative(phone: string): string {
+  return `<div class="stack"><p>Esta sessão usa SQLite. Os arquivos Redis .viperdevice e .vipersession não representam seu armazenamento atual. Use o backup .viperstorage no worker proprietário, sem converter a sessão para Redis.</p><p>O backup de armazenamento não habilita a remoção legada após transferência. Restauração em outro worker exige o procedimento offline documentado.</p>${/^[1-9]\d{7,14}$/.test(phone) ? `<button type="button" class="btn" data-action="storage-open" data-id="${escapeHtml(phone)}">Abrir armazenamento da sessão</button>` : '<p>Abra Gerenciar → Visão geral → Armazenamento da sessão.</p>'}</div>`
+}
+
+export async function isSqliteStorageBackup(file: Blob & { name?: string }): Promise<boolean> {
+  if (file.name?.toLowerCase().endsWith('.viperstorage')) return true
+  try { return JSON.parse((await file.slice(0, 1024).text()).split('\n')[0]).format === 'viperconnect-storage-backup-stream' } catch { return false }
+}
 
 export function renderMobileBackup(restore: boolean, busy: boolean): string {
   if (busy) return `<div class="stack" role="status" aria-live="polite" aria-busy="true"><h3>${restore ? 'Restaurando dispositivo…' : 'Gerando backup…'}</h3><p>${restore ? 'Aguarde a validação e a restauração do arquivo.' : 'Aguarde: suspendendo a origem, reunindo os dados e criptografando o arquivo. Isso pode levar alguns instantes.'}</p><p>Não feche esta janela nem atualize a página.</p><button class="btn" disabled>Aguarde…</button></div>`
@@ -24,6 +40,9 @@ export function mobileBackupError(error: unknown, restore = false): string {
     session_restore_rollback_pending: 'A restauração foi interrompida e precisa de revisão no destino. Não importe novamente nem exclua as chaves antes de verificar os lotes já aplicados.',
     mobile_registration_required: 'O registro deste dispositivo ainda não foi concluído. Confirme o código SMS e conecte à Zapo antes de gerar o backup.',
     mobile_backup_requires_imported_redis_device: 'Conecte este dispositivo à Zapo no laboratório antes de gerar o backup. As credenciais ainda não estão prontas para exportação.',
+    mobile_backup_sqlite_requires_session_storage_endpoint: 'Esta sessão usa SQLite. Abra Armazenamento da sessão para gerar ou restaurar seu .viperstorage; o formato Redis .viperdevice não pode ser usado aqui.',
+    session_backup_sqlite_requires_session_storage_endpoint: 'Esta sessão ou arquivo usa SQLite. Use Armazenamento da sessão para .viperstorage; não importe como .vipersession e não altere o backend para Redis.',
+    session_backup_incompatible: 'O arquivo ou a combinação Zapo/store Redis não é compatível. São aceitos backups Redis Zapo 1.9.0 e 1.11.0 com store-redis 1.3.0.',
     mobile_backup_too_large: 'O backup excedeu o limite permitido. A origem pode ter permanecido suspensa; consulte a conexão antes de continuar.',
   }
   if (error instanceof ApiError) {
@@ -48,6 +67,7 @@ export async function transferMobileBackup(api: ApiClient, restore: boolean, id:
   if (data.get('confirm') !== 'on') throw new Error('Confirme a suspensão da origem antes de continuar.')
   if (restore) {
     const file = data.get('archive')
+    if (file instanceof Blob && await isSqliteStorageBackup(file)) throw new ApiError(409, '', { error: 'mobile_backup_sqlite_requires_session_storage_endpoint' })
     if (!(file instanceof Blob) || !file.size || file.size > 16 * 1024 * 1024) throw new Error('Escolha um backup .viperdevice de até 16 MiB.')
     const result = await api.request<{ restored: true; warning?: string }>('/manager/mobile-devices/restore', { method: 'POST', body: JSON.stringify({ archive: await file.text(), password, confirmOriginOffline: true }) })
     return { restored: true as const, warning: result?.warning }

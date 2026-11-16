@@ -9,6 +9,8 @@ import type { Store } from '../../src/services/store'
 import type { ZapoMessageMetadataResolver } from '../../src/services/zapo/zapo_message_metadata'
 import { MessageFilter } from '../../src/services/message_filter'
 import { getPollState, setPollState } from '../../src/services/redis'
+import { zapoStoreRegistry } from '../../src/services/zapo/zapo_store_registry'
+import { toUnoReceiptUpdates } from '../../src/services/zapo/zapo_events'
 
 jest.mock('../../src/services/redis', () => ({
   ...jest.requireActual('../../src/services/redis'),
@@ -52,6 +54,26 @@ describe('ListenerZapo', () => {
     expect(message.context).toEqual(expect.objectContaining({ id: 'uno-quoted-id', message_id: 'uno-quoted-id', forwarded: true }))
     expect(message.text.body).toBe('Mensagem recebida')
     expect(message.id).not.toBe('provider-forward')
+  })
+
+  test.each(['556696269251@s.whatsapp.net', '94047083475061@lid'])('enriches own status reply with participant %s before outgoing', async participant => {
+    const getByJid = jest.fn().mockResolvedValue({ phoneNumber: '556696269251@s.whatsapp.net' })
+    const session = jest.fn().mockReturnValue({ contacts: { getByJid } })
+    const registry = jest.spyOn(zapoStoreRegistry, 'get').mockReturnValue({ session } as any)
+    ;(store.mediaStore.getMedia as jest.Mock).mockResolvedValue({ url: 'https://storage.test/status.mp4', mime_type: 'video/mp4' })
+    await service.process('5566996269251', [{ key: { id: 'reply-status', remoteJid: '123@lid', remoteJidAlt: '5566999838791@s.whatsapp.net', fromMe: false },
+      message: { extendedTextMessage: { text: '😂', contextInfo: { stanzaId: 'own-status', remoteJid: 'status@broadcast', participant,
+        quotedMessage: { videoMessage: { mimetype: 'video/mp4', mediaKey: Buffer.alloc(32), directPath: '/media' } } } } }, messageTimestamp: 1793849677 }], 'notify')
+    const value = (outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value
+    expect(value.messages).toHaveLength(1)
+    expect(value.messages[0]).toMatchObject({ text: { body: '😂' }, provider_message_id: 'reply-status',
+      context: { status: { id: 'own-status', available: true, type: 'videoMessage', media: { url: 'https://storage.test/status.mp4' } } } })
+    expect(value.messages[0].id).not.toBe('reply-status')
+    if (participant.endsWith('@lid')) {
+      expect(session).toHaveBeenCalledWith('5566996269251')
+      expect(getByJid).toHaveBeenCalledWith(participant)
+    } else expect(getByJid).not.toHaveBeenCalled()
+    registry.mockRestore()
   })
 
   test('maps the official Zapo id to an external Uno id and forwards the webhook', async () => {
@@ -578,6 +600,95 @@ describe('ListenerZapo', () => {
       update: { status: 'DELIVERY_ACK' },
     }], 'update')
     expect(outgoing.send).not.toHaveBeenCalled()
+  })
+
+  test('forwards real timestamped read, late delivered and repeated read receipts without regressing provider state', async () => {
+    const readAt = Math.floor(Date.now() / 1000) - 10
+    let latest: string | undefined
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-receipt')
+    ;(store.dataStore.loadStatus as jest.Mock).mockImplementation(async () => latest)
+    ;(store.dataStore.setStatus as jest.Mock).mockImplementation(async (_id: string, status: string) => { latest = status })
+
+    for (const [status, timestamp] of [['read', readAt], ['delivered', readAt - 10], ['read', readAt]] as const) {
+      const updates = toUnoReceiptUpdates({
+        chatJid: '123@lid', messageIds: ['provider-receipt'], status,
+        rawNode: { tag: 'receipt', attrs: { id: 'provider-receipt', from: '123@lid', t: `${timestamp}` } },
+      } as never)
+      await service.process('5511888888888', updates, 'update')
+    }
+
+    const statuses = (outgoing.send as jest.Mock).mock.calls.map(([, payload]) => payload.entry[0].changes[0].value.statuses[0])
+    expect(statuses).toMatchObject([
+      { id: 'uno-receipt', provider_message_id: 'provider-receipt', status: 'read', timestamp: `${readAt}` },
+      { id: 'uno-receipt', provider_message_id: 'provider-receipt', status: 'delivered', timestamp: `${readAt - 10}` },
+      { id: 'uno-receipt', provider_message_id: 'provider-receipt', status: 'read', timestamp: `${readAt}` },
+    ])
+    expect(latest).toBe('read')
+    expect(store.dataStore.setStatus).toHaveBeenCalledTimes(1)
+    expect(store.dataStore.setStatus).toHaveBeenCalledWith('uno-receipt', 'read')
+  })
+
+  test('forwards the actual read time after a timestamp-less read update already advanced the provider state', async () => {
+    const readAt = Math.floor(Date.now() / 1000) - 10
+    let latest: string | undefined
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-read')
+    ;(store.dataStore.loadStatus as jest.Mock).mockImplementation(async () => latest)
+    ;(store.dataStore.setStatus as jest.Mock).mockImplementation(async (_id: string, status: string) => { latest = status })
+    await service.process('5511888888888', [{
+      key: { id: 'provider-read', remoteJid: '123@lid', fromMe: true }, update: { status: 'READ' },
+    }], 'update')
+    const updates = toUnoReceiptUpdates({
+      chatJid: '123@lid', messageIds: ['provider-read'], status: 'read',
+      rawNode: { tag: 'receipt', attrs: { id: 'provider-read', from: '123@lid', t: `${readAt}` } },
+    } as never)
+    await service.process('5511888888888', updates, 'update')
+
+    const statuses = (outgoing.send as jest.Mock).mock.calls.map(([, payload]) => payload.entry[0].changes[0].value.statuses[0])
+    expect(statuses).toHaveLength(2)
+    expect(statuses[0]).not.toHaveProperty('timestamp')
+    expect(statuses[1]).toMatchObject({ id: 'uno-read', provider_message_id: 'provider-read', status: 'read', timestamp: `${readAt}` })
+    expect(store.dataStore.setStatus).toHaveBeenCalledTimes(1)
+    expect(latest).toBe('read')
+  })
+
+  test.each([undefined, '', 'invalid', '0', '-1', '123.5', '1e9', `${Date.now()}`, `${Math.floor(Date.now() / 1000) + 600}`])(
+    'keeps duplicate/regression suppression for an absent or invalid occurrence timestamp: %s', async timestamp => {
+      ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-read')
+      ;(store.dataStore.loadStatus as jest.Mock).mockResolvedValue('read')
+      await service.process('5511888888888', [{
+        key: { id: 'provider-read', remoteJid: '123@lid', fromMe: true },
+        update: { status: 'DELIVERY_ACK' }, messageTimestamp: timestamp,
+      }], 'update')
+
+      expect(outgoing.send).not.toHaveBeenCalled()
+      expect(store.dataStore.setStatus).not.toHaveBeenCalled()
+    },
+  )
+
+  test('forwards a timestamped sent receipt after read without regressing provider state', async () => {
+    const timestamp = Math.floor(Date.now() / 1000) - 10
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-read')
+    ;(store.dataStore.loadStatus as jest.Mock).mockResolvedValue('read')
+    await service.process('5511888888888', [{
+      key: { id: 'provider-read', remoteJid: '123@lid', fromMe: true },
+      update: { status: 'SERVER_ACK' }, messageTimestamp: timestamp,
+    }], 'update')
+
+    const status = (outgoing.send as jest.Mock).mock.calls[0][1].entry[0].changes[0].value.statuses[0]
+    expect(status).toMatchObject({ id: 'uno-read', status: 'sent', timestamp: `${timestamp}` })
+    expect(store.dataStore.setStatus).not.toHaveBeenCalled()
+  })
+
+  test('does not replay timestamped duplicate deletion events as delivery occurrence evidence', async () => {
+    ;(store.dataStore.loadUnoId as jest.Mock).mockResolvedValue('uno-deleted')
+    ;(store.dataStore.loadStatus as jest.Mock).mockResolvedValue('deleted')
+    await service.process('5511888888888', [{
+      key: { id: 'provider-deleted', remoteJid: '123@lid', fromMe: true },
+      update: { status: 'DELETED' }, messageTimestamp: Math.floor(Date.now() / 1000) - 10,
+    }], 'update')
+
+    expect(outgoing.send).not.toHaveBeenCalled()
+    expect(store.dataStore.setStatus).not.toHaveBeenCalled()
   })
 
   test('forwards receipt and persists progression with the associated Uno id', async () => {

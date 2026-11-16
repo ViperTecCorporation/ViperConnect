@@ -2,6 +2,7 @@ import { setLocale } from '../../frontend/core/i18n'
 import { mergeRedisTreeLevel, redisParentPrefix } from '../../frontend/domain/redis_tree'
 import {
   redisTreeFromKeys,
+  redisKeyIsReadOnly,
   redisValueIsRedacted,
   renderRedisDeleteModal,
   renderRedisEditorModal,
@@ -9,13 +10,21 @@ import {
 } from '../../frontend/pages/redis'
 
 describe('Redis admin page', () => {
-  test.each(['manager-identity:{v1}:users', 'unoapi-webhook-history:5511'])('renders %s as read-only without delete controls', key => {
-    const html = renderRedisPage({ keys: [key], tree: {}, expandedPrefixes: [], sessions: [], sessionFilter: '', query: '', selected: { key, type: 'hash', ttl: -1, size: 1, truncated: false, value: { name: 'Operador' }, readOnly: true }, loading: false, refreshIn: 30, error: '' })
+  test.each(['manager-identity:{v1}:users', 'unoapi-webhook-history:5511', 'unoapi-config:999123456789', 'unoapi-session-storage:task:id', 'unoapi-lease:zapo-session:999123456789'])('renders %s as read-only even without server metadata', key => {
+    const html = renderRedisPage({ keys: [key], tree: redisTreeFromKeys([key]), expandedPrefixes: Object.keys(redisTreeFromKeys([key])), sessions: [], sessionFilter: '', query: '', selected: { key, type: 'hash', ttl: -1, size: 1, truncated: false, value: { name: 'Operador' } }, loading: false, refreshIn: 30, error: '' })
     expect(html).toContain('Somente leitura')
     expect(html).toContain('Operador')
     expect(html).not.toContain('data-action="edit-redis-key"')
     expect(html).not.toContain('data-action="delete-redis-key"')
     expect(html).not.toContain('data-action="delete-redis-prefix"')
+  })
+
+  test('readonly guards include control ancestors but leave legacy Redis session data editable', () => {
+    expect(redisKeyIsReadOnly('unoapi-')).toBe(true)
+    expect(redisKeyIsReadOnly('unoapi-config:')).toBe(true)
+    expect(redisKeyIsReadOnly('unoapi-session-storage:')).toBe(true)
+    expect(redisKeyIsReadOnly('unoapi:zapo:contacts:999123456789')).toBe(false)
+    expect(redisKeyIsReadOnly('unoapi-message:999123456789:jid:id')).toBe(false)
   })
   afterEach(() => setLocale('pt-BR'))
 

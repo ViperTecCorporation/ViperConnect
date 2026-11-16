@@ -1,0 +1,34 @@
+# Optional DEV-only overlay. lab.ps1 includes it only when private service-control.env exists.
+# Only the separate restricted agent receives the Docker socket. Never publish its port.
+services:
+  web:
+    environment:
+      SERVICE_CONTROL_URL: http://service-control:9880
+      SERVICE_CONTROL_TOKEN: ${LAB_SERVICE_CONTROL_TOKEN:?Configure the private control environment}
+      SERVICE_CONTROL_GUARD_TOKEN: ${LAB_SERVICE_CONTROL_GUARD_TOKEN:?Configure a different private secret}
+  service-control:
+    image: viperconnect-mobile-lab:dev
+    init: true
+    restart: "no"
+    entrypoint: [node, /app/dist/src/services/service_control/standalone.js]
+    networks: [lab]
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+      SERVICE_CONTROL_BIND: 0.0.0.0
+      SERVICE_CONTROL_TOKEN: ${LAB_SERVICE_CONTROL_TOKEN}
+      SERVICE_CONTROL_GUARD_TOKEN: ${LAB_SERVICE_CONTROL_GUARD_TOKEN}
+      SERVICE_CONTROL_GUARD_URL: http://web:9876/internal/service-control/safety
+      SERVICE_CONTROL_TARGETS_FILE: /etc/viperconnect-control/targets.json
+      SERVICE_CONTROL_STATE_DIR: /var/lib/viperconnect-control
+    volumes:
+      - compiled:/app/dist:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${LAB_SERVICE_CONTROL_TARGETS_FILE:?Configure the private allowlist}:/etc/viperconnect-control/targets.json:ro
+      - control-state:/var/lib/viperconnect-control
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    cpus: 0.25
+volumes:
+  control-state:

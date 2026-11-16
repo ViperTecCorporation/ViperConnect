@@ -26,6 +26,15 @@ $labVoipEnv = Join-Path (Split-Path $labEnv -Parent) 'mobile-primary-voip.env'
 if (Test-Path -LiteralPath $labVoipEnv) {
   $labArgs += @('--env-file', $labVoipEnv, '-f', (Join-Path $labRoot 'compose.lab.voip.yml'))
 }
+# Preserve the same admin port and storage tooling when enabling/recreating VoIP.
+foreach ($labOverlay in @('compose.lab.admin-port.yml', 'compose.lab.storage-tools.yml')) {
+  $labOverlayPath = Join-Path $labRoot $labOverlay
+  if (Test-Path -LiteralPath $labOverlayPath) { $labArgs += @('-f', $labOverlayPath) }
+}
+$labControlEnv = Join-Path (Split-Path $labEnv -Parent) 'service-control.env'
+if (Test-Path -LiteralPath $labControlEnv) {
+  $labArgs += @('--env-file', $labControlEnv, '-f', (Join-Path $labRoot 'compose.lab.service-control.yml'))
+}
 switch ($Action) {
   'build' { & docker @labArgs build compiler docs }
   'up' { & docker @labArgs up -d --no-build }

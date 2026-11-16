@@ -1,6 +1,7 @@
 const managerPrefix = 'manager-identity:{v1}:'
 export const managerPreviewKeys = ['users', 'names', 'assignments', 'history', 'keys'].map(name => `${managerPrefix}${name}`)
-export const protectedRedisPrefixes = ['manager-identity:', 'unoapi-webhook-history:']
+export const internalControlRedisPrefixes = ['unoapi-config:', 'unoapi-session-storage:', 'unoapi-lease:']
+export const protectedRedisPrefixes = ['manager-identity:', 'unoapi-webhook-history:', ...internalControlRedisPrefixes]
 export const isProtectedRedisKey = (key: string) => protectedRedisPrefixes.some(prefix => key.startsWith(prefix))
 
 // Positive field selection: unknown fields, hashes and nested credentials never leave Redis.
@@ -16,6 +17,17 @@ const pick = (value: Record<string, any>, fields: string[]) => Object.fromEntrie
 
 export const safeRedisPreview = (key: string, raw: unknown): unknown => {
   const value = record(raw)
+  if (key.startsWith('unoapi-lease:')) return { reserved: raw !== null && raw !== undefined }
+  if (key.startsWith('unoapi-config:')) {
+    const storage = record(value.sessionStorage)
+    return {
+      ...pick(value, ['phone', 'label', 'provider', 'server', 'autoConnect', 'connectionType', 'zapoWebClientProfile', 'coexistenceEnabled']),
+      ...(value.sessionStorage ? { sessionStorage: pick(storage, ['backend', 'storageId', 'owner', 'generation', 'state', 'fixture']) } : {}),
+    }
+  }
+  if (key.startsWith('unoapi-session-storage:')) {
+    return pick(value, ['id', 'taskId', 'phone', 'owner', 'storageId', 'generation', 'backend', 'state', 'status', 'kind', 'operation', 'createdAt', 'updatedAt', 'completedAt', 'bytes', 'protection'])
+  }
   if (key.startsWith('unoapi-webhook-history:')) {
     return {
       ...pick(value, ['id', 'archived_at', 'reason', 'server']),

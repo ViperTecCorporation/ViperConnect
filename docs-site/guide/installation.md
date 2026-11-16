@@ -65,6 +65,55 @@ token, os volumes são persistentes e os workers necessários estão saudáveis.
 Telefonia e worker de vídeo podem ser validados separadamente do primeiro envio
 de texto.
 
+## Versão 4.0.43
+
+A 4.0.43 consolida SQLite e migrações, corrige os cards de instâncias antigas e
+adiciona logs filtrados/exportáveis e reinício confirmado no detalhe de cada
+serviço. O controle exige agente separado com alvos permitidos, Docker
+standalone ou Linux/systemd; não suporta Swarm e não executa comandos livres.
+Veja o [gerenciador de recursos](/guide/resource-metrics).
+
+O caminho Docker padrão do SQLite é `/home/u/app/session-data`, com escrita
+para o usuário da imagem. Caminhos explícitos e volumes legados são preservados;
+sem persistência válida, novas sessões seguem em Redis com alerta no painel.
+Redis continua obrigatório. Backups SQLite são habilitados por padrão quando
+há S3 configurado; `SESSION_STORAGE_BACKUP_ENABLED=false` desliga a agenda.
+Backup global Redis continua sendo uma configuração independente e opt-in.
+Veja [armazenamento e backup](/guide/session-storage).
+
+Mantém Zapo **1.11.0** e VoIP **0.1.71**, revisão
+`b56747dbbc79a10c76e836c631b51cb63934b11c`. Consulte as
+[notas da versão](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.43/docs/release-4.0.43.md)
+e os workflows na
+[release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.43).
+Publicação não faz deploy nem remove hostpaths. Correções somente documentais
+podem reconstruir `viperconnect-docs:4.0.43` pela ação manual
+**Documentation Docker Image**, com `image_version=4.0.43`, igual ao `package.json`,
+sem mover a tag Git nem alterar a imagem da aplicação.
+
+## Versão 4.0.42
+
+A 4.0.42 reúne armazenamento SQLite por sessão, migração controlada, métricas,
+explorador administrativo e backup/restauração S3 de sessões e da base VoIP.
+Novas sessões usam SQLite somente com volume persistente e capacidade válidos;
+sem isso continuam no Redis, com alerta no painel. Redis permanece obrigatório
+para coordenação, autenticação e configuração compartilhada. Sessões Redis
+existentes não são migradas automaticamente.
+
+O workflow da imagem unificada fixa o VoIP **0.1.71** na revisão
+`b56747dbbc79a10c76e836c631b51cb63934b11c`, incluindo recuperação de chamadas
+nativas. O aviso de reconexão também exige aplicativos compatíveis atualizados.
+Veja [armazenamento por sessão](/guide/session-storage),
+[backups VoIP](/guide/voip-backups) e as
+[notas da versão](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.42/docs/release-4.0.42.md).
+Confira os workflows e os artefatos na
+[release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.42)
+antes de implantar. Publicação não faz deploy em produção nem remove hostpaths.
+Correções somente documentais podem reconstruir `viperconnect-docs:4.0.42`
+pela ação manual **Documentation Docker Image**, com `image_version=4.0.42`;
+o valor deve coincidir com `package.json`. Isso não move a tag Git nem a imagem
+da aplicação; a imagem documental identifica sua própria revisão nas labels.
+
 ## Versão 4.0.41
 
 A 4.0.41 atualiza a Zapo para 1.11.0 e inclui recuperação de criptografia por

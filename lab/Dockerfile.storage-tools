@@ -1,0 +1,5 @@
+# Optional small DEV-only layer; reuse the existing laboratory dependencies.
+FROM viperconnect-mobile-lab:dev
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends redis-tools \
+    && rm -rf /var/lib/apt/lists/*

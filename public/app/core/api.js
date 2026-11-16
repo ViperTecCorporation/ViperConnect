@@ -1,4 +1,4 @@
-import { t } from './i18n.js?v=4.0.41-0f2cc5a1';
+import { t } from './i18n.js?v=4.0.43-010277e1';
 export class ApiError extends Error {
     get code() {
         const value = this.payload;
@@ -95,6 +95,23 @@ export class ApiClient {
         if (!response.ok)
             throw new ApiError(response.status, errorMessage(payload, response.status), payload);
         return payload;
+    }
+    async serviceLogs(component, query, signal) {
+        const revision = this.authRevision;
+        const response = await this.fetcher.call(globalThis, `${this.baseUrl}/admin/resources/${encodeURIComponent(component)}/logs?${query}`, {
+            headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/x-ndjson' }, signal,
+        });
+        if (revision !== this.authRevision) {
+            await response.body?.cancel();
+            throw new ApiError(0, 'Sessão alterada. Requisição descartada.');
+        }
+        if (!response.ok)
+            throw new ApiError(response.status, 'Logs indisponíveis.', await response.json().catch(() => undefined));
+        if (!response.body || !response.headers.get('content-type')?.startsWith('application/x-ndjson')) {
+            await response.body?.cancel();
+            throw new ApiError(502, 'Logs indisponíveis.');
+        }
+        return response;
     }
     async sessions() {
         const response = await this.request('/sessions');

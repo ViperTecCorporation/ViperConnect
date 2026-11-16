@@ -26,6 +26,7 @@ import { providerFromQueueName, providerQueueName } from './services/providers/p
 import { isWebhookCircuitOpenError, webhookRetryCount } from './services/webhook_circuit_breaker'
 import { payloadLogSummary } from './services/payload_log_summary'
 import { publishConfirmed } from './services/amqp_confirmed_publish'
+import { NonRetryableQueueError } from './services/non_retryable_queue_error'
 
 const withTimeout = (millis, error, promise) => {
   let timeoutPid
@@ -558,7 +559,7 @@ export const amqpConsume = async (
             return
           }
           const retryCount = webhookRetryCount(countRetries, error)
-          if (retryCount >= maxRetries) {
+          if (error instanceof NonRetryableQueueError || retryCount >= maxRetries) {
             logger.info('Reject %s retries', retryCount)
             if (normalizedOptions.notifyFailedMessages) {
               logger.info('Sending error to whatsapp...')

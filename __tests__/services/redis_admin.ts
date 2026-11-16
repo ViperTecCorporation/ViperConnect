@@ -35,13 +35,43 @@ describe('Redis admin service', () => {
     expect(factory).not.toHaveBeenCalled()
   })
 
-  test.each(['manager-identity:{v1}:users', 'manager-identity:', 'manager-identity:{v1}:', 'unoapi-webhook-history:', 'unoapi-webhook-history:5511'])('rejects direct and subtree writes to %s', async key => {
+  test.each(['manager-identity:{v1}:users', 'manager-identity:', 'manager-identity:{v1}:', 'unoapi-webhook-history:', 'unoapi-webhook-history:5511',
+    'unoapi-config:', 'unoapi-config:999123456789', 'unoapi-config:auth-token-index',
+    'unoapi-session-storage:', 'unoapi-session-storage:task:lock:999123456789', 'unoapi-session-storage:journal:999123456789:id',
+    'unoapi-lease:', 'unoapi-lease:zapo-session:999123456789', 'unoapi-', 'unoapi-con', 'unoapi-session-', 'unoapi-lea',
+  ])('rejects direct and subtree writes to %s', async key => {
     const factory = jest.fn()
     const admin = new RedisAdmin(factory as any)
     await expect(admin.saveKey(key, 'string', 'overwrite')).rejects.toThrow('redis_key_read_only')
     await expect(admin.deleteKey(key)).rejects.toThrow('redis_key_read_only')
     await expect(admin.deletePrefix(key)).rejects.toThrow('redis_key_read_only')
     expect(factory).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    ['unoapi-config:999123456789', { phone: '999123456789', provider: 'zapo', label: 'Lab', authToken: 'secret-config', storage: { credentials: { accessKeyId: 'secret-s3' } }, sessionStorage: { backend: 'sqlite', owner: 'worker_fixture', generation: 2, state: 'offline', secret: 'secret-descriptor' } }, { phone: '999123456789', provider: 'zapo', label: 'Lab', sessionStorage: { backend: 'sqlite', owner: 'worker_fixture', generation: 2, state: 'offline' } }],
+    ['unoapi-session-storage:backup:id', { id: 'id', status: 'ready', protection: 'none', credentials: 'secret-backup', configuration: { authToken: 'secret-config' }, objectKey: 'secret-url' }, { id: 'id', status: 'ready', protection: 'none' }],
+    ['unoapi-lease:zapo-session:999123456789', 'secret-lease-token', { reserved: true }],
+  ])('reads protected control metadata without credentials through detail and query: %s', async (key, record, projected) => {
+    const raw = typeof record === 'string' ? record : JSON.stringify(record)
+    const client = { type: jest.fn().mockResolvedValue('string'), ttl: jest.fn().mockResolvedValue(30), get: jest.fn().mockResolvedValue(raw) }
+    const admin = new RedisAdmin(async () => client as any)
+    const details = await admin.getKey(key)
+    expect(details).toMatchObject({ readOnly: true, type: 'string', value: projected, size: raw.length })
+    expect(await admin.query('GET', [key])).toEqual(projected)
+    expect(JSON.stringify(details)).not.toContain('secret')
+  })
+
+  test.each(['unoapi-config:999123456789', 'unoapi-session-storage:task:id'])('malformed control JSON is not exposed: %s', async key => {
+    const client = { type: jest.fn().mockResolvedValue('string'), ttl: jest.fn().mockResolvedValue(-1), get: jest.fn().mockResolvedValue('secret-invalid-json') }
+    expect((await new RedisAdmin(async () => client as any).getKey(key)).value).toEqual({})
+  })
+
+  test.each([['hash', 'hLen'], ['set', 'sCard'], ['list', 'lLen'], ['zset', 'zCard'], ['stream', 'xLen']])('internal %s indices never enumerate potentially secret field names or members', async (type, lengthMethod) => {
+    const client = { type: jest.fn().mockResolvedValue(type), ttl: jest.fn().mockResolvedValue(-1), [lengthMethod]: jest.fn().mockResolvedValue(3), hGetAll: jest.fn(), sMembers: jest.fn(), lRange: jest.fn(), zRangeWithScores: jest.fn(), xRange: jest.fn() }
+    const details = await new RedisAdmin(async () => client as any).getKey('unoapi-config:auth-token-index')
+    expect(details).toMatchObject({ readOnly: true, size: 3, value: '[REDACTED]' })
+    for (const method of ['hGetAll', 'sMembers', 'lRange', 'zRangeWithScores', 'xRange']) expect(client[method]).not.toHaveBeenCalled()
   })
 
   test('does not allow wildcard deletion to bypass protected prefixes', async () => {

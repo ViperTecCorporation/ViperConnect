@@ -5,6 +5,9 @@ import { Outgoing } from './services/outgoing'
 import { getConfig } from './services/config'
 import middleware from './services/middleware'
 import { SessionStore } from './services/session_store'
+import { sessionStorageRouter } from './controllers/session_storage_controller'
+import { storageRestoreRouter } from './controllers/storage_restore_controller'
+import { sessionStorageGateway } from './services/session_storage/gateway'
 import injectRoute from './services/inject_route'
 import injectRouteDummy from './services/inject_route_dummy'
 import { indexController } from './controllers/index_controller'
@@ -42,8 +45,12 @@ import { PasskeyBridgeController } from './controllers/passkey_bridge_controller
 import { ZapoContactDirectory } from './services/zapo/zapo_contact_directory'
 import { QueuesController } from './controllers/queues_controller'
 import { RedisAdminController } from './controllers/redis_admin_controller'
+import { ResourceMetricsController } from './controllers/resource_metrics_controller'
+import { ServiceControlController } from './controllers/service_control_controller'
+import { ServiceLogsController } from './controllers/service_logs_controller'
 import { ContactBookIncoming } from './services/contacts/contact_book_incoming'
 import { VoipController } from './controllers/voip_controller'
+import { voipBackupRouter } from './controllers/voip_backup_controller'
 import { ProfilePictureController } from './controllers/profile_picture_controller'
 import { SessionWebhooksController } from './controllers/session_webhooks_controller'
 import { WebhookHistoryController } from './controllers/webhook_history_controller'
@@ -76,7 +83,13 @@ export const router = (
   router.use(apiErrorLocalization)
   router.use('/manager/mobile-devices', mobileDeviceRouter())
   router.use('/manager/session-transfers', sessionTransferRouter())
+  router.use('/manager/storage', storageRestoreRouter())
+  router.use('/manager/voip-backups', voipBackupRouter())
   router.use('/manager', managerRouter())
+  router.use('/:version', sessionStorageRouter(sessionStorageGateway))
+  const serviceControl = new ServiceControlController()
+  // Dedicated agent credential; never uses a personal/session token or returns application data.
+  router.get('/internal/service-control/safety', serviceControl.guard.bind(serviceControl))
   router.use(managerAccess())
   installSessionMessageSocket(socket, getConfig)
   const sessionMessages = new SessionMessagesController(new SessionMessages(getConfig), getConfig)
@@ -112,7 +125,7 @@ export const router = (
   const embeddedController = new EmbeddedController()
   const passkeyBridgeController = new PasskeyBridgeController(getConfig)
   const pairingCodeController = new PairingCodeController(incoming)
-  const connectController = new ConnectController(reload)
+  const connectController = new ConnectController(reload, getConfig)
   const timerController = new TimerController()
   const queuesController = new QueuesController()
   const redisAdminController = new RedisAdminController()
@@ -170,6 +183,14 @@ export const router = (
   router.delete('/passkey-bridge/:bridgeId', passkeyBridgeController.cancel.bind(passkeyBridgeController))
   router.get('/ping', indexController.ping)
   router.get('/version', middleware, indexController.versionStatus.bind(indexController))
+  const resources = new ResourceMetricsController()
+  router.get('/admin/resources', middleware, resources.handle.bind(resources))
+  router.get('/admin/resources/control', middleware, serviceControl.handle.bind(serviceControl))
+  router.get('/admin/resources/operations/:operation', middleware, serviceControl.handle.bind(serviceControl))
+  router.post('/admin/resources/:component/restart', middleware, serviceControl.handle.bind(serviceControl))
+  const serviceLogs = new ServiceLogsController()
+  router.get('/admin/resources/:component/logs', middleware, serviceLogs.handle.bind(serviceLogs))
+  router.get('/admin/resources/:component/history', middleware, resources.handle.bind(resources))
   router.get('/admin/rabbitmq/queues', middleware, queuesController.list.bind(queuesController))
   router.get('/admin/rabbitmq/queues/:queue/messages', middleware, queuesController.preview.bind(queuesController))
   router.delete('/admin/rabbitmq/queues/:queue/messages', middleware, queuesController.purge.bind(queuesController))

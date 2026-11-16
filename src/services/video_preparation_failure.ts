@@ -5,6 +5,7 @@ import logger from './logger'
 import type { Outgoing } from './outgoing'
 import { normalizeUserOrGroupIdForWebhook } from './transformer'
 import type { VideoPreparationJobData } from './video_preparation_types'
+import { readVideoPreparationConfig } from './video_preparation_policy'
 
 export class VideoPreparationFailureReporter {
   constructor(
@@ -13,7 +14,7 @@ export class VideoPreparationFailureReporter {
   ) {}
 
   async report(phone: string, data: VideoPreparationJobData, error: unknown) {
-    const config = await this.getConfig(phone)
+    const config = await readVideoPreparationConfig(phone, this.getConfig)
     const recipientId = normalizeUserOrGroupIdForWebhook(data.payload?.to || '')
     // Do not expose ffmpeg stderr, file paths or signed source URLs in the webhook.
     const oversized = `${(error as any)?.message || ''}`.startsWith('video_output_too_large:')

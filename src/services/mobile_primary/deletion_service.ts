@@ -7,6 +7,15 @@ redis.call('HSET', KEYS[1], ARGV[1], ARGV[3])
 return 1`
 export const FINISH_MOBILE_DELETION = `
 if redis.call('HGET', KEYS[1], ARGV[1]) ~= ARGV[2] then return 0 end
+if KEYS[6] then
+ local raw=redis.call('GET',KEYS[6]); if not raw then return 0 end
+ local cfg=cjson.decode(raw)
+ if cfg.mobilePrimaryDraftId~=ARGV[3] or cfg.mobilePrimaryDeleting~=true or cfg.autoConnect~=false or not cfg.sessionStorage or cfg.sessionStorage.backend~='sqlite' or cfg.sessionStorage.storageId~=ARGV[5] or cfg.sessionStorage.generation~=tonumber(ARGV[6]) or cfg.sessionStorage.state=='migrating' or cfg.sessionStorage.state=='restoring' then return 0 end
+ if not KEYS[7] or redis.call('GET',KEYS[7])~=ARGV[7] then return 0 end
+ cfg.mobilePrimaryDraftId=''; cfg.mobilePrimaryImported=false; cfg.mobilePrimaryDeleting=false
+ cfg.sessionStorageUnlinked=true; cfg.sessionStorage.state='offline'; cfg.autoConnect=false
+ redis.call('SET',KEYS[6],cjson.encode(cfg)); redis.call('PUBLISH','unoapi-config:update',ARGV[4])
+end
 redis.call('DEL', KEYS[2])
 if KEYS[3] then redis.call('DEL', KEYS[3]) end
 if KEYS[4] then redis.call('DEL', KEYS[4]) end
@@ -14,7 +23,7 @@ if KEYS[5] then redis.call('DEL', KEYS[5]) end
 redis.call('HDEL', KEYS[1], ARGV[1])
 return 1`
 
-interface Lease { acquire(): Promise<boolean>; renew(): Promise<boolean>; release(): Promise<unknown> }
+interface Lease { acquire(): Promise<boolean>; renew(): Promise<boolean>; release(): Promise<unknown>; ownership?(): { key: string; token: string } }
 export interface MobileDeletionDependencies {
   list(): Promise<MobileDeviceDraft[]>
   registration(id: string): Promise<{ canonicalPhone?: string; sessionPhone?: string } | undefined>
@@ -83,7 +92,12 @@ export class MobileDeletionService {
       if (latest && latest.mobilePrimaryDraftId !== id) throw new MobileDeviceError(409, 'mobile_session_conflict')
       if (transferred && !await this.transferReady(id, phone, latest)) throw new MobileDeviceError(409, 'mobile_transfer_backup_suspension_required')
       if (latest) await this.deps.clear(phone, latest)
-      if (Number(await this.deps.eval(FINISH_MOBILE_DELETION, { keys: [MOBILE_DRAFTS_KEY, REGISTRATION_PREFIX + id, `mobile-primary:{v1}:companions:${id}`, `mobile-primary:{v1}:companion-operation:${id}`, `mobile-primary:{v1}:backup-completed:${phone}`], arguments: [draft.phone, snapshot] })) !== 1) throw new MobileDeviceError(409, 'mobile_draft_changed')
+      const sqlite = latest?.sessionStorage?.backend === 'sqlite'
+      const fence = sqlite ? ownership.ownership?.() : undefined
+      if (sqlite && (!fence || fence.key !== `unoapi-lease:zapo-session:${phone}` || !fence.token)) throw new MobileDeviceError(409, 'mobile_deletion_lease_required')
+      if (Number(await this.deps.eval(FINISH_MOBILE_DELETION, { keys: [MOBILE_DRAFTS_KEY, REGISTRATION_PREFIX + id, `mobile-primary:{v1}:companions:${id}`, `mobile-primary:{v1}:companion-operation:${id}`, `mobile-primary:{v1}:backup-completed:${phone}`,
+        ...(sqlite ? [`unoapi-config:${phone}`, fence!.key] : [])], arguments: [draft.phone, snapshot, id, phone,
+        ...(sqlite ? [latest.sessionStorage.storageId, String(latest.sessionStorage.generation), fence!.token] : [])] })) !== 1) throw new MobileDeviceError(409, 'mobile_draft_changed')
     } finally {
       try { if (acquired) await ownership?.release() } finally { await operation.release() }
     }

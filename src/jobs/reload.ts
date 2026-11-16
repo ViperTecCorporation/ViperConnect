@@ -3,23 +3,21 @@ import { Reload } from '../services/reload'
 
 export class ReloadJob {
   private reload: Reload
-  private static inFlight: Set<string> = new Set()
+  private static inFlight: Map<string, Promise<void>> = new Map()
 
   constructor(reload: Reload) {
     this.reload = reload
   }
 
   async consume(_: string, { phone }: { phone: string }) {
-    if (ReloadJob.inFlight.has(phone)) {
-      logger.warn('Skip duplicated reload while another reload is in-flight for %s', phone)
-      return
-    }
-    ReloadJob.inFlight.add(phone)
+    const previous = ReloadJob.inFlight.get(phone)
+    const task = (previous || Promise.resolve()).catch(() => {}).then(() => this.reload.run(phone))
+    ReloadJob.inFlight.set(phone, task)
     logger.debug('Reload job run for phone %s', phone)
     try {
-      await this.reload.run(phone)
+      await task
     } finally {
-      ReloadJob.inFlight.delete(phone)
+      if (ReloadJob.inFlight.get(phone) === task) ReloadJob.inFlight.delete(phone)
     }
   }
 }

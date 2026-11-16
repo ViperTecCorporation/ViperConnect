@@ -16,8 +16,12 @@ async function main() {
   const bootstrap = await bootstrapResponse.json()
   assert.ok(bootstrap.zapoLines?.some(l => l.automatic), 'Nenhuma linha automática provisionada')
   console.log(JSON.stringify({ automaticLines: bootstrap.zapoLines?.map(l => ({ session: l.session, online: l.online, automatic: !!l.automatic })), extensions: bootstrap.config?.extensions?.length }, null, 2))
-  const { RTCPeerConnection } = require('/home/u/app/voip/node_modules/@roamhq/wrtc')
-  const pc = new RTCPeerConnection({ iceTransportPolicy: 'relay', iceServers: [{ urls: process.env.VOIP_TURN_URL, username: process.env.VOIP_TURN_USERNAME, credential: process.env.VOIP_TURN_CREDENTIAL }] })
+  const { RTCPeerConnection } = require(require.resolve('@roamhq/wrtc', {
+    paths: [process.cwd(), '/home/u/app', '/home/u/app/voip'],
+  }))
+  // The browser's host loopback address points at this container when used here.
+  const turnUrl = process.env.VOIP_TURN_URL.replace(/^(turns?:)(127\.0\.0\.1|localhost)(?=[:?]|$)/, '$1coturn')
+  const pc = new RTCPeerConnection({ iceTransportPolicy: 'relay', iceServers: [{ urls: turnUrl, username: process.env.VOIP_TURN_USERNAME, credential: process.env.VOIP_TURN_CREDENTIAL }] })
   let timeout
   try {
     const allocation = new Promise((resolve, reject) => {

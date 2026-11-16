@@ -19,6 +19,22 @@ export async function suspendOrphanMobile(redis: { eval(script: string, options:
   })) === 1
 }
 
+export interface MobileDeletionStorageDependencies {
+  unlinkSqlite(phone: string, config: any): Promise<unknown>
+  clearLegacy(phone: string, config: any): Promise<void>
+  deleteConfig(phone: string): Promise<unknown>
+  clearTransient(phone: string): Promise<unknown>
+  clearStatus(phone: string): Promise<unknown>
+}
+
+/** SQLite deletion detaches config only in the final draft/vault CAS, never here. */
+export async function clearMobileDeletionStorage(phone: string, config: any, deps: MobileDeletionStorageDependencies) {
+  if (config.sessionStorage?.backend === 'sqlite') await deps.unlinkSqlite(phone, config)
+  else { await deps.clearLegacy(phone, config); await deps.deleteConfig(phone) }
+  await deps.clearTransient(phone)
+  await deps.clearStatus(phone)
+}
+
 export async function createMobileDeletionService() {
   const redis = await import('../redis.js')
   const { getConfigRedis } = await import('../config_redis.js')
@@ -27,6 +43,7 @@ export async function createMobileDeletionService() {
   const { createZapoStore } = await import('../zapo/zapo_store.js')
   const { clearZapoSession } = await import('../zapo/zapo_session_cleanup.js')
   const { ZAPO_REDIS_KEY_PREFIX } = await import('../../defaults.js')
+  const ownedLeases = new Map<string, InstanceType<typeof RedisLease>>()
   return new MobileDeletionService({
     list: () => new MobileDeviceService().list(),
     registration: async id => {
@@ -38,14 +55,22 @@ export async function createMobileDeletionService() {
     backupCompleted: async (phone, id) => (await (await redis.getRedis()).get(`mobile-primary:{v1}:backup-completed:${phone}`)) === id,
     dispatch: phone => new ReloadAmqp(getConfigRedis).run(phone),
     eval: async (script, options) => (await redis.getRedis()).eval(script, options),
-    lease: name => new RedisLease(name, 120000),
+    lease: name => { const lease = new RedisLease(name, 120000); ownedLeases.set(name, lease); return lease },
     pause: () => new Promise(resolve => setTimeout(resolve, 200)),
-    clear: async (phone, config) => {
-      const store = createZapoStore({ useRedis: config.useRedis, baseStore: config.baseStore, redisUrl: process.env.REDIS_URL, redisKeyPrefix: ZAPO_REDIS_KEY_PREFIX })
-      try { await clearZapoSession(store.session(phone)) } finally { await store.destroy() }
-      await redis.delConfig(phone, true)
-      await redis.delSessionTransientKeys(phone)
-      await redis.delSessionStatus(phone)
-    },
+    clear: (phone, config) => clearMobileDeletionStorage(phone, config, {
+      unlinkSqlite: async (value, selected) => {
+        const { sessionStorageRpc } = await import('../session_storage/rpc.js')
+        const fence = ownedLeases.get(`zapo-session:${value}`)?.ownership()
+        if (!fence) throw new Error('session_storage_primary_unlink_lease_lost')
+        return sessionStorageRpc(value, await getConfigRedis(value), 'primary.auth.unlink', [selected.mobilePrimaryDraftId, fence])
+      },
+      clearLegacy: async (value, selected) => {
+        const store = createZapoStore({ useRedis: selected.useRedis, baseStore: selected.baseStore, redisUrl: process.env.REDIS_URL, redisKeyPrefix: ZAPO_REDIS_KEY_PREFIX })
+        try { await clearZapoSession(store.session(value)) } finally { await store.destroy() }
+      },
+      deleteConfig: value => redis.delConfig(value, true),
+      clearTransient: redis.delSessionTransientKeys,
+      clearStatus: redis.delSessionStatus,
+    }),
   })
 }

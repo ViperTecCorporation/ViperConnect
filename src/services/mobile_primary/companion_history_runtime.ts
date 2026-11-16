@@ -19,6 +19,8 @@ import { CompanionHistoryReceiptTrace } from './companion_history_receipt_trace'
 import logger from '../logger'
 import { traceCompanionOutgoing } from './companion_outgoing_trace'
 import { mobilePrimaryReady, mobilePrimaryServer, mobileHistoryQueue } from './runtime_policy'
+import { createSqliteHistoryIndex } from '../session_storage/primary_state'
+import { isSqliteSession } from '../session_storage/routing'
 
 export const COMPANION_HISTORY_QUEUE = mobileHistoryQueue()
 const EXCHANGE = COMPANION_HISTORY_QUEUE
@@ -88,11 +90,15 @@ export function companionHistoryPlugin(device: string, phone: string, fence: His
       },
       async linked(target) { return provisioned.has(target) && (await ctx.client.mobile.listCompanions()).some(item => item.deviceJid === target) },
       async *packets() {
-        const { getRedis, getUnoId, getMessageStatus } = await import('../redis.js')
-        const pages = streamCompanionHistory(ctx.stores, await getRedis(), ZAPO_REDIS_KEY_PREFIX, phone, 'text-video',
+        const { getRedis } = await import('../redis.js')
+        const { getConfigRedis } = await import('../config_redis.js')
+        const config = await getConfigRedis(phone)
+        const index = isSqliteSession(config) ? createSqliteHistoryIndex(phone, config, ZAPO_REDIS_KEY_PREFIX) : await getRedis()
+        const { dataStore } = await config.getStore(phone, config)
+        const pages = streamCompanionHistory(ctx.stores, index, ZAPO_REDIS_KEY_PREFIX, phone, 'text-video',
           conversations => applyHistoryStatus(conversations,
-            async id => (await getUnoId(phone, id)) || undefined,
-            async id => (await getMessageStatus(phone, id)) || undefined))
+            async id => (await dataStore.loadUnoId(id)) || undefined,
+            async id => (await dataStore.loadStatus(id)) || undefined))
         for await (const packet of threeChunkHistory(pages, 192000, 'text-video-sticker-image')) {
           if (!await runtime.current()) throw new Error('mobile_history_not_connected')
           yield packet

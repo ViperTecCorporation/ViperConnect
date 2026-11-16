@@ -1,0 +1,12 @@
+# Dedicated LAB Redis only: --rdb captures ALL databases. Never reuse on a shared Redis blindly.
+services:
+  worker-zapo:
+    image: viperconnect-mobile-lab-storage-tools:dev
+    build:
+      context: .
+      dockerfile: lab/Dockerfile.storage-tools
+    environment:
+      SESSION_STORAGE_REDIS_BACKUP_ENABLED: "true"
+      SESSION_STORAGE_REDIS_BACKUP_ALL_DATABASES: "true"
+      SESSION_STORAGE_REDIS_CLI_PATH: /usr/bin/redis-cli
+      SESSION_STORAGE_REDIS_BACKUP_INSTANCE_ID: mobile-lab-redis

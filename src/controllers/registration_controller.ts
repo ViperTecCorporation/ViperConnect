@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import { Webhook, getConfig, type connectionType } from '../services/config'
+import { Webhook, getConfig, configs, type connectionType } from '../services/config'
 import { getConfig as getStoredConfig, setConfig } from '../services/redis'
 import logger from '../services/logger'
 import { Logout } from '../services/logout'
@@ -13,6 +13,11 @@ import { mergeMobileWebhooks } from '../services/mobile_primary/integration_poli
 import { MobileDeviceError } from '../services/mobile_device_service'
 import { normalizeZapoWebClientProfile } from '../services/zapo/zapo_web_client_profile'
 import { UNOAPI_SERVER_NAME } from '../defaults'
+import { createProvisionPending, confirmSessionStorageProvision } from '../services/session_storage/provisioning'
+import { SessionStorageError } from '../services/session_storage/types'
+import { SendError } from '../services/send_error'
+import { isDeepStrictEqual } from 'node:util'
+import { sessionReloadIntent } from '../services/session_reload_intent'
 
 export class RegistrationController {
   private static readonly REGISTER_DEBOUNCE_MS = 15000
@@ -38,7 +43,18 @@ export class RegistrationController {
     const phone = await resolveSessionPhoneByMetaId(req.params.phone)
     try {
       const previousConfig = await this.getConfig(phone)
+      if (['sessionStorage', 'sessionStorageUnlinked', 'sessionStorageTaskId', 'sessionStorageProvisionPending', 'sessionStorageProvisioned'].some(key => req.body[key] !== undefined)) return res.status(400).json({ status: 'error', message: 'session_storage_internal_fields' })
+      if (previousConfig.sessionStorage?.fixture || process.env.UNOAPI_STORAGE_SYNTHETIC_ONLY === 'true') return res.status(409).json({ status: 'error', message: 'session_storage_fixture_external_effects_forbidden' })
       const storedConfig = await getStoredConfig(phone)
+      const unlinkedSqlite = storedConfig?.sessionStorage?.backend === 'sqlite' && storedConfig.sessionStorage.state === 'offline'
+        && storedConfig.sessionStorageUnlinked === true && storedConfig.autoConnect === false && !storedConfig.mobilePrimaryDraftId
+      if (previousConfig.sessionStorage && ['migrating', 'restoring'].includes(previousConfig.sessionStorage.state)) {
+        return res.status(409).json({ status: 'error', message: 'session_storage_operation_in_progress' })
+      }
+      if (previousConfig.sessionStorage?.backend === 'sqlite' && req.body.server !== undefined && req.body.server !== previousConfig.server
+        && !(storedConfig?.mobilePrimaryDraftId && req.body.server === 'server_1')) {
+        return res.status(409).json({ status: 'error', message: 'session_storage_owner_change_requires_transfer' })
+      }
       if (storedConfig?.mobilePrimaryDeleting) return res.status(409).json({ status: 'error', message: 'mobile_deletion_in_progress' })
       if (req.body.mobilePrimaryDraftId !== undefined || req.body.mobilePrimaryImported !== undefined || req.body.mobilePrimaryDeleting !== undefined) {
         return res.status(400).json({ status: 'error', message: 'mobile_primary_internal_fields' })
@@ -60,7 +76,7 @@ export class RegistrationController {
         })
       }
       const connectionType = resolveRegistrationConnectionType({
-        hasStoredConfig: !!storedConfig,
+        hasStoredConfig: !!storedConfig && !unlinkedSqlite,
         previousProvider: resolveWhatsAppEngine(previousConfig.provider),
         previousConnectionType: previousConfig.connectionType,
         requestedConnectionType: req.body.connectionType as connectionType | undefined,
@@ -74,7 +90,7 @@ export class RegistrationController {
         return res.status(400).json({ status: 'error', message: 'zapo_web_client_profile_invalid' })
       }
       const effectiveConnectionType = connectionType.value ?? previousConfig.connectionType
-      if (storedConfig && requestedWebClientProfile !== previousWebClientProfile) {
+      if (storedConfig && !unlinkedSqlite && requestedWebClientProfile !== previousWebClientProfile) {
         return res.status(409).json({ status: 'error', message: 'zapo_web_client_profile_deregister_required' })
       }
       if (storedConfig?.mobilePrimaryDraftId && requestedWebClientProfile !== 'default') {
@@ -84,9 +100,12 @@ export class RegistrationController {
         return res.status(400).json({ status: 'error', message: 'zapo_web_client_profile_requires_qrcode' })
       }
       const requestedProvider = req.body.provider ?? previousConfig.provider
-      const provider = !storedConfig && !isProviderRuntimeEnabled(requestedProvider)
+      const provider = (!storedConfig || storedConfig.sessionStorageProvisionPending) && !isProviderRuntimeEnabled(requestedProvider)
         ? resolveSessionProvider(undefined)
         : requestedProvider
+      if (previousConfig.sessionStorage?.backend === 'sqlite' && provider !== previousConfig.provider) {
+        return res.status(409).json({ status: 'error', message: 'session_storage_provider_change_not_supported' })
+      }
       if (provider !== requestedProvider) {
         logger.warn(
           'Replaced disabled provider %s with %s for new session %s',
@@ -97,7 +116,7 @@ export class RegistrationController {
       }
       const requestedConfig = {
         ...req.body,
-        ...(!storedConfig || (storedConfig.server === undefined && req.body.server === undefined)
+        ...(req.body.server === undefined && (!storedConfig || storedConfig.server === undefined)
           ? { server: UNOAPI_SERVER_NAME }
           : {}),
         ...(labServerAlias ? { server: previousConfig.server } : {}),
@@ -106,6 +125,7 @@ export class RegistrationController {
           webhooks: mergeMobileWebhooks(storedConfig.webhooks || [], req.body.webhooks), overrideWebhooks: true,
         } : {}),
         provider,
+        ...(unlinkedSqlite ? { sessionStorageUnlinked: false, autoConnect: true } : {}),
         zapoWebClientProfile: requestedWebClientProfile,
         ...(connectionType.value ? { connectionType: connectionType.value } : {}),
       }
@@ -117,7 +137,24 @@ export class RegistrationController {
           req.body.connectionType,
         )
       }
-      await setConfig(phone, requestedConfig)
+      const newZapo = (!storedConfig || storedConfig.sessionStorageProvisionPending) && provider === 'zapo'
+      const requestedAutoConnect = req.body.autoConnect ?? storedConfig?.sessionStorageProvisionPending?.autoConnect ?? previousConfig.autoConnect
+      const desiredAutoConnect = requestedAutoConnect === 'true' ? true : requestedAutoConnect === 'false' ? false : requestedAutoConnect
+      const pending = newZapo ? { ...createProvisionPending(desiredAutoConnect),
+        ...(typeof storedConfig?.sessionStorageProvisionPending?.id === 'string' ? { id: storedConfig.sessionStorageProvisionPending.id } : {}) } : undefined
+      // Do not expose a connectable Redis session while its owner selects SQLite.
+      await setConfig(phone, newZapo ? { ...requestedConfig, autoConnect: false, sessionStorageProvisionPending: pending } : requestedConfig)
+      if (newZapo) {
+        let selected: { backend?: 'redis' | 'sqlite' } | undefined
+        try {
+          configs.delete(phone)
+          const { sessionStorageRpc } = module.require('../services/session_storage/rpc') as typeof import('../services/session_storage/rpc')
+          selected = await sessionStorageRpc(phone, await this.getConfig(phone), 'provision', [{ provisionId: pending!.id }])
+        } catch { /* Only a durable, attempt-bound owner receipt can resolve an ambiguous reply. */ }
+        try { await confirmSessionStorageProvision(phone, pending!.id, requestedConfig.server ?? storedConfig?.server ?? previousConfig.server, selected?.backend) }
+        catch { return res.status(503).json({ status: 'error', message: 'session_storage_provision_unconfirmed' }) }
+        configs.delete(phone)
+      }
       const config = await this.getConfig(phone)
       if (storedConfig?.mobilePrimaryDraftId) {
         // Await publication; a 200 does not mean WhatsApp has connected yet.
@@ -131,12 +168,13 @@ export class RegistrationController {
         return res.status(200).json(config)
       }
       const providerChanged = resolveWhatsAppEngine(previousConfig.provider) !== resolveWhatsAppEngine(config.provider)
+      const intentChanged = !isDeepStrictEqual(sessionReloadIntent(previousConfig), sessionReloadIntent(config))
       const now = Date.now()
       const last = RegistrationController.lastRegisterAtByPhone.get(phone) || 0
       const inFlight = RegistrationController.inFlightByPhone.has(phone)
       const inDebounceWindow = (now - last) < RegistrationController.REGISTER_DEBOUNCE_MS
 
-      if (!providerChanged && (inFlight || inDebounceWindow)) {
+      if (!providerChanged && !unlinkedSqlite && !intentChanged && (inFlight || inDebounceWindow)) {
         logger.warn(
           'register suppressed for %s (inFlight=%s debounceMs=%s)',
           phone,
@@ -156,6 +194,7 @@ export class RegistrationController {
 
       return res.status(200).json(config)
     } catch (e) {
+      if (e instanceof SessionStorageError || e instanceof SendError) return res.status(e instanceof SessionStorageError ? e.status : e.code).json({ status: 'error', message: e instanceof SessionStorageError ? e.code : e.title })
       return res.status(400).json({ status: 'error', message: `${phone} could not create, error: ${e.message}` })
     }
   }

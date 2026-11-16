@@ -2,13 +2,13 @@ import { proto, type WaStoreSession } from 'zapo-js'
 import { collectCompanionHistory, historyPackets, resequenceHistoryPacket, type HistoryImageExperiment } from './companion_history_payload'
 import { resolveZapoRedisKeyPrefix } from '../zapo/zapo_store'
 
-interface IndexRedis {
+export interface HistoryIndex {
   scan(cursor: number, options: { MATCH: string; COUNT: number }): Promise<{ cursor: number; keys: string[] }>
   zRange(key: string, start: number, stop: number): Promise<string[]>
 }
 /** Export bounded pages from the live archive, with no age or total-count cutoff.
  * This is not a transactional snapshot of active chats. */
-export async function* streamCompanionHistory(store: WaStoreSession, redis: IndexRedis, prefix: string, phone: string, textOnly: boolean | 'text-video' = false, enrich?: (conversations: proto.IConversation[]) => Promise<void>, imageExperiment?: HistoryImageExperiment): AsyncGenerator<{ message: proto.Message.IProtocolMessage; count: number }> {
+export async function* streamCompanionHistory(store: WaStoreSession, redis: HistoryIndex, prefix: string, phone: string, textOnly: boolean | 'text-video' = false, enrich?: (conversations: proto.IConversation[]) => Promise<void>, imageExperiment?: HistoryImageExperiment): AsyncGenerator<{ message: proto.Message.IProtocolMessage; count: number }> {
   if (!/^[A-Za-z0-9_:-]+$/.test(prefix) || !/^[1-9]\d{7,14}$/.test(phone)) throw new Error('history_index_scope_invalid')
   // The Redis store maps the legacy unoapi-zapo: setting to unoapi:zapo:.
   // Export from that same effective namespace, never the raw environment value.

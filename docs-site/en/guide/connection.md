@@ -64,3 +64,44 @@ and require revalidation before library upgrades; real acceptance remains unprov
 - Deregistration removes the native credentials and requires a new pairing.
 - Do not run two owners for the same session.
 - Keep Valkey and the session data volume persistent across container updates.
+
+## Passkey bridge across separate workers
+
+When Zapo requests a WebAuthn assertion, read `GET /passkey-bridge/pending` or
+`GET /passkey-bridge/{bridgeId}/pending`. Use that request's `bridge_id`, never
+an identifier from another pairing attempt. These routes require the global
+token, the owning session's token, a valid embedded token or an administrator
+Manager login; knowing the bridge ID does not grant access.
+
+```http
+POST /passkey-bridge/{bridgeId}/assertion
+Authorization: Bearer YOUR_TOKEN
+Content-Type: application/json
+
+{"credential_id":"BASE64URL_ID","assertion_json":{"authenticatorData":"AUTHENTICATOR_RESPONSE"}}
+```
+
+HTTP forwards the assertion to the owning worker over internal RPC for both
+Redis and SQLite sessions. The worker rechecks ownership, generation, phone,
+active bridge and expiry before resolving the existing signer. It never creates
+a client, opens the worker's SQLite file in the web process or connects an
+offline session. An older bridge cannot answer a newer request for the same phone.
+
+HTTP `200` with `status=response-sent` confirms delivery to the signer only.
+`POST /passkey-bridge/{bridgeId}/confirm` returns
+`provider_managed_confirmation=true` for Zapo and does **not** force `completed`.
+Only `auth_paired` confirms authentication completion. Read
+`GET /passkey-bridge/{bridgeId}/status`; a persisted `completed` result can be
+queried again without another device operation.
+
+`PASSKEY_BRIDGE_TTL_SECONDS` sets the original deadline (120s default, minimum
+30s); assertion and confirmation do not renew it. Atomic Redis CAS updates retain
+absolute expiry and cannot overwrite concurrent completion or recreate a
+cancelled/expired bridge. At most three local metadata checks are attempted,
+not three assertion submissions.
+
+Errors: `404` missing/expired request; `409` ownership, generation, bridge or
+pending-state conflict/suspended session; `502/503` unconfirmed result or
+unavailable worker/RPC. POSTs are not automatically retried: timeout can occur
+after signer delivery. Check status before acting. Synthetic process-isolation
+tests do not establish real-device authentication.

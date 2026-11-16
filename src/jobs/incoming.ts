@@ -22,6 +22,7 @@ import { outgoingForwardedWebhook } from '../services/messages/outgoing_forwarde
 import { outgoingViewOnceWebhook } from '../services/messages/outgoing_view_once'
 import { addProviderMessageIds } from '../services/messages/provider_message_identity'
 import { resolveProviderMessageId } from '../services/message_id_map'
+import { recordSessionWebhookStatuses } from '../services/messages/session_message_status'
 
 type RetryContext = {
   countRetries: number
@@ -266,6 +267,10 @@ export class IncomingJob {
   }
 
   async consume(phone: string, data: object, retry?: RetryContext) {
+    return module.require('../services/session_storage/activity').withSessionStorageActivity(phone, () => this.consumeSession(phone, data, retry))
+  }
+
+  private async consumeSession(phone: string, data: object, retry?: RetryContext) {
     const config = await this.getConfig(phone)
     if (config.server !== UNOAPI_SERVER_NAME) {
       logger.info(`Ignore incoming with ${phone} server ${config.server} is not server current server ${UNOAPI_SERVER_NAME}...`)
@@ -315,6 +320,11 @@ export class IncomingJob {
       logger.warn(e as any, 'Ignore error checking outgoing idempotency')
     }
     if (alreadyProcessed) {
+      if (successfulSend && !previousStatus) {
+        // A provider ACK/key can survive a failed status projection. Repair only
+        // the local state on redelivery; never send the message a second time.
+        await recordSessionWebhookStatuses(phone, { entry: [{ changes: [{ value: { statuses: [{ id: idUno, status: 'sent' }] } }] }] }, config)
+      }
       // Outside the guard catch: failure to replay a warning must never resend to WhatsApp.
       if (successfulSend && (payload?.context || a.options?.videoTranscoded)) {
         const pending = await loadReplyWarning(phone, idUno)
@@ -335,7 +345,9 @@ export class IncomingJob {
     try {
       response = await this.incoming.send(phone, payload, options)
     } catch (error) {
-      if (!shouldReturnProviderSendFailure(provider, error, retry)) throw error
+      // A receipt/update failure is not a failed send of the original message.
+      // Keep the queue error observable without publishing a fabricated status.
+      if (isStatusOperation || !shouldReturnProviderSendFailure(provider, error, retry)) throw error
       logger.warn(
         error as any,
         'Provider send failed permanently; emitting failed status provider=%s phone=%s id=%s type=%s',
@@ -571,6 +583,9 @@ export class IncomingJob {
     }
     if (outgingPayload) {
       addProviderMessageIds(outgingPayload, identities)
+      // Provider outcome is session data, independent of whether a webhook is
+      // configured. sendHttp only enqueues a destination; it does not record it.
+      await recordSessionWebhookStatuses(phone, outgingPayload, config)
       await amqpPublish(
         UNOAPI_EXCHANGE_BROKER_NAME,
         UNOAPI_QUEUE_BULK_STATUS,

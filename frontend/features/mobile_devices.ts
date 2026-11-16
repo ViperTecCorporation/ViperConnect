@@ -5,7 +5,7 @@ import { icon } from '../components/icons.js'
 import { renderMobileDeviceGrid, mobileGridSession } from './mobile_device_grid.js'
 import { sessionPhone } from '../domain/session.js'
 import type { SessionConfig } from '../domain/types.js'
-import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError, type BackupTaskView } from './mobile_backup.js'
+import { renderMobileBackup, transferMobileBackup, downloadMobileBackup, mobileBackupError, manualBackupNeedsStorage, renderSqliteBackupAlternative, type BackupTaskView } from './mobile_backup.js'
 
 export interface MobileDraft {
   id: string; phone: string; name: string; platform: 'android' | 'ios'; accountType: 'personal' | 'business'
@@ -29,6 +29,8 @@ export class MobileDevicesPanel {
   transferEligible = false
   backupDownload?: { archive: string; fileName: string }
   backupTasks: BackupTaskView[] = []
+  private readonly sqliteSessions = new Map<string, string>()
+  private backupStorageRequired = false
   selected?: MobileDraft
   private generation = 0
   private cooldownTimer?: ReturnType<typeof setInterval>
@@ -47,6 +49,7 @@ export class MobileDevicesPanel {
     this.transferEligible = false
     this.backupDownload = undefined
     this.backupTasks = []
+    this.sqliteSessions.clear(); this.backupStorageRequired = false
     this.devices = []
     this.query = ''
     this.statusFilter = 'all'
@@ -80,6 +83,7 @@ export class MobileDevicesPanel {
   action(action: string, id = ''): void {
     if (!this.enabled || this.busy) return
     this.error = ''
+    this.backupStorageRequired = false
     if (action === 'mobile-backups-refresh') { void this.refreshBackups().then(() => this.render()); return }
     if (action === 'mobile-saved-backup') { void this.fetchSavedBackup(id); return }
     if (action === 'mobile-backup-download' && this.backupDownload) {
@@ -207,7 +211,7 @@ export class MobileDevicesPanel {
         // Keep the encrypted result in memory until the user closes this modal; no password is retained.
       } else { this.modal = undefined; this.busy = false; await this.load(true) }
     } catch (error) {
-      if (generation === this.generation) this.error = mobileBackupError(error, form === 'mobile-restore')
+      if (generation === this.generation) { this.backupStorageRequired = manualBackupNeedsStorage(error); this.error = mobileBackupError(error, form === 'mobile-restore') }
     } finally { if (generation === this.generation) { this.busy = false; this.render() } }
   }
 
@@ -364,6 +368,11 @@ export class MobileDevicesPanel {
   }
 
   renderGrid(sessions: SessionConfig[] = []): string {
+    this.sqliteSessions.clear()
+    for (const device of this.devices) {
+      const session = mobileGridSession(device, sessions)
+      if ((session?.sessionStorage as { backend?: string } | undefined)?.backend === 'sqlite') this.sqliteSessions.set(device.id, sessionPhone(session!))
+    }
     if (!this.enabled) return this.error ? `<p role="alert">${e(this.error)}</p>` : ''
     const backups = this.backupTasks.length ? `<section class="mobile-overview__section" aria-label="Backups de dispositivos"><div class="mobile-overview__status"><h3>Backups de dispositivos</h3>${button('Atualizar backups', 'backups-refresh')}</div>${this.backupTasks.map(task => {
       const device = this.devices.find(item => item.id === task.deviceId)
@@ -386,6 +395,7 @@ export class MobileDevicesPanel {
       <label><input type="checkbox" name="labConsent" required ${this.values.labConsent ? 'checked' : ''}>Confirmo que este número é destinado ao laboratório e tenho autorização para utilizá-lo.</label>
       <p><button class="btn" ${this.busy ? 'disabled' : ''}>Salvar rascunho</button></p></form><hr><p>Já possui um backup deste dispositivo?</p>${button('Restaurar dispositivo', 'restore')}`
     else if (this.modal === 'backup' && this.backupDownload) content = `<div class="stack"><h3 role="status">Backup gerado. Origem suspensa.</h3><p>O download foi solicitado ao navegador. Confira se o arquivo foi salvo antes de fechar esta janela.</p><p><strong>${e(this.backupDownload.fileName)}</strong></p><p>Se não baixou automaticamente, clique abaixo. Não é necessário gerar outro backup.</p>${button('Baixar arquivo .viperdevice', 'backup-download')}${button('Fechar', 'close')}</div>`
+    else if ((this.modal === 'backup' && this.sqliteSessions.has(this.selected?.id || '')) || this.backupStorageRequired) content = renderSqliteBackupAlternative(this.sqliteSessions.get(this.selected?.id || '') || this.connection?.phone || this.selected?.phone || '')
     else if (this.modal === 'restore' || this.modal === 'backup') content = renderMobileBackup(this.modal === 'restore', this.busy)
     else if (this.selected) {
       const item = this.selected

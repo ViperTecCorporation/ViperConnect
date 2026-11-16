@@ -1,6 +1,7 @@
 import { MobileDeviceError, validateMobileDraft } from '../mobile_device_service'
 import { deserializeCompanionEpoch } from './companion_persistence'
 import { sameRegistrationPhone } from './registration_identity'
+import { isBackupZapoVersion, type BackupZapoVersion } from './backup_compatibility'
 
 // Audited against @zapo-js/store-redis 1.3.0. Domain comes BEFORE the session ID.
 export const BACKUP_DOMAINS = ['auth', 'signal:reg', 'signal:spk', 'signal:meta', 'signal:pk', 'signal:pk:ids', 'signal:pk:avail', 'signal:sess', 'signal:ident', 'sk', 'sk:grp', 'skd', 'appstate:key', 'appstate:key:idx', 'appstate:col', 'appstate:idx', 'appstate:idx:set', 'privtoken'] as const
@@ -11,7 +12,7 @@ export type BackupMode = 'credentials' | 'complete'
 export const BACKUP_MAX_RECORDS = 50000
 export interface BackupRecord { key: string; dump: string; namespace?: 'uno'; expiresAt?: number }
 export interface MobileBackupManifest {
-  version: 1 | 2; mode?: BackupMode; zapo: '1.9.0'; redisStore: '1.3.0'; prefix: string; createdAt: string
+  version: 1 | 2; mode?: BackupMode; zapo: BackupZapoVersion; redisStore: '1.3.0'; prefix: string; createdAt: string
   device: { phone: string; name: string; platform: 'android' | 'ios'; accountType: 'personal' | 'business' }
   registration: any
   companionEpoch?: ReturnType<typeof import('./companion_persistence').serializeCompanionEpoch>
@@ -45,7 +46,7 @@ export function backupRecordKey(record: BackupRecord, prefix: string): string {
 
 export function validateMobileBackup(value: any, prefix: string): asserts value is MobileBackupManifest {
   const fail = () => { throw new MobileDeviceError(400, 'mobile_backup_incompatible') }
-  if (!value || ![1, 2].includes(value.version) || value.zapo !== '1.9.0' || value.redisStore !== '1.3.0' || value.prefix !== prefix) return fail()
+  if (!value || ![1, 2].includes(value.version) || !isBackupZapoVersion(value.zapo) || value.redisStore !== '1.3.0' || value.prefix !== prefix) return fail()
   if (value.version === 2 && (!['credentials', 'complete'].includes(value.mode) || !Number.isFinite(Date.parse(value.createdAt)))) return fail()
   if (value.version === 1 && value.mode !== undefined) return fail()
   if (value.companionEpoch !== undefined) { try { deserializeCompanionEpoch(value.companionEpoch) } catch { return fail() } }

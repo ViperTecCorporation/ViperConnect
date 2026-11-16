@@ -3,6 +3,7 @@ import { isLidJid, normalizeDeviceJid, toUserJid, WA_CALL_RECEIPT_PAYLOAD_TAGS }
 import { buildAckNode, buildReceiptNode, getFirstNodeChild } from 'zapo-js/transport';
 import { toError } from 'zapo-js/util';
 import { summarizeCallEnvelope } from './signaling-diagnostics.js';
+import { buildRejectStanza } from './signaling.js';
 const RECEIPT_CALL_TAGS = new Set([
     'offer',
     'accept',
@@ -59,7 +60,7 @@ function buildCallResponse(deps, node, inner) {
         type: inner.tag
     });
 }
-export async function routeCallStanza(manager, deps, node, logger) {
+export async function routeCallStanza(manager, deps, node, logger, allowOffers = true) {
     const log = logger ?? createNoopLogger();
     const inner = getFirstNodeChild(node);
     if (!inner)
@@ -96,7 +97,13 @@ export async function routeCallStanza(manager, deps, node, logger) {
     });
     switch (tag) {
         case 'offer':
-            await manager.handleCallOffer(node, normalizedPeerJid);
+            if (!allowOffers) {
+                const callId = inner.attrs?.['call-id'];
+                if (callId)
+                    await deps.lowLevelCoordinator.sendNode(buildRejectStanza(peerJid, callId, inner.attrs?.['call-creator'] || normalizedPeerJid));
+            }
+            else
+                await manager.handleCallOffer(node, normalizedPeerJid);
             break;
         case 'preaccept':
             await manager.handleCallPreaccept(node, normalizedPeerJid);

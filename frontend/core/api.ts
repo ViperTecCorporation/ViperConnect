@@ -121,6 +121,17 @@ export class ApiClient {
     return payload as T
   }
 
+  async serviceLogs(component: string, query: string, signal: AbortSignal): Promise<Response> {
+    const revision = this.authRevision
+    const response = await this.fetcher.call(globalThis, `${this.baseUrl}/admin/resources/${encodeURIComponent(component)}/logs?${query}`, {
+      headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/x-ndjson' }, signal,
+    })
+    if (revision !== this.authRevision) { await response.body?.cancel(); throw new ApiError(0, 'Sessão alterada. Requisição descartada.') }
+    if (!response.ok) throw new ApiError(response.status, 'Logs indisponíveis.', await response.json().catch(() => undefined))
+    if (!response.body || !response.headers.get('content-type')?.startsWith('application/x-ndjson')) { await response.body?.cancel(); throw new ApiError(502, 'Logs indisponíveis.') }
+    return response
+  }
+
   async sessions(): Promise<SessionConfig[]> {
     const response = await this.request<{ data?: SessionConfig[] }>('/sessions')
     return Array.isArray(response?.data) ? response.data : []

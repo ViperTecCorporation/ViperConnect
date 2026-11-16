@@ -17,6 +17,9 @@ const variableDefaults = {
   base_url: 'http://localhost:9876',
   voip_base_url: 'https://voip.example.com',
   voip_service_token: '',
+  control_base_url: 'http://127.0.0.1:9880',
+  service_control_token: '',
+  service_control_guard_token: '',
   version: 'v15.0',
   token: '',
   phone: '5511999999999',
@@ -135,11 +138,14 @@ for (const [route, pathItem] of Object.entries(spec.paths || {})) {
     collectVariables(route, parameters, variables)
     const queryParameters = parameters.filter((parameter) => parameter.in === 'query')
     const queryString = queryParameters.map((parameter) => `${encodeURIComponent(parameter.name)}={{${parameter.name}}}`).join('&')
-    const baseVariable = pathItem.servers?.length ? 'voip_base_url' : 'base_url'
-    const routePath = baseVariable === 'voip_base_url'
+    const controlAgent = /^\/v1\/(?:targets|operations)(?:\/|$)/.test(route)
+    const baseVariable = controlAgent ? 'control_base_url' : pathItem.servers?.length ? 'voip_base_url' : 'base_url'
+    const routePath = baseVariable !== 'base_url'
       ? route.replace(/\{([^}]+)\}/g, '{{$1}}') : postmanPath(route)
     variables.add(baseVariable)
     if (baseVariable === 'voip_base_url') variables.add('voip_service_token')
+    if (controlAgent) variables.add('service_control_token')
+    if (route === '/internal/service-control/safety') variables.add('service_control_guard_token')
     const url = {
       raw: `{{${baseVariable}}}${routePath}${queryString ? `?${queryString}` : ''}`,
       host: [`{{${baseVariable}}}`],
@@ -175,7 +181,9 @@ for (const [route, pathItem] of Object.entries(spec.paths || {})) {
       }
       const security = operation.security ?? spec.security ?? []
       const administrative = route.startsWith('/admin/') || route.startsWith('/manager/')
-      if (baseVariable === 'voip_base_url') {
+      if (controlAgent || route === '/internal/service-control/safety') {
+        request.auth = { type: 'bearer', bearer: [{ key: 'token', value: controlAgent ? '{{service_control_token}}' : '{{service_control_guard_token}}', type: 'string' }] }
+      } else if (baseVariable === 'voip_base_url') {
         request.auth = { type: 'bearer', bearer: [{ key: 'token', value: '{{voip_service_token}}', type: 'string' }] }
       } else if (administrative && !security.length) request.auth = { type: 'noauth' }
       else if (administrative) {

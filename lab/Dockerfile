@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go test ./... \
     && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/relay-bridge ./main.go
 
 FROM node:24-bookworm-slim AS base
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git ffmpeg python3 make g++ \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git ffmpeg python3 make g++ redis-tools \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN corepack enable

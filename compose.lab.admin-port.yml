@@ -1,0 +1,6 @@
+# Optional local alias for the existing lab admin. Keep the original 19876 port.
+# Merge with compose.lab.yml; do not start a second Redis/worker/project.
+services:
+  web:
+    ports:
+      - "127.0.0.1:9876:9876"

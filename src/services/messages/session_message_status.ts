@@ -5,13 +5,23 @@ import { resolveZapoRedisKeyPrefix } from '../zapo/zapo_store'
 import { sessionMessageIndex, MESSAGE_CHANGE_CHANNEL, MERGE_MESSAGE_STATUS_LUA } from './session_message_index'
 import { providerIdKey } from '../redis'
 import logger from '../logger'
+import { isSqliteSession, isStorageWorker, storageOwner } from '../session_storage/routing'
+import { sessionStorageRpc } from '../session_storage/rpc'
+import { applySqliteStatuses } from '../session_storage/status_projection'
+import { rethrowSessionStateFence } from '../session_storage/private_state'
 
 export const recordSessionWebhookStatuses = async (phone: string, payload: any, config: Config) => {
-  if (config.provider !== 'zapo' || !config.useRedis) return
+  if (config.provider !== 'zapo' || (!config.useRedis && !isSqliteSession(config))) return
   const statuses = (payload?.entry || []).flatMap((entry: any) => (entry.changes || []).flatMap((change: any) => change.value?.statuses || []))
     .filter((item: any) => typeof item.id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(item.id) && ['sent', 'failed', 'delivered', 'read', 'played'].includes(item.status)).slice(0, 100)
   if (!statuses.length) return
   try {
+    if (isSqliteSession(config)) {
+      const values = statuses.map((item: any) => ({ id: item.id, status: item.status }))
+      if (isStorageWorker() && config.sessionStorage!.owner === storageOwner()) await applySqliteStatuses(phone, config, values)
+      else await sessionStorageRpc(phone, config, 'query.statuses', [values])
+      return
+    }
     zapoStoreRegistry.get(config)
     const index = sessionMessageIndex(resolveZapoRedisKeyPrefix(ZAPO_REDIS_KEY_PREFIX))
     if (!index) return
@@ -27,5 +37,5 @@ export const recordSessionWebhookStatuses = async (phone: string, payload: any, 
       const provider = rows?.[i * 3 + 1]?.[1]
       if (provider) await index.state(phone, [String(provider)], { status: statuses[i].status })
     }
-  } catch { logger.warn('SESSION_MESSAGES_STATUS_FAILED session=%s', phone) }
+  } catch (error) { rethrowSessionStateFence(error); logger.warn('SESSION_MESSAGES_STATUS_FAILED session=%s', phone) }
 }

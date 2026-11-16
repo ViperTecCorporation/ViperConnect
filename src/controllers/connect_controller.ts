@@ -2,6 +2,10 @@ import { Request, Response } from 'express'
 import logger from '../services/logger'
 import { Reload } from '../services/reload'
 import { t } from '../i18n'
+import type { getConfig } from '../services/config'
+import { assertSessionConfigRegistered } from '../services/session_storage/connection_registration'
+import { SendError } from '../services/send_error'
+import { getConfigRedis } from '../services/config_redis'
 
 const connect = async (phone: string) => {
   return `<!DOCTYPE html>
@@ -62,7 +66,7 @@ const connect = async (phone: string) => {
 export class ConnectController {
   private reload: Reload
 
-  constructor(reload: Reload) {
+  constructor(reload: Reload, private readonly getConfig: getConfig = getConfigRedis) {
     this.reload = reload
   }
 
@@ -72,8 +76,12 @@ export class ConnectController {
     logger.debug('connect params %s', JSON.stringify(req.params))
     logger.debug('connect body %s', JSON.stringify(req.body))
     const { phone } = req.params
+    try { assertSessionConfigRegistered(await this.getConfig(phone)) }
+    catch (error) {
+      return res.status(error instanceof SendError ? error.code : 503).json({ error: error instanceof SendError ? error.title : 'session_storage_unavailable' })
+    }
     const html = await connect(phone)
-    this.reload.run(phone)
+    void this.reload.run(phone).catch(error => logger.error(error, 'Connect reload failed'))
     return res.send(html)
   }
 }

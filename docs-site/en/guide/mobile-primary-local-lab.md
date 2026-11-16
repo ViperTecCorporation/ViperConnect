@@ -188,6 +188,22 @@ The compiler watches backend, frontend, public assets and scripts. Compiled file
 
 ## Encrypted device backup
 
+Manual Redis backups run on **Zapo 1.11.0 / store-redis 1.3.0** and accept
+archives produced by **1.9.0 or 1.11.0**, with identity, exact store schema,
+scope and absolute-expiry validation. Unknown versions remain rejected.
+The `.viperdevice` and `.vipersession` manual formats remain password-encrypted.
+
+For a **SQLite session**, choose **Armazenamento da sessão** in the panel and
+use the owning worker's `.viperstorage` backup. Legacy export/task endpoints
+return HTTP 409 (`mobile_backup_sqlite_requires_session_storage_endpoint` or
+`session_backup_sqlite_requires_session_storage_endpoint`) before suspension
+or task reservation. The panel offers the storage action; renaming a SQLite
+archive does not make it a Redis backup. There is no automatic Redis fallback
+or backend conversion. New SQLite storage backups are unencrypted and must
+remain in a private bucket. See [session storage](/en/guide/session-storage)
+for offline restore and standalone recovery without a catalogue. A storage
+backup does not authorize the legacy transfer-removal workflow.
+
 Backup and restore errors display the HTTP status and stable API error code,
 including localized responses. Restore errors do not display download warnings.
 The web log event `MOBILE_BACKUP_TRANSFER_FAILED` contains operation, status, code
@@ -213,9 +229,10 @@ tokens. Excludes messages, media, webhooks, users and infrastructure credentials
 Registration is re-encrypted with the destination's own vault key. Existing data is
 never overwritten. Credentials revoked by WhatsApp may still require a new registration.
 
-Initial scope: `mobile_lab`, Redis, Zapo 1.9.0, store-redis 1.3.0, identical Redis
+Manual export scope: Redis, Zapo 1.11.0, store-redis 1.3.0, identical Redis
 prefix and compatible Redis DUMP format; up to 50,000 keys, 8 MiB internal content
-and a 16 MiB archive. SQLite and QR companion backups are not supported.
+and a 16 MiB archive. SQLite uses the separate storage workflow described above;
+this manual format does not export QR companion sessions as primary devices.
 
 New linked-session `.vipersession` backups use **stream-v2**, without a fixed
 total record/file size cap or truncation. SCAN and temporary deduplication feed
@@ -362,3 +379,21 @@ For a regular WhatsApp account, use `--android` instead of `--smb-android`:
 the override becomes `ANDROID`, not Business. These flags are mutually exclusive.
 Restart and scan a fresh QR after removing the previous link. All remaining
 handshake fields, including the experimental Web version, stay unchanged.
+
+## Local admin on port 9876 as well
+
+The optional `compose.lab.admin-port.yml` overlay adds
+`http://127.0.0.1:9876` to the existing lab web service while keeping port 19876.
+It does not start a second stack or replace Redis, workers or volumes. From the
+repository root, with the private environment already configured:
+
+```powershell
+docker --context desktop-linux compose --project-name viperconnect-mobile-lab --env-file "$env:LOCALAPPDATA/ViperConnect/mobile-primary.env" -f compose.lab.yml -f compose.lab.admin-port.yml up -d --no-deps --no-build web
+```
+
+Keep any other web overlays in the command as well. Only web is recreated;
+a migration running in the worker is not restarted. Access remains loopback-only,
+without enabling LAN/Internet access or changing authentication. Synthetic mode
+and the connection/send guards on production copies remain enabled. Include the
+overlay again when recreating web later to retain the 9876 alias. This does not
+establish successful SQLite migration; see [per-session storage](/en/guide/session-storage).

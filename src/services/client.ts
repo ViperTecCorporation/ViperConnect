@@ -63,9 +63,9 @@ export interface Client {
     days?: number
   }): Promise<{ request_id?: string; forwarded?: number }>
 
-  sendPasskeyResponse?(payload: { credentialId: Buffer; assertionJson: Buffer | string }): Promise<Response>
+  sendPasskeyResponse?(payload: { credentialId: Buffer; assertionJson: Buffer | string }, expectedBridgeId?: string): Promise<Response>
 
-  sendPasskeyConfirmation?(): Promise<Response>
+  sendPasskeyConfirmation?(expectedBridgeId?: string): Promise<Response>
 
   getMessageMetadata<T>(message: T): Promise<T>
 

@@ -1,7 +1,7 @@
 import { escapeHtml } from '../core/html.js'
 import { icon } from '../components/icons.js'
 import { renderStatus } from '../components/status.js'
-import { filterSessions, isLegacySession, isOnlineStatus, sessionLabel, sessionPhone } from '../domain/session.js'
+import { filterSessions, isLegacySession, isOnlineStatus, isSessionStorageFixture, sessionLabel, sessionPhone } from '../domain/session.js'
 import type { SessionConfig } from '../domain/types.js'
 import { t } from '../core/i18n.js'
 
@@ -16,10 +16,11 @@ interface DashboardOptions {
   mobileButton?: string
   mobileGrid?: string
   backupPanel?: string
+  canManageResources?: boolean
   mobileSessionPhones?: string[]
 }
 
-export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', mobileSessionPhones = [] }: DashboardOptions): string => {
+export const renderDashboard = ({ sessions, query, status, loading, refreshIn, visibleLimit, canCreate = true, mobileButton = '', mobileGrid = '', backupPanel = '', canManageResources = false, mobileSessionPhones = [] }: DashboardOptions): string => {
   const excluded = new Set(canCreate && mobileGrid ? mobileSessionPhones : [])
   const filtered = filterSessions(sessions.filter(session => !excluded.has(sessionPhone(session))), query, status)
   const visible = filtered.slice(0, visibleLimit)
@@ -51,7 +52,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
 
     <section class="dashboard-refresh" aria-label="${t('Atualização')}">
         <p class="muted" aria-live="polite">${loading ? t('Atualizando…') : `${t(canCreate && mobileGrid ? 'Atualização automática de dispositivos e sessões em' : 'Atualização automática de sessões em')} <span data-refresh-countdown>${refreshIn}s</span>`}</p>
-        <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh" ${loading ? 'disabled' : ''}>${icon('refresh')}${t('Atualizar agora')}</button></div>
+        <div class="actions"><span class="auto-refresh">${renderStatus('online')} ${t('Automático')}</span><button class="btn btn--ghost" type="button" data-action="refresh" ${loading ? 'disabled' : ''}>${icon('refresh')}${t('Atualizar agora')}</button>${canManageResources ? `<button class="btn btn--ghost" type="button" data-action="open-resources">${icon('resources')}${t('Gerenciador de recursos')}</button>` : ''}</div>
     </section>
 
     ${canCreate ? mobileGrid : ''}
@@ -79,6 +80,7 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
                       const phone = sessionPhone(session)
                       const onlineSession = isOnlineStatus(session.status)
                       const legacySession = isLegacySession(session)
+                      const fixture = isSessionStorageFixture(session)
                       return `<tr>
                 <td><div class="session-identity"><span class="session-identity__icon">${icon('whatsapp', 'WhatsApp')}</span><span><strong>${escapeHtml(sessionLabel(session))}</strong><small>${escapeHtml(phone)}</small></span></div></td>
                 <td>${renderStatus(session.status)}</td>
@@ -89,8 +91,8 @@ export const renderDashboard = ({ sessions, query, status, loading, refreshIn, v
                     legacySession
                       ? `<span class="legacy-label">${t('Baileys desativada')}</span>`
                       : onlineSession
-                        ? `<button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(phone)}" aria-label="${t('Testar mensagem')}">${icon('send')}</button>`
-                        : `<button class="btn" type="button" data-action="connect-session" data-phone="${escapeHtml(phone)}">${icon('link')}${t('Conectar')}</button>`
+                        ? `<button class="btn btn--icon btn--ghost" type="button" data-action="test-message" data-phone="${escapeHtml(phone)}" aria-label="${t('Testar mensagem')}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('send')}</button>`
+                        : `<button class="btn" type="button" data-action="connect-session" data-phone="${escapeHtml(phone)}" ${fixture ? 'disabled title="Dados de teste – conexão/envios bloqueados"' : ''}>${icon('link')}${t('Conectar')}</button>`
                   }
                 </div></td>
               </tr>`

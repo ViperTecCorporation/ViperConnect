@@ -1,5 +1,6 @@
 import { STATUS_RECIPIENT_RETENTION_SEC } from '../../defaults'
-import { BASE_KEY, getRedis } from '../redis'
+import { BASE_KEY } from '../redis'
+import { getSessionStateRedis, SessionStateRedis } from '../session_storage/state_redis'
 
 const normalizeUsername = (value: string) => `${value || ''}`.trim().replace(/^@/, '').toLowerCase()
 
@@ -17,7 +18,7 @@ export class ZapoUsernameIndex {
     return `${this.key(phone)}:seen`
   }
 
-  private async ensureTemporalIndex(redis: Awaited<ReturnType<typeof getRedis>>, phone: string, nowMs: number) {
+  private async ensureTemporalIndex(redis: SessionStateRedis, phone: string, nowMs: number) {
     if (await redis.zCard(this.seenKey(phone))) return
     const names = (await redis.hKeys(this.key(phone))).filter((field) => !field.startsWith('lid:'))
     if (names.length) await redis.zAdd(this.seenKey(phone), names.map((value) => ({ score: nowMs, value })))
@@ -31,7 +32,7 @@ export class ZapoUsernameIndex {
     for (const [key, value] of this.reverseLocal) {
       if (key.startsWith(`${phone}:`) && value.seenAt < cutoff) this.reverseLocal.delete(key)
     }
-    const redis = await getRedis()
+    const redis = await getSessionStateRedis(phone)
     await this.ensureTemporalIndex(redis, phone, nowMs)
     const expired = await redis.zRangeByScore(this.seenKey(phone), 0, cutoff)
     for (const name of expired) {
@@ -53,7 +54,7 @@ export class ZapoUsernameIndex {
     this.local.set(`${phone}:${name}`, { lid: canonicalLid, seenAt: nowMs })
     this.reverseLocal.set(`${phone}:${canonicalLid}`, { name, seenAt: nowMs })
     try {
-      const redis = await getRedis()
+      const redis = await getSessionStateRedis(phone)
       await this.ensureTemporalIndex(redis, phone, nowMs)
       await redis.hSet(this.key(phone), name, canonicalLid)
       await redis.hSet(this.key(phone), `lid:${canonicalLid}`, name)
@@ -68,7 +69,7 @@ export class ZapoUsernameIndex {
     const canonicalLid = `${`${lid || ''}`.split('@')[0].split(':')[0]}@lid`
     let name = this.reverseLocal.get(`${phone}:${canonicalLid}`)?.name
     try {
-      const redis = await getRedis()
+      const redis = await getSessionStateRedis(phone)
       name = name || `${await redis.hGet(this.key(phone), `lid:${canonicalLid}`) || ''}`
       if (name) await redis.hDel(this.key(phone), name)
       await redis.hDel(this.key(phone), `lid:${canonicalLid}`)
@@ -85,7 +86,7 @@ export class ZapoUsernameIndex {
     if (local && nowMs - local.seenAt <= Math.max(1, this.retentionSec) * 1000) return local.lid
     if (local) this.local.delete(`${phone}:${name}`)
     try {
-      const redis = await getRedis()
+      const redis = await getSessionStateRedis(phone)
       await this.prune(phone, nowMs)
       const lid = `${await redis.hGet(this.key(phone), name) || ''}`
       if (lid.endsWith('@lid')) {
@@ -104,7 +105,7 @@ export class ZapoUsernameIndex {
     if (local) this.reverseLocal.delete(`${phone}:${canonicalLid}`)
     if (localOnly) return undefined
     try {
-      const redis = await getRedis()
+      const redis = await getSessionStateRedis(phone)
       await this.prune(phone, nowMs)
       const name = normalizeUsername(`${await redis.hGet(this.key(phone), `lid:${canonicalLid}`) || ''}`)
       if (name) {
@@ -142,7 +143,7 @@ export class ZapoUsernameIndex {
     if (localOnly || !missing.length) return result
 
     try {
-      const redis = await getRedis()
+      const redis = await getSessionStateRedis(phone)
       await this.prune(phone, nowMs)
       const names = await redis.hmGet(this.key(phone), missing.map((lid) => `lid:${lid}`))
       for (let index = 0; index < missing.length; index += 1) {

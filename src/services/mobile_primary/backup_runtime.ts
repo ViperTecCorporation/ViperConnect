@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import Redis from 'ioredis'
 import { WaAuthRedisStore } from '@zapo-js/store-redis'
 import { MobileDeviceService, MobileDeviceError, MOBILE_DRAFTS_KEY } from '../mobile_device_service'
@@ -12,6 +10,7 @@ import { BACKUP_MAX_BYTES, decryptMobileBackup, encryptMobileBackup, validateBac
 import { mobilePrimaryReady, mobilePrimaryServer } from './runtime_policy'
 import { requestRestoredConnection } from './restored_connection'
 import { mobileBackupDestinationHasKeys } from './backup_destination'
+import { assertRedisManualBackup, installedBackupVersion, type BackupZapoVersion } from './backup_compatibility'
 
 export const COMMIT_MOBILE_BACKUP = `
 if redis.call('GET', KEYS[5]) ~= ARGV[5] then return 0 end
@@ -39,18 +38,18 @@ return 1`
 // One expensive encryption/import per web process. The session lock also spans replicas.
 let busy = false
 export async function createMobileBackupService() {
-  const redisService = await import('../redis.js')
-  const { getConfigRedis } = await import('../config_redis.js')
-  const { ReloadAmqp } = await import('../reload_amqp.js')
-  const { resolveZapoRedisKeyPrefix } = await import('../zapo/zapo_store.js')
-  const { ZAPO_REDIS_KEY_PREFIX } = await import('../../defaults.js')
+  const redisService = module.require('../redis.js') as typeof import('../redis')
+  const { getConfigRedis } = module.require('../config_redis.js') as typeof import('../config_redis')
+  const { ReloadAmqp } = module.require('../reload_amqp.js') as typeof import('../reload_amqp')
+  const { resolveZapoRedisKeyPrefix } = module.require('../zapo/zapo_store.js') as typeof import('../zapo/zapo_store')
+  const { ZAPO_REDIS_KEY_PREFIX } = module.require('../../defaults.js') as typeof import('../../defaults')
   const prefix = resolveZapoRedisKeyPrefix(ZAPO_REDIS_KEY_PREFIX)
   const drafts = new MobileDeviceService()
   const fail = (code: string, status = 409): never => { throw new MobileDeviceError(status, code) }
 
-  async function run<T>(action: (redis: Redis, vault: RegistrationVault) => Promise<T>): Promise<T> {
+  async function run<T>(action: (redis: Redis, vault: RegistrationVault, version: BackupZapoVersion) => Promise<T>): Promise<T> {
     if (!mobilePrimaryReady()) return fail('mobile_registration_key_required', 503)
-    if (JSON.parse(readFileSync(require.resolve('zapo-js/package.json'), 'utf8')).version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') return fail('mobile_backup_incompatible', 400)
+    const version = installedBackupVersion('mobile_backup_incompatible')
     if (busy) return fail('mobile_backup_busy')
     busy = true
     let redis: Redis | undefined
@@ -59,8 +58,18 @@ export async function createMobileBackupService() {
       redis = new Redis(process.env.REDIS_URL || '', { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false })
       redis.on('error', () => { /* The controller returns a sanitized error, never connection credentials. */ })
       await redis.connect()
-      return await action(redis, vault)
+      return await action(redis, vault, version)
     } finally { redis?.disconnect(); busy = false }
+  }
+
+  async function exportSource(id: string, redis: { get(key: string): Promise<string | null> }, vault: RegistrationVault) {
+    const draft = await drafts.get(id), raw = await redis.get(REGISTRATION_PREFIX + id)
+    const state: any = raw && vault.open(id, raw), phone = state?.sessionPhone || state?.canonicalPhone
+    if (state?.status !== 'registered' || !/^[1-9]\d{7,14}$/.test(phone || '')) return fail('mobile_registration_required')
+    const config = await redisService.getConfig(phone)
+    assertRedisManualBackup(config, 'mobile_backup_sqlite_requires_session_storage_endpoint')
+    if (!config?.mobilePrimaryImported || config.mobilePrimaryDraftId !== id || config.server !== mobilePrimaryServer() || config.provider !== 'zapo' || !config.useRedis || config.mobilePrimaryDeleting) return fail('mobile_backup_requires_imported_redis_device')
+    return { draft, state, phone, config }
   }
 
   async function scopedKeys(redis: Redis, phone: string, mode: BackupMode = 'credentials'): Promise<string[]> {
@@ -93,26 +102,27 @@ export async function createMobileBackupService() {
   }
 
   return {
+    // Check before accepting a background task, not only after returning 202.
+    assertExportable: async (id: string) => {
+      if (!mobilePrimaryReady()) return fail('mobile_registration_key_required', 503)
+      installedBackupVersion('mobile_backup_incompatible')
+      const source = await exportSource(id, await redisService.getRedis(), new RegistrationVault(process.env.MOBILE_REGISTRATION_KEY || ''))
+      return { phone: source.phone, draftId: source.draft.id }
+    },
     export: async (id: string, body: any) => {
       validateBackupPassword(body?.password)
       if (body.confirmSuspend !== true || Object.keys(body).some(key => !['password', 'confirmSuspend', 'mode'].includes(key))) return fail('mobile_backup_confirmation_required', 400)
       const mode: BackupMode = body.mode ?? 'credentials'
       if (!['credentials', 'complete'].includes(mode)) return fail('mobile_backup_mode_invalid', 400)
-      return run(async (redis, vault) => {
-        const draft = await drafts.get(id)
-        const raw = await redis.get(REGISTRATION_PREFIX + id)
-        const state: any = raw && vault.open(id, raw)
-        const phone = state?.sessionPhone || state?.canonicalPhone
-        if (state?.status !== 'registered' || !/^[1-9]\d{7,14}$/.test(phone || '')) return fail('mobile_registration_required')
-        const config = await redisService.getConfig(phone)
-        if (!config?.mobilePrimaryImported || config.mobilePrimaryDraftId !== id || config.server !== mobilePrimaryServer() || config.provider !== 'zapo' || !config.useRedis || config.mobilePrimaryDeleting) return fail('mobile_backup_requires_imported_redis_device')
+      return run(async (redis, vault, version) => {
+        const { draft, state, phone } = await exportSource(id, redis, vault)
         // Suspension preserves webhooks and credentials; no deregister/logout is invoked.
         await redisService.setConfig(phone, { autoConnect: false })
         await new ReloadAmqp(getConfigRedis).run(phone)
         for (let attempt = 0; attempt < 50 && await redis.exists(`unoapi-lease:zapo-session:${phone}`); attempt++) await new Promise(resolve => setTimeout(resolve, 200))
         return lock(redis, phone, async (_key, _token, renew) => {
           await drafts.get(id)
-          const snapshot: MobileBackupManifest = { version: 2, mode, zapo: '1.9.0', redisStore: '1.3.0', prefix, createdAt: new Date().toISOString(), device: { phone, name: draft.name, platform: draft.platform, accountType: draft.accountType }, registration: backupRegistration(state), records: [] }
+          const snapshot: MobileBackupManifest = { version: 2, mode, zapo: version, redisStore: '1.3.0', prefix, createdAt: new Date().toISOString(), device: { phone, name: draft.name, platform: draft.platform, accountType: draft.accountType }, registration: backupRegistration(state), records: [] }
           const epochKey = `mobile-primary:{v1}:companions:${id}`
           const epoch = await redis.get(epochKey)
           if (epoch) snapshot.companionEpoch = vault.open(epochKey, epoch)
@@ -132,6 +142,7 @@ export async function createMobileBackupService() {
           validateMobileBackup(snapshot, prefix)
           await renew()
           const latest = await redisService.getConfig(phone)
+          assertRedisManualBackup(latest, 'mobile_backup_sqlite_requires_session_storage_endpoint')
           if (latest?.autoConnect !== false || latest.mobilePrimaryDraftId !== id || latest.mobilePrimaryDeleting) return fail('mobile_backup_state_changed')
           const archive = await encryptMobileBackup(snapshot, body.password)
           await renew()
@@ -139,6 +150,7 @@ export async function createMobileBackupService() {
           const configKey = redisService.configKey(phone)
           const rawConfig = await redis.get(configKey)
           const finalConfig = rawConfig && JSON.parse(rawConfig)
+          assertRedisManualBackup(finalConfig, 'mobile_backup_sqlite_requires_session_storage_endpoint')
           if (finalConfig?.autoConnect !== false || finalConfig.mobilePrimaryDraftId !== id || finalConfig.mobilePrimaryDeleting) return fail('mobile_backup_state_changed')
           const checkpoint = await redis.eval(`
             if redis.call('GET', KEYS[1]) ~= ARGV[1] or redis.call('GET', KEYS[2]) ~= ARGV[2] then return 0 end

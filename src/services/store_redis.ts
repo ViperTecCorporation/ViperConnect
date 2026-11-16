@@ -12,6 +12,8 @@ import { getMediaStoreFile } from './media_store_file'
 import { BAILEYS_AUTH_POLICY } from './baileys_auth_policy'
 import { resolveSessionProvider } from './providers/provider_resolver'
 import type { ProviderAuthState } from './whatsapp_types'
+import { isSqliteSession, isStorageWorker, storageOwner } from './session_storage/routing'
+import { remoteSessionDataStore } from './session_storage/rpc'
 
 const LEGACY_AUTH_STATE_MODULE = './auth_state.js'
 const LEGACY_SESSION_REDIS_MODULE = './session_redis.js'
@@ -47,13 +49,18 @@ const storeRedis: store = async (phone: string, config: Config): Promise<Store> 
     state = legacy.state
     saveCreds = legacy.saveCreds
   }
-  const dataStore: DataStore = await getDataStoreRedis(phone, config)
+  const dataStoreFactory = async (phone: string, config: Config) => {
+    if (!isSqliteSession(config)) return getDataStoreRedis(phone, config)
+    if (!isStorageWorker() || config.sessionStorage!.owner !== storageOwner()) return remoteSessionDataStore(phone, config)
+    return (await import('./session_storage/data_store_sqlite.js')).getDataStoreSqlite(phone, config)
+  }
+  const dataStore: DataStore = await dataStoreFactory(phone, config)
   let mediaStore: MediaStore
   if (config.useS3) {
-    mediaStore = getMediaStoreS3(phone, config, getDataStoreRedis) as MediaStore
+    mediaStore = getMediaStoreS3(phone, config, dataStoreFactory) as MediaStore
     logger.info(`Store media in s3`)
   } else {
-    mediaStore = getMediaStoreFile(phone, config, getDataStoreRedis) as MediaStore
+    mediaStore = getMediaStoreFile(phone, config, dataStoreFactory) as MediaStore
     logger.info(`Store media in system file`)
   }
   logger.info(`Store data in redis`)

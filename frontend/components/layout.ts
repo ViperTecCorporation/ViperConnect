@@ -9,7 +9,7 @@ interface LayoutOptions {
   collapsed: boolean
   mobileOpen: boolean
   versionStatus: VersionStatus
-  activeView?: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps'
+  activeView?: 'dashboard' | 'resources' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps'
   identity?: ManagerIdentity | null
   canManageAccount?: boolean
 }
@@ -37,7 +37,7 @@ export const renderLayout = ({ content, collapsed, mobileOpen, versionStatus, ac
         <span class="brand__copy"><strong>ViperConnect</strong><small>WhatsApp Hub</small></span>
       </div>
       <nav class="sidebar__nav">
-        <button class="nav-item ${activeView === 'dashboard' ? 'nav-item--active' : ''}" type="button" data-action="go-dashboard" title="Dashboard">
+        <button class="nav-item ${activeView === 'dashboard' || activeView === 'resources' ? 'nav-item--active' : ''}" type="button" data-action="go-dashboard" title="Dashboard">
           ${icon('dashboard')}<span>Dashboard</span>
         </button>
         ${identity?.role !== 'user' ? `<button class="nav-item ${activeView === 'queues' ? 'nav-item--active' : ''}" type="button" data-action="open-queues" title="${t('Filas')}">

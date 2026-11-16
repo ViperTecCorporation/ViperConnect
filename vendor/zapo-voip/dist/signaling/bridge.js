@@ -8,6 +8,7 @@ const protocol_1 = require("zapo-js/protocol");
 const transport_1 = require("zapo-js/transport");
 const util_1 = require("zapo-js/util");
 const signaling_diagnostics_js_1 = require("./signaling-diagnostics.js");
+const signaling_js_1 = require("./signaling.js");
 const RECEIPT_CALL_TAGS = new Set([
     'offer',
     'accept',
@@ -64,7 +65,7 @@ function buildCallResponse(deps, node, inner) {
         type: inner.tag
     });
 }
-async function routeCallStanza(manager, deps, node, logger) {
+async function routeCallStanza(manager, deps, node, logger, allowOffers = true) {
     const log = logger ?? (0, zapo_js_1.createNoopLogger)();
     const inner = (0, transport_1.getFirstNodeChild)(node);
     if (!inner)
@@ -101,7 +102,13 @@ async function routeCallStanza(manager, deps, node, logger) {
     });
     switch (tag) {
         case 'offer':
-            await manager.handleCallOffer(node, normalizedPeerJid);
+            if (!allowOffers) {
+                const callId = inner.attrs?.['call-id'];
+                if (callId)
+                    await deps.lowLevelCoordinator.sendNode((0, signaling_js_1.buildRejectStanza)(peerJid, callId, inner.attrs?.['call-creator'] || normalizedPeerJid));
+            }
+            else
+                await manager.handleCallOffer(node, normalizedPeerJid);
             break;
         case 'preaccept':
             await manager.handleCallPreaccept(node, normalizedPeerJid);

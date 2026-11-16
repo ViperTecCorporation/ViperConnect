@@ -48,17 +48,22 @@ export class MediaController {
     logger.debug('media index params %s', JSON.stringify(req.params))
     logger.debug('media index body %s', JSON.stringify(req.body))
     const { phone, media_id: mediaId } = req.params
-    const sessionPhone = await resolveSessionPhoneByMetaId(phone)
-    const config = await this.getConfig(sessionPhone)
-    const store = await config.getStore(sessionPhone, config)
-    const { mediaStore } = store
-    const mediaResult = await mediaStore.getMedia(this.baseUrl, mediaId)
-    if (mediaResult) {
-      logger.debug('media index response %s', JSON.stringify(mediaResult))
-      return res.status(200).json(mediaResult)
-    } else {
-      logger.debug('media index response 404')
-      return sendGraphError(res, 404, '(#100) Unsupported get request. Object with ID does not exist', { code: 100, type: 'GraphMethodException' })
+    try {
+      const sessionPhone = await resolveSessionPhoneByMetaId(phone)
+      const config = await this.getConfig(sessionPhone)
+      const store = await config.getStore(sessionPhone, config)
+      const { mediaStore } = store
+      const mediaResult = await mediaStore.getMedia(this.baseUrl, mediaId)
+      if (mediaResult) {
+        logger.debug('media index response %s', JSON.stringify(mediaResult))
+        return res.status(200).json(mediaResult)
+      } else {
+        logger.debug('media index response 404')
+        return sendGraphError(res, 404, '(#100) Unsupported get request. Object with ID does not exist', { code: 100, type: 'GraphMethodException' })
+      }
+    } catch {
+      logger.warn({ phone, code: 'media_lookup_unavailable' }, 'Media metadata lookup unavailable')
+      return sendGraphError(res, 503, 'media_lookup_unavailable', { code: 131016, type: 'GraphMethodException' })
     }
   }
 

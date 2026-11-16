@@ -10,7 +10,7 @@ import { SocketBridge } from './core/socket.js'
 import { renderLayout, renderLogin } from './components/layout.js'
 import { renderSettings, renderGoogleMapsSettings } from './pages/settings.js'
 import { updateProfileHours } from './features/profile_hours.js'
-import { isLegacySession, sessionPhone, sessionLabel } from './domain/session.js'
+import { isLegacySession, isSessionStorageFixture, sessionPhone, sessionLabel } from './domain/session.js'
 import { mergeRedisTreeLevel, redisParentPrefix } from './domain/redis_tree.js'
 import { shouldRenderBackgroundUpdate } from './domain/render_policy.js'
 import { OwnProfilePanel } from './features/own_profile.js'
@@ -36,6 +36,7 @@ import { sessionConfigPayload } from './features/session_config.js'
 import { renderConfirmDeregisterModal, renderConnectionModal, renderMessageModal, renderNewSessionModal } from './features/session_modals.js'
 import { renderWebhookModal, webhookPayload } from './features/webhooks.js'
 import { renderDashboard } from './pages/dashboard.js'
+import { renderResourcesPage } from './pages/resources.js'
 import { DOCUMENTATION_ORIGIN, renderDocumentationPage } from './pages/documentation.js'
 import { renderSessionPage } from './pages/session.js'
 import { renderQueuePurgeModal, renderQueuesPage } from './pages/queues.js'
@@ -54,6 +55,9 @@ import { icon } from './components/icons.js'
 import { ManagerPage, managerIdentity } from './features/manager.js'
 import { MobileDevicesPanel } from './features/mobile_devices.js'
 import { SessionTransfersPanel, describeSessionBackup } from './features/session_transfers.js'
+import { SessionStoragePanel } from './features/session_storage.js'
+import { VoipBackupPanel } from './features/voip_backups.js'
+import { ResourceMetricsPanel } from './features/resource_metrics.js'
 import type { ManagerIdentity } from './domain/manager_types.js'
 import { renderScopedVoip, scopedExtensions, scopedRegistrations, canDisconnectScopedRegistration } from './pages/voip_scoped.js'
 import { scopedHistoryItems, scopedRecording } from './domain/voip_history.js'
@@ -129,6 +133,9 @@ export class ViperConnectApp {
   private readonly manager: ManagerPage
   private readonly mobileDevices: MobileDevicesPanel
   private readonly sessionTransfers: SessionTransfersPanel
+  private readonly sessionStorage: SessionStoragePanel
+  private readonly voipBackups: VoipBackupPanel
+  private readonly resources: ResourceMetricsPanel
   private readonly mobileCompanions: MobileCompanionsPanel
   private readonly ownProfile: OwnProfilePanel
   private readonly messages: SessionMessagesPanel
@@ -150,7 +157,7 @@ export class ViperConnectApp {
   private groupsHasMore = false
   private groupsQuery = ''
   private sessionVisibleLimit = PAGE_SIZE
-  private view: 'dashboard' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps' = 'dashboard'
+  private view: 'dashboard' | 'resources' | 'queues' | 'redis' | 'voip' | 'documentation' | 'session-webhooks' | 'users' | 'account' | 'google-maps' = 'dashboard'
   private sessionDestinations: SessionDestination[] = []
   private editingSessionDestination = ''
   private sessionDestinationError = ''
@@ -220,6 +227,11 @@ export class ViperConnectApp {
     this.manager = new ManagerPage(api, () => this.render())
     this.mobileDevices = new MobileDevicesPanel(api, () => this.render())
     this.sessionTransfers = new SessionTransfersPanel(api, () => this.render())
+    this.voipBackups = new VoipBackupPanel(api, () => this.render())
+    this.resources = new ResourceMetricsPanel(api, () => {
+      if (this.view === 'resources' && !this.modal && !this.manager?.pending && !this.sessionStorage?.modal && !this.voipBackups?.open && !this.mobileDevices?.modal && !this.sessionTransfers?.modal) this.render()
+    })
+    this.sessionStorage = new SessionStoragePanel(api, () => this.render(), 120, () => this.view === 'dashboard' && this.tab === 'overview' && this.selectedPhone === this.sessionStorage?.phone && document.visibilityState !== 'hidden')
     this.mobileCompanions = new MobileCompanionsPanel(api, () => this.render(), this.root)
     this.ownProfile = new OwnProfilePanel(api, () => this.render(), this.root)
     this.messages = new SessionMessagesPanel(api, this.root)
@@ -272,12 +284,16 @@ export class ViperConnectApp {
     for (const name of ['input', 'change']) this.root.addEventListener(name, (event) => {
       if ((event.target as HTMLElement).closest?.('.profile-editor')) this.ownProfile.markDirty()
       const target = event.target as HTMLElement
+      if (this.identity?.role === 'admin' && target.matches?.('[data-log-filter]')) {
+        const input = target as HTMLInputElement | HTMLSelectElement
+        this.resources.logs.draft(input.name, input.value)
+      }
       if (name === 'change' && target.matches?.('[data-session-backup-file]')) {
         const input = target as HTMLInputElement, file = input.files?.[0]
         const feedback = input.closest('form')?.querySelector<HTMLElement>('[data-session-backup-feedback]')
-        if (feedback && file) {
+        if (feedback && file && this.identity?.role === 'admin') {
           feedback.textContent = 'Identificando o formato do arquivo…'
-          void describeSessionBackup(file).then(message => { if (input.files?.[0] === file) feedback.textContent = message })
+          void this.sessionTransfers.selectRestoreFile(file).then(async handled => { if (!handled && input.files?.[0] === file) feedback.textContent = await describeSessionBackup(file) })
             .catch(() => { if (input.files?.[0] === file) feedback.textContent = 'Não foi possível ler o cabeçalho do arquivo. Selecione novamente.' })
         } else if (feedback) feedback.textContent = 'Selecione um arquivo .vipersession.'
       }
@@ -319,11 +335,16 @@ export class ViperConnectApp {
       }
       if (event.key === 'Escape' && this.mobileDevices.modal) { this.mobileDevices.action('mobile-close'); return }
       if (event.key === 'Escape' && this.sessionTransfers.modal) { void this.sessionTransfers.action('transfer-close', ''); return }
+      if (event.key === 'Escape' && this.sessionStorage.modal) { void this.sessionStorage.action('storage-close'); return }
+      if (event.key === 'Escape' && this.voipBackups?.open) { void this.voipBackups.action('voip-backup-close'); return }
       if (event.key === 'Escape' && this.manager.pending && !this.manager.busy) {
         this.manager.pending = undefined
         this.render()
         return
       }
+      if (event.key === 'Escape' && this.resources?.logs?.opened) { void this.resources.action('resources-logs-close'); return }
+      if (event.key === 'Escape' && this.resources?.control?.opened) { void this.resources.action('resources-control-close'); return }
+      if (event.key === 'Escape' && this.resources?.open) { void this.resources.action('resources-close'); return }
       if (event.key === 'Escape' && this.modal) this.closeModal()
     })
   }
@@ -346,6 +367,12 @@ export class ViperConnectApp {
     if (!actionElement) return
 
     const action = actionElement.dataset.action || ''
+    if (action.startsWith('open-') || ['go-dashboard', 'manage-session'].includes(action)) this.resources?.logs?.reset()
+    if (action === 'open-resources' && this.identity?.role !== 'admin') return
+    if (action.startsWith('resources-')) {
+      if (this.identity?.role === 'admin') await this.resources.action(action, actionElement.dataset.id || '')
+      return
+    }
     this.root?.querySelectorAll?.<HTMLElement>('.profile-image-menu:not([hidden])').forEach(menu => {
       if (!menu.parentElement?.contains(actionElement)) {
         menu.hidden = true; menu.parentElement?.querySelector('[aria-expanded]')?.setAttribute('aria-expanded', 'false')
@@ -388,6 +415,9 @@ export class ViperConnectApp {
       return
     }
     const phone = actionElement.dataset.phone || ''
+    if (['connect-session', 'test-message'].includes(action) && (isSessionStorageFixture(this.findSession(phone || this.selectedPhone)) || (this.sessionStorage?.phone === (phone || this.selectedPhone) && this.sessionStorage.status?.fixture))) {
+      this.showToast('Dados de teste – conexão/envios bloqueados.', 'error'); return
+    }
     if (this.identity?.role === 'user' && (/(redis|queue|session-webhook)/.test(action) || action === 'new-session' || action === 'open-users')) return
     if (this.identity?.role === 'user' && action.includes('voip') && !['open-voip', 'refresh-voip', 'scoped-voip-command', 'show-voip-credentials', 'drop-voip-registration', 'voip-history-page', 'reset-voip-history', 'play-voip-recording', 'download-voip-recording'].includes(action)) return
     if (this.identity?.role === 'user' && ['voip-history-page', 'reset-voip-history'].includes(action) && this.voip?.capabilities?.history !== true) return
@@ -421,7 +451,33 @@ export class ViperConnectApp {
       return
     }
     if (action.startsWith('transfer-')) {
+      if (action === 'transfer-view-restored' && this.identity?.role === 'admin') {
+        const restoredPhone = this.sessionTransfers.restoredPhone()
+        if (restoredPhone && restoredPhone === actionElement.dataset.id) {
+          await this.sessionTransfers.action('transfer-close', '')
+          await this.loadSessions(true); await this.openSession(restoredPhone)
+        }
+        return
+      }
       if (this.identity?.role === 'admin') { this.modal = undefined; await this.sessionTransfers.action(action, actionElement.dataset.id || '') }
+      return
+    }
+    if (action.startsWith('voip-backup-')) {
+      if (this.identity?.role === 'admin') { this.modal = undefined; this.sessionStorage.reset(); await this.voipBackups.action(action, actionElement.dataset.id || '') }
+      return
+    }
+    if (action.startsWith('storage-')) {
+      if (this.identity?.role === 'admin') {
+        if (action === 'storage-redis-open') {
+          this.redisSession = actionElement.dataset.id || this.selectedPhone; this.redisQuery = ''; this.selectedRedisKey = undefined
+          this.sessionStorage.reset(); this.selectedPhone = ''; this.view = 'redis'; this.mobileOpen = false; this.render(); await this.loadRedisKeys(); return
+        }
+        this.modal = undefined
+        this.mobileDevices.modal = undefined
+        this.sessionTransfers.modal = undefined
+        if (actionElement.dataset.backupId) await this.sessionStorage.action(action, actionElement.dataset.id || this.selectedPhone, actionElement.dataset.backupId)
+        else await this.sessionStorage.action(action, actionElement.dataset.id || this.selectedPhone)
+      }
       return
     }
     if (action.startsWith('mobile-')) {
@@ -430,6 +486,7 @@ export class ViperConnectApp {
     }
     if (action === 'open-google-maps') {
       if (this.identity?.role !== 'admin') return
+      this.sessionStorage?.reset()
       this.view = 'google-maps'; this.selectedPhone = ''; this.mobileOpen = false
       this.render()
       try { await this.ownProfile.mapsSettings('GET') } catch (e) { this.showToast(this.messageFor(e), 'error') }
@@ -438,6 +495,7 @@ export class ViperConnectApp {
     if (action === 'open-users' || action === 'open-settings' || action === 'open-account') {
       if (!this.identity || (action !== 'open-account') !== (this.identity.role === 'admin')) return
       if (this.api.getToken().startsWith('mgr_key_')) return
+      this.sessionStorage?.reset()
       this.manager.reset()
       this.manager.knownPhones = this.sessions.map(session => ({ phone: sessionPhone(session), label: sessionLabel(session) }))
       this.view = action === 'open-account' ? 'account' : 'users'
@@ -447,7 +505,8 @@ export class ViperConnectApp {
       if (phone && this.view === 'users' && this.identity?.role === 'admin') this.manager.focusAssignment(phone)
       return
     }
-    if (['go-dashboard', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session'].includes(action)) this.manager?.reset()
+    if (['go-dashboard', 'open-resources', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session'].includes(action)) this.manager?.reset()
+    if (['go-dashboard', 'open-resources', 'open-documentation', 'open-queues', 'open-redis', 'open-voip', 'open-session-webhooks', 'manage-session', 'open-users'].includes(action)) { this.sessionStorage?.reset(); this.voipBackups?.reset() }
     if (action === 'load-webhook-history') {
       await this.loadWebhookHistory()
     } else if (action === 'open-session-webhooks' || action === 'refresh-session-webhooks') {
@@ -488,6 +547,14 @@ export class ViperConnectApp {
       this.tab = 'overview'
       this.mobileOpen = false
       this.render()
+      globalThis.window?.scrollTo?.({ top: 0, left: 0 })
+    } else if (action === 'open-resources') {
+      this.selectedPhone = ''
+      this.view = 'resources'
+      this.mobileOpen = false
+      this.render()
+      globalThis.window?.scrollTo?.({ top: 0, left: 0 })
+      await this.resources.refresh()
     } else if (action === 'open-queues') {
       this.selectedPhone = ''
       this.view = 'queues'
@@ -810,6 +877,10 @@ export class ViperConnectApp {
     if (!(form instanceof HTMLFormElement) || !form.dataset.form) return
     event.preventDefault()
     const data = new FormData(form)
+    if (form.dataset.form === 'resource-logs') {
+      if (this.identity?.role === 'admin') this.resources.logs.submit(data)
+      return
+    }
     if (form.dataset.form === 'profile-maps-settings') {
       if (this.identity?.role !== 'admin') return
       try { await this.ownProfile.mapsSettings('PUT', String(data.get('mapsApiKey') || '')); this.showToast('Chave Google Maps salva.') }
@@ -831,6 +902,14 @@ export class ViperConnectApp {
     }
     if (form.dataset.form.startsWith('transfer-')) {
       if (this.identity?.role === 'admin') await this.sessionTransfers.submit(form.dataset.form, data)
+      return
+    }
+    if (form.dataset.form === 'voip-backup-confirm') {
+      if (this.identity?.role === 'admin') await this.voipBackups.submit(data)
+      return
+    }
+    if (form.dataset.form.startsWith('storage-')) {
+      if (this.identity?.role === 'admin') await this.sessionStorage.submit(form.dataset.form, data)
       return
     }
     if (form.dataset.form.startsWith('mobile-')) {
@@ -1144,6 +1223,10 @@ export class ViperConnectApp {
 
   private handleFilter(event: Event): void {
     const input = event.target as HTMLInputElement | HTMLSelectElement
+    if (event.type === 'change' && input.matches('input[type="checkbox"][name="confirm"]') && input.closest('form[data-form^="storage-"]')) {
+      if (this.identity?.role === 'admin') this.sessionStorage.setConfirmed((input as HTMLInputElement).checked)
+      return
+    }
     const dialingForm = input.closest<HTMLFormElement>('form[data-form="voip-resource-fields"]')
     if (dialingForm && input.name.startsWith('viperchatWebhook.')) {
       syncVoipWebhookFields(dialingForm)
@@ -1369,10 +1452,13 @@ export class ViperConnectApp {
     sessionStorage.removeItem(TOKEN_KEY)
     this.api.setToken('')
     this.identity = null
+    this.voipBackups?.reset()
+    this.resources?.reset()
     this.manager.reset()
     this.contacts = emptyContactState()
     this.mobileDevices?.reset()
     this.sessionTransfers?.reset()
+    this.sessionStorage?.reset()
     this.groups = []
     this.query = ''
     this.statusFilter = 'all'
@@ -1436,7 +1522,7 @@ export class ViperConnectApp {
   private async loadSessions(initial = false): Promise<void> {
     if (this.loading) return
     this.loading = true
-    if (!initial) this.render()
+    if (!initial && !this.sessionStorage?.modal && !this.voipBackups?.open) this.render()
     const token = this.api.getToken()
     try {
       const sessions = await this.api.sessions()
@@ -1462,12 +1548,17 @@ export class ViperConnectApp {
       throw error
     } finally {
       this.loading = false
-      if (shouldRenderBackgroundUpdate(this.tab === 'profile' || !!this.modal || !!this.mobileDevices?.modal || !!this.sessionTransfers?.modal || !!this.mobileCompanions?.isCapturing)) this.render()
+      if (shouldRenderBackgroundUpdate(this.tab === 'profile' || !!this.modal || !!this.sessionStorage?.modal || !!this.voipBackups?.open || !!this.mobileDevices?.modal || !!this.sessionTransfers?.modal || !!this.mobileCompanions?.isCapturing)) this.render()
     }
   }
 
   private tickRefresh(): void {
-    if (!this.api.getToken() || this.modal || this.manager?.pending || this.mobileDevices.modal || this.mobileDevices.busy || this.sessionTransfers.modal || this.sessionTransfers.busy) return
+    if (this.view === 'resources') {
+      if (this.api.getToken() && this.identity?.role === 'admin' && !this.resources?.logs?.opened && document.visibilityState !== 'hidden') void this.resources?.control?.poll()
+      if (this.api.getToken() && this.identity?.role === 'admin' && !this.resources?.open && !this.resources?.logs?.opened && !this.modal && document.visibilityState !== 'hidden') void this.resources?.refresh()
+      return
+    }
+    if (!this.api.getToken() || this.modal || this.sessionStorage?.modal || this.voipBackups?.open || this.manager?.pending || this.mobileDevices.modal || this.mobileDevices.busy || this.sessionTransfers.modal || this.sessionTransfers.busy) return
     // Preserve the iframe navigation and scroll position while reading docs.
     if (this.view === 'documentation' || this.view === 'session-webhooks' || this.view === 'users' || this.view === 'account' || this.view === 'google-maps') return
     if (this.view === 'queues') {
@@ -1513,7 +1604,9 @@ export class ViperConnectApp {
   }
 
   private async openSession(phone: string): Promise<void> {
+    this.voipBackups?.reset()
     this.mobileCompanions?.reset()
+    this.sessionStorage?.reset()
     const session = this.findSession(phone)
     if (!session) return
     this.selectedPhone = phone
@@ -1535,6 +1628,7 @@ export class ViperConnectApp {
     this.sectionError = ''
     this.render()
     if (isLegacySession(session)) return
+    if (this.identity?.role === 'admin') { void this.sessionStorage.load(phone); this.sessionStorage.startMetrics(phone) }
     void this.loadOverviewContactCount(phone, this.contactCountRevision)
     try {
       const detail = await this.api.session(phone)
@@ -1548,7 +1642,7 @@ export class ViperConnectApp {
       // Detail identifiers arrive after the initial overview. Do not redraw a
       // different session, an editing tab, or an open modal when they arrive.
       if (this.selectedPhone === phone && this.view === 'dashboard' && this.tab === 'overview'
-        && shouldRenderBackgroundUpdate(!!this.modal)) this.render()
+        && shouldRenderBackgroundUpdate(!!this.modal || !!this.sessionStorage?.modal || !!this.voipBackups?.open)) this.render()
     } catch (error) {
       this.showToast(this.messageFor(error))
     }
@@ -1567,7 +1661,7 @@ export class ViperConnectApp {
     }
     if (tab === 'overview' && this.selectedPhone) void this.loadOverviewContactCount(this.selectedPhone, ++this.contactCountRevision)
     if (tab === 'profile') await this.ownProfile.open(this.selectedPhone)
-    if (tab === 'messages') await this.messages.open(this.selectedPhone)
+    if (tab === 'messages') await this.messages.open(this.selectedPhone, isSessionStorageFixture(this.findSession(this.selectedPhone)) || !!this.sessionStorage.status?.fixture)
     if (tab === 'contacts' && !this.contacts.items.length) await this.loadContacts(true)
     if (tab === 'groups' && !this.groups.length) await this.loadGroups(true)
     if (tab === 'webhooks') await this.loadWebhookHistory()
@@ -1579,7 +1673,7 @@ export class ViperConnectApp {
       const page = await this.api.contacts(phone, '0', 1, '')
       if (phone !== this.selectedPhone || revision !== this.contactCountRevision) return
       this.overviewContactCount = page.total_count
-      if (this.view === 'dashboard' && this.tab === 'overview' && !this.modal) this.render()
+      if (this.view === 'dashboard' && this.tab === 'overview' && !this.modal && !this.sessionStorage?.modal && !this.voipBackups?.open) this.render()
     } catch {
       // Unknown is displayed as a dash, never as a false zero.
     }
@@ -1777,6 +1871,7 @@ export class ViperConnectApp {
 
   private async sendTestMessage(data: FormData): Promise<void> {
     const phone = `${data.get('phone') || ''}`
+    if (isSessionStorageFixture(this.findSession(phone)) || (this.sessionStorage?.phone === phone && this.sessionStorage.status?.fixture)) { this.showToast('Dados de teste – conexão/envios bloqueados.', 'error'); return }
     const to = messageRecipient(data.get('to'))
     const body = `${data.get('body') || ''}`.trim()
     try {
@@ -2182,11 +2277,13 @@ export class ViperConnectApp {
       this.root.innerHTML = renderLogin(escapeHtml(this.loginError))
       return
     }
-    if (this.identity?.role !== 'admin' && ['users', 'google-maps'].includes(this.view)) this.view = 'dashboard'
+    if (this.identity?.role !== 'admin' && ['users', 'google-maps', 'resources'].includes(this.view)) this.view = 'dashboard'
+    if (this.view !== 'resources') this.resources?.reset()
     if (this.identity?.role === 'user' && ['queues', 'redis', 'session-webhooks'].includes(this.view)) this.view = 'dashboard'
     const selected = this.findSession(this.selectedPhone)
     const content =
       this.view === 'google-maps' ? renderSettings('google-maps', renderGoogleMapsSettings())
+        : this.view === 'resources' ? renderResourcesPage(this.resources.html())
         : this.view === 'users' ? renderSettings('users', this.manager.renderPage(true))
         : this.view === 'account'
         ? this.manager.renderPage(this.identity?.role === 'admin')
@@ -2243,6 +2340,9 @@ export class ViperConnectApp {
                     companionsHtml: this.tab === 'devices' ? this.mobileCompanions.html(selected, this.identity?.role !== 'admin') : '',
                     profileHtml: this.tab === 'profile' ? this.ownProfile.html(this.selectedPhone, this.identity?.role === 'admin') : '',
                     messagesHtml: this.tab === 'messages' ? this.messages.html() : '',
+                    storageHtml: this.identity?.role === 'admin' ? this.sessionStorage.html(this.selectedPhone) : '',
+                    storageFixture: !!this.sessionStorage?.status?.fixture,
+                    storageBackend: this.sessionStorage?.phone === this.selectedPhone ? this.sessionStorage.status?.backend : undefined,
                     session: selected,
                     tab: this.tab,
                     contacts: filterContacts(this.contacts.items, this.contactsQuery).slice(0, this.contactsVisibleLimit),
@@ -2257,6 +2357,7 @@ export class ViperConnectApp {
                     sectionError: this.sectionError,
                   })
                 : renderDashboard({
+                    canManageResources: this.identity?.role === 'admin',
                     mobileButton: this.identity?.role === 'admin' ? this.mobileDevices.renderButton() : '',
                     mobileGrid: this.identity?.role === 'admin' ? this.mobileDevices.renderGrid(this.sessions) : '',
                     backupPanel: this.identity?.role === 'admin' ? this.sessionTransfers.html() : '',
@@ -2284,6 +2385,9 @@ export class ViperConnectApp {
       (this.manager?.renderConfirmation() || '') +
       this.mobileDevices.renderDialog() +
       this.sessionTransfers.dialog() +
+      this.sessionStorage.dialog() +
+      (this.voipBackups?.dialog() || '') +
+      (this.resources?.dialog() || '') +
       this.renderToastHtml()
     if (this.identity?.role === 'admin' && this.view === 'dashboard' && this.tab === 'profile') this.ownProfile?.mountMap()
     if (this.view === 'dashboard' && this.tab === 'messages') this.messages?.mount()
@@ -2481,7 +2585,7 @@ export class ViperConnectApp {
         update_available: false,
       }
     }
-    if (shouldRenderBackgroundUpdate(!!this.modal)) this.render()
+    if (shouldRenderBackgroundUpdate(!!this.modal || !!this.sessionStorage?.modal || !!this.voipBackups?.open)) this.render()
   }
 
   private messageFor(error: unknown): string {

@@ -63,6 +63,7 @@ export const normalizeProviderSendError = (
     value?.code,
     value?.data,
     value?.statusCode,
+    value?.status,
     value?.errorCode,
     value?.cause?.code,
     payload?.statusCode,

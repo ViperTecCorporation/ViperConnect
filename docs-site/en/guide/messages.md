@@ -1,5 +1,21 @@
 # Messages
 
+## Redis message-copy experiment
+
+A dev prototype, **not wired into application readers/writers**, compares the
+current envelope against native Zapo content plus a compressed fallback. UnoID,
+ZapoID, `unoapi-key`, authentication, permissions and TTLs are unchanged. No new
+route, public flag, migration or production feature is enabled.
+
+A read-only sample of 200 real records showed identical envelopes/IDs and no
+edit/recovery-consumer differences with fake senders. The safeguarded format
+saved only 1.06% of serialized bytes; pointers without a fallback are not approved
+because native records can expire or mutate. Isolated dev Valkey tests verified
+48 records after a normal restart and 48 fallbacks after deleting only synthetic
+native records, without real sends. Details and limits are in repository file
+`docs/auditorias/message-copy-dev-20261108.md`. These results do not guarantee
+absence of regressions in every possible case.
+
 ## Editing media captions
 
 The existing `type: message_edit`, `context.message_id` (original UnoAPI ID),
@@ -76,18 +92,18 @@ Sending uses the regular messages POST and respects the session's webhook/echo p
 
 Replies show a short original-message preview, respecting revocation and view-once protection. Clicking the quote scrolls to and highlights the original. If not loaded, `around=<ID>` loads a bounded window within the same conversation, not a full history scan. Expired originals display an unavailable warning and are not fetched from WhatsApp.
 
-Open **Manage → Messages**, next to Groups, to browse direct chats and groups from **Zapo/Redis**. Search names/phones (minimum 3 characters), filter chat type and load more pages. Bubbles show direction, time, group participants and edit/revoke/view-once notices. Contacts, locations and interactive messages have compact summaries; unknown formats show a fallback. Initial avatars use icons without automatic profile-photo lookups.
+Open **Manage → Messages**, next to Groups, to browse direct chats and groups from **Zapo/Redis or per-session SQLite**. SQLite reads run on the owning worker, not the web process. Search names/phones (minimum 3 characters), filter chat type and load more pages. Bubbles show direction, time, group participants and edit/revoke/view-once notices. Contacts, locations and interactive messages have compact summaries; unknown formats show a fallback. Initial avatars use icons without automatic profile-photo lookups.
 
 The compact composer sends text, images, videos, audio files and documents, with cancelable attachments and replies through the original ID. It reuses the existing send route. **Accepted in queue is not delivered**; HTTP/worker failures are displayed and retry requires a user click. Worker video preparation remains active. No microphone recording or helpdesk workflow. Start direct chats using country/area-code phone or LID; select existing groups from the sidebar.
 
 - Default retention: **30 days from the original message date**, for both Zapo/Redis and the `unoapi-message` compatibility copy. Rewrites, edits, receipts and history synchronization do not renew it. `DATA_TTL` (seconds) controls the copy and `ZAPO_REDIS_MESSAGES_TTL_MS` (milliseconds) controls the store. The copy uses 30 days for nonpositive `DATA_TTL`; Zapo store configuration must be positive. Missing/invalid dates use a fixed first-write window; future dates are capped at write time. Panel summaries/overlays follow original age; conversation index writes prune old references. Reads do not fetch remote history or mark chats read. Existing `readOnReceipt`/`readOnReply` policies remain independent.
-- No bulk cleanup is performed: untouched old data physically retains its previous TTL, but message reads no longer return records whose original date has expired. Credentials, Signal, app-state and contacts are unaffected. This Redis policy does not change SQLite.
+- No bulk cleanup is performed: untouched old data physically retains its previous TTL, but message reads no longer return records whose original date has expired. Credentials, Signal, app-state and contacts are unaffected. See [Per-session storage](/en/guide/session-storage) for SQLite migration, expiration and limits.
 - `unoapi-message-status` also has a fixed deadline: incoming statuses consider the located message date/expiry and existing UnoAPI/provider ID status deadlines without extending the earliest one. Scheduled sends, failures and IDs without identifiable message data use up to `DATA_TTL` from the first still-stored status; updates do not renew this window. A receipt arriving after all identifying data has expired may start a new fallback window because the original date is unavailable. Lookups are direct and bounded, with no Redis scan. Untouched old statuses retain their prior TTL; cache expiration does not suppress status webhooks.
 - HTTP, media and live updates require administrator, session token or existing Manager assignment. Socket.IO authorization is separate from QR broadcasts, revalidated before events and removed when leaving the tab.
 - First access builds auxiliary indexes in background under a per-session lock, batches up to 200. The sidebar can fill while indexing. Normal queries use sorted sets/pipelines, without per-view SCAN/KEYS. Search examines at most 200 summaries per page; an empty page can have a continuation.
 - Defaults 30 conversations/50 messages, API maximum 100. Browser limits: 300 conversations/500 messages in the active chat; reload for another window. Invalid/expired cursors return 400/409 and require reload.
 - Media loads **on click**, authenticated, from storage or official Zapo download/decrypt respecting proxy. Maximum 256 MiB/60s. Expired CDN media can fail. View-once/revoked media is never exposed. Blob URLs are released on exit; documents are not executed inline.
-- Only persisted data is available. This is not a full Chatwoot app; no Vue or extra ENV. Redis failures are explicit; SQLite is unsupported by this tab.
+- Only persisted data is available. This is not a full Chatwoot app; no Vue. SQLite requires a configured volume on its owning worker; media requires shared S3. Redis, worker and volume failures are explicit, without creating an empty database or reading an old Redis copy.
 
 ```http
 GET /v15.0/5511999999999/conversations?limit=30&kind=all
@@ -263,6 +279,24 @@ Email addresses remain unchanged, including dotted local parts, subdomains and
 suffixes such as `.com.br`: no part of an email receives `https://`.
 When the same message also contains a separate website, its preview remains
 available without additional configuration or permissions.
+**Pix copy and paste:** messages containing the BR Code header `000201` followed
+by the identifier `0014br.gov.bcb.pix` remain byte-for-byte unchanged and have
+previews disabled, even when another website is present. Protection does not
+depend on the bank, provider or payment domain and explicitly disables Zapo's
+preview: it neither adds `https://` nor visits URLs inside the code. Truncated
+codes and invalid CRC values are protected too; this does not validate a payment,
+recipient or checksum, or repair the Pix code. Standalone Pix keys are not BR Code
+payloads; email keys remain covered by the email protection described above.
+Format reference: [BCB Pix Initiation Standards Manual](https://www.bcb.gov.br/content/estabilidadefinanceira/pix/Regulamento_Pix/II_ManualdePadroesparaIniciacaodoPix.pdf).
+Domain suffixes are checked against a local copy of the
+[official IANA list](https://data.iana.org/TLD/tlds-alpha-by-domain.txt)
+(snapshot `2026110500`), without per-message DNS/HTTP validation.
+`carlos.vv`, `cert.pfx` and reserved suffixes such as `.local`/`.test` remain
+plain text without adding `https://`. `oi.com` remains recognized regardless
+of domain ownership. This checks the suffix, not whether the site exists:
+a username that also looks like a valid public domain remains ambiguous.
+Previously blocked file extensions still do not trigger previews. New TLDs
+require a code snapshot update; the list is never downloaded at runtime.
 Links from `youtube.com`, including Shorts, and `youtu.be` automatically use
 YouTube's official `oEmbed` response for title and thumbnail metadata without
 downloading the complete page. If that lookup fails, the generic preview path

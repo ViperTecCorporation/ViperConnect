@@ -42,6 +42,34 @@ describe('Zapo event mapper', () => {
     expect(toUnoReceiptUpdates({ status: 'inactive', messageIds: ['m1'] } as never)).toEqual([])
   })
 
+  test.each([
+    ['delivered', 'DELIVERY_ACK'],
+    ['read', 'READ'],
+    ['played', 'PLAYED'],
+  ])('preserves the explicit %s occurrence in every batched update without exposing the raw node', (status, expected) => {
+    const timestamp = Math.floor(Date.now() / 1000) - 60
+    const updates = toUnoReceiptUpdates({
+      chatJid: 'synthetic@lid', participantJid: 'participant@lid',
+      messageIds: ['m1', 'm2'], status,
+      rawNode: { tag: 'receipt', attrs: { t: `${timestamp}` } },
+    } as never, '15550000000@s.whatsapp.net')
+    expect(updates).toHaveLength(2)
+    expect(updates).toEqual(['m1', 'm2'].map(id => ({
+      key: { id, remoteJid: 'synthetic@lid', remoteJidAlt: '15550000000@s.whatsapp.net', fromMe: true, participant: 'participant@lid' },
+      update: { status: expected }, messageTimestamp: timestamp,
+    })))
+  })
+
+  test.each([undefined, '', '0', '-1', '1.5', '1e3', 'invalid', '9007199254740992',
+    `${Date.now()}`, `${Math.floor(Date.now() / 1000) + 600}`])('omits unavailable or invalid receipt time %s without inventing a fallback', t => {
+    const updates = toUnoReceiptUpdates({
+      chatJid: 'synthetic@lid', messageIds: ['m1'], status: 'read',
+      timestampSeconds: 123, rawNode: { tag: 'receipt', attrs: { t } },
+    } as never)
+    expect(updates[0]).not.toHaveProperty('messageTimestamp')
+    expect(updates[0].update.status).toBe('READ')
+  })
+
   test('identifies encrypted poll votes that must wait for the Zapo addon event', () => {
     expect(isEncryptedZapoAddonMessage({
       pollUpdateMessage: {

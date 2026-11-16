@@ -7,6 +7,15 @@ import { createEnvironment, initializeEnvironment } from './environment.mjs'
 import YAML from 'yaml'
 
 const storage = { STORAGE_ENDPOINT: 'https://s3.example.test', STORAGE_ACCESS_KEY_ID: 'test', STORAGE_SECRET_ACCESS_KEY: 'test$secret', STORAGE_BUCKET_NAME: 'production', UNOAPI_AUTH_TOKEN: 'production-token' }
+
+test('normal admin port overlay adds only a loopback alias to the same lab web service', async () => {
+  const base = YAML.parse(await readFile(new URL('../compose.lab.yml', import.meta.url), 'utf8'), { merge: true })
+  const overlay = YAML.parse(await readFile(new URL('../compose.lab.admin-port.yml', import.meta.url), 'utf8'))
+  assert.deepEqual(overlay, { services: { web: { ports: ['127.0.0.1:9876:9876'] } } })
+  assert.deepEqual(base.services.web.ports, ['127.0.0.1:19876:9876'])
+  assert.equal(base.services['worker-zapo'].environment.UNOAPI_STORAGE_SYNTHETIC_ONLY, '${LAB_STORAGE_SYNTHETIC_ONLY:-true}')
+  assert.ok(base.services['worker-zapo'].volumes.includes('session-data:/app/session-data'))
+})
 test('lab app builds, tests and includes the executable native media relay', async () => {
   const dockerfile = await readFile(new URL('./Dockerfile', import.meta.url), 'utf8')
   assert.match(dockerfile, /CGO_ENABLED=0 go test \.\/\.\.\./)
@@ -69,12 +78,47 @@ test('optional VoIP overlay stays local with its own database and authenticated 
   assert.equal(compose.services['worker-zapo'].environment.VOIP_BRIDGE_URL, 'ws://voip:3097/v1/bridge/zapo')
   assert.equal(compose.services.web.environment.VOIP_SERVICE_URL, 'http://voip:3097')
   assert.match(compose.services.voip.environment.VOIP_SERVICE_TOKEN, /LAB_VOIP_SERVICE_TOKEN/)
+  const amqp = compose.services.voip.environment.AMQP_URL
+  assert.match(amqp, /^amqp:\/\/lab:\$\{LAB_RABBIT_PASSWORD:.*\}@rabbitmq:5672$/)
+  assert.equal(compose.services.voip.environment.VOIP_AMQP_URL, amqp)
   assert.deepEqual(compose.services.voip.volumes, ['voip-data:/home/u/app/data'])
+  const allowedSipLanPorts = new Set(['0.0.0.0:5060:5060/udp', '0.0.0.0:12000-12063:12000-12063/udp'])
   for (const service of Object.values(compose.services)) {
     assert.equal(service.network_mode, undefined)
-    for (const port of service.ports || []) assert.match(port, /^127\.0\.0\.1:/)
+    for (const port of service.ports || []) {
+      if (allowedSipLanPorts.has(port)) assert.equal(service, compose.services.voip)
+      else assert.match(port, /^127\.0\.0\.1:/)
+    }
     for (const value of Object.values(service.environment || {})) assert.doesNotMatch(String(value), /192\.168\.0\.50|sip\.vipertec\.net|45\.224\.94\.232/)
   }
   assert.match(compose.services.coturn.command[0], /--lt-cred-mech/)
   assert.equal(compose.volumes['voip-data'].external, undefined)
+})
+
+test('lab launcher preserves VoIP, admin port and persistent storage tool overlays together', async () => {
+  const launcher = await readFile(new URL('./lab.ps1', import.meta.url), 'utf8')
+  assert.match(launcher, /Test-Path -LiteralPath \$labVoipEnv/)
+  assert.match(launcher, /'compose\.lab\.voip\.yml'/)
+  assert.match(launcher, /foreach \(\$labOverlay in @\('compose\.lab\.admin-port\.yml', 'compose\.lab\.storage-tools\.yml'\)\)/)
+  assert.match(launcher, /Test-Path -LiteralPath \$labOverlayPath/)
+})
+
+test('VoIP smoke resolves WebRTC in both current and legacy image layouts', async () => {
+  const smoke = await readFile(new URL('./voip-smoke.cjs', import.meta.url), 'utf8')
+  assert.match(smoke, /require\.resolve\('@roamhq\/wrtc'/)
+  assert.match(smoke, /paths: \[process\.cwd\(\), '\/home\/u\/app', '\/home\/u\/app\/voip'\]/)
+})
+
+test('container TURN smoke uses coturn for host loopback without changing other servers', async () => {
+  const smoke = await readFile(new URL('./voip-smoke.cjs', import.meta.url), 'utf8')
+  const expression = smoke.match(/const turnUrl = (.+)/)?.[1]
+  assert.ok(expression)
+  const resolve = new Function('process', `return (${expression})`)
+  for (const [input, expected] of [
+    ['turn:127.0.0.1:3478', 'turn:coturn:3478'],
+    ['turn:localhost:3478?transport=tcp', 'turn:coturn:3478?transport=tcp'],
+    ['turns:localhost:5349', 'turns:coturn:5349'],
+    ['turn:turn.example.test:3478', 'turn:turn.example.test:3478'],
+    ['turn:localhost.example.test:3478', 'turn:localhost.example.test:3478'],
+  ]) assert.equal(resolve({ env: { VOIP_TURN_URL: input } }), expected)
 })

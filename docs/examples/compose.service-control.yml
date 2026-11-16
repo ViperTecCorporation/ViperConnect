@@ -1,0 +1,33 @@
+# Merge into your Compose project. Replace the image with a build containing this feature.
+# Operator must create targets.json with the ACTUAL component IDs from GET /admin/resources.
+# Do not publish the agent port. Docker socket access is root-equivalent, even with :ro.
+services:
+  web:
+    environment:
+      SERVICE_CONTROL_URL: http://service-control:9880
+      SERVICE_CONTROL_TOKEN: ${SERVICE_CONTROL_TOKEN:?Generate a dedicated random secret of at least 32 characters}
+      SERVICE_CONTROL_GUARD_TOKEN: ${SERVICE_CONTROL_GUARD_TOKEN:?Generate another different random secret}
+  service-control:
+    image: ${VIPERCONNECT_CONTROL_IMAGE:?Set the tested ViperConnect image with this feature}
+    user: "0:0"
+    entrypoint: [node, /home/u/app/dist/src/services/service_control/standalone.js]
+    restart: unless-stopped
+    environment:
+      SERVICE_CONTROL_BIND: 0.0.0.0
+      SERVICE_CONTROL_TOKEN: ${SERVICE_CONTROL_TOKEN}
+      SERVICE_CONTROL_GUARD_TOKEN: ${SERVICE_CONTROL_GUARD_TOKEN}
+      SERVICE_CONTROL_GUARD_URL: http://web:9876/internal/service-control/safety
+      SERVICE_CONTROL_TARGETS_FILE: /etc/viperconnect-control/targets.json
+      SERVICE_CONTROL_STATE_DIR: /var/lib/viperconnect-control
+      NODE_OPTIONS: --max-old-space-size=128
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./targets.json:/etc/viperconnect-control/targets.json:ro
+      - service-control:/var/lib/viperconnect-control
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    cpus: 0.25
+volumes:
+  service-control:

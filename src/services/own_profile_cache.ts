@@ -1,5 +1,7 @@
 import { randomUUID } from 'crypto'
-import { BASE_KEY, getRedis } from './redis'
+import { BASE_KEY } from './redis'
+import { getSessionPrivateState, rethrowSessionStateFence } from './session_storage/private_state'
+import { invalidateSnapshot, saveSnapshot } from './session_storage/snapshot_state'
 
 const TTL = 86400
 const safeProfile = (profile: any) => {
@@ -21,17 +23,17 @@ const safeProfile = (profile: any) => {
 /** Snapshot cache only; the owning worker remains the source of truth. */
 export class OwnProfileCache {
   private readonly pending = new Map<string, Promise<any>>()
-  constructor(private readonly redis: () => Promise<any> = getRedis) {}
+  constructor(private readonly redis: (phone: string) => Promise<any> = getSessionPrivateState) {}
   private key(phone: string) { return `${BASE_KEY}own-profile:v1:${phone}` }
 
   async read(phone: string, refresh: boolean, fetch: () => Promise<any>): Promise<any> {
     let redis: any; let cached: any; let generation = '0'
     try {
-      redis = await this.redis()
+      redis = await this.redis(phone)
       const raw = await redis.get(this.key(phone))
       if (raw) cached = JSON.parse(raw)
       generation = await redis.get(`${this.key(phone)}:generation`) || '0'
-    } catch { redis = undefined }
+    } catch (error) { rethrowSessionStateFence(error); redis = undefined }
     if (!refresh && cached?.profile) return this.response(cached, 'cache', true)
     const pendingKey = `${phone}:${generation}`
     const running = this.pending.get(pendingKey)
@@ -49,13 +51,12 @@ export class OwnProfileCache {
         const snapshot = { profile, updated_at: new Date().toISOString() }
         if (redis) {
           try {
-            await redis.eval("if (redis.call('GET', KEYS[2]) or '0') == ARGV[1] then return redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) end return nil", {
-              keys: [this.key(phone), `${this.key(phone)}:generation`], arguments: [generation, JSON.stringify(snapshot), String(TTL)],
-            })
-          } catch { /* Redis failure must not turn a successful WhatsApp read into an error. */ }
+            await saveSnapshot(redis, this.key(phone), generation, JSON.stringify(snapshot), TTL)
+          } catch (error) { rethrowSessionStateFence(error) /* Generic cache outages do not fail successful upstream reads. */ }
         }
         return this.response(snapshot, 'live', warnings.length > 0)
       } catch (error) {
+        rethrowSessionStateFence(error)
         if (cached?.profile) return { ...this.response(cached, 'cache', true), cache: { ...this.response(cached, 'cache', true).cache, refresh_failed: true } }
         throw error
       }
@@ -66,12 +67,10 @@ export class OwnProfileCache {
 
   async invalidate(phone: string): Promise<void> {
     try {
-      const redis = await this.redis()
+      const redis = await this.redis(phone)
       // Keep the last snapshot as stale fallback if the post-write read fails.
-      await redis.eval("redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2]); return 1", {
-        keys: [this.key(phone), `${this.key(phone)}:generation`], arguments: [randomUUID(), String(TTL * 2)],
-      })
-    } catch { /* Post-save UI explicitly refreshes; never report a confirmed write as failed. */ }
+      await invalidateSnapshot(redis, this.key(phone), randomUUID(), TTL * 2, false)
+    } catch (error) { rethrowSessionStateFence(error) /* Post-save UI refreshes after generic cache failures. */ }
   }
 
   private response(snapshot: any, source: string, stale: boolean) {

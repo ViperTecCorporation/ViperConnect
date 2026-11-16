@@ -8,7 +8,7 @@ import { SendError } from '../send_error'
 import { SEND_AUDIO_MESSAGE_AS_PTT } from '../../defaults'
 import { zapoMediaProcessor } from './zapo_media_processor'
 import { zapoLegacyPdfNormalizer } from './zapo_legacy_pdf'
-import { normalizeAutomaticLinkPreview } from '../messages/automatic_link_preview'
+import { containsPixCopyPaste, normalizeAutomaticLinkPreview } from '../messages/automatic_link_preview'
 import { normalizeOutgoingLocation } from '../messages/outgoing_location'
 import { outgoingViewOnce } from '../messages/outgoing_view_once'
 import type { YouTubeLinkPreviewResolver } from '../messages/youtube_link_preview'
@@ -436,7 +436,7 @@ export const toZapoMessageContent = async (
       content: {
         type: 'text',
         text: preview.text,
-        ...(preview.enabled ? { linkPreview: youtubePreview || true } : {}),
+        ...(containsPixCopyPaste(preview.text) ? { linkPreview: false } : preview.enabled ? { linkPreview: youtubePreview || true } : {}),
       },
       options: mentions.length ? { mentions } : {},
     }

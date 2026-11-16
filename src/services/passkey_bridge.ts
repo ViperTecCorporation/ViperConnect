@@ -1,6 +1,7 @@
 import { PASSKEY_BRIDGE_TTL_SECONDS } from '../defaults'
-import { BASE_KEY, redisGet, redisSetAndExpire, redisDelKey, redisScanSome } from './redis'
+import { BASE_KEY, getRedis, redisGet, redisSetAndExpire, redisDelKey, redisScanSome } from './redis'
 import logger from './logger'
+import { SendError } from './send_error'
 
 export type PasskeyBridgeStatus =
   | 'request'
@@ -88,20 +89,38 @@ export const listPasskeyBridgeSessions = async (limit = 200): Promise<PasskeyBri
   return sessions.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
 }
 
+export const PASSKEY_BRIDGE_CAS_LUA = `
+local current=redis.call('GET',KEYS[1]);
+if current~=ARGV[1] then return 0 end;
+local clock=redis.call('TIME'); local now=tonumber(clock[1])*1000+math.floor(tonumber(clock[2])/1000);
+if tonumber(ARGV[3])<=now then return -1 end;
+redis.call('SET',KEYS[1],ARGV[2],'PXAT',ARGV[3]); return 1;
+`
+
 export const updatePasskeyBridgeSession = async (bridgeId: string, patch: Partial<PasskeyBridgeSession>) => {
-  const current = await getPasskeyBridgeSession(bridgeId)
-  if (!current) return undefined
-  const next: PasskeyBridgeSession = {
-    ...current,
-    ...patch,
-    bridgeId: current.bridgeId,
-    phone: current.phone,
-    updatedAt: new Date().toISOString(),
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const raw = await redisGet(key(bridgeId))
+    if (!raw) return undefined
+    let current: PasskeyBridgeSession
+    try { current = JSON.parse(raw) } catch { return undefined }
+    if (!current || current.bridgeId !== bridgeId || typeof current.phone !== 'string') return undefined
+    const expiresAt = Date.parse(current.expiresAt)
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return undefined
+    if (['completed', 'timeout', 'error'].includes(current.status)) return current
+    const next: PasskeyBridgeSession = {
+      ...current,
+      ...patch,
+      bridgeId: current.bridgeId,
+      phone: current.phone,
+      createdAt: current.createdAt,
+      expiresAt: current.expiresAt,
+      updatedAt: new Date().toISOString(),
+    }
+    const stored = await (await getRedis()).eval(PASSKEY_BRIDGE_CAS_LUA, { keys: [key(bridgeId)], arguments: [raw, JSON.stringify(next), String(expiresAt)] })
+    if (stored === 1) return next
+    if (stored === -1) return undefined
   }
-  const expiresAt = Date.parse(next.expiresAt)
-  const ttl = Number.isFinite(expiresAt) ? Math.max(30, Math.ceil((expiresAt - Date.now()) / 1000)) : ttlSeconds()
-  await redisSetAndExpire(key(bridgeId), JSON.stringify(next), ttl)
-  return next
+  throw new SendError(409, 'passkey_bridge_update_conflict')
 }
 
 export const deletePasskeyBridgeSession = async (bridgeId: string) => redisDelKey(key(bridgeId))

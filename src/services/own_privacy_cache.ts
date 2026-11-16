@@ -1,18 +1,20 @@
 import { randomUUID } from 'crypto'
-import { BASE_KEY, getRedis } from './redis'
+import { BASE_KEY } from './redis'
+import { getSessionPrivateState, rethrowSessionStateFence } from './session_storage/private_state'
+import { invalidateSnapshot, saveSnapshot } from './session_storage/snapshot_state'
 
 const TTL = 86400
 /** Privacy is always refreshed; snapshots are only a bounded, per-session fallback. */
 export class OwnPrivacyCache {
-  constructor(private readonly redis: () => Promise<any> = getRedis) {}
+  constructor(private readonly redis: (phone: string) => Promise<any> = getSessionPrivateState) {}
   private key(phone: string) { return `${BASE_KEY}own-privacy:v1:${phone}` }
   async read(phone: string, fetch: () => Promise<any>) {
     let redis: any; let cached: any; let generation = '0'
     try {
-      redis = await this.redis()
+      redis = await this.redis(phone)
       cached = JSON.parse(await redis.get(this.key(phone)) || 'null')
       generation = await redis.get(`${this.key(phone)}:generation`) || '0'
-    } catch { redis = undefined }
+    } catch (error) { rethrowSessionStateFence(error); redis = undefined }
     try {
       const raw = await fetch()
       const warnings: string[] = raw.warnings || []
@@ -27,12 +29,12 @@ export class OwnPrivacyCache {
       // Never renew old fallback data indefinitely or label it as newly observed.
       const updated_at = fallback ? cached.updated_at : new Date().toISOString()
       if (redis && !fallback && !warnings.length) {
-        try { await redis.eval("if (redis.call('GET', KEYS[2]) or '0') == ARGV[1] then return redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) end return nil", {
-          keys: [this.key(phone), `${this.key(phone)}:generation`], arguments: [generation, JSON.stringify({ data, updated_at }), String(TTL)],
-        }) } catch { /* Successful upstream reads must survive Redis outages. */ }
+        try { await saveSnapshot(redis, this.key(phone), generation, JSON.stringify({ data, updated_at }), TTL) }
+        catch (error) { rethrowSessionStateFence(error) /* Successful upstream reads survive generic cache outages. */ }
       }
       return { ...data, cache: { source: fallback ? 'mixed' : 'live', updated_at, stale: fallback || warnings.length > 0, refresh_failed: warnings.length > 0 } }
     } catch (error) {
+      rethrowSessionStateFence(error)
       const code = Number((error as any)?.code) || Number(String((error as any)?.message).match(/^(\d{3}):/)?.[1])
       if ([400, 401, 403].includes(code) || !cached?.data) throw error
       return { ...cached.data, cache: { source: 'cache', updated_at: cached.updated_at, stale: true, refresh_failed: true } }
@@ -40,10 +42,8 @@ export class OwnPrivacyCache {
   }
   async invalidate(phone: string) {
     try {
-      const redis = await this.redis()
-      await redis.eval("redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2]); return redis.call('DEL', KEYS[1])", {
-        keys: [this.key(phone), `${this.key(phone)}:generation`], arguments: [randomUUID(), String(TTL * 2)],
-      })
-    } catch { /* A confirmed write must not be reported as failed because Redis failed. */ }
+      const redis = await this.redis(phone)
+      await invalidateSnapshot(redis, this.key(phone), randomUUID(), TTL * 2, true)
+    } catch (error) { rethrowSessionStateFence(error) /* Generic outages do not invalidate a confirmed upstream write. */ }
   }
 }

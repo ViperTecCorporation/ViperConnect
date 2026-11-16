@@ -15,7 +15,7 @@ import { extractDestinyPhone, isAudioMessage, isIncomingMessage, TYPE_MESSAGES_M
 import logger from '../services/logger'
 import { getConfig } from '../services/config'
 import { isUpdateMessage, isFailedStatus } from '../services/transformer'
-import { getConfig as getRedisConfig } from '../services/redis'
+import { currentQueuedWebhooks, readWebhookBindings } from '../services/queued_webhook'
 
 const  dUntil: Map<string, number> = new Map()
 const  dVerified: Map<string, number> = new Map()
@@ -77,17 +77,14 @@ export class OutgoingJob {
   }
 
   async consume(phone: string, data: object) {
-    const persistedConfig = await getRedisConfig(phone)
-    if (!persistedConfig) {
-      logger.warn('Dropping outgoing job for %s because session config was not found in redis', phone)
-      return
-    }
+    const bindings = await readWebhookBindings(phone)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const a = { ...data as any }
     const payload: any = a.payload
     if (a.webhooks) {
-      const webhooks: Webhook[] = a.webhooks
+      const webhooks: Webhook[] = currentQueuedWebhooks(phone, a.webhooks, bindings)
+      if (!webhooks.length) return
       if (isFailedStatus(payload) && STATUS_FAILED_WEBHOOK_URL) {
         await amqpPublish(
           UNOAPI_EXCHANGE_BROKER_NAME,
@@ -103,19 +100,20 @@ export class OutgoingJob {
         }),
       )
       if (isAudioMessage(payload)) {
-        const webhooks = a.webhooks.filter(w => {
+        const transcriptionWebhooks = webhooks.filter(w => {
           if (w.sendTranscribeAudio) {
             logger.debug('Session phone %s webhook %s configured to send transcribe audio message for this webhook', phone, w.id)
             return true
           }
         })
-        if (webhooks.length > 0) {
+        if (transcriptionWebhooks.length > 0) {
           await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME,
             this.queue === UNOAPI_QUEUE_HISTORY_OUTGOING ? UNOAPI_QUEUE_HISTORY_TRANSCRIBER : UNOAPI_QUEUE_TRANSCRIBER,
-            phone, { payload, webhooks }, { type: 'topic' })
+            phone, { payload, webhooks: transcriptionWebhooks }, { type: 'topic' })
         }
       }
     } else if (a.webhook) {
+      if (!currentQueuedWebhooks(phone, [a.webhook], bindings).length) return
       await delayFunc(phone, payload)
       const config = await this.getConfig(phone)
       if (config.provider == 'forwarder') {
@@ -165,7 +163,9 @@ export class OutgoingJob {
           )
         }
       }
-      await this.service.sendHttp(phone, a.webhook, payload, {})
+      // Recheck after delay/media preparation, immediately before the HTTP/CB boundary.
+      const [webhook] = currentQueuedWebhooks(phone, [a.webhook], await readWebhookBindings(phone))
+      if (webhook) await this.service.sendHttp(phone, webhook, payload, {})
     }
   }
 }

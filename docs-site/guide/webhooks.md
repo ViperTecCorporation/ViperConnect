@@ -1,5 +1,89 @@
 # Webhooks
 
+## Horários de entrega e leitura Zapo
+
+Nos recibos Zapo, `statuses[].timestamp` transporta o horário explícito da
+ocorrência recebido no atributo `t` do stanza, em segundos Unix. Cada ID de um
+lote recebe esse horário. O mapper aceita somente inteiros positivos válidos,
+até cinco minutos no futuro; sem horário, ou com valor inválido/milissegundos,
+omite o campo. Não substitui por criação da mensagem ou chegada do webhook.
+
+Recibos `sent`, `delivered` e `read` com horário válido podem chegar depois de
+um status igual ou mais avançado. São encaminhados sem regredir o estado salvo
+da mensagem; callbacks sem horário mantêm a supressão de status repetidos ou
+regressivos. O consumidor deve mesclar idempotentemente as ocorrências por
+ID/provedor/etapa e preservar a primeira ocorrência válida, pois um recibo com
+horário pode ser repetido. Ler não fornece automaticamente o horário de entrega.
+
+Não exige novas permissões ou configurações. Não cria mensagens, reenvia chamadas
+nem faz backfill de horários antigos desconhecidos. Requer o worker atualizado;
+código/documentação locais não comprovam implantação ou entrega real ao receptor.
+
+## Respostas a status com mídia de contexto
+
+Nas sessões Zapo, uma resposta recebida a um status de imagem ou vídeo publicado
+pela própria sessão tenta recuperar a mídia citada antes de entregar o webhook.
+O worker reutiliza o storage ou baixa pelo cliente Zapo ativo e persiste a mídia
+no storage configurado. Não envia mensagem ao WhatsApp nem modifica o status.
+A autoria aceita telefone ou LID. Quando vem LID, a confirmação usa somente o
+contato nativo armazenado na própria sessão Zapo: o telefone associado precisa
+corresponder ao da sessão. LID desconhecido ou de terceiros não é aceito; falha
+de leitura não impede a entrega da resposta. Não consulta o WhatsApp para isso.
+
+O evento original mantém texto, identidade e ID da resposta e recebe
+`messages[].context.status`: `id`, `type`, `available`, `caption` e, quando
+disponível, `media.url`, `media.mime_type` e `media.file_name`.
+Para destinos Chatwoot/ViperChat reconhecidos pelo adapter existente, são feitos
+dois POSTs sequenciais, com uma mensagem em cada evento:
+
+1. Imagem/vídeo com legenda “Status publicado por você” e ID sintético estável
+   `status-media-<hash>`, específico da sessão, status e contato/conversa.
+2. Resposta original com `context.id` e `context.message_id` apontando para
+   esse ID sintético. A mídia não cita a resposta e não repete seu texto.
+
+O receptor atual pode usar sua apresentação de respostas/citações, sem mudança
+no ViperChat. Outros webhooks recebem somente a resposta enriquecida, sem bolha
+sintética. Credenciais, filtros e autenticação de webhook/mídia não mudam.
+
+Retries e novas respostas ao mesmo status no mesmo contato reutilizam o ID da
+bolha de contexto; o receptor precisa deduplicar por ID. Um HTTP 2xx confirma
+aceitação, não a ordem de processamento de jobs internos no receptor. Falha HTTP
+usa o retry normal da entrega, sem gerar novos IDs.
+
+Mídia ausente, expirada ou com falha de recuperação não bloqueia a resposta:
+o contexto informa `available=false` e não gera bolha de mídia. Não recupera
+visualização única, conteúdo efêmero protegido ou status de terceiros. Depende
+do cliente ativo e dos dados ainda disponíveis na citação/store. Não reprocessa
+conversas antigas automaticamente. Requer atualização do worker e do adapter
+de entrega; código local não significa implantação em produção.
+
+## Cancelamento de entregas pendentes
+
+Remover ou desabilitar um webhook de mensagens na sessão também impede suas
+entregas pendentes quando os consumidores atualizados voltarem a processá-las.
+Antes do fan-out e do envio ao adapter HTTP/CB, o worker consulta diretamente a
+configuração persistida no Redis e valida o ID, a URL efetiva e a habilitação.
+Tarefas cujo vínculo não existe mais, foi desabilitado ou mudou de destino
+terminam normalmente com ACK, sem HTTP, nova tentativa ou envio à fila de falhas.
+Uma troca de URL não redireciona eventos antigos para o novo endereço.
+
+Para um vínculo ainda válido, são usados os tokens, timeouts e filtros atuais.
+Novos destinos não são adicionados retroativamente ao fan-out já enfileirado.
+Uma lista explícita `webhooks: []` não reativa o webhook padrão do ambiente;
+sessões legadas sem a propriedade continuam herdando a configuração do ambiente.
+
+A regra cobre as filas de mensagens novas e de histórico e seus retries. A
+transcrição revalida também `sendTranscribeAudio`, antes de baixar/processar o
+áudio e após o processamento, antes de publicar o resultado. Falha de leitura
+do Redis é erro para retry, nunca evidência de remoção. Os logs de descarte
+contêm sessão, ID e motivo classificado, sem URL, token ou conteúdo da mensagem.
+
+Limites: não cancela uma requisição HTTP ou processamento de IA já iniciados,
+não elimina registros já presentes em filas de falhas/quarentena e não muda o
+contrato separado de webhooks de sessão ou do serviço VoIP. Não distingue uma
+remoção seguida de recriação com o mesmo ID e URL antes da próxima leitura.
+Não há nova rota ou permissão; publicar o código não atualiza a VPS.
+
 Para recuperar configurações anteriores após recriar uma sessão, consulte
 [Histórico e restauração de webhooks](/guide/webhook-history). A restauração é manual
 e não interfere na conexão ou reconexão.
@@ -240,6 +324,18 @@ metadados complementares.
 Estados usuais: `sent`, `delivered`, `read`, `played` e `failed`.
 
 ## Falha
+
+`statuses[].status=failed` informa uma falha de envio de mensagem, não uma
+falha ao aplicar um status/recibo solicitado pela aplicação. Erros dessas
+atualizações permanecem observáveis na fila/logs, sem gerar um webhook `failed`
+para a mensagem original, mesmo na última tentativa. A aceitação HTTP da
+operação assíncrona não confirma que o status foi aplicado.
+
+Notas privadas e bolhas/artefatos de chamadas são eventos internos do receptor:
+não envie IDs como `voip-call:382` para a rota de mensagens como status WhatsApp.
+O validador de IDs do storage permanece ativo. A correção do emissor desses
+status no ViperChat exige atualização separada de seu backend; atualizar apenas
+o ViperConnect não limpa erros já gravados em bolhas existentes.
 
 ```json
 {

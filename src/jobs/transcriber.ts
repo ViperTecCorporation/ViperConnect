@@ -8,6 +8,7 @@ import { extractDestinyPhone, jidToPhoneNumber } from '../services/transformer'
 import { jidNormalizedUser, isPnUser } from '../services/whatsapp_jid'
 import { saveTranscriptionReference } from '../services/transcription_reference'
 import mime from 'mime'
+import { currentQueuedWebhooks, readWebhookBindings, WebhookBindingReadError } from '../services/queued_webhook'
 
 const firstNonEmptyString = (...values: unknown[]) => {
   for (const value of values) {
@@ -43,8 +44,11 @@ export class TranscriberJob {
   }
 
   async consume(phone: string, data: object) {
+    const bindings = await readWebhookBindings(phone)
     try {
-      const { payload, webhooks }: { payload: any; webhooks: Webhook[] } = data as any
+      const { payload, webhooks: snapshots }: { payload: any; webhooks: Webhook[] } = data as any
+      const webhooks = currentQueuedWebhooks(phone, snapshots, bindings, true)
+      if (!webhooks.length) return
       const payloadEntry = payload?.entry && payload.entry[0]
       const payloadValue = payloadEntry &&
         payload.entry[0].changes &&
@@ -165,6 +169,7 @@ export class TranscriberJob {
         return
       }
       logger.debug('Transcriber audio content for session %s and to %s is %s', phone, destinyPhone, transcriptionText)
+      if (!currentQueuedWebhooks(phone, webhooks, await readWebhookBindings(phone), true).length) return
       const id = await saveTranscriptionReference(phone, destinyPhone, audioMessage.id)
       const output = structuredClone(payload)
       const transcriptionFrom = firstNonEmptyString(
@@ -239,13 +244,15 @@ export class TranscriberJob {
           }
         }
       } catch {}
+      const liveWebhooks = currentQueuedWebhooks(phone, webhooks, await readWebhookBindings(phone), true)
       await Promise.all(
-        webhooks.map(async (w) => {
+        liveWebhooks.map(async (w) => {
           logger.debug('Transcriber phone %s to %s sending webhook %s', phone, destinyPhone, w.id)
           return this.service.sendHttp(phone, w, output, {})
         }),
       )
     } catch (error) {
+      if (error instanceof WebhookBindingReadError) throw error
       logger.error(error)
     }
   }

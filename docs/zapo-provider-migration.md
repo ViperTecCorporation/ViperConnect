@@ -266,8 +266,8 @@ explícito ao webhook.
 ### Falhas de envio
 
 Todas as ações que passam pelo envio comum de mensagens — texto, mídias,
-contatos, interativos, enquete, voto, edição, reação, template, raw e atualização
-de status — entregam à aplicação o mesmo webhook Cloud API com `status: failed`,
+contatos, interativos, enquete, voto, edição, reação, template e raw — entregam
+à aplicação o mesmo webhook Cloud API com `status: failed`,
 independentemente de a sessão usar Baileys ou Zapo.
 
 Na Zapo, erros conhecidos da UnoAPI (`SendError`) geram o webhook
@@ -275,6 +275,14 @@ imediatamente. Exceções nativas ou potencialmente transitórias continuam usan
 as tentativas configuradas da fila e geram o webhook na última tentativa. O
 payload preserva o ID UnoAPI e inclui `code`, `title`, `message` e
 `error_data.provider=zapo`; não inclui stack trace.
+
+Atualizações de status/recibos não são novos envios. Se falharem, o erro original
+permanece no processamento da fila, com as tentativas e o registro de falha
+existentes, sem emitir `failed` para a mensagem original. IDs internos de
+chamada, como `voip-call:382`, não são IDs WhatsApp e continuam inválidos no
+storage da sessão. O receptor não deve enviar notas privadas ou artefatos VoIP
+para essa sincronização. Erros estruturados de storage preservam seu status
+HTTP (por exemplo, 400), em vez de serem classificados como 500 genérico.
 
 Operações administrativas executadas por HTTP/RPC, como alterações de grupo,
 continuam retornando o erro na própria resposta HTTP. Elas não são transformadas
@@ -358,6 +366,12 @@ por expressão, excluindo e-mail, IP, `localhost`, extensões comuns de arquivo 
 host malformado, e recebe `https://` antes do envio para que a Zapo possa buscar
 os metadados. A decisão não depende de `text.preview_url`; clientes antigos que
 ainda enviem esse campo não alteram o comportamento automático.
+
+Exceção de segurança: Pix copia e cola reconhecido pelo cabeçalho BR Code
+`000201` seguido de `0014br.gov.bcb.pix` mantém todo o texto intacto e envia
+`linkPreview:false` explicitamente à Zapo. Não depende de domínio/banco ou CRC
+válido, não visita URLs da cobrança e suprime também links separados na mesma
+mensagem, evitando seleção automática de um domínio interno pelo SDK.
 
 Como o HTML do YouTube pode posicionar Open Graph depois do limite genérico de
 leitura da Zapo, links `youtube.com` (incluindo Shorts) e `youtu.be` usam um

@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import Redis from 'ioredis'
 import { WaAuthRedisStore } from '@zapo-js/store-redis'
 import { MobileDeviceError } from '../mobile_device_service'
@@ -15,6 +13,7 @@ import { sessionKeys, sessionRecords } from './stream_records'
 import { restoreStagedStream, validateStreamMeta, StreamSessionMeta } from './stream_restore'
 import { recoverBackupConnection } from './backup_recovery'
 import { MultipartSessionRestore } from './multipart_restore'
+import { assertRedisManualBackup, installedBackupVersion } from '../mobile_primary/backup_compatibility'
 
 export const SESSION_TASK_PREFIX = 'session-transfer:{v1}:task:'
 const checkpoint = (phone: string) => `session-transfer:{v1}:completed:${phone}`
@@ -22,26 +21,25 @@ const fail = (code: string, status = 409): never => { throw new MobileDeviceErro
 const phoneCheck = (phone: string) => { if (!/^[1-9]\d{7,14}$/.test(phone)) fail('session_phone_invalid', 400) }
 
 export async function createSessionTransfer() {
-  const service = await import('../redis.js')
-  const { ReloadAmqp } = await import('../reload_amqp.js')
-  const { getConfigRedis } = await import('../config_redis.js')
-  const { ZAPO_REDIS_KEY_PREFIX, UNOAPI_SERVER_NAME } = await import('../../defaults.js')
-  const { resolveZapoRedisKeyPrefix, createZapoStore } = await import('../zapo/zapo_store.js')
-  const { clearZapoSession } = await import('../zapo/zapo_session_cleanup.js')
-  const { amqpPublish } = await import('../../amqp.js')
-  const { UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_MEDIA } = await import('../../defaults.js')
+  const service = module.require('../redis.js') as typeof import('../redis')
+  const { ReloadAmqp } = module.require('../reload_amqp.js') as typeof import('../reload_amqp')
+  const { getConfigRedis } = module.require('../config_redis.js') as typeof import('../config_redis')
+  const { ZAPO_REDIS_KEY_PREFIX, UNOAPI_SERVER_NAME } = module.require('../../defaults.js') as typeof import('../../defaults')
+  const { resolveZapoRedisKeyPrefix, createZapoStore } = module.require('../zapo/zapo_store.js') as typeof import('../zapo/zapo_store')
+  const { clearZapoSession } = module.require('../zapo/zapo_session_cleanup.js') as typeof import('../zapo/zapo_session_cleanup')
+  const { amqpPublish } = module.require('../../amqp.js') as typeof import('../../amqp')
+  const { UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_MEDIA } = module.require('../../defaults.js') as typeof import('../../defaults')
   const prefix = resolveZapoRedisKeyPrefix(ZAPO_REDIS_KEY_PREFIX)
-  const versionCheck = () => {
-    if (JSON.parse(readFileSync(require.resolve('zapo-js/package.json'), 'utf8')).version !== '1.9.0' || JSON.parse(readFileSync(join(dirname(require.resolve('@zapo-js/store-redis')), '../package.json'), 'utf8')).version !== '1.3.0') fail('session_backup_incompatible', 400)
-  }
+  const versionCheck = () => installedBackupVersion('session_backup_incompatible')
   const config = async (phone: string) => {
     phoneCheck(phone)
     const value = await service.getConfig(phone)
+    assertRedisManualBackup(value, 'session_backup_sqlite_requires_session_storage_endpoint')
     if (!value || value.provider !== 'zapo' || value.mobilePrimaryDraftId || !value.useRedis) fail('session_backup_requires_linked_redis_session')
     return value
   }
-  async function run<T>(action: (redis: Redis) => Promise<T>) {
-    versionCheck()
+  async function run<T>(action: (redis: Redis) => Promise<T>, options: { native?: boolean } = {}) {
+    if (options.native !== false) versionCheck()
     const redis = new Redis(process.env.REDIS_URL || '', { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false })
     redis.on('error', () => {})
     try { await redis.connect(); return await action(redis) } finally { redis.disconnect() }
@@ -73,7 +71,7 @@ export async function createSessionTransfer() {
     const result = await owned(redis, phone, async (lease, token, renew) => {
       const auth = await new WaAuthRedisStore({ redis, keyPrefix: prefix, sessionId: phone }).load()
       if (!auth?.meJid || auth.deviceInfo) return fail('session_backup_registered_linked_required')
-      const snapshot: StreamSessionMeta = { kind: 'linked-session', version: 2, zapo: '1.9.0', redisStore: '1.3.0', phone, name: String(current.name || phone).slice(0, 80), identityJid: auth.meJid, mode: body.mode, createdAt: new Date().toISOString() }
+      const snapshot: StreamSessionMeta = { kind: 'linked-session', version: 2, zapo: versionCheck(), redisStore: '1.3.0', phone, name: String(current.name || phone).slice(0, 80), identityJid: auth.meJid, mode: body.mode, createdAt: new Date().toISOString() }
       validateStreamMeta(snapshot)
       const alive = async () => { await renew(); await heartbeat?.() }
       const encrypted = encryptSessionStream(snapshot, sessionRecords(redis, prefix, phone, body.mode, alive), body.password)
@@ -85,6 +83,7 @@ export async function createSessionTransfer() {
       await amqpPublish(UNOAPI_EXCHANGE_BROKER_NAME, UNOAPI_QUEUE_MEDIA, phone, { fileName: objectKey }, { delay: 86400000, type: 'topic' })
       await renew()
       const raw = await redis.get(service.configKey(phone)), latest = raw && JSON.parse(raw)
+      assertRedisManualBackup(latest, 'session_backup_sqlite_requires_session_storage_endpoint')
       if (!latest || latest.autoConnect !== false || latest.provider !== 'zapo' || latest.mobilePrimaryDraftId || latest.sessionTransferBackupId !== objectKey) fail('session_backup_state_changed')
       if (Number(await redis.eval("if redis.call('GET',KEYS[1]) ~= ARGV[1] or redis.call('GET',KEYS[2]) ~= ARGV[2] then return 0 end; local cfg=cjson.decode(ARGV[2]); cfg.sessionTransferBackupId=nil; redis.call('SET',KEYS[2],cjson.encode(cfg)); redis.call('SET',KEYS[3],ARGV[3]); return 1", 3, lease, service.configKey(phone), checkpoint(phone), token, raw!, snapshot.createdAt)) !== 1) fail('session_backup_state_changed')
       return { objectKey, fileName: `sessao-${phone}-${Date.now()}.vipersession` }
@@ -125,7 +124,9 @@ export async function createSessionTransfer() {
         try {
           const head = await frames.next()
           if (head.done || head.value.kind !== 'meta') fail('session_backup_incompatible', 400)
-          const meta = head.value.value; validateStreamMeta(meta)
+          const meta = head.value.value
+          if (meta?.kind === 'sqlite-session') fail('session_backup_sqlite_requires_session_storage_endpoint')
+          validateStreamMeta(meta)
           const restored = await run(redis => owned(redis, meta.phone, async (lease, token, renew) => {
             if (await service.getConfig(meta.phone) || await redis.hexists('mobile-primary:{v1}:drafts', meta.phone)) fail('mobile_restore_destination_exists')
             for await (const _key of sessionKeys(redis, prefix, meta.phone, 'complete', renew)) fail('mobile_restore_destination_exists')
@@ -149,7 +150,7 @@ export async function createSessionTransfer() {
         }
       } while (cursor !== '0')
       return { tasks: states }
-    }),
+    }, { native: false }),
     eligibility: (phone: string) => run(async redis => ({ eligible: (await config(phone)).autoConnect === false && !!await redis.get(checkpoint(phone)) })),
     restore: (body: any) => run(async redis => {
       if (!body || body.confirmOriginOffline !== true || Object.keys(body).some(k => !['archive', 'password', 'confirmOriginOffline'].includes(k))) fail('mobile_restore_confirmation_required', 400)

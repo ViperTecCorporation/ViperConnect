@@ -27,6 +27,7 @@ export const autoConnect = async (
   onNewLogin: OnNewLogin,
   workerEngine?: WhatsAppEngine,
 ) => {
+  if (process.env.UNOAPI_STORAGE_SYNTHETIC_ONLY === 'true') return
   try {
     const phones = await sessionStore.getPhones()
     logger.info(`${phones.length} phones to verify if is auto connect`)
@@ -35,6 +36,7 @@ export const autoConnect = async (
       const phone = phones[i]
       try {
         const config = await getConfig(phone)
+        if (config.sessionStorage?.fixture || ['migrating', 'restoring'].includes(config.sessionStorage?.state || '')) continue
         if (workerEngine && resolveWhatsAppEngine(config.provider) !== workerEngine) {
           continue
         }
@@ -50,6 +52,7 @@ export const autoConnect = async (
       const phone = phones[i]
       try {
         const config = await getConfig(phone)
+        if (config.sessionStorage?.fixture || ['migrating', 'restoring'].includes(config.sessionStorage?.state || '')) continue
         if (workerEngine && resolveWhatsAppEngine(config.provider) !== workerEngine) {
           logger.info(`Ignore connecting phone ${phone} provider ${config.provider}...`)
           continue;
@@ -59,8 +62,8 @@ export const autoConnect = async (
           continue;
         }
         await sessionStore.syncConnection(phone)
-        if (config.mobilePrimaryDraftId && (!config.autoConnect || config.mobilePrimaryDeleting)) {
-          logger.info('Mobile primary remains suspended phone=%s', phone)
+        if (!config.autoConnect || config.mobilePrimaryDeleting) {
+          logger.info('Session remains suspended phone=%s', phone)
           continue
         }
         if (await sessionStore.isStatusStandBy(phone)) {

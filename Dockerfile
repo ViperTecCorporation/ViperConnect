@@ -153,15 +153,17 @@ COPY ./scripts/container-entrypoint.sh ./container-entrypoint.sh
 COPY ./lab/registration/*.cjs ./lab/registration/
 COPY ./lab/registration/package*.json ./lab/registration/
 COPY ./scripts/check-mobile-runtime.cjs ./scripts/check-mobile-runtime.cjs
+COPY ./scripts/restore-session-from-s3.cjs ./scripts/restore-session-from-s3.cjs
 COPY --from=mobile-registration /app/lab/registration/node_modules /opt/mobile-registration/node_modules
 RUN sed -i 's/\r$//' container-entrypoint.sh \
     && node -e "const fs = require('fs'); const script = fs.readFileSync('container-entrypoint.sh'); if (script.includes(13) || !script.toString().startsWith('#!/bin/sh\n')) throw new Error('invalid_entrypoint_line_endings')" \
     && node scripts/check-mobile-runtime.cjs
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg qpdf wget ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg qpdf wget ca-certificates redis-tools \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p data/medias data/sessions data/stores data/logs voip/data \
+    && mkdir -p data/medias data/sessions data/stores data/logs voip/data /home/u/app/session-data \
+    && chmod 0700 /home/u/app/session-data \
     && printf '%s\n' "${VOIP_SOURCE_SHA}" > voip/SOURCE_REVISION \
     && chmod 0755 container-entrypoint.sh voip/updater/viperconnect-voip-updater vendor/zapo-voip/native/relay-bridge/relay-bridge \
     && chown -R u:u /home/u/app
@@ -175,6 +177,7 @@ COPY --from=legacy-builder /app/dist ./dist
 COPY --from=legacy-builder /app/node_modules ./node_modules
 RUN chown -R u:u /home/u/app
 USER u
+RUN test -w /home/u/app/session-data
 ENTRYPOINT ["/home/u/app/container-entrypoint.sh"]
 
 # Default production target: Zapo-only compiled graph and production packages.
@@ -183,4 +186,5 @@ COPY --from=builder /app/dist ./dist
 COPY --from=production-dependencies /app/node_modules ./node_modules
 RUN chown -R u:u /home/u/app
 USER u
+RUN test -w /home/u/app/session-data
 ENTRYPOINT ["/home/u/app/container-entrypoint.sh"]

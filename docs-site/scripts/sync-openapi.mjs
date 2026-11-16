@@ -34,11 +34,13 @@ const normalize = (value) => value.replace(/:([A-Za-z_][A-Za-z0-9_]*)(?:\([^)]*\
 const publicRoute = (route) => route.replace(/^\/v\d+(?:\.\d+)?(?=\/|$)/, '/{version}')
 
 const tagFor = (route) => {
+  if (/\/storage(?:\/|$)/.test(route)) return 'Sessões'
   if (/\/profile(?:\/|$)/.test(route)) return 'Perfil'
   if (route.startsWith('/manager/')) return 'Manager'
-  if (/^\/admin\/(?:redis|rabbitmq|settings)\//.test(route)) return 'Administração'
+  if (/^\/(?:internal\/service-control\/|v1\/(?:targets|operations)(?:\/|$))/.test(route)) return 'Administração'
+  if (/^\/admin\/(?:(?:redis|rabbitmq|settings)\/|resources(?:\/|$))/.test(route)) return 'Administração'
   if (/^\/(?:ping|version)$/.test(route)) return 'Sistema'
-  if (route.startsWith('/admin/voip/') || route.startsWith('/v1/console/')) return 'Telefonia'
+  if (route.startsWith('/admin/voip/') || route.startsWith('/v1/console/') || route.startsWith('/v1/resources/')) return 'Telefonia'
   if (route.startsWith('/passkey-bridge/') || route.startsWith('/connect/') || route.endsWith('/request_code')) return 'Pareamento'
   if (route.includes('/debug/')) return 'Diagnóstico'
   if (route.includes('/groups')) return 'Grupos'

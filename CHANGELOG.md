@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and follows SemVer when applicable.
 
+## [4.0.43] - 2026-11-16
+
+- Add administrator-only service restart controls through a separate allowlisted Docker/systemd agent, with explicit confirmation, durable idempotency and bounded safety checks. Docker Swarm is not supported by this agent.
+- Add live, filtered service logs and TXT export from resource-card details, with bounded buffers, secret-pattern masking and cancellation when the viewer closes or becomes hidden.
+- Exclude retired container instances from current resource totals while retaining their history; preserve the selected period across detail actions on desktop and mobile.
+- Default Docker SQLite storage to the image user's writable `/home/u/app/session-data`, retaining explicit paths and existing legacy mounts. New sessions still require verified persistent storage and otherwise use Redis.
+- Harden migration ownership, worker-wide serialization, drain/reconnect state and deferred source cleanup after verified backup. Enable automatic SQLite session backups unless explicitly disabled; global Redis backup remains independent opt-in.
+- Bound backup byte streams and preserve explicit storage errors. Receipt-update failures no longer fabricate a failed-send webhook for the original message.
+- Keep Zapo 1.11.0 and VoIP 0.1.71 pinned to `b56747dbbc79a10c76e836c631b51cb63934b11c`. Update PT/EN guides, OpenAPI and Postman. Publication does not deploy to production or remove hostpaths; known opt-in WebRTC teardown SIGSEGV remains unresolved.
+
+## [4.0.42] - 2026-11-15
+
+- Add per-session SQLite storage, controlled migration, session metrics and protected administrative CRUD; keep Redis required for shared coordination and the existing Redis flow when SQLite is unavailable for new sessions.
+- Add session, Redis and VoIP S3 backup/restore with twelve-hour scheduling and seven weekday slots. VoIP packages include configuration and hold audio, not call recordings.
+- Preserve correlated Status reply media, reject Pix payloads as preview URLs and revalidate queued webhook bindings.
+- Integrate VoIP 0.1.71 pinned to `b56747dbbc79a10c76e836c631b51cb63934b11c`, with authenticated bounded dialog recovery, current-generation ICE/SDP defaults and independent MP3 encoding after lossless PCM splitting for AI. Compatible applications are required for native reconnection cues.
+- Add worker/Redis/RabbitMQ/VoIP resource metrics and bounded Redis buffers with private S3 JSON history; preserve provider receipt occurrence timestamps without regressing saved message status.
+- Update PT/EN guides and API version metadata. Verify release workflows/artifacts before deploying. Publication does not deploy to production or remove hostpaths. Known opt-in WebRTC teardown SIGSEGV remains unresolved.
+
 ## [4.0.41] - 2026-11-02
 
 - Upgrade Zapo from 1.10.0 to 1.11.0 without changing the dedicated VoIP plugin.

@@ -5,6 +5,23 @@ beforeAll(() => { Object.defineProperty(globalThis, 'crypto', { value: webcrypto
 import { renderSessionPage } from '../../frontend/pages/session'
 const data = (values: Record<string, string>) => { const form = new FormData(); Object.entries(values).forEach(([k, v]) => form.set(k, v)); return form }
 
+test('SQLite sessions expose an actionable storage path without submitting a Redis backup', async () => {
+  const api = { request: jest.fn().mockRejectedValue(new ApiError(409, '', { error_code: 'session_backup_sqlite_requires_session_storage_endpoint' })) }, panel = new SessionTransfersPanel(api as any, jest.fn())
+  await panel.action('transfer-open', '999123456789')
+  expect(panel.dialog()).toContain('data-action="storage-open"'); expect(panel.dialog()).toContain('data-id="999123456789"')
+  expect(panel.dialog()).not.toContain('data-form="transfer-backup"')
+  expect(panel.eligible).toBe(false)
+  panel.reset(); expect(panel.storageRequired).toBe(false)
+})
+
+test('SQLite file renamed as a session archive is refused locally without upload or Redis import', async () => {
+  const api = { request: jest.fn() }, panel = new SessionTransfersPanel(api as any, jest.fn()), form = data({ password: 'synthetic-password', confirm: 'on' })
+  form.set('archive', new Blob(['{"format":"viperconnect-storage-backup-stream"}\n']), 'renamed.vipersession')
+  panel.modal = 'restore'; await panel.submit('transfer-restore', form)
+  expect(api.request).not.toHaveBeenCalled(); expect(panel.error).toContain('SQLite'); expect(panel.dialog()).toContain('.viperstorage')
+  expect(await describeSessionBackup({ name: 'snapshot.viperstorage' } as File)).toContain('Nenhum arquivo foi enviado')
+})
+
 test('file feedback reads only a bounded header and explains selection, legacy limits and large stream backups', async () => {
   const file: any = { name: 'large.vipersession', size: 576 * 1024 * 1024, slice: jest.fn(() => new Blob(['{"salt":"x","format":"viperconnect-session-stream-v2"}\n'])) }
   expect(await isStreamSessionBackup(file)).toBe(true)

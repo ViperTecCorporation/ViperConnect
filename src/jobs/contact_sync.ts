@@ -8,8 +8,13 @@ import {
 } from '../defaults'
 import logger from '../services/logger'
 import { Outgoing } from '../services/outgoing'
-import { BASE_KEY, delContactSyncPending, getRedis, redisGet, redisSetAndExpire, redisSetIfNotExists } from '../services/redis'
+import { BASE_KEY, delContactSyncPending, getRedis, getSessionPhones, redisGet, redisSetAndExpire, redisSetIfNotExists } from '../services/redis'
 import { jidToPhoneNumber } from '../services/transformer'
+import type { getConfig } from '../services/config'
+import { readSessionLifecycleConfig, sessionLifecycleIdentity } from '../services/session_storage/lifecycle_transition'
+import { sessionContacts } from '../services/session_storage/contacts_gateway'
+import { SendError } from '../services/send_error'
+import { assertSessionConfigRegistered } from '../services/session_storage/connection_registration'
 
 export type ContactSyncItem = {
   wa_id: string
@@ -114,14 +119,19 @@ export const resolveContactFromInfo = (jid: string, info: any, usernameIndex: Re
 export class ContactSyncJob {
   private outgoing: Outgoing
 
-  constructor(outgoing: Outgoing) {
+  constructor(outgoing: Outgoing,
+    private readonly readConfig: getConfig = phone => module.require('../services/config_redis').getConfigRedis(phone),
+    private readonly listSessions = getSessionPhones,
+    private readonly contactGateway = sessionContacts,
+  ) {
     this.outgoing = outgoing
   }
 
-  private async sendContacts(phone: string, contacts: ContactSyncItem[]): Promise<void> {
+  private async sendContacts(phone: string, contacts: ContactSyncItem[], expected: string): Promise<void> {
     for (let i = 0; i < contacts.length; i += CONTACT_SYNC_PAGE_SIZE) {
       const page = contacts.slice(i, i + CONTACT_SYNC_PAGE_SIZE)
       if (!page.length) continue
+      await readSessionLifecycleConfig(phone, this.readConfig, expected)
       const payload = buildContactSyncPayload(phone, page)
       await this.outgoing.send(phone, payload)
       logger.info('CONTACT_SYNC sent: phone=%s contacts=%s', phone, page.length)
@@ -147,50 +157,23 @@ export class ContactSyncJob {
     }
   }
 
-  private async loadContactsByPhone(): Promise<Map<string, Map<string, ContactSyncItem>>> {
-    const redis: any = await getRedis()
-    const perPhone = new Map<string, Map<string, ContactSyncItem>>()
-    const usernameIndexes = new Map<string, Promise<Record<string, string>>>()
-    const pattern = `${BASE_KEY}contact-info:*`
-    const count = Math.max(10, CONTACT_SYNC_SCAN_COUNT || 500)
-    let cursor = '0'
-    do {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const res: any = await redis.scan(cursor, { MATCH: pattern, COUNT: count })
-      cursor = (typeof res.cursor !== 'undefined') ? `${res.cursor}` : `${res[0]}`
-      const keys: string[] = Array.isArray(res.keys) ? res.keys : (res[1] || [])
-      if (!keys.length) continue
-      const values = await redis.mGet(keys)
-      for (let i = 0; i < keys.length; i += 1) {
-        const key = keys[i]
-        const raw = values?.[i]
-        if (!raw) continue
-        const parsed = parseContactInfoKey(key)
-        if (!parsed) continue
-        const { phone, jid } = parsed
-        if (!phone || !jid) continue
-        let info: any
-        try { info = JSON.parse(raw) } catch { continue }
-        let bucket = perPhone.get(phone)
-        if (!bucket) {
-          bucket = new Map()
-          perPhone.set(phone, bucket)
-        }
-        let usernameIndex = usernameIndexes.get(phone)
-        if (!usernameIndex) {
-          const loadingIndex: Promise<Record<string, string>> = redis
-            .hGetAll(`${BASE_KEY}zapo-username-lid:${phone}`)
-            .catch(() => ({}))
-          usernameIndexes.set(phone, loadingIndex)
-          usernameIndex = loadingIndex
-        }
-        this.upsertContact(bucket, jid, info, await usernameIndex)
-      }
-    } while (cursor !== '0')
-    return perPhone
-  }
-
-  private async loadContactsForPhone(phone: string): Promise<Map<string, ContactSyncItem>> {
+  private async loadContactsForPhone(phone: string, expected: string): Promise<Map<string, ContactSyncItem>> {
+    const config = await readSessionLifecycleConfig(phone, this.readConfig, expected)
+    if (config.sessionStorage?.backend === 'sqlite') {
+      const bucket = new Map<string, ContactSyncItem>(), contacts = this.contactGateway(phone, config)
+      let cursor: string | undefined
+      const visited = new Set<string>()
+      do {
+        await readSessionLifecycleConfig(phone, this.readConfig, expected)
+        const page = await contacts.syncPage({ ...(cursor ? { cursor } : {}), limit: CONTACT_SYNC_PAGE_SIZE })
+        if (!page || !Array.isArray(page.contacts) || page.contacts.length > 200) throw new SendError(503, 'session_storage_contact_sync_page_invalid')
+        for (const row of page.contacts) this.upsertContact(bucket, row.jid, { pn: row.pn, name: row.name, username: row.username })
+        if (!page.has_more) break
+        if (!page.next_cursor || visited.has(page.next_cursor)) throw new SendError(503, 'session_storage_contact_sync_page_invalid')
+        visited.add(page.next_cursor); cursor = page.next_cursor
+      } while (true)
+      return bucket
+    }
     const redis: any = await getRedis()
     const bucket = new Map<string, ContactSyncItem>()
     const usernameIndex: Record<string, string> = await redis
@@ -223,6 +206,9 @@ export class ContactSyncJob {
   public async runForPhone(phone: string): Promise<boolean> {
     if (!CONTACT_SYNC_ENABLED || CONTACT_SYNC_INTERVAL_MS <= 0) return false    
     if (!process.env.REDIS_URL) return false
+    const config = await readSessionLifecycleConfig(phone, this.readConfig)
+    assertSessionConfigRegistered(config)
+    const expected = sessionLifecycleIdentity(config)
     try {
       const scheduled = await redisGet(scheduleKeyForPhone(phone))
       if (scheduled) {
@@ -237,10 +223,10 @@ export class ContactSyncJob {
       logger.debug('CONTACT_SYNC skip: lock is held for %s', phone)
       return false
     }
-    const bucket = await this.loadContactsForPhone(phone)
+    const bucket = await this.loadContactsForPhone(phone, expected)
     const contacts = Array.from(bucket.values())
     if (!contacts.length) return false
-    await this.sendContacts(phone, contacts)
+    await this.sendContacts(phone, contacts, expected)
     try { await redisSetAndExpire(scheduleKeyForPhone(phone), `${Date.now()}`, getScheduleTtlSec()) } catch {}
     return true
   }
@@ -254,19 +240,9 @@ export class ContactSyncJob {
       logger.debug('CONTACT_SYNC skip: lock is held')
       return
     }
-    const perPhone = await this.loadContactsByPhone()
-    for (const [phone, items] of perPhone) {
-      try {
-        const scheduled = await redisGet(scheduleKeyForPhone(phone))
-        if (scheduled) {
-          logger.debug('CONTACT_SYNC skip: schedule active for %s', phone)
-          continue
-        }
-      } catch {}
-      const contacts = Array.from(items.values())
-      if (!contacts.length) continue
-      await this.sendContacts(phone, contacts)
-      try { await redisSetAndExpire(scheduleKeyForPhone(phone), `${Date.now()}`, getScheduleTtlSec()) } catch {}
+    for (const phone of await this.listSessions()) {
+      try { await this.runForPhone(phone) }
+      catch (error) { logger.warn({ phone, code: (error as any)?.title || (error as any)?.code || 'contact_sync_failed' }, 'CONTACT_SYNC session skipped') }
     }
   }
 

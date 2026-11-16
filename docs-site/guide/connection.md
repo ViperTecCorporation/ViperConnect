@@ -137,3 +137,44 @@ curl -H "Authorization: Bearer $UNOAPI_AUTH_TOKEN" \
 
 Considere a sessão pronta para envio somente quando o estado indicar conexão
 ativa. Não tente enviar enquanto ela estiver aguardando pareamento.
+
+## Bridge Passkey em workers separados
+
+Quando a Zapo solicitar uma assertion WebAuthn, consulte
+`GET /passkey-bridge/pending` ou `GET /passkey-bridge/{bridgeId}/pending`.
+Use o `bridge_id` dessa solicitação, nunca o ID de outro pareamento. As rotas
+exigem token global, token da própria sessão, token embedded válido ou login
+Manager de administrador; conhecer o ID do bridge não concede acesso.
+
+```http
+POST /passkey-bridge/{bridgeId}/assertion
+Authorization: Bearer SEU_TOKEN
+Content-Type: application/json
+
+{"credential_id":"ID_BASE64URL","assertion_json":{"authenticatorData":"RESPOSTA_DO_AUTENTICADOR"}}
+```
+
+O processo HTTP encaminha a assertion ao worker dono por RPC interno, tanto
+para sessões Redis quanto SQLite. O worker revalida dono, geração, telefone,
+bridge ativo e expiração antes de resolver o signer existente. Não cria cliente,
+abre banco SQLite no processo web ou conecta uma sessão offline. Uma assertion
+de bridge antigo não pode responder a um novo pedido pendente do mesmo número.
+
+`200` com `status=response-sent` confirma somente a entrega da assertion ao
+signer. Em `POST /passkey-bridge/{bridgeId}/confirm`, a Zapo informa
+`provider_managed_confirmation=true`; isso **não** força `completed`. Somente
+o evento `auth_paired` confirma a conclusão. Consulte
+`GET /passkey-bridge/{bridgeId}/status`; resultado persistido `completed` pode
+ser consultado novamente sem nova ação no aparelho.
+
+O prazo original é definido por `PASSKEY_BRIDGE_TTL_SECONDS` (padrão 120s,
+mínimo 30s) e não é renovado ao responder ou confirmar. Atualizações usam CAS
+atômico no Redis, preservando a expiração absoluta. Conclusão, cancelamento ou
+expiração concorrentes não autorizam sobrescrever o estado ou recriar o bridge.
+São até três revalidações locais de metadados, não três envios da assertion.
+
+Erros `404` indicam pedido ausente/expirado; `409`, dono/geração/bridge divergente,
+sessão suspensa ou operação não pendente; `502/503`, resultado não confirmado ou
+worker/RPC indisponível. Não há retry automático do POST: um timeout pode ocorrer
+depois de o signer receber a resposta. Confira o status antes de agir. Testes
+sintéticos com processos simulados não comprovam autenticação real no aparelho.

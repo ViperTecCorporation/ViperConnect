@@ -65,6 +65,13 @@ describe('media routes', () => {
     await request(app.server).get(`/v13.0/${phone}/${messageId}`).expect(200, mediaData)
   })
 
+  test('metadata RPC failure returns 503 instead of an unhandled route rejection', async () => {
+    mediaStore.getMedia.mockRejectedValueOnce(new Error('timeout rpc private queue details'))
+    const response = await request(app.server).get(`/v13.0/${phone}/${messageId}`).expect(503)
+    expect(response.body.error.error_code).toBe('media_lookup_unavailable')
+    expect(JSON.stringify(response.body)).not.toContain('private queue')
+  })
+
   test('download', async () => {
     const name = `${phone}/${messageId}.${extension}`
     const fileName = `./data/medias/${name}`

@@ -26,6 +26,11 @@ export const isConnectingStatus = (status: SessionStatus | undefined): boolean =
 export const isLegacySession = (session: SessionConfig): boolean =>
   session.provider === 'baileys' || session.provider === 'forwarder'
 
+export const isSessionStorageFixture = (session: SessionConfig | undefined): boolean => {
+  const descriptor = session?.sessionStorage as { fixture?: boolean } | undefined
+  return descriptor?.fixture === true || session?.fixture === true
+}
+
 export const filterSessions = (
   sessions: SessionConfig[],
   query: string,

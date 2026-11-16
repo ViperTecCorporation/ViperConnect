@@ -1,0 +1,24 @@
+[Unit]
+Description=ViperConnect restricted service control agent
+After=network.target
+
+[Service]
+Type=simple
+# root is required here for systemctl; it is NOT required in the ViperConnect web.
+# Install this file, the environment and allowlist as root-owned, not web-writable.
+User=root
+WorkingDirectory=/opt/viperconnect
+EnvironmentFile=/etc/viperconnect-control/agent.env
+ExecStart=/usr/bin/node /opt/viperconnect/dist/src/services/service_control/standalone.js
+Restart=on-failure
+RestartSec=10
+StateDirectory=viperconnect-control
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/var/lib/viperconnect-control
+
+[Install]
+WantedBy=multi-user.target

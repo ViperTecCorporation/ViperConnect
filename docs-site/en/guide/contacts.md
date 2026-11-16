@@ -2,10 +2,17 @@
 
 ## Recover a contact's encryption {#recover-contact-encryption}
 
-In the session's **Contacts** tab, click **Recover encryption** on the affected
-contact and confirm the warning. Use only when investigating encryption failures
+In the session's **Contacts** tab, use the affected contact's refresh icon,
+labelled **Recover encryption** in its tooltip and accessible name. The label
+does not overlap the icon row. Confirm the warning. Use only when investigating encryption failures
 such as “Waiting for this message”, not merely an offline recipient or a missing
 delivery receipt.
+
+A worker communication failure while listing contacts returns HTTP 503 with
+the stable code `contact_directory_unavailable` or `session_storage_worker_unavailable`,
+without terminating the web process. Lightweight SQLite queries have a 15s
+deadline; expired queued reads are not executed. This does not cancel accepted
+writes or automatically recover encryption or replay a message.
 
 ```bash
 curl -X POST "https://your-domain/15551234567/contacts/recover-crypto" \
@@ -74,3 +81,24 @@ Manager.
 
 Contact import is idempotent. When the network confirms a new canonical LID,
 the local alias cache is updated and the response returns the resolved value.
+
+## PN/LID mappings and group participant names
+
+`GET /v15.0/{phone}/jidmap/{contact}` reads a phone/LID mapping.
+`GET /v15.0/{phone}/jidmap` listing requires `JIDMAP_LIST_ENABLED`; its default
+scope is `session`, while `scope=global` reads legacy shared records. Both retain
+the route's session authentication and authorization scope.
+
+For SQLite sessions, local records are read on the owning worker; the HTTP
+process does not open its database. An absent key is a genuine cache miss.
+SQLite/RPC failure, generation changes or an ongoing migration produce explicit
+errors (`409` conflicts; `503` unavailability), not a silently incomplete HTTP
+`200` listing or stale Redis fallback. Responses do not expose internal diagnostics.
+
+With group-management routes enabled,
+`GET /v15.0/{phone}/groups/{groupId}/join_requests` resolves participant names
+through cached PN/LID aliases only. It visits at most four distinct identities
+and stops cycles, including PN → LID → PN. Unknown names fall back to an already
+available username, phone or LID; no identity is fabricated and no WhatsApp
+lookup is performed solely to obtain a name. Group permissions, participant
+approval and addressing contracts are unchanged.

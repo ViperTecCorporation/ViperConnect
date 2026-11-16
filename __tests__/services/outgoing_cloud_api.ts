@@ -323,16 +323,16 @@ describe('service outgoing whatsapp cloud api', () => {
     }
 
     await service.sendHttp(phone!, chatwootWebhook, statusReplyPayload, {})
-    expect(mockFetch).toHaveBeenCalledTimes(1)
-    const callArgs: any = mockFetch.mock.calls[0]
-    const body = JSON.parse(callArgs[1].body)
-    const msgs = body?.entry?.[0]?.changes?.[0]?.value?.messages || []
-    expect(msgs).toHaveLength(2)
-    expect(msgs[0].type).toBe('text')
-    expect(msgs[0].text?.body).toBe('resposta ao status')
-    expect(msgs[1].type).toBe('image')
-    expect(msgs[1].image?.url).toBe('https://files.local/status.jpg')
-    expect(msgs[1].image?.caption).toBe('resposta ao status')
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    const media = JSON.parse((mockFetch.mock.calls[0][1] as any).body).entry[0].changes[0].value.messages[0]
+    const reply = JSON.parse((mockFetch.mock.calls[1][1] as any).body).entry[0].changes[0].value.messages[0]
+    expect(media.type).toBe('image')
+    expect(media.image.url).toBe('https://files.local/status.jpg')
+    expect(media.image.caption).toBe('Status publicado por você')
+    expect(media.context).toBeUndefined()
+    expect(reply.text.body).toBe('resposta ao status')
+    expect(reply.context).toMatchObject({ id: media.id, message_id: media.id })
+    expect(statusReplyPayload.entry[0].changes[0].value.messages).toHaveLength(1)
   })
 
   test('normalizes typebot metadata with canonical phone id and display plus sign', async () => {

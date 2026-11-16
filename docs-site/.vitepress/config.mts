@@ -35,6 +35,8 @@ const portugueseTheme = {
         { text: 'Docker Compose', link: '/guide/docker-compose' },
         { text: 'Docker Swarm', link: '/guide/docker-swarm' },
         { text: 'Armazenamento S3 com RustFS', link: '/guide/storage-rustfs' },
+        { text: 'SQLite por sessão e migração', link: '/guide/session-storage' },
+        { text: 'Backup e restauração VoIP', link: '/guide/voip-backups' },
         { text: 'Linux nativo', link: '/guide/install-native-linux' },
         { text: 'Rede IPv4 e IPv6', link: '/guide/network-ipv6' },
         { text: 'Laboratório mobile-primary', link: '/guide/mobile-primary-local-lab' },
@@ -56,6 +58,7 @@ const portugueseTheme = {
       collapsed: true,
       items: [
         { text: 'RabbitMQ e filas', link: '/guide/rabbitmq' },
+        { text: 'Gerenciador de recursos', link: '/guide/resource-metrics' },
         { text: 'Usuários do Manager', link: '/guide/manager-users' },
         { text: 'Erros e solução de problemas', link: '/guide/troubleshooting' },
         { text: 'Arquitetura e cobertura', link: '/guide/architecture' },
@@ -122,6 +125,8 @@ const englishTheme = {
         { text: 'Docker Compose', link: '/en/guide/docker-compose' },
         { text: 'Docker Swarm', link: '/en/guide/docker-swarm' },
         { text: 'S3 storage with RustFS', link: '/en/guide/storage-rustfs' },
+        { text: 'Per-session SQLite and migration', link: '/en/guide/session-storage' },
+        { text: 'VoIP backup and restore', link: '/en/guide/voip-backups' },
         { text: 'Native Linux', link: '/en/guide/install-native-linux' },
         { text: 'IPv4 and IPv6 network', link: '/en/guide/network-ipv6' },
       ],
@@ -142,6 +147,7 @@ const englishTheme = {
       collapsed: true,
       items: [
         { text: 'RabbitMQ and queues', link: '/en/guide/rabbitmq' },
+        { text: 'Resource manager', link: '/en/guide/resource-metrics' },
         { text: 'Manager users', link: '/en/guide/manager-users' },
         { text: 'Errors and troubleshooting', link: '/en/guide/troubleshooting' },
         { text: 'Architecture and coverage', link: '/en/guide/architecture' },

@@ -4,6 +4,7 @@ export const configLogSummary = (config: Partial<Config>) => {
   const webhooks = Array.isArray(config.webhooks) ? config.webhooks : []
 
   return {
+    ...(config.sessionStorage ? { session_storage: config.sessionStorage.backend, storage_owner: config.sessionStorage.owner, storage_fixture: !!config.sessionStorage.fixture } : {}),
     provider: config.provider || '<none>',
     server: config.server || '<none>',
     connection_type: config.connectionType || '<none>',

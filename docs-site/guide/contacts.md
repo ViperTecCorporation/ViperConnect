@@ -9,10 +9,17 @@ O ViperConnect possui quatro operações diferentes para contatos:
 
 ## Recuperar criptografia de um contato
 
-No painel, abra a sessão, entre em **Contatos** e clique em **Recuperar
-criptografia** no contato afetado. Leia e confirme o aviso. Use esta manutenção
+No painel, abra a sessão, entre em **Contatos** e use o ícone de atualização
+do contato afetado, identificado por **Recuperar criptografia** no tooltip e
+no leitor de tela. O texto não ocupa a linha dos ícones. Leia e confirme o aviso. Use esta manutenção
 somente ao investigar uma falha de criptografia, como “Aguardando mensagem”.
 Um contato offline ou uma mensagem ainda sem recibo não comprovam esse problema.
+
+Uma falha de comunicação com o worker ao listar contatos retorna HTTP 503 com
+código estável (`contact_directory_unavailable` ou `session_storage_worker_unavailable`),
+sem derrubar o processo web. Consultas SQLite leves têm prazo de 15s; consultas
+vencidas na fila não são executadas. Isso não cancela uma escrita já aceita nem
+autoriza recuperar criptografia ou reenviar mensagens automaticamente.
 
 ```bash
 curl -X POST "https://seu-dominio/5500000000001/contacts/recover-crypto" \
@@ -116,3 +123,25 @@ Use `next_cursor` na página seguinte enquanto `has_more` for `true`. O diretór
 é isolado por sessão e pode ser pesquisado por nome, telefone, username ou LID.
 
 Veja todos os campos, respostas e exemplos na [referência interativa](/api-reference).
+
+## Identidades PN/LID e nomes de participantes
+
+`GET /v15.0/{phone}/jidmap/{contact}` consulta o mapeamento de telefone/LID.
+A listagem `GET /v15.0/{phone}/jidmap` depende de `JIDMAP_LIST_ENABLED`; o escopo
+padrão é `session`, e `scope=global` consulta os registros compartilhados
+legados. Ambos mantêm a autenticação e o escopo da sessão da rota.
+
+Em sessão SQLite, os registros locais são consultados no worker dono; o
+processo HTTP não abre seu arquivo. Uma chave realmente ausente é um cache
+miss. Falha de SQLite/RPC, troca de geração ou migração em andamento retorna
+erro explícito (`409` para conflito; `503` para indisponibilidade), não uma
+listagem `200` silenciosamente incompleta nem fallback para Redis antigo.
+Diagnósticos internos não são incluídos na resposta.
+
+Quando as rotas de gerenciamento de grupos estiverem habilitadas,
+`GET /v15.0/{phone}/groups/{groupId}/join_requests` resolve nomes por aliases
+PN/LID somente no cache. A busca visita no máximo quatro identidades distintas
+e interrompe ciclos, inclusive PN → LID → PN. Sem nome conhecido, usa username,
+telefone ou LID já disponíveis; não inventa identidade nem consulta o WhatsApp
+apenas para obter o nome. Isso não altera permissões, aprovação de participantes
+ou o contrato de endereçamento dos grupos.

@@ -27,6 +27,7 @@ export declare class WaVoipCoordinator {
     private readonly deps;
     private readonly logger;
     private readonly unregisterHandlers;
+    private readonly admission;
     constructor(ctx: WaClientPluginContext, options?: WaVoipCoordinatorOptions);
     /**
      * Place an outgoing call to `options.peerJid` (optionally video, with a
@@ -98,6 +99,9 @@ export declare class WaVoipCoordinator {
     getCall(callId: string): CallInfo | null;
     /** Snapshot of every tracked call (ringing, connecting, or active). */
     getCalls(): readonly CallInfo[];
+    /** Atomically refuse migration if a call or accepted call operation exists.
+     * Returns rollback only; keep admission closed until disconnect on success. */
+    pauseForStorageMigration(): () => void;
     /**
      * Subscribe directly to a low-level {@link CallManagerEvents} event. Most
      * consumers should use the client-level `client.on('voip_*')` events

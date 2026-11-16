@@ -15,6 +15,7 @@ x-environment: &environment
   UNOAPI_VIDEO_WORKER_MODE: dedicated
   UNOAPI_BASE_STORE: /app/data
   AUTO_CONNECT: "false"
+  UNOAPI_STORAGE_SYNTHETIC_ONLY: ${LAB_STORAGE_SYNTHETIC_ONLY:-true}
   UNOAPI_MOBILE_PRIMARY_LAB: "true"
   WEBHOOK_URL: ""
   WEBHOOK_TOKEN: ""
@@ -73,6 +74,7 @@ services:
       - ./src:/app/src:ro
       - ./frontend:/app/frontend:ro
       - ./scripts:/app/scripts:ro
+      - ./tsconfig.runtime.json:/app/tsconfig.runtime.json:ro
       - ./public:/source-public:ro
       - ./lab:/app/lab:ro
       - compiled:/app/dist
@@ -106,11 +108,29 @@ services:
 
   worker-zapo:
     <<: *app
+    # Controlled storage tasks must not be killed by compiler/frontend hot reload.
+    command: [node, dist/src/cloud.js]
     environment:
       <<: *environment
       UNOAPI_PROCESS_ROLE: worker
       UNOAPI_MOBILE_COMPANION_PEM_LAB: "true"
       MOBILE_REGISTRATION_KEY: ${LAB_AUTH_TOKEN}
+      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_PERSISTENT: "true"
+      SESSION_STORAGE_DEFAULT: sqlite
+      # Optional: read older encrypted archives only; new backups never require a key.
+      SESSION_STORAGE_BACKUP_KEY_FILE: /app/session-data/.backup.key
+      SESSION_STORAGE_BACKUP_ENABLED: ${LAB_SESSION_STORAGE_BACKUP_ENABLED:-true}
+      SESSION_STORAGE_BACKUP_INTERVAL_HOURS: "12"
+      SESSION_STORAGE_BACKUP_ROTATION: weekly
+      SESSION_STORAGE_BACKUP_TIMEZONE: America/Cuiaba
+    volumes:
+      - compiled:/app/dist:ro
+      - public:/app/public:ro
+      - data:/app/data
+      - session-data:/app/session-data
+      - ./scripts:/app/scripts:ro
+      - ./lab/registration:/app/lab/registration:ro
 
   video-worker:
     <<: *app
@@ -168,6 +188,7 @@ networks:
   lab: {}
 
 volumes:
+  session-data: {}
   redis: {}
   rabbitmq: {}
   data: {}

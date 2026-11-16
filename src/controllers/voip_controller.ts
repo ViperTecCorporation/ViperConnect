@@ -3,7 +3,7 @@ import { Readable } from 'node:stream'
 import { sanitizeVoipConsolePayload, VoipService, VoipServiceError } from '../services/voip_service'
 import { ManagerVoipAccess } from '../services/manager_voip_access'
 
-const REMOVED_CONSOLE_PATHS = new Set(['login', 'users'])
+const REMOVED_CONSOLE_PATHS = new Set(['login', 'users', 'backups'])
 
 export class VoipController {
   constructor(private readonly service = new VoipService()) {}

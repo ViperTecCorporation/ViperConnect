@@ -15,6 +15,8 @@ import type { DataStore } from '../../src/services/data_store'
 import { SendError } from '../../src/services/send_error'
 import { UNOAPI_MEDIA_PUBLIC_URL, UNOAPI_MEDIA_SOURCE, UNOAPI_MEDIA_STORAGE_KEY } from '../../src/services/messages/outgoing_media_input'
 import { loadReplyWarning } from '../../src/services/reply_warning_outbox'
+import { amqpPublish } from '../../src/amqp'
+import { SessionStorageError } from '../../src/services/session_storage/types'
 
 describe('incoming job', () => {
   test('replays a pending video warning without sending the video again', async () => {
@@ -243,10 +245,11 @@ describe('incoming job', () => {
     expect(outgoing.sendHttp).not.toHaveBeenCalled()
   })
 
-  test('preserves the original message id when a Zapo status action fails', async () => {
+  test.each(['sent', 'delivered', 'failed', 'progress', 'read', 'deleted'])('keeps rejected %s updates out of send failures', async status => {
     const incoming = mock<Incoming>()
     const outgoing = mock<Outgoing>()
-    incoming.send = jest.fn().mockRejectedValue(new SendError(404, 'message_not_found'))
+    const error = new SendError(404, 'message_not_found')
+    incoming.send = jest.fn().mockRejectedValue(error)
     outgoing.sendHttp = jest.fn().mockResolvedValue(undefined)
     const job = new IncomingJob(incoming, outgoing, async () => ({
       ...defaultConfig,
@@ -256,32 +259,39 @@ describe('incoming job', () => {
       webhooks: [{ ...defaultConfig.webhooks[0] }],
     }))
 
-    await job.consume(
+    const publicationsBefore = (amqpPublish as jest.Mock).mock.calls.length
+    await expect(job.consume(
       '5566999999999',
       {
         payload: {
           message_id: 'uno-original-message',
-          status: 'read',
+          status,
         },
       },
-      { countRetries: 1, maxRetries: 5 },
-    )
+      { countRetries: 5, maxRetries: 5 },
+    )).rejects.toBe(error)
+    expect(outgoing.sendHttp).not.toHaveBeenCalled()
+    expect((amqpPublish as jest.Mock).mock.calls).toHaveLength(publicationsBefore)
+    expect(incoming.send).toHaveBeenCalledWith('5566999999999',
+      { message_id: 'uno-original-message', status }, expect.objectContaining({ unoMessageId: 'uno-original-message' }))
+  })
 
-    const status = (outgoing.sendHttp as jest.Mock).mock.calls[0][2].entry[0].changes[0].value.statuses[0]
-    expect(status).toEqual(
-      expect.objectContaining({
-        id: 'uno-original-message',
-        recipient_id: '5566999999999',
-        status: 'failed',
-        errors: [
-          expect.objectContaining({
-            error_data: expect.objectContaining({
-              message_type: 'status_read',
-            }),
-          }),
-        ],
-      }),
-    )
+  test.each([1, 5])('never emits a failed webhook for a VoIP ID rejected by SQLite (attempt %s)', async countRetries => {
+    const incoming = mock<Incoming>(), outgoing = mock<Outgoing>()
+    const error = new SessionStorageError(400, 'session_storage_message_status_invalid')
+    incoming.send.mockRejectedValue(error)
+    const job = new IncomingJob(incoming, outgoing, async () => ({
+      ...defaultConfig, provider: 'zapo', server: 'server_1',
+      webhooks: [{ ...defaultConfig.webhooks[0], sendUpdateMessages: true }],
+    }))
+    const publicationsBefore = (amqpPublish as jest.Mock).mock.calls.length
+
+    await expect(job.consume('5566999999999', { payload: {
+      message_id: 'voip-call:382', status: 'sent', recipient_id: '5511999999999',
+    } }, { countRetries, maxRetries: 5 })).rejects.toBe(error)
+
+    expect(outgoing.sendHttp).not.toHaveBeenCalled()
+    expect((amqpPublish as jest.Mock).mock.calls).toHaveLength(publicationsBefore)
   })
 
   test('does not block a delete status because the original message key already exists', async () => {

@@ -141,6 +141,138 @@ interno. Veja [Docker Compose](/guide/docker-compose#família-ip-das-conexões-z
 
 ## Validação
 
+### Estado da entrega em 13/11/2026
+
+O código consolidado inclui retomada da mesma chamada por até 60 segundos,
+correções de SDP/ICE/TURN e aviso local de reconexão nas duas pontas nativas.
+A build QA 4161307 foi instalada no Android e validada/enviada ao App Store
+Connect para TestFlight interno. O usuário confirmou o bip no teste real;
+isso não homologa automaticamente todas as redes, rotas de áudio ou modos
+de atendimento. O aviso é misturado à voz recebida, sem enviá-lo por RTP.
+
+As subseções abaixo registram etapas anteriores do diagnóstico. A central
+recebeu hotfix pontual, mas publicar os commits não gera uma imagem nova nem
+substitui automaticamente a stack em produção.
+
+### Cliente nativo após alternar 4G e Wi-Fi
+
+Se o ramal registra, mas fica aguardando serviço e responde `SIP 500` ao
+INVITE, a falha ocorre antes do áudio. No motor nativo do ViperChat foi
+adicionada uma atualização dos endereços locais do sistema antes de preparar
+uma nova chamada ICE/DTLS-SRTP. Isso evita selecionar a rota com o catálogo
+da rede anterior; um novo REGISTER sozinho não atualiza esse catálogo.
+
+O ajuste exige recompilar e instalar o SDK no aplicativo. Está em validação
+em pacote QA Android, não em uma nova versão publicada. Reiniciar o worker
+VoIP ou atualizar somente a imagem do ViperConnect não instala esse ajuste.
+Não altera credenciais, não força IPv4, não reinicia sockets de chamadas já
+abertas e não promete manter áudio durante uma troca de rede na chamada
+ativa. O despertar/registro do iOS em segundo plano é uma condição separada.
+
+Há outra falha possível com o mesmo texto na tela: receber a oferta por push,
+mas não receber o INVITE SIP antes de ela expirar. Após trocar de rede, um
+registro antigo em cache não comprova que o socket WSS ainda funciona. No
+Android, o app passa a observar a rede padrão e renovar o transporte quando
+ocioso, depois de receber os endereços da nova rede. Não reinicia chamadas
+pendentes/ativas e mantém a política push-only em segundo plano. Essa camada
+exige recompilar e instalar o APK completo; trocar somente a biblioteca do
+SDK não basta. Não é correção na VPS nem garantia de handover de áudio.
+Verificar separadamente a chegada do REGISTER, o INVITE e sua resposta;
+ausência de INVITE não deve ser diagnosticada como falha de RTP ou SIP 500.
+
+No reteste QA de 11/11/2026, o usuário confirmou o funcionamento da chamada
+com o Android nativo e o telefone WhatsApp ambos no Wi-Fi; o trace confirmou
+conexão, mídia segura nos dois sentidos e encerramento. Essa aprovação é
+limitada ao cenário testado, não ao despertar do iOS em segundo plano nem
+a uma troca de rede durante chamada ativa. O ajuste ainda não foi publicado.
+
+Para iOS, foi gerado no Mac um Archive local assinado `4.16.13`, build
+`4161302`, com o SDK atualizado e a preparação nativa em segundo plano.
+Assinaturas, APNs de produção e grupos compartilhados foram conferidos. O
+pacote mantém o modo experimental QA; ainda precisa de validação no iPhone,
+inclusive tela bloqueada e áudio. O teste sintético CallKit no simulador não
+foi aprovado. Não houve envio ao TestFlight nem publicação automática.
+
+### Atendida, mas sem concluir a conexão de áudio
+
+Um atendimento SIP pode completar sem que ICE/DTLS esteja pronto. O filtro
+de candidatos da central não pode remover o endereço padrão do SDP e ainda
+anunciá-lo em `c=`, `m=audio` ou `a=rtcp`: isso pode prender o cliente nativo
+em “conectando áudio”, mesmo com o ramal registrado.
+
+Nas ofertas/respostas iniciais, a ponte agora mantém esses campos coerentes
+com um candidato UDP RTP preservado pelo filtro. Mantém a família original
+quando possível, sem eliminar as alternativas IPv4/IPv6, alterar credenciais
+ou dispensar ICE/DTLS. Se nenhum candidato utilizável restar, retorna erro
+explícito. Re-INVITEs continuam exigindo a confirmação do par conforme abaixo.
+
+Essa correção é no serviço VoIP, sem nova configuração ou recompilação do app.
+Foi reproduzida e testada em ambiente isolado com o SDK nativo real e aplicada
+como hotfix pontual no VoIP da VPS em 11/11/2026, sem recriar a stack. Ainda
+não resolveu o reteste Android/1010 → iPhone/1001 de 11/11: o ICE conectou,
+mas DTLS ficou pendente e RTP zerado na origem. Não considerar esse sentido
+homologado apenas pelo ajuste de SDP. O hotfix sobrevive
+ao restart do container, mas não à recriação a partir da imagem antiga.
+
+No motor nativo, um caminho descoberto por STUN autenticado pode precisar de
+uma base local ainda sem par na checklist. O ajuste em desenvolvimento busca
+essa base entre os candidatos locais coletados, preservando UDP, componente,
+família e autenticação. Exige recompilar o SDK; não é uma configuração da RB
+nem uma correção já entregue ao aplicativo. Testes de pares não substituem
+DTLS, RTP e escuta bidirecional nos aparelhos. O ajuste isolado ainda não
+resolveu DTLS no ensaio restrito. Na chamada real, foi identificado outro
+descarte no motor Android, descrito a seguir.
+
+### Android recebe os pacotes, mas não conclui DTLS
+
+Um socket UDP IPv6 dual-stack pode entregar um pacote IPv4 como endereço
+IPv4-mapped (`::ffff:a.b.c.d`). O motor comparava essa origem com o candidato
+IPv4 validado exigindo também a mesma representação de família, descartando
+o pacote antes de DTLS apesar de IP e porta idênticos.
+
+O patch nativo em desenvolvimento reconhece somente essa equivalência exata
+no filtro ICE, mantendo IP, porta, lista de pares válidos, STUN e fingerprint
+DTLS obrigatórios. Não libera outras origens nem equivale NAT64 a IPv4.
+Exige recompilar o SDK/aplicativo; uma configuração no painel ou reinício
+da central não instala essa correção.
+
+Em 11/11/2026, dez controles UDP reais em loopback passaram no Android. O APK
+diagnóstico instalado também concluiu DTLS seguro e RTP nos dois sentidos em
+1010/Android Wi-Fi → 1001/iPhone 4G com o app em primeiro plano; o usuário
+confirmou a abertura do áudio. Isso não substitui escuta humana nas duas
+pontas nem homologa todos os cenários. Não houve nova alteração na VPS/RB.
+
+Com o iPhone bloqueado, um reteste separado permaneceu em “Conectando Áudio”
+antes de estabelecer o registro SIP nativo, apesar de oferta/bootstrap HTTP
+200. Essa falha de segundo plano continua pendente, assim como o empacotamento
+final dos SDKs Android/iOS. O Archive iOS anterior não contém este patch novo.
+
+O usuário confirmou que a falha com a tela bloqueada também ocorre na build
+4161302, que já tem a preparação em segundo plano. Foi gerado o Archive QA
+4161303 com o patch mapped e diagnóstico numérico de preparação/registro;
+compilação, assinatura e testes sintéticos passaram. Isso não significa
+instalação no iPhone, disponibilidade no TestFlight ou correção do segundo plano.
+
+### Áudio unilateral após a chamada ser atendida
+
+Nos clientes SIP nativos, uma renegociação (`re-INVITE`) não pode voltar a
+anunciar o relay IPv4 inicial quando ICE já selecionou outro caminho, como
+IPv6. A ponte VoIP passa a alinhar o destino do SDP ao par UDP efetivamente
+selecionado, sem trocar DTLS, codecs ou a conexão existente. Só aceita
+`remote-candidates` depois de confirmar os dois endpoints na lista de pares
+com checagens ICE bem-sucedidas, mesmo antes da publicação da seleção DTLS; em
+um reinício de ICE não reutiliza o par antigo.
+
+Se um cliente listar vários candidatos para o mesmo componente RTP, a ponte
+exige que o seu próprio transporte confirme o par escolhido; não aceita o
+primeiro endereço da lista como destino de áudio.
+
+Esse ajuste não exige nova configuração ou alteração da RB/Coturn. Está no
+código em desenvolvimento e em hotfix pontual na VPS de validação; isso não
+significa que uma nova imagem já foi publicada. Para homologar, confira RTP
+recebido e enviado após a renegociação **e** a escuta nos dois aparelhos. Um
+registro Online ou ICE conectado sozinho não comprova áudio bidirecional.
+
 Antes de iniciar, confira o AAAA e se IPv6 está habilitado no host:
 
 ```bash

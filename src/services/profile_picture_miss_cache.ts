@@ -1,9 +1,11 @@
 import { PROFILE_PICTURE_NOT_FOUND_TTL_SEC } from '../defaults'
-import { BASE_KEY, getRedis } from './redis'
+import { BASE_KEY } from './redis'
 import { profilePictureCacheIds } from './profile_picture_cache'
+import type { SessionStateRedis } from './session_storage/state_redis'
+import { getSessionPrivateState, rethrowSessionStateFence } from './session_storage/private_state'
 
-type RedisClient = Awaited<ReturnType<typeof getRedis>>
-type RedisFactory = () => Promise<RedisClient>
+type RedisClient = Pick<SessionStateRedis, 'zScore' | 'zRem' | 'zRemRangeByScore' | 'zAdd' | 'expire'>
+type RedisFactory = (phone: string) => Promise<RedisClient>
 
 export type ProfilePictureMissCacheOptions = {
   useRedis: boolean
@@ -18,7 +20,7 @@ export class ProfilePictureMissCache {
 
   constructor(private readonly options: ProfilePictureMissCacheOptions) {
     this.ttlMs = Math.max(0, options.ttlSeconds ?? PROFILE_PICTURE_NOT_FOUND_TTL_SEC) * 1_000
-    this.redisFactory = options.redisFactory ?? getRedis
+    this.redisFactory = options.redisFactory ?? getSessionPrivateState
   }
 
   async has(phone: string, jid: string, nowMs = Date.now()): Promise<boolean> {
@@ -28,12 +30,12 @@ export class ProfilePictureMissCache {
 
     if (this.options.useRedis) {
       try {
-        const redis = await this.redisFactory()
+        const redis = await this.redisFactory(phone)
         const score = await redis.zScore(this.key(phone), member)
         if (score !== null && score > nowMs) return true
         if (score !== null) await redis.zRem(this.key(phone), member)
         return false
-      } catch {}
+      } catch (error) { rethrowSessionStateFence(error) }
     }
 
     const expiresAt = this.expiresAt.get(`${phone}:${member}`) || 0
@@ -51,12 +53,12 @@ export class ProfilePictureMissCache {
     if (!this.options.useRedis) return
 
     try {
-      const redis = await this.redisFactory()
+      const redis = await this.redisFactory(phone)
       const key = this.key(phone)
       await redis.zRemRangeByScore(key, 0, nowMs)
       await redis.zAdd(key, [{ score: expiresAt, value: member }])
       await redis.expire(key, Math.ceil(this.ttlMs / 1_000))
-    } catch {}
+    } catch (error) { rethrowSessionStateFence(error) }
   }
 
   async invalidate(phone: string, jid: string): Promise<void> {
@@ -66,9 +68,9 @@ export class ProfilePictureMissCache {
     if (!this.options.useRedis) return
 
     try {
-      const redis = await this.redisFactory()
+      const redis = await this.redisFactory(phone)
       await redis.zRem(this.key(phone), member)
-    } catch {}
+    } catch (error) { rethrowSessionStateFence(error) }
   }
 
   private key(phone: string) {

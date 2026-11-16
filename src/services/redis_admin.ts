@@ -1,6 +1,6 @@
 import { getRedis, redisScanSome } from './redis'
 import { redactLogValue } from './log_redaction'
-import { isProtectedRedisKey, managerPreviewKeys, protectedRedisPrefixes, safeRedisPreview } from './redis_admin_preview'
+import { internalControlRedisPrefixes, isProtectedRedisKey, managerPreviewKeys, protectedRedisPrefixes, safeRedisPreview } from './redis_admin_preview'
 
 export type RedisKeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'none'
 
@@ -185,7 +185,17 @@ export class RedisAdmin {
     if (isProtectedRedisKey(key)) {
       let size = 0
       let value: unknown = null
-      if (type === 'list') {
+      if (type !== 'string' && internalControlRedisPrefixes.some(prefix => key.startsWith(prefix))) {
+        // Auth-token indices and unexpected collection fields can themselves be
+        // credentials. Do not enumerate their members or hash field names.
+        const lengthMethod = { hash: 'hLen', list: 'lLen', set: 'sCard', zset: 'zCard', stream: 'xLen' }[type]
+        size = lengthMethod ? Number(await client[lengthMethod](key)) : 0
+        value = '[REDACTED]'
+      } else if (type === 'string') {
+        const raw = await client.get(key)
+        size = typeof raw === 'string' ? raw.length : 0
+        value = safeRedisPreview(key, raw)
+      } else if (type === 'list') {
         size = Number(await client.lLen(key))
         value = (await client.lRange(key, 0, 199)).map((raw: unknown) => safeRedisPreview(key, raw))
       } else if (type === 'hash') {

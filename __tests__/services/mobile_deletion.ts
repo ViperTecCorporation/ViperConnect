@@ -5,7 +5,7 @@ const phone = '999123456789'
 const confirmation = { confirm: true, acknowledgeNewSms: true, phone }
 function fixture() {
   const operation = { acquire: jest.fn(async () => true), renew: jest.fn(async () => true), release: jest.fn() }
-  const ownership = { acquire: jest.fn(async () => true), renew: jest.fn(async () => true), release: jest.fn() }
+  const ownership = { acquire: jest.fn(async () => true), renew: jest.fn(async () => true), release: jest.fn(), ownership: () => ({ key: `unoapi-lease:zapo-session:${phone}`, token: 'synthetic-owner-token' }) }
   const deps = {
     list: jest.fn(async (): Promise<any[]> => [{ id, phone, state: 'draft' }]),
     registration: jest.fn(async (): Promise<any> => ({ canonicalPhone: phone })),
@@ -70,6 +70,18 @@ describe('full mobile deletion', () => {
     expect(s.deps.dispatch.mock.invocationCallOrder[0]).toBeLessThan(s.deps.clear.mock.invocationCallOrder[0])
     expect(s.operation.release).toHaveBeenCalled()
     expect(s.ownership.release).toHaveBeenCalled()
+  })
+  test('SQLite deletion finalizes the vault/draft and retained unlinked config in the same CAS', async () => {
+    const s = fixture(), config = { mobilePrimaryDraftId: id, mobilePrimaryDeleting: true, autoConnect: false, sessionStorage: { backend: 'sqlite', storageId: 'synthetic-storage', generation: 3 } }
+    s.deps.config.mockResolvedValue(config)
+    await s.service.remove(id, confirmation)
+    expect(s.deps.clear).toHaveBeenCalledWith(phone, config)
+    const options = s.deps.eval.mock.calls.at(-1)![1]
+    expect(options.keys[5]).toBe(`unoapi-config:${phone}`)
+    expect(options.keys[6]).toBe(`unoapi-lease:zapo-session:${phone}`)
+    expect(options.arguments.slice(2)).toEqual([id, phone, 'synthetic-storage', '3', 'synthetic-owner-token'])
+    expect(FINISH_MOBILE_DELETION).toContain('cfg.sessionStorageUnlinked=true')
+    expect(FINISH_MOBILE_DELETION).toContain('cfg.sessionStorage.state=\'offline\'')
   })
   test('removes abandoned registration with no imported session', async () => {
     const s = fixture(); s.deps.registration.mockResolvedValue(undefined); s.deps.config.mockResolvedValue(undefined)

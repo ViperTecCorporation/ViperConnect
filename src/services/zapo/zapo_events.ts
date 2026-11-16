@@ -34,6 +34,11 @@ const receiptStatus = (status: WaIncomingReceiptEvent['status']) => ({
 export const toUnoReceiptUpdates = (event: WaIncomingReceiptEvent, phoneJid?: string) => {
   const status = receiptStatus(event.status)
   if (!status) return []
+  // The typed receipt has no timestamp field; Zapo preserves the original stanza.
+  // Never substitute message creation time or local webhook arrival time.
+  const rawTimestamp = event.rawNode?.attrs?.t
+  const timestamp = typeof rawTimestamp === 'string' && /^\d+$/.test(rawTimestamp) ? Number(rawTimestamp) : 0
+  const hasTimestamp = Number.isSafeInteger(timestamp) && timestamp > 0 && timestamp <= Math.floor(Date.now() / 1000) + 300
   return event.messageIds.map((id) => ({
     key: {
       remoteJid: event.chatJid,
@@ -43,6 +48,7 @@ export const toUnoReceiptUpdates = (event: WaIncomingReceiptEvent, phoneJid?: st
       ...(event.participantJid ? { participant: event.participantJid } : {}),
     },
     update: { status },
+    ...(hasTimestamp ? { messageTimestamp: timestamp } : {}),
   }))
 }
 

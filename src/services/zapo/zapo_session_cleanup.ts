@@ -40,8 +40,9 @@ const clearDomains = async (session: WaStoreSession, domains: readonly SessionDo
   ))
 }
 
-export async function clearZapoSession(session: WaStoreSession) {
-  const persistedFailures = await clearDomains(session, persistedSessionDomains)
+export async function clearZapoSession(session: WaStoreSession, options: { preserveHistory?: boolean } = {}) {
+  const domains = options.preserveHistory ? persistedSessionDomains.filter(domain => !['messages', 'threads', 'contacts'].includes(domain)) : persistedSessionDomains
+  const persistedFailures = await clearDomains(session, domains)
   // Redis preKey.clear() recreates signal:meta with empty counters. Clear signal
   // after all prekey work, otherwise a full deletion leaves crypto metadata behind.
   persistedFailures.push(...await clearDomains(session, ['signal']))

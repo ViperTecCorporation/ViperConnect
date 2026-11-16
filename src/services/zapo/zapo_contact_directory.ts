@@ -8,6 +8,8 @@ import { resolveProfilePictureId } from '../profile_picture_identity'
 import { resolveZapoRedisKeyPrefix } from './zapo_store'
 import { normalizeContactPhoneNumber } from './zapo_contact_phone'
 import { zapoUsernameIndex } from './zapo_username_index'
+import { isSqliteSession, isStorageWorker, storageOwner } from '../session_storage/routing'
+import { sessionStorageRpc } from '../session_storage/rpc'
 
 export { normalizeContactPhoneNumber } from './zapo_contact_phone'
 
@@ -115,6 +117,10 @@ export class ZapoContactDirectory implements ContactDirectory {
   async list(phone: string, query: ContactDirectoryQuery = {}): Promise<ContactDirectoryPage> {
     const config = await this.loadConfig(phone)
     if (config.provider !== 'zapo') throw new SendError(409, 'contact_directory_requires_zapo_provider')
+    if (isSqliteSession(config)) {
+      if (isStorageWorker() && config.sessionStorage!.owner === storageOwner()) return new (await import('../session_storage/sqlite_queries.js')).SqliteSessionQueries(phone, config).contacts(query)
+      return sessionStorageRpc<ContactDirectoryPage>(phone, config, 'query.contacts', [query])
+    }
 
     const cursor = /^\d+$/.test(`${query.cursor || '0'}`) ? `${query.cursor || '0'}` : '0'
     const limit = Math.min(MAX_LIMIT, Math.max(1, Math.trunc(query.limit || DEFAULT_LIMIT)))
