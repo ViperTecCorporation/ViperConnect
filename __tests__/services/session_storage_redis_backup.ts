@@ -56,6 +56,8 @@ test('CLI capability is explicit and backup is disabled unless operator opted in
 test('new backup streams unencrypted RDB without any key, verifies readback, publishes sidecar and removes temporary files', async () => {
   const f = fixture(), result = await f.service.backup({ ...f.input, backupPassword: undefined })
   expect(result).toMatchObject({ status: 'ready', scope: 'all-databases', uploadVerified: true, bytes: rdb.length, protection: 'none' })
+  expect(f.store.save.mock.calls[0][1].readableObjectMode).toBe(false)
+  expect(f.store.save.mock.calls[0][1].readableHighWaterMark).toBe(256 * 1024)
   expect(f.store.open).toHaveBeenCalledWith(result.objectKey)
   expect(f.objects.get(result.objectKey + '.manifest.json')!.toString()).not.toContain('password')
   expect(f.objects.get(result.objectKey)!.toString()).toContain('viperconnect-storage-backup-stream')

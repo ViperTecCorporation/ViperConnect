@@ -3,7 +3,7 @@
 # ViperConnect
 
 [![License](https://img.shields.io/badge/license-GPL--3.0-orange)](./LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0.42-blue)](./docs/release-4.0.42.md)
+[![Version](https://img.shields.io/badge/version-4.0.43-blue)](./docs/release-4.0.43.md)
 [![Docker](https://img.shields.io/badge/GHCR-viperconnect-blue)](https://github.com/ViperTecCorporation/ViperConnect/pkgs/container/viperconnect)
 [![Documentação](https://img.shields.io/badge/docs-viperconnect.vipertec.net-9d3836)](https://viperconnect.vipertec.net/)
 

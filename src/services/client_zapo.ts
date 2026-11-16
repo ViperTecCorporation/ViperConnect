@@ -80,6 +80,8 @@ import { createYouTubeLinkPreviewResolverForTransport } from './messages/youtube
 import { zapoOperationDeadline } from './zapo/zapo_operation_deadline'
 import { companionDiagnosticLogger } from './mobile_primary/companion_diagnostic_logger'
 import { recordSessionMessageEvent } from './messages/session_message_events'
+import { publishOwnedSqliteConnectionState } from './session_storage/connection_state'
+import { getRedis, clearConnectCount } from './redis'
 import { withZapoWebClientProfile, zapoWebClientDeviceOptions, zapoWebClientProfileLabel } from './zapo/zapo_web_client_profile'
 
 type VoipCoordinator = ReturnType<ReturnType<typeof voipPlugin>['setup']>
@@ -199,6 +201,18 @@ export class ClientZapo implements Client {
     )
   }
 
+  private async setSessionStatus(status: 'online' | 'offline' | 'disconnected' | 'connecting') {
+    if (this.config.useRedis && this.config.sessionStorage?.backend === 'sqlite') {
+      if (!this.lease) return
+      const redis = await getRedis()
+      if (!await publishOwnedSqliteConnectionState(redis, this.phone, this.config.sessionStorage, this.lease.ownership(), status)) return
+      if (status !== 'connecting') this.config.sessionStorage.state = status === 'online' ? 'active' : 'offline'
+      if (status === 'online') await clearConnectCount(this.phone)
+      return
+    }
+    await this.unoStore?.sessionStore.setStatus(this.phone, status)
+  }
+
   private async syncGroupCache(client: ZapoClient, groupJid?: string) {
     if (!this.unoStore) return
     const groups = groupJid ? [await client.group.queryGroupMetadata(groupJid)] : [...(await client.group.queryAllGroups())]
@@ -271,7 +285,7 @@ export class ClientZapo implements Client {
     this.catalog = undefined
     this.pendingPasskey?.reject(new SendError(502, 'zapo_passkey_connection_failed'))
     try {
-      await this.unoStore?.sessionStore.setStatus(this.phone, 'offline')
+      await this.setSessionStatus('offline')
     } catch (statusError) {
       logger.warn(statusError as any, 'Could not persist Zapo offline status after connection failure for %s', this.phone)
     } finally {
@@ -473,7 +487,7 @@ export class ClientZapo implements Client {
             this.connected = online
             if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, online, { reason: 'transport_watchdog', reconnect_expected: !online })
             logger.warn({ phone: this.phone, online }, 'ZAPO_TRANSPORT_STATE_CHANGED')
-            await this.unoStore?.sessionStore.setStatus(this.phone, online ? 'online' : 'offline')
+            await this.setSessionStatus(online ? 'online' : 'offline')
           },
           () => this.recoverTransport(client, 'transport_offline_timeout'),
         )
@@ -481,7 +495,7 @@ export class ClientZapo implements Client {
         this.presenceHeartbeat.start(client, !!this.config.mobilePrimaryDraftId || this.config.markOnlineOnConnect, () => isCurrent() && this.connected)
         this.voiceBridge?.start()
         this.reconnectAttempts = 0
-        await this.unoStore?.sessionStore.setStatus(this.phone, 'online')
+        await this.setSessionStatus('online')
         await this.emitStatus(`Connected with ${this.phone} using Zapo`).catch((error) => {
           logger.warn(error as any, 'Could not emit Zapo connected status for %s', this.phone)
         })
@@ -510,7 +524,7 @@ export class ClientZapo implements Client {
       this.voiceBridge?.stop(event.isLogout ? 'session_unlinked' : 'connection_closed')
       this.pendingPasskey?.reject(new SendError(502, event.isLogout ? 'zapo_passkey_session_unlinked' : 'zapo_passkey_connection_closed'))
       try {
-        await this.unoStore?.sessionStore.setStatus(this.phone, event.isLogout ? 'disconnected' : 'offline')
+        await this.setSessionStatus(event.isLogout ? 'disconnected' : 'offline')
       } finally {
         if (this.socket === client && !this.intentionalDisconnect) {
           this.connectionGeneration += 1
@@ -944,7 +958,7 @@ export class ClientZapo implements Client {
     this.profilePictures = undefined
     this.catalog = undefined
     await Promise.resolve(socket?.disconnect()).catch(() => undefined)
-    await this.unoStore?.sessionStore.setStatus(this.phone, 'offline')
+    await this.setSessionStatus('offline')
     this.intentionalDisconnect = false
     this.scheduleReconnect()
   }
@@ -1039,7 +1053,7 @@ export class ClientZapo implements Client {
     if (this.socket && this.messages) return
     await this.acquireRuntimeOwnership()
     await checkPreparation()
-    await sessionStore.setStatus(this.phone, 'connecting')
+    await this.setSessionStatus('connecting')
 
     const zapoStore = this.storeRegistry.get(this.config, this.phone)
     await prepareZapoState(zapoStore)
@@ -1256,7 +1270,7 @@ export class ClientZapo implements Client {
       clients.delete(this.phone)
       configs.delete(this.phone)
       try {
-        await this.unoStore?.sessionStore.setStatus(this.phone, 'offline')
+        await this.setSessionStatus('offline')
       } finally {
         await this.releaseRuntimeOwnership()
       }

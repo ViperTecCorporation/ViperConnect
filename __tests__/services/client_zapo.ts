@@ -41,6 +41,7 @@ import { registerZapoStatePreparation } from '../../src/services/zapo/zapo_persi
 import { registerZapoHistoryReader } from '../../src/services/zapo/zapo_history'
 import logger from '../../src/services/logger'
 import * as proxyOptions from '../../src/services/zapo/zapo_proxy'
+import * as redisAccess from '../../src/services/redis'
 
 describe('ClientZapo', () => {
   const phone = '5566999999999'
@@ -121,6 +122,26 @@ describe('ClientZapo', () => {
       await expect(service.recoverContactCrypto('123@lid')).rejects.toThrow('409: zapo_client_not_connected')
       expect(recover).not.toHaveBeenCalled()
     } finally { recover.mockRestore() }
+  })
+
+  test('SQLite status adapter publishes fenced state without the old unfenced status write', async () => {
+    config.useRedis = true
+    config.sessionStorage = { backend: 'sqlite', owner: 'server_1', storageId: '12345678-1234-4234-8234-123456789abc', generation: 2, state: 'offline' }
+    ;(service as any).config = config; (service as any).unoStore = { sessionStore }
+    const evalLua = jest.fn().mockResolvedValue(1)
+    const redis = jest.spyOn(redisAccess, 'getRedis').mockResolvedValue({ eval: evalLua } as any)
+    const clear = jest.spyOn(redisAccess, 'clearConnectCount').mockResolvedValue(undefined as any)
+    ;(service as any).lease = { ownership: () => ({ key: `unoapi-lease:zapo-session:${phone}`, token: 'owner-token' }) }
+    try {
+      await (service as any).setSessionStatus('online')
+      expect(config.sessionStorage.state).toBe('active'); expect(clear).toHaveBeenCalledWith(phone)
+      expect(sessionStore.setStatus).not.toHaveBeenCalled()
+      evalLua.mockResolvedValueOnce(0)
+      await (service as any).setSessionStatus('offline')
+      expect(config.sessionStorage.state).toBe('active')
+      await (service as any).setSessionStatus('offline')
+      expect(config.sessionStorage.state).toBe('offline')
+    } finally { (service as any).lease = undefined; redis.mockRestore(); clear.mockRestore() }
   })
 
   test.each(['migrating', 'restoring', 'fixture'])('fresh connect rejects the actual %s config before loading any store', async (state) => {

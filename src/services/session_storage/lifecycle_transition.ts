@@ -8,7 +8,7 @@ export const sessionLifecycleIdentity = (config: Config) => JSON.stringify([
   config.provider, config.server, config.mobilePrimaryDraftId,
   !!config.mobilePrimaryDeleting, config.sessionStorage ? [
     config.sessionStorage.backend, config.sessionStorage.storageId, config.sessionStorage.owner,
-    config.sessionStorage.generation, config.sessionStorage.state, !!config.sessionStorage.fixture,
+    config.sessionStorage.generation, ['active', 'offline'].includes(config.sessionStorage.state) ? 'stable' : config.sessionStorage.state, !!config.sessionStorage.fixture,
   ] : null,
 ])
 

@@ -325,6 +325,18 @@ Estados usuais: `sent`, `delivered`, `read`, `played` e `failed`.
 
 ## Falha
 
+`statuses[].status=failed` informa uma falha de envio de mensagem, não uma
+falha ao aplicar um status/recibo solicitado pela aplicação. Erros dessas
+atualizações permanecem observáveis na fila/logs, sem gerar um webhook `failed`
+para a mensagem original, mesmo na última tentativa. A aceitação HTTP da
+operação assíncrona não confirma que o status foi aplicado.
+
+Notas privadas e bolhas/artefatos de chamadas são eventos internos do receptor:
+não envie IDs como `voip-call:382` para a rota de mensagens como status WhatsApp.
+O validador de IDs do storage permanece ativo. A correção do emissor desses
+status no ViperChat exige atualização separada de seu backend; atualizar apenas
+o ViperConnect não limpa erros já gravados em bolhas existentes.
+
 ```json
 {
   "statuses": [{

@@ -46,6 +46,8 @@ import { ZapoContactDirectory } from './services/zapo/zapo_contact_directory'
 import { QueuesController } from './controllers/queues_controller'
 import { RedisAdminController } from './controllers/redis_admin_controller'
 import { ResourceMetricsController } from './controllers/resource_metrics_controller'
+import { ServiceControlController } from './controllers/service_control_controller'
+import { ServiceLogsController } from './controllers/service_logs_controller'
 import { ContactBookIncoming } from './services/contacts/contact_book_incoming'
 import { VoipController } from './controllers/voip_controller'
 import { voipBackupRouter } from './controllers/voip_backup_controller'
@@ -85,6 +87,9 @@ export const router = (
   router.use('/manager/voip-backups', voipBackupRouter())
   router.use('/manager', managerRouter())
   router.use('/:version', sessionStorageRouter(sessionStorageGateway))
+  const serviceControl = new ServiceControlController()
+  // Dedicated agent credential; never uses a personal/session token or returns application data.
+  router.get('/internal/service-control/safety', serviceControl.guard.bind(serviceControl))
   router.use(managerAccess())
   installSessionMessageSocket(socket, getConfig)
   const sessionMessages = new SessionMessagesController(new SessionMessages(getConfig), getConfig)
@@ -180,6 +185,11 @@ export const router = (
   router.get('/version', middleware, indexController.versionStatus.bind(indexController))
   const resources = new ResourceMetricsController()
   router.get('/admin/resources', middleware, resources.handle.bind(resources))
+  router.get('/admin/resources/control', middleware, serviceControl.handle.bind(serviceControl))
+  router.get('/admin/resources/operations/:operation', middleware, serviceControl.handle.bind(serviceControl))
+  router.post('/admin/resources/:component/restart', middleware, serviceControl.handle.bind(serviceControl))
+  const serviceLogs = new ServiceLogsController()
+  router.get('/admin/resources/:component/logs', middleware, serviceLogs.handle.bind(serviceLogs))
   router.get('/admin/resources/:component/history', middleware, resources.handle.bind(resources))
   router.get('/admin/rabbitmq/queues', middleware, queuesController.list.bind(queuesController))
   router.get('/admin/rabbitmq/queues/:queue/messages', middleware, queuesController.preview.bind(queuesController))

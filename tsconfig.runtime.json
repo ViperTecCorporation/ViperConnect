@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": [
     "src/cloud.ts",
+    "src/services/service_control/standalone.ts",
     "src/services/session_storage/standalone_recovery.ts",
     "src/services/session_storage/standalone_web.ts",
     "src/services/session_storage/standalone_web_worker.ts",

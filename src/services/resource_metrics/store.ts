@@ -56,10 +56,23 @@ export class ResourceMetricsStore {
   async leased(token: string) { return await this.redis.sendCommand(['GET', this.prefix + 'collector']) === token }
 }
 
-/** One configured VoIP endpoint: an old container is history, not a second service. */
-export function currentResourceComponents(samples: ResourceSample[]): ResourceSample[] {
-  const voip = samples.filter(s => s.kind === 'voip').reduce<ResourceSample | undefined>((latest, s) => !latest || s.t > latest.t ? s : latest, undefined)
-  return samples.filter(s => s.kind !== 'voip' || s.id === voip?.id)
+/** Retire expired incarnations, not healthy parallel replicas or other servers. */
+export function currentResourceComponents(samples: ResourceSample[], now = Date.now()): ResourceSample[] {
+  const groups = new Map<string, ResourceSample[]>()
+  for (const sample of samples) {
+    // Default cloud names encode server, role and hostname. Do not infer a
+    // deployment relationship from arbitrary custom instance labels.
+    const identity = /^([A-Za-z0-9_-]{1,80}) · (web|broker|worker|video|all) · [A-Za-z0-9_.-]+$/.exec(sample.name)
+    const group = sample.kind === 'voip' ? 'voip' : identity && identity[2] === sample.kind ? `${identity[1]}:${sample.kind}` : `id:${sample.id}`
+    groups.set(group, [...groups.get(group) || [], sample])
+  }
+  const selected = new Set<string>()
+  for (const [group, values] of groups) {
+    const live = group === 'voip' ? [] : values.filter(sample => now - sample.t < LIVE_MS)
+    const current = live.length ? live : [values.reduce((latest, sample) => sample.t > latest.t ? sample : latest)]
+    for (const sample of current) selected.add(sample.id)
+  }
+  return samples.filter(sample => selected.has(sample.id))
 }
 
 export function resourceTotal(samples: ResourceSample[]): ResourceSample {

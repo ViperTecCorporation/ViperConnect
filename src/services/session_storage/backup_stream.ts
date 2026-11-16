@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { Readable } from 'node:stream'
 import { decryptSessionStream } from '../session_transfer/archive_stream'
 import { SessionStorageError } from './types'
 
@@ -6,6 +7,13 @@ const FORMAT = 'viperconnect-storage-backup-stream', LEGACY = 'viperconnect-sess
 const FRAME_BYTES = 4 * 1024 * 1024, LINE_BYTES = 6 * 1024 * 1024
 export type BackupProtection = 'none' | 'aes-256-gcm'
 export type BackupFrame = { kind: 'meta'; value: any; protection: BackupProtection } | { kind: 'records'; value: any[] } | { kind: 'end'; count: number }
+export const BACKUP_STREAM_HIGH_WATER_MARK = 256 * 1024
+
+/** Make the byte budget explicit instead of relying on object-mode defaults. */
+export function backupArchiveReadable(archive: AsyncIterable<Buffer>): Readable {
+  return Readable.from(archive, { objectMode: false, highWaterMark: BACKUP_STREAM_HIGH_WATER_MARK })
+}
+
 const invalid = (): never => { throw new SessionStorageError(409, 'session_storage_backup_stream_invalid') }
 const object = (value: any) => value && typeof value === 'object' && !Array.isArray(value)
 const shape = (value: any, keys: string) => object(value) && Object.keys(value).sort().join(',') === keys

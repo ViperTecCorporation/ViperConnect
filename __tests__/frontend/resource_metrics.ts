@@ -5,6 +5,32 @@ import { renderResourcesPage } from '../../frontend/pages/resources'
 import { ViperConnectApp } from '../../frontend/app'
 
 const overview = { archiveEnabled: true, prefix: 'metrics/v1/test/', components: [{ id: 'a'.repeat(24), name: '<worker>', kind: 'worker', t: Date.now(), n: 1, ramBytes: 104857600, live: true, diskBytes: 2048 }], redisUnavailable: false, archiveUnavailable: false }
+test('whole summary card opens details; operational buttons exist only inside current service details', async () => {
+  const api = { request: jest.fn().mockResolvedValue({ points: [], warnings: [], resolution: 'minute' }), serviceLogs: jest.fn().mockRejectedValue(new Error('synthetic source unavailable')) }
+  const panel = new ResourceMetricsPanel(api as any, jest.fn()), id = overview.components[0].id
+  panel.current = overview as any
+  panel.control.overview = { configured: true, targets: [{ component: id, name: 'worker', backend: 'docker', available: true, logs: true, confirmation: 'proof', expiresAt: Date.now() + 60000 }] }
+  const grid = panel.html()
+  expect(grid).toContain('<button class="resource-card ')
+  expect(grid).toContain('Ver detalhes')
+  expect(grid).not.toContain('resources-control-open'); expect(grid).not.toContain('resources-logs-open')
+  await panel.action('resources-open', id)
+  expect(panel.dialog()).toContain('resources-control-open'); expect(panel.dialog()).toContain('resources-logs-open')
+  expect(panel.dialog()).toContain('resource-periods'); expect(panel.dialog()).toContain('resource-charts')
+  await panel.action('resources-logs-open', id)
+  expect(panel.logs.opened).toBe(true); expect(panel.open).toBe(true)
+  await panel.action('resources-logs-close')
+  expect(panel.dialog()).toContain('Ações do serviço'); expect(panel.selected).toBe(id)
+  expect(api.request).toHaveBeenCalledTimes(1)
+  panel.control.action = jest.fn(async action => { panel.control.opened = action === 'resources-control-open' })
+  await panel.action('resources-control-open', id); expect(panel.open).toBe(true)
+  await panel.action('resources-control-close'); expect(panel.dialog()).toContain('resources-control-open')
+  panel.current!.historicalComponents = [{ ...overview.components[0], id: 'b'.repeat(24), live: false } as any]
+  await panel.action('resources-open', 'b'.repeat(24))
+  expect(panel.dialog()).not.toContain('resources-control-open'); expect(panel.dialog()).not.toContain('resources-logs-open')
+  panel.current!.components[0].kind = 'total'; await panel.action('resources-open', id)
+  expect(panel.dialog()).not.toContain('resources-control-open'); panel.reset()
+})
 test('overview cards are escaped and clickable; dashboard links to the dedicated page only for admin', async () => {
   const panel = new ResourceMetricsPanel({ request: jest.fn().mockResolvedValue(overview) } as any, jest.fn())
   await panel.refresh()
@@ -24,6 +50,23 @@ test('S3 readings have date and last-measurement label, not a live claim', async
   await panel.refresh()
   expect(panel.html()).toContain('Última medição'); expect(panel.html()).not.toContain('resource-live')
   expect(panel.html()).toContain('recuperada do S3')
+})
+
+test('retired containers leave the card grid and keep clickable history in a collapsed list', async () => {
+  const old = { ...overview.components[0], id: 'b'.repeat(24), name: '<retired-worker>', live: false, source: 's3' }
+  const api = { request: jest.fn().mockResolvedValueOnce({ ...overview, historicalComponents: [old] }).mockResolvedValue({ points: [], range: '1d', resolution: 'minute', warnings: [] }) }
+  const panel = new ResourceMetricsPanel(api as any, jest.fn())
+  await panel.refresh()
+  const html = panel.html(), grid = html.split('<div class="resource-cards">')[1].split('<details')[0]
+  expect(grid).not.toContain('retired-worker')
+  expect(html).toContain('<details class="resource-previous"><summary>Instâncias anteriores (1)')
+  expect(html).not.toContain('<details class="resource-previous" open')
+  expect(html).toContain('&lt;retired-worker&gt;')
+  expect(html).toContain('Não entram no total atual')
+  await panel.action('resources-open', old.id)
+  expect(api.request).toHaveBeenLastCalledWith(`/admin/resources/${old.id}/history?range=1d`)
+  expect(panel.dialog()).toContain('&lt;retired-worker&gt;')
+  expect(panel.dialog()).toContain('S3 · Última medição')
 })
 test('period controls query all five ranges and closing ignores a late response', async () => {
   const api = { request: jest.fn().mockResolvedValue({ points: [], range: '1d', resolution: 'minute', warnings: [] }) }, panel = new ResourceMetricsPanel(api as any, jest.fn())
@@ -100,5 +143,16 @@ test('resource polling is isolated from sessions, paused for hidden pages and op
     expect(app.loadSessions).not.toHaveBeenCalled(); expect(app.refreshIn).toBe(1)
     documentState.visibilityState = 'visible'; app.view = 'dashboard'; app.mobileDevices = {}; app.sessionTransfers = {}
     app.tickRefresh(); expect(app.resources.refresh).toHaveBeenCalledTimes(1); expect(app.loadSessions).toHaveBeenCalledTimes(1)
+  } finally { if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document') }
+})
+test('restart status keeps polling inside details, but never rerenders an active log reader', () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'document')
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { visibilityState: 'visible' } })
+  try {
+    const app = Object.create(ViperConnectApp.prototype) as any
+    app.identity = { role: 'admin' }; app.view = 'resources'; app.api = { getToken: () => 'test' }
+    app.resources = { open: true, refresh: jest.fn(), logs: { opened: false }, control: { poll: jest.fn() } }
+    app.tickRefresh(); expect(app.resources.control.poll).toHaveBeenCalledTimes(1); expect(app.resources.refresh).not.toHaveBeenCalled()
+    app.resources.logs.opened = true; app.tickRefresh(); expect(app.resources.control.poll).toHaveBeenCalledTimes(1)
   } finally { if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document') }
 })

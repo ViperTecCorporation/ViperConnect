@@ -45,7 +45,10 @@ export class ResourceMetricsQuery {
     if (this.rabbitEnabled && !samples.some(row => row.kind === 'rabbitmq')) samples.push({
       id: resourceId(this.store.stack + ':rabbitmq'), name: 'RabbitMQ', kind: 'rabbitmq', t: 0, n: 0, memorySource: 'rabbitmq-node',
     })
-    samples = currentResourceComponents(samples)
+    const current = currentResourceComponents(samples), currentIds = new Set(current.map(sample => sample.id))
+    const historicalComponents = samples.filter(sample => sample.kind !== 'total' && !currentIds.has(sample.id))
+      .map(sample => ({ ...sample, source: source.get(sample.id), live: false }))
+    samples = current
     const live = samples.filter(sample => source.get(sample.id) === 'redis' && Date.now() - sample.t < LIVE_MS && sample.kind !== 'total')
     if (live.length) {
       const total = resourceTotal(samples.filter(sample => source.get(sample.id) === 'redis'))
@@ -55,6 +58,7 @@ export class ResourceMetricsQuery {
     }
     return { sampledAt: Date.now(), intervalSeconds: 60, redisUnavailable, archiveUnavailable,
       archiveEnabled: !!this.archive.objects, prefix: `metrics/v1/${this.store.stack}/`,
+      historicalComponents,
       components: samples.map(sample => ({ ...sample, source: source.get(sample.id), live: sample.ramBytes !== undefined && source.get(sample.id) === 'redis' && Date.now() - sample.t < LIVE_MS })) }
   }
 

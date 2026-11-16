@@ -50,6 +50,8 @@ test('new unencrypted streaming backup/restore needs no key and preserves binary
   const manifest = await f.service.backup({ ...f.input, password: undefined, kind: 'mobile-primary', supplement })
   expect(manifest.objectKey).toBe(`backups/session-storage/${phone}/${manifest.id}.viperstorage`)
   expect(manifest.protection).toBe('none'); expect(f.objects.get(manifest.objectKey)!.toString()).toContain('viperconnect-storage-backup-stream')
+  expect(f.store.save.mock.calls[0][1].readableObjectMode).toBe(false)
+  expect(f.store.save.mock.calls[0][1].readableHighWaterMark).toBe(256 * 1024)
   expect(f.objects.get(manifest.objectKey)!.toString()).toContain('not-a-real-key')
   const path = join(directory, 'restored.sqlite'), result = await f.service.restore({ phone, backupId: manifest.id, stagedPath: path })
   expect(result.autoConnect).toBe(false); expect(result.supplement).toEqual(supplement)

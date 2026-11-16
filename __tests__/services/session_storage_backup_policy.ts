@@ -1,9 +1,16 @@
 import { Readable } from 'node:stream'
-import { backupRetention, indexedBackupManifests, weeklyBackupSlots, publishBackupManifest, pruneBackupSlots } from '../../src/services/session_storage/backup_policy'
+import { backupRetention, sessionBackupsEnabled, indexedBackupManifests, weeklyBackupSlots, publishBackupManifest, pruneBackupSlots } from '../../src/services/session_storage/backup_policy'
 import type { BackupObjects } from '../../src/services/session_storage/backup_objects'
 import type { SqliteBackupManifest } from '../../src/services/session_storage/backup'
 
 const phone = '999123456789', scope = { kind: 'session-storage' as const, id: phone }
+
+test.each([undefined, 'true', '', 'false'])('SQLite backup policy defaults on and only explicit false disables it: %s', value => {
+  const env = value === undefined ? {} : { SESSION_STORAGE_BACKUP_ENABLED: value }
+  expect(sessionBackupsEnabled(env)).toBe(value !== 'false')
+  // The SQLite switch never grants Redis-wide snapshot opt-in.
+  expect(env).not.toHaveProperty('SESSION_STORAGE_REDIS_BACKUP_ENABLED')
+})
 const manifest = (suffix = '001', owner = phone): SqliteBackupManifest => {
   const id = `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`
   return { id, version: 1, phone: owner, storageId: '00000000-0000-4000-8000-000000000099', generation: 2, createdAt: '2026-11-08T16:00:00.000Z', objectKey: `backups/session-storage/${owner}/${id}.viperstorage`, bytes: 100, sha256: 'a'.repeat(64), kind: 'linked-session', status: 'ready' }
@@ -74,4 +81,10 @@ test('weekly wiring uses Cuiaba, scoped legacy lookups, task busy state and comp
   await service.options.forget!(value); expect(f.values.has(key)).toBe(false)
   f.values.set(key, 'changed-after-capture'); await service.options.forget!(value); expect(f.values.get(key)).toBe('changed-after-capture')
   expect(await pruneBackupSlots(scope, f.objects, f.redis, {})).toEqual({ deleted: 0, deferred: true })
+})
+
+test.each(['pending', 'running', 'diverged', 'failed', 'ready'])('background cleanup %s pins the migration backup until safe completion', async cleanup => {
+  const f = fixture(), env = { SESSION_STORAGE_BACKUP_ROTATION: 'weekly' }
+  f.values.set(`unoapi-session-storage:migration-completion:${phone}`, JSON.stringify({ cleanup }))
+  expect(await weeklyBackupSlots(scope, f.objects, f.redis, env)!.options.busy!()).toBe(cleanup !== 'ready')
 })

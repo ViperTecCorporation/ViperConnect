@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { Readable } from 'node:stream'
-import { decodeBackupStream, encodeBackupStream } from '../../src/services/session_storage/backup_stream'
+import { Readable, Writable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { backupArchiveReadable, BACKUP_STREAM_HIGH_WATER_MARK, decodeBackupStream, encodeBackupStream } from '../../src/services/session_storage/backup_stream'
 import { encryptSessionStream } from '../../src/services/session_transfer/archive_stream'
 
 const password = 'synthetic-legacy-backup-key'
@@ -10,6 +11,35 @@ const source = async function* (values: unknown[] = records) { yield* values }
 async function collect(stream: AsyncIterable<Buffer>) { const result: Buffer[] = []; for await (const chunk of stream) result.push(chunk); return Buffer.concat(result) }
 async function decoded(input: Buffer | string, key?: string) { const result: any[] = []; for await (const frame of decodeBackupStream(Readable.from([input]), key)) result.push(frame); return result }
 async function archive() { return collect(encodeBackupStream(meta, source())) }
+
+test('archive read-ahead is byte-bounded under a slow consumer, without changing wire bytes', async () => {
+  const chunks = async function* () { for (let n = 0; n < 128; n++) yield Buffer.alloc(128 * 1024, n) }
+  const stream = backupArchiveReadable(chunks())
+  expect(stream.readableObjectMode).toBe(false)
+  expect(stream.readableHighWaterMark).toBe(BACKUP_STREAM_HIGH_WATER_MARK)
+  let bytes = 0, queued = 0
+  await pipeline(stream, new Writable({ highWaterMark: 1, write(chunk, _encoding, done) {
+    bytes += chunk.length
+    setImmediate(() => { queued = Math.max(queued, stream.readableLength); done() })
+  } }))
+  expect(bytes).toBe(16 * 1024 * 1024)
+  expect(queued).toBeLessThanOrEqual(BACKUP_STREAM_HIGH_WATER_MARK + 128 * 1024)
+  expect(await collect(backupArchiveReadable(encodeBackupStream(meta, source())))).toEqual(await archive())
+})
+
+test('consumer failure closes the archive iterator instead of continuing to prefetch a backup', async () => {
+  let closed = false, produced = 0
+  const chunks = async function* () {
+    try { for (let n = 0; n < 1000; n++) { produced++; yield Buffer.alloc(128 * 1024) } }
+    finally { closed = true }
+  }
+  const stream = backupArchiveReadable(chunks())
+  await expect(pipeline(stream, new Writable({ write(_chunk, _encoding, done) { done(new Error('synthetic upload interrupted')) } })))
+    .rejects.toThrow('synthetic upload interrupted')
+  expect(stream.destroyed).toBe(true)
+  expect(closed).toBe(true)
+  expect(produced).toBeLessThan(10)
+})
 function rewrite(input: Buffer, mutate: (lines: any[]) => void, repair = false) {
   const frames = input.toString().trimEnd().split('\n').map(line => JSON.parse(line)); mutate(frames)
   if (repair && frames[frames.length - 1].kind === 'end') frames[frames.length - 1].sha256 = createHash('sha256').update(frames.slice(0, -1).map(frame => JSON.stringify(frame) + '\n').join('')).digest('hex')

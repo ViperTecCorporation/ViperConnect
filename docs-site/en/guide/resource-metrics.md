@@ -8,6 +8,22 @@ screen. Click a card for RAM/CPU/disk
 charts with **1 day, 7 days, 30 days, 90 days and Max** filters. Infrastructure
 metrics require an administrator or global token, never a session/user credential.
 
+### Recreated containers
+
+An instance expires after three minutes without a sample. When a recent instance
+with the same server/role exists, the expired one leaves the main cards and stays
+under collapsed **Previous instances**, with its archived charts still accessible.
+No Redis keys or S3 objects are deleted to fix the list. Healthy parallel replicas
+and different servers stay separate. Without recent instances, only the latest
+known measurement per server/role remains, never marked live. The grace period
+distinguishes delayed sampling from shutdown without accessing Docker.
+
+Automatic grouping uses the default `server · role · hostname` naming format.
+Custom labels are not grouped heuristically; a unique stable
+`RESOURCE_METRICS_INSTANCE_ID` preserves their series. Current totals exclude old
+instances. `/admin/resources` separates `components` from `historicalComponents`,
+while per-ID historical queries remain available.
+
 ## Reading the numbers
 
 Linux containers use cgroup v2 memory minus `inactive_file`, approximately matching
@@ -163,3 +179,204 @@ Responses are `no-store`; invalid IDs/ranges return 400, insufficient privileges
 403 and unavailable queries 503. Missing values remain absent/null, never zero.
 See OpenAPI for the complete contract. Sampling failures do not affect sessions,
 message delivery or queues.
+
+## Restart services
+
+Click a current card except **Total** to open its details, then select **Restart service**, with an explicit
+confirmation showing the allowed target and executor (**Docker** or **systemd**).
+Opening history or cancelling never restarts anything. Only Manager administrators
+or the global stack token can authorize it. Historical/S3-only readings cannot
+enable restart. Without a configured control agent, buttons are disabled with a
+setup notice. Restart interrupts connections but does not change images, volumes,
+databases, configuration or hostpath overlays. It is not a deployment.
+
+### Independent restricted agent
+
+Run the agent outside the process/container/unit it controls. The web application
+receives **no Docker socket and no systemctl/root privileges**. An operator-owned
+static allowlist associates actual component hashes from `GET /admin/resources`
+with exact containers or systemd units. Browser requests cannot supply commands,
+URLs or target names. Set a unique stable `RESOURCE_METRICS_INSTANCE_ID` for each
+process to retain the association across container recreation/native restarts.
+Use Redis/RabbitMQ IDs from the overview. Keep VoIP's published ID stable or update
+the allowlist explicitly. Do not infer control targets from similar display names.
+
+On the **web**:
+
+```dotenv
+SERVICE_CONTROL_URL=http://127.0.0.1:9880
+SERVICE_CONTROL_TOKEN=<dedicated-random-secret-at-least-32-characters>
+SERVICE_CONTROL_GUARD_TOKEN=<another-different-random-secret>
+```
+
+On the **agent**, also configure the same two different secrets, plus:
+
+```dotenv
+SERVICE_CONTROL_BIND=127.0.0.1
+SERVICE_CONTROL_PORT=9880
+SERVICE_CONTROL_GUARD_URL=http://127.0.0.1:9876/internal/service-control/safety
+SERVICE_CONTROL_TARGETS_FILE=/etc/viperconnect-control/targets.json
+SERVICE_CONTROL_STATE_DIR=/var/lib/viperconnect-control
+SERVICE_CONTROL_SYSTEMD_UNIT=viperconnect-control.service
+```
+
+Start `node dist/src/services/service_control/standalone.js`. State must be on a
+persistent writable directory exclusive to the agent, not writable by the web.
+Both secrets must be at least 32 characters and different. Never expose the agent
+port publicly; use restricted loopback/private networking or external TLS. Secrets
+are not sent to the browser, URLs, logs or S3. The internal safety callback accepts
+only its dedicated secret and returns a boolean/timestamp, not session contents.
+
+Example allowlist, replacing the **placeholder** hash with the actual component:
+
+```json
+[
+  { "component": "aaaaaaaaaaaaaaaaaaaaaaaa", "name": "Zapo worker", "backend": "docker", "target": "viperconnect-worker-1" }
+]
+```
+
+For standalone Docker Compose, mount `/var/run/docker.sock` **only in the agent**
+and a separate persistent state volume. Docker socket access is host-root-equivalent;
+`:ro` does not make API calls read-only. Keep the agent isolated and protect its
+secrets. Repository example: `docs/examples/compose.service-control.yml`. It restarts
+the exact inspected container ID, with a 30-second stop grace period, without
+recreating it. Swarm services/tasks are explicitly refused; stopped containers
+are not started. One agent controls one host; no automatic remote-host discovery.
+
+For native Linux set `backend=systemd`, e.g. `target=viperconnect-worker.service`.
+Only `/usr/bin/systemctl show` and `restart` are used, with fixed argument arrays,
+never a shell. The separate agent needs administrative unit permissions; the web
+does not. See `docs/examples/viperconnect-control.service`. Protect configuration
+as administrator-owned mode 0600. Do not allowlist the agent itself. PM2,
+supervisord, Windows services and arbitrary commands are not supported.
+
+### Safety and status
+
+Before invoking restart, the agent asks the web to check Zapo calls, native busy
+extensions, VoIP routing locks, RabbitMQ unacknowledged work and active storage
+migration/backup/restore/rotation locks. Unavailable Redis, configured VoIP or
+Management, invalid responses and exceeded bounded scan budgets refuse restart.
+There is no force action. Reads do not remove queue messages or inspect message
+contents. Ready/scheduled queue entries alone do not block restart. This is a
+**point-in-time preflight**, not atomic global maintenance: a new call/task may
+start after the check. Use a quiet maintenance window and avoid new work while
+confirming. It does not guarantee coordinated multi-host draining or preservation
+of work started within that interval.
+
+Signed confirmation expires after 60 seconds and is bound to the current Docker
+or systemd incarnation. Changed instances are refused. A UUID operation ID is
+generated before the POST; submitting that ID again never invokes restart again.
+**Check operation** uses GET only. The browser keeps the ID in the current tab to
+recover status after restarting/reloading the web; authentication may be required
+again. The agent keeps the latest 200 operations in `operations.json`, independent
+of Redis/S3, including when restarting Redis. Audit contains admin ID, target,
+executor, timestamps and outcome, never credentials. Protect the state directory;
+this journal does not replace session backups.
+
+Configured VoIP must also expose `GET /v1/console/backups/capability`. Active native
+restores refuse restart even if a Redis lease has already expired. Older services
+without this confirmation fail closed; there is no forced fallback.
+
+States are `accepted`, `restarting`, `running`, `failed` (refused before command)
+and `unknown` (uncertain after command/interruption). Uncertain commands are never
+automatically retried. The agent waits up to 120 seconds after invoking restart
+for a changed incarnation running, and requires Docker `healthy` when available.
+Without a healthcheck/systemd, process running **does not confirm application
+health, audio or Online sessions**. Pending operations become uncertain on agent
+recovery. `agent.lock` prevents a second agent sharing the directory: after an
+abrupt crash, verify no agent is running and preserve/inspect the journal before
+removing **only** that stale lock. Never delete the state directory or blindly
+replay commands.
+
+Administrator API, with `Cache-Control: no-store`:
+
+- `GET /admin/resources/control`: capabilities, executor, refusal reasons and signed proof.
+- `POST /admin/resources/{component}/restart`: UUID v4 `operationId`, component-matching `confirm`, and `confirmation` from the overview. 202 means accepted, not completed.
+- `GET /admin/resources/operations/{operation}`: persisted status; no new command.
+
+Errors: 400 invalid contract; 403 not administrator; 404 unknown operation/target;
+409 changed/expired confirmation, incarnation or busy agent; 503 unavailable agent
+or journal. Preflight refusals appear in the operation (`control_calls_active`,
+`control_storage_busy`, `control_jobs_active`, `control_safety_unavailable`); the
+internal callback returns 423. DEV implementation/validation does not publish an
+image or deploy/restart production services.
+
+## Live logs and export
+
+The entire summary card is clickable. Its details combine charts/period filters
+with **Logs** and **Restart service** for current services; operational buttons
+are not displayed on the summary grid. Closing Logs or restart confirmation
+returns to the same details and retains the selected period/history.
+
+Each current resource detail includes **Logs**, next to **Restart service**. It opens
+an administrator-only, read-only viewer with desktop/mobile layout, using the same
+restricted agent and static allowlist. Update the agent to enable the button. No
+Docker socket is added to the web, no arbitrary file/shell access is provided and
+reading does not restart the target. Total/previous-instance cards do not read
+logs. Stopped/current services with stale metrics may still have readable logs;
+log access is independent of restart safety checks and Online state.
+
+- **Recent lines**: 100, 300 (default), 1,000 or 2,000 raw recent lines plus new
+  lines through a continuous HTTP stream, not repeated log polling.
+- **Include words** matches any of up to eight comma-separated literal terms;
+  **Exclude words** removes any match. Case-insensitive, max 200 characters per
+  field, no regex. Internal spaces belong to a term. **Apply filters** starts a
+  fresh bounded view, clearing the previous one. Initial tail happens before
+  filtering; rare terms do not trigger an unlimited search through old files.
+- **Minimum level** uses Pino, journal priority or recognizable text markers.
+  Error includes Fatal; Warn includes Warn/Error/Fatal. Unknown-level lines appear
+  only under **All**. stderr is not automatically Error. **Channel** selects
+  stdout/stderr/journal; Docker TTY combines streams as stdout, native uses journal.
+- **Pause** closes the source while preserving displayed lines. **Resume** tries
+  from the last received second and deduplicates retained IDs. Rotation, large
+  gaps, network outages, tail limits or pauses longer than 24h may lose coverage.
+- Disable **Auto-scroll** to keep the reading position. **Clear view** affects
+  only the browser, never host logs. **Export displayed (.txt)** downloads only
+  the sanitized displayed buffer with timestamp/level/channel, not all host logs.
+
+No extra Redis/S3/web log persistence is introduced; Docker/journald retention
+remains authoritative. Closing, navigating away, logout or hiding the tab cancels
+that viewer's source/process without stopping the service or calls. Returning to
+a hidden tab requires Resume. Browser updates are batched every 200ms and use
+text, not log-supplied HTML. It retains up to the selected number, max 2,000 lines
+and approximately 1 MiB of estimated text/metadata, showing an eviction counter;
+this is not an exact browser heap measurement. TXT generation uses that bounded
+buffer and releases its temporary download URL.
+
+Agent and proxy allow four concurrent viewers. Each source connection is bounded
+to five minutes, 8 MiB raw input or 50,000 lines, then shows a resume notice rather
+than silently reconnecting in a loop. The proxy adds a 330s/32 MiB output safety
+limit without collecting an entire response. Backpressure and 10s heartbeat are
+used. `X-Accel-Buffering: no` disables compatible proxy buffering; otherwise
+configure the external proxy to disable buffering on this route and allow idle
+timeouts beyond heartbeat. Do not expose the private agent port as a workaround.
+
+Lines over 32,768 characters are omitted entirely, not partly disclosed. Pattern-
+recognized passwords/tokens/keys, Bearer/Basic credentials, URL userinfo and the
+agent secrets are hidden before filtering/export. This is **not guaranteed
+anonymization**: unlabelled secrets, phone numbers, messages and other personal
+data may remain. Treat access/downloads as administrative and protect exported
+files. The feature does not change the stack log level.
+
+Docker reads the daemon ContainerLogs stream bound to the exact container ID;
+unsupported logging drivers return explicit errors, never fall back to arbitrary
+host files. Native Linux uses `/usr/bin/journalctl --unit <unit>` with fixed
+argument arrays and JSON; the agent needs journal access. Large/binary fields
+omitted by journalctl's default JSON limits are not claimed recovered. PM2,
+supervisord, arbitrary files and Swarm are unsupported. Native systemd requires
+host validation before deployment; DEV Docker uses synthetic native tests only.
+
+Administrator endpoint: `GET /admin/resources/{component}/logs`, with `tail`,
+`include`, `exclude`, `level`, `channel`, `since` (Unix second within the last 24h,
+0 for tail only, at most 60s in the future). Private agent equivalent:
+`GET /v1/targets/{component}/logs` using its dedicated token. All credentials stay
+in headers, not URLs. Capability overview adds `logs=true`, meaning backend support,
+not successful source access until opened. Response is `application/x-ndjson`:
+`connected`, `line`, `heartbeat`, `end`, `error`. Errors after headers are explicit
+events, not successful empty logs. HTTP 400 invalid filters, 403 unauthorized,
+404 target not allowlisted, 429 viewer limit, 503 unavailable source/agent/format.
+Authorization is checked on opening; a stream is time-bounded, not reauthenticated
+for every line. See OpenAPI for the complete contract.
+
+Protocol references: [Docker ContainerLogs](https://docs.docker.com/reference/api/engine/version/v1.47/#tag/Container/operation/ContainerLogs)
+and [journalctl](https://www.freedesktop.org/software/systemd/man/latest/journalctl.html).

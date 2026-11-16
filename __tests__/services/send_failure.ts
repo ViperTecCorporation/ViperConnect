@@ -1,4 +1,5 @@
 import { SendError } from '../../src/services/send_error'
+import { SessionStorageError } from '../../src/services/session_storage/types'
 import {
   buildProviderSendFailureResponse,
   isZapoClientNotConnected,
@@ -92,6 +93,15 @@ describe('provider send failure', () => {
         provider: 'zapo',
         message_type: 'interactive',
       },
+    })
+  })
+
+  test('preserves the HTTP status and reason of storage validation errors', () => {
+    const error = new SessionStorageError(400, 'session_storage_message_status_invalid')
+
+    expect(normalizeProviderSendError('zapo', 'text', error)).toMatchObject({
+      code: 400,
+      error_data: { reason: 'session_storage_message_status_invalid', provider: 'zapo', message_type: 'text' },
     })
   })
 

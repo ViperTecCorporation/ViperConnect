@@ -17,6 +17,7 @@ export interface StorageMaintenanceDependencies {
   reconcile(phone: string, deps: StorageReconciliationDependencies): Promise<StorageReconciliationResult>
   cleanupUploads?(phone: string, config: Config): Promise<unknown>
   cleanupStandalone?(): Promise<unknown>
+  completeMigration?(phone: string): Promise<unknown>
   now?(): number
 }
 
@@ -28,13 +29,14 @@ const RECEIPT = `local raw=redis.call('GET',KEYS[1]); if not raw then return 0 e
 local c=cjson.decode(raw); local s=c.sessionStorage; local e=cjson.decode(ARGV[1])
 if c.provider~='zapo' or c.server~=e.owner or not s or s.owner~=e.owner or s.storageId~=e.storageId or s.generation~=e.generation or s.backend~=e.backend or s.state~=e.state then return 0 end
 redis.call('SET',KEYS[2],ARGV[2]); return 1`
-const TERMINAL = new Set(['source_cleaned', 'restore_committed', 'redis_reconciled_offline', 'restore_reconciled_offline'])
+const TERMINAL = new Set(['backup_verified', 'source_cleaned', 'restore_committed', 'redis_reconciled_offline', 'restore_reconciled_offline'])
 const safeCode = (error: any) => {
   const code = typeof error?.code === 'string' ? error.code : error?.title
   return /^session_storage_[a-z0-9_]{1,100}$/.test(code || '') ? code : 'session_storage_maintenance_failed'
 }
 
-/** Sequential metadata-only maintenance. Reads never invoke this class. */
+/** Sequential maintenance. Recovery reconciliation is metadata-only; a separately
+ * verified migration handoff may resume transport and clean source. Never from GET. */
 export class SessionStorageMaintenanceCoordinator {
   private running = false
   private stopped = false
@@ -77,6 +79,8 @@ export class SessionStorageMaintenanceCoordinator {
           if (this.stopped) break
           if (!this.local(config)) continue
           validateStorageDescriptor(config.sessionStorage)
+          // Durable cleanup has its own lock and never suspends an online socket.
+          await this.deps.completeMigration?.(phone)
           if (this.deps.busy(phone) || await this.deps.redis.get(lockKey(phone))) { result.waiting++; continue }
           if (await this.pendingRecovery(phone, config)) {
             if (this.stopped || this.deps.busy(phone)) { result.waiting++; continue }
@@ -137,6 +141,7 @@ export async function startStorageMaintenanceCoordinator(dependencies?: StorageM
       maintain: module.require('./maintenance').maintainSessionSqlite, reconcile: module.require('./reconciliation').reconcileInterruptedStorage,
       cleanupUploads: module.require('./backup_upload').cleanExpiredStorageUploads,
       cleanupStandalone: () => module.require('./standalone_staging').cleanExpiredStandaloneStaging(storageOwner()),
+      completeMigration: phone => module.require('./runtime').finishMigrationCompletion(phone),
       lease: phone => { const lease = new RedisLease(`zapo-session:${phone}`, 60000); return {
         acquire: () => lease.acquire(), ownership: () => lease.ownership(), release: () => lease.release(),
         assertOwned: async () => { if (!await lease.renew()) throw new SessionStorageError(409, 'session_storage_lease_lost') },

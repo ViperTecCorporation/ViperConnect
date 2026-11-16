@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "ViperConnect API",
-    "version": "4.0.42",
+    "version": "4.0.43",
     "description": "API ViperConnect para sessões Zapo, com rotas de compatibilidade de payload.\n- Endpoints versionados aceitam prefixos como `v15`, `v22` ou `v25` (ex.: `v25/{phone}/messages`).\n- Suporta envios de texto, mídia (imagem/áudio/documento/vídeo), contatos e mensagens interativas (botões/listas).\n- Respostas recebidas a status próprios de imagem/vídeo incluem context.status com available e mídia recuperada quando possível. O adapter Chatwoot entrega primeiro a mídia sintética e depois a resposta referenciando-a; outros destinos recebem somente a resposta enriquecida. Veja o guia de webhooks para limites e deduplicação.\n"
   },
   "servers": [
@@ -672,7 +672,7 @@
         ],
         "operationId": "getSessionStorage",
         "summary": "Consultar armazenamento e capacidade SQLite da sessão",
-        "description": "Administrativo. Consulta backend, dono, geração, tarefa, manutenção, reconciliação e último backup. Novas sessões usam SQLite por padrão na raiz /app/session-data somente com mount persistente gravável e motor compatível confirmados pelo worker. ENVs ROOT/DEFAULT/PERSISTENT são opcionais; DEFAULT=redis mantém novas sessões em Redis, PERSISTENT=false desabilita SQLite. Sem volume válido novas sessões usam Redis e o painel alerta como configurar; uma pasta ou ENV não prova persistência. Sessões Redis existentes não migram automaticamente. Redis e REDIS_URL continuam obrigatórios com SQLite para catálogo, autenticação/autorização do painel/API, configuração, leases e roteamento; SQLite não é modo de operação sem Redis. Worker deve confirmar Redis/SQLite antes de conectar: timeout não é fallback. Sessão já migrada com volume ausente falha sem recriar banco vazio ou voltar ao Redis. Exibe bucket/prefixo/slots sem credenciais. connectionStatus difere do estado do storage; restoreUpload.available exige offline real e autoConnect=false. GET não executa manutenção. Em validação DEV; não implanta produção.",
+        "description": "Administrativo. Consulta backend, dono, geração, tarefa, manutenção, reconciliação e último backup. Novas sessões usam SQLite por padrão na raiz /home/u/app/session-data somente com mount persistente gravável e motor compatível confirmados pelo worker. ENVs ROOT/DEFAULT/PERSISTENT são opcionais; DEFAULT=redis mantém novas sessões em Redis, PERSISTENT=false desabilita SQLite. Sem volume válido novas sessões usam Redis e o painel alerta como configurar; uma pasta ou ENV não prova persistência. Sessões Redis existentes não migram automaticamente. Redis e REDIS_URL continuam obrigatórios com SQLite para catálogo, autenticação/autorização do painel/API, configuração, leases e roteamento; SQLite não é modo de operação sem Redis. Worker deve confirmar Redis/SQLite antes de conectar: timeout não é fallback. Sessão já migrada com volume ausente falha sem recriar banco vazio ou voltar ao Redis. Exibe bucket/prefixo/slots sem credenciais. connectionStatus difere do estado do storage; restoreUpload.available exige offline real e autoConnect=false. GET não executa manutenção. Em validação DEV; não implanta produção.",
         "security": [
           {
             "ManagerLoginToken": []
@@ -726,7 +726,7 @@
         ],
         "operationId": "migrateSessionStorage",
         "summary": "Solicitar migração manual Redis para SQLite",
-        "description": "Pausa somente esta sessão sem logout, prepara snapshot no volume do worker dono e valida IDs, conteúdo e expiração antes do cutover por geração. Exige S3, mas não exige chave: após commit verifica novo backup sem criptografia por leitura de volta/restauração e remove somente as chaves Redis de origem cujo conteúdo/TTL permanecem iguais, sob a mesma lease. Arquivo contém credenciais; mantenha bucket e downloads restritos. Configuração e coordenação permanecem. sourcePreserved=false e sourceCleanup confirmam finalização; falha mantém SQLite offline, sem rollback silencioso. Só solicita retomada após finalização/lease liberada se autoConnect=true, status online/connecting e cliente local anterior no dono. Fixtures e guard global não retomam. result.reconnect=requested não confirma Online. Sem retry por timeout. HTTP aceito não é conclusão. Não altera outras sessões.",
+        "description": "Pausa somente esta sessão sem logout, prepara snapshot no volume do worker dono e valida IDs, conteúdo e expiração antes do cutover por geração. Exige S3, sem exigir chave: após commit verifica novo backup sem criptografia por leitura de volta/restauração. Libera lease e bloqueio da tarefa antes de solicitar reconexão conforme intenção anterior (autoConnect=true, status online/connecting e cliente local no dono). Fixtures e guard global não retomam. Limpeza Redis durável em segundo plano usa lock independente; cada lote revalida dono, geração, banco, backup, ausência de transição, conteúdo e TTL. Arquivo contém credenciais; mantenha bucket e downloads restritos. Configuração e coordenação permanecem. Tarefa ready confirma cutover/backup, não Online ou exclusão; sourceCleanup.status=ready e sourcePreserved=false confirmam limpeza. Divergência/falha preserva a origem sem desfazer SQLite ou parar a sessão. Backup/verificação falhos não reconectam. result.reconnect=requested não confirma Online. Sem retry por timeout. Não altera outras sessões.",
         "security": [
           {
             "ManagerLoginToken": []
@@ -800,7 +800,7 @@
             "description": "Requer administrador autorizado"
           },
           "409": {
-            "description": "Migração em andamento",
+            "description": "Uma migração de cópia/validação/backup por worker; session_storage_worker_migration_busy recusa a segunda antes de pausar sua sessão ou criar tarefa. Workers distintos podem migrar em paralelo. Sem fila/retry automático. Também inclui migração na mesma sessão",
             "dono alterado": null,
             "backend incompatível ou S3 não configurado. Chamada ativa ou operação VoIP em andamento gera session_storage_active_calls antes de desconectar; quando detectado após aceite consultar error na tarefa.": null
           },
@@ -17470,6 +17470,14 @@
                     },
                     "components": {
                       "type": "array",
+                      "description": "Instâncias atuais; coletas cloud expiradas há 3 minutos são retiradas quando há substitutas do mesmo servidor/papel. Réplicas recentes são preservadas; sem instâncias recentes fica a última medição por grupo",
+                      "items": {
+                        "$ref": "#/components/schemas/ResourceSample"
+                      }
+                    },
+                    "historicalComponents": {
+                      "type": "array",
+                      "description": "Instâncias anteriores com live=false; fora dos cards e totais atuais. Histórico por ID preservado sem apagar Redis/S3",
                       "items": {
                         "$ref": "#/components/schemas/ResourceSample"
                       }
@@ -17605,6 +17613,526 @@
         }
       }
     },
+    "/admin/resources/control": {
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "getServiceControlCapabilities",
+        "summary": "Consultar capacidade de reinício restrito por card",
+        "description": "Administrador global/Manager. Proxy para agente privado, sem Docker socket no web. Lista estática de component para container Docker standalone ou unidade systemd. Sem agente retorna configured=false, targets vazios e motivo; não simula capacidade. Confirmação assinada por instância vence em 60s. Não reinicia ao consultar. Não controla Swarm.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capacidade atual; no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceControlOverview"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "503": {
+            "description": "control_unavailable ou control_config_invalid"
+          }
+        }
+      }
+    },
+    "/admin/resources/{component}/logs": {
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "streamResourceServiceLogs",
+        "summary": "Consultar logs ao vivo do serviço autorizado",
+        "description": "Administrador global/Manager. Fluxo HTTP NDJSON sem buffering integral, sem Redis/S3 e somente leitura. Usa o agente restrito e allowlist de componentes, nunca nome de container/unidade ou caminho do navegador. Docker standalone stdout/stderr, incluindo TTY agregado em stdout; Linux nativo via journalctl da unidade systemd. Não suporta Swarm nem leitura de arquivo livre. Filtros literais sem regex: include aceita qualquer termo, exclude remove qualquer termo, máximo 8 separados por vírgula, sem diferenciar maiúsculas. Nível mínimo inferido de Pino/texto/PRIORITY; linhas sem nível só em all. Tail é recorte bruto recente antes dos filtros, não busca ilimitada por ocorrências. Últimos 1–2000 registros e novas linhas; máximo 4 leitores, 5 minutos/8 MiB brutos por fonte ou 50000 linhas, com encerramento explícito. Pausar/fechar/aba oculta/logout cancela a fonte. Retomar tenta desde o último segundo recebido, com deduplicação no buffer; pode haver lacunas por rotação, recorte ou interrupção. Exportação TXT é local no navegador e contém somente as linhas exibidas/filtradas (até 2000 e aproximadamente 1 MiB), não todo o log do host. Credenciais reconhecíveis/segredos do agente são ocultados antes do envio; não é garantia de anonimização, logs ainda podem conter dados pessoais. Autorização validada na abertura. Heartbeat 10s, Cache-Control no-store e X-Accel-Buffering no.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "component",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogTail"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogInclude"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogExclude"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogLevel"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogChannel"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogSince"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eventos ServiceLogEvent separados por newline. Erro após abrir o fluxo é evento error, nunca log vazio simulado. end informa encerramento/limite; heartbeat não é linha",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "description": "Sequência de ServiceLogEvent delimitada por newline"
+                },
+                "example": "{\"type\":\"connected\",\"name\":\"Worker\",\"backend\":\"docker\"}\n{\"type\":\"heartbeat\"}\n"
+              }
+            }
+          },
+          "400": {
+            "description": "logs_query_invalid; query desconhecida",
+            "tail fora do limite ou filtro inválido": null
+          },
+          "401": {
+            "description": "Credencial ausente",
+            "inválida ou expirada no middleware": null
+          },
+          "403": {
+            "description": "logs_admin_required"
+          },
+          "404": {
+            "description": "logs_target_not_allowed"
+          },
+          "429": {
+            "description": "logs_viewers_limit; máximo quatro leitores simultâneos por agente/proxy"
+          },
+          "503": {
+            "description": "logs_not_configured",
+            "logs_format_invalid ou logs_source_unavailable; agente/permissões/driver indisponíveis": null
+          }
+        }
+      }
+    },
+    "/v1/targets/{component}/logs": {
+      "servers": [
+        {
+          "url": "http://127.0.0.1:9880",
+          "description": "Agente privado separado; não expor porta publicamente"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "streamControlAgentLogs",
+        "summary": "Ler logs diretamente no agente restrito",
+        "description": "Mesmo contrato NDJSON/filtros e limites de /admin/resources/{component}/logs, protegido por SERVICE_CONTROL_TOKEN dedicado. Resolve exclusivamente a allowlist estática. Não executa comandos fornecidos pelo cliente nem mutações. Fluxo de Docker API vinculado ao ID exato; journalctl usa argumentos fixos por unidade. Segredos reconhecidos ocultados antes de filtrar/enviar. Fonte indisponível/permissão/driver de logs incompatível retorna erro explícito. Leitura não reinicia o serviço e independe de tarefa de reinício em andamento.",
+        "security": [
+          {
+            "ServiceControlToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "component",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogTail"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogInclude"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogExclude"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogLevel"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogChannel"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceLogSince"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sequência NDJSON de ServiceLogEvent; heartbeat 10s e eventos end/error após abrir",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "logs_query_invalid"
+          },
+          "403": {
+            "description": "control_forbidden"
+          },
+          "404": {
+            "description": "logs_target_not_allowed"
+          },
+          "429": {
+            "description": "logs_viewers_limit"
+          },
+          "503": {
+            "description": "logs_not_configured",
+            "logs_source_unavailable ou logs_format_invalid": null
+          }
+        }
+      }
+    },
+    "/admin/resources/{component}/restart": {
+      "post": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "restartResourceService",
+        "summary": "Solicitar reinício com confirmação explícita e ID idempotente",
+        "description": "Administrador. Envia somente ID UUID v4, confirm igual ao component e confirmation assinada obtida no resumo. Não aceita comando, URL ou nome de unidade/container. Agente independente persiste antes da ação, uma por vez, verifica segurança e instância. Recusas de chamada/tarefa/backup/migração/restore ou verificação indisponível ficam na operação failed antes do comando. Checagem pontual, não dreno global atômico. Reinício pode interromper conexões; não recria containers, remove volumes ou altera imagens. 202 não é conclusão; repetir mesmo ID não repete comando. Resultado incerto não tem retry automático.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "component",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceRestartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Operação aceita ou resultado do mesmo ID já existente; consultar estado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRestartOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "control_request_invalid"
+          },
+          "403": {
+            "description": "control_admin_required"
+          },
+          "404": {
+            "description": "control_target_not_allowed"
+          },
+          "409": {
+            "description": "control_confirmation_invalid/expired",
+            "control_operation_conflict ou control_busy": null
+          },
+          "503": {
+            "description": "control_not_configured",
+            "control_unavailable ou control_journal_unavailable; consultar mesmo ID sem repetir comando": null
+          }
+        }
+      }
+    },
+    "/admin/resources/operations/{operation}": {
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "getServiceRestartOperation",
+        "summary": "Acompanhar reinício sem reenviar comando",
+        "description": "Administrador; diário persistido no agente, independente do Redis. accepted/restarting são pendentes; running confirma nova instância em execução, não sessões Online. applicationHealth=healthy somente com healthcheck Docker aprovado; not_checked não confirma saúde da aplicação. failed recusado antes do comando; unknown é incerto e exige revisão de logs, nunca retry automático. Últimas 200 operações; no-store.",
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado persistido; consulta não executa ação",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRestartOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "ID inválido"
+          },
+          "403": {
+            "description": "Administrador exigido"
+          },
+          "404": {
+            "description": "control_operation_not_found"
+          },
+          "503": {
+            "description": "Agente indisponível; não repetir comando"
+          }
+        }
+      }
+    },
+    "/internal/service-control/safety": {
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "checkServiceRestartSafety",
+        "summary": "Verificação interna restrita ao agente de controle",
+        "description": "Não usa token Manager/global. Somente SERVICE_CONTROL_GUARD_TOKEN dedicado >=32 caracteres. Leitura limitada de travas Redis, chamadas Zapo, registros nativos ocupados/locks VoIP e tarefas RabbitMQ sem ACK. Falhas ou limite de scan recusam. Não retorna conteúdo ou identificadores de sessões, não altera filas. Pontual, não lock global de admissão.",
+        "security": [
+          {
+            "ServiceControlGuardToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "seguro neste instante; no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "safe",
+                    "checkedAt"
+                  ],
+                  "properties": {
+                    "safe": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "checkedAt": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "control_forbidden"
+          },
+          "423": {
+            "description": "control_calls_active",
+            "control_storage_busy": null,
+            "control_jobs_active ou control_safety_unavailable": null
+          }
+        }
+      }
+    },
+    "/v1/targets": {
+      "servers": [
+        {
+          "url": "http://127.0.0.1:9880",
+          "description": "Agente privado separado; não é a porta web ViperConnect"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "getControlAgentTargets",
+        "summary": "Capacidade direta do agente interno",
+        "security": [
+          {
+            "ServiceControlToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alvos permitidos e provas assinadas; sem nomes internos de containers/unidades",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceControlOverview"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "control_forbidden"
+          }
+        }
+      }
+    },
+    "/v1/targets/{component}/restart": {
+      "servers": [
+        {
+          "url": "http://127.0.0.1:9880",
+          "description": "Agente privado separado"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "restartControlAgentTarget",
+        "summary": "Solicitar ao agente reinício permitido e idempotente",
+        "description": "Somente proxy web autenticado por segredo dedicado. Mesmo contrato do reinício administrativo, com actor ID administrativo para auditoria. Configuração e permissões do host são administradas fora do navegador. Sem APIs de shell, deploy, remoção ou alteração de allowlist.",
+        "security": [
+          {
+            "ServiceControlToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "component",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{24}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ServiceRestartRequest"
+                  }
+                ],
+                "properties": {
+                  "actor": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Aceita ou mesmo ID anterior",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRestartOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Contrato inválido ou JSON acima de 8 KiB"
+          },
+          "403": {
+            "description": "control_forbidden"
+          },
+          "404": {
+            "description": "Alvo não permitido"
+          },
+          "409": {
+            "description": "Confirmação inválida/expirada",
+            "operação conflitante ou agente ocupado": null
+          },
+          "503": {
+            "description": "Diário ou agente indisponível"
+          }
+        }
+      }
+    },
+    "/v1/operations/{operation}": {
+      "servers": [
+        {
+          "url": "http://127.0.0.1:9880",
+          "description": "Agente privado separado"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Administração"
+        ],
+        "operationId": "getControlAgentOperation",
+        "summary": "Consultar diário independente do Redis",
+        "security": [
+          {
+            "ServiceControlToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado persistido",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceRestartOperation"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "control_forbidden"
+          },
+          "404": {
+            "description": "Operação ausente/inválida"
+          }
+        }
+      }
+    },
     "/v1/resources/metrics": {
       "servers": [
         {
@@ -17648,6 +18176,16 @@
   },
   "components": {
     "securitySchemes": {
+      "ServiceControlToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SERVICE_CONTROL_TOKEN dedicado, mínimo 32 caracteres; só proxy web/agente na rede privada. Não enviar ao navegador."
+      },
+      "ServiceControlGuardToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SERVICE_CONTROL_GUARD_TOKEN dedicado diferente do token do agente; callback privado de segurança. Não é token Manager/SIP/SSH."
+      },
       "VoipServiceToken": {
         "type": "http",
         "scheme": "bearer",
@@ -17676,6 +18214,79 @@
       }
     },
     "parameters": {
+      "ResourceLogTail": {
+        "name": "tail",
+        "in": "query",
+        "description": "Quantidade de linhas brutas recentes da fonte antes dos filtros.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2000,
+          "default": 300
+        }
+      },
+      "ResourceLogInclude": {
+        "name": "include",
+        "in": "query",
+        "description": "Qualquer um de até oito termos literais separados por vírgula, case-insensitive. Sem regex.",
+        "schema": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "ResourceLogExclude": {
+        "name": "exclude",
+        "in": "query",
+        "description": "Excluir qualquer um de até oito termos literais separados por vírgula; aplicado após ocultar credenciais.",
+        "schema": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "ResourceLogLevel": {
+        "name": "level",
+        "in": "query",
+        "description": "Nível mínimo. all inclui linhas sem nível identificado; stderr não é automaticamente error.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "all",
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error",
+            "fatal"
+          ],
+          "default": "all"
+        }
+      },
+      "ResourceLogChannel": {
+        "name": "channel",
+        "in": "query",
+        "description": "Docker com TTY reúne os canais em stdout. Systemd usa journal, sem inferir stderr pela prioridade.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "all",
+            "stdout",
+            "stderr",
+            "journal"
+          ],
+          "default": "all"
+        }
+      },
+      "ResourceLogSince": {
+        "name": "since",
+        "in": "query",
+        "description": "Segundo Unix de retomada nas últimas 24h, no máximo 60s no futuro; zero usa somente tail recente. Retomada não garante ausência de lacunas.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0,
+          "default": 0
+        }
+      },
       "PhonePath": {
         "name": "phone",
         "in": "path",
@@ -17713,6 +18324,244 @@
       }
     },
     "schemas": {
+      "ServiceLogEvent": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "line",
+              "heartbeat",
+              "end",
+              "error"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "docker",
+              "systemd"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "source_closed",
+              "time_limit",
+              "input_limit"
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "line": {
+            "type": "object",
+            "required": [
+              "id",
+              "text",
+              "channel"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{24}$",
+                "description": "Identificador de deduplicação da linha sanitizada"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 65536
+              },
+              "timestamp": {
+                "type": "string",
+                "description": "Horário da fonte quando disponível; Docker preserva nanossegundos do prefixo"
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "stdout",
+                  "stderr",
+                  "journal"
+                ]
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "trace",
+                  "debug",
+                  "info",
+                  "warn",
+                  "error",
+                  "fatal"
+                ]
+              },
+              "omitted": {
+                "type": "boolean",
+                "description": "Linha grande demais omitida por segurança; nunca é enviada parcialmente"
+              }
+            }
+          }
+        }
+      },
+      "ServiceControlOverview": {
+        "type": "object",
+        "required": [
+          "configured",
+          "targets"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "targets": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "required": [
+                "component",
+                "name",
+                "backend",
+                "available"
+              ],
+              "properties": {
+                "component": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{24}$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "backend": {
+                  "type": "string",
+                  "enum": [
+                    "docker",
+                    "systemd"
+                  ]
+                },
+                "available": {
+                  "type": "boolean"
+                },
+                "logs": {
+                  "type": "boolean",
+                  "description": "Agente suporta leitura pelo backend permitido; a abertura ainda verifica acesso à fonte. Independente de reinício disponível ou serviço rodando"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "confirmation": {
+                  "type": "string",
+                  "description": "Prova assinada efêmera por instância; nunca é token do agente"
+                },
+                "expiresAt": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ServiceRestartRequest": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "confirm",
+          "confirmation"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID v4 gerado antes da requisição; preservar para consultar resultado incerto"
+          },
+          "confirm": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{24}$",
+            "description": "Deve ser exatamente igual ao component do caminho"
+          },
+          "confirmation": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "Prova assinada por instância obtida há menos de 60s"
+          }
+        }
+      },
+      "ServiceRestartOperation": {
+        "type": "object",
+        "required": [
+          "id",
+          "component",
+          "name",
+          "backend",
+          "actor",
+          "createdAt",
+          "updatedAt",
+          "state"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "component": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "docker",
+              "systemd"
+            ]
+          },
+          "actor": {
+            "type": "string",
+            "description": "Identificador administrativo",
+            "não credencial": null
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "restarting",
+              "running",
+              "failed",
+              "unknown"
+            ]
+          },
+          "applicationHealth": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "not_checked"
+            ],
+            "description": "Processo rodando não confirma saúde da aplicação nem sessões Online"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
       "ResourcePoint": {
         "type": "object",
         "required": [
@@ -18008,7 +18857,7 @@
           "state": {
             "type": "string",
             "example": "active",
-            "description": "Estado operacional do armazenamento; offline não confirma o estado do socket WhatsApp"
+            "description": "Estado operacional do armazenamento; eventos reais do socket atualizam active/offline com token de posse e geração. Pedido em fila não confirma Online"
           },
           "generation": {
             "type": "integer",
@@ -18108,13 +18957,17 @@
             "type": "object",
             "properties": {
               "enabled": {
-                "type": "boolean"
+                "type": "boolean",
+                "default": true,
+                "description": "Agenda das sessões SQLite habilitada quando SESSION_STORAGE_BACKUP_ENABLED está ausente; false explícito desliga somente essa agenda. Requer volume persistente e S3; não comprova execução nem habilita o backup global Redis ou VoIP."
               },
               "intervalHours": {
                 "type": "integer",
                 "enum": [
                   12
-                ]
+                ],
+                "default": 12,
+                "description": "Intervalo fixo em janelas UTC de 12 horas"
               },
               "destination": {
                 "type": "string",
@@ -18274,13 +19127,17 @@
               "reason": {
                 "type": "string"
               },
+              "root": {
+                "type": "string",
+                "description": "Raiz efetiva do storage; ROOT explícito prevalece. Sem ENV preserva mount legado /app/session-data quando existente; novo padrão Docker /home/u/app/session-data preparado para o usuário u"
+              },
               "defaultBackend": {
                 "type": "string",
                 "enum": [
                   "redis",
                   "sqlite"
                 ],
-                "description": "SQLite por padrão com volume persistente gravável validado; Redis sem capacidade válida ou com DEFAULT=redis. Raiz padrão /app/session-data. Não muda backend de sessões existentes"
+                "description": "SQLite por padrão com volume persistente gravável validado; Redis sem capacidade válida ou com DEFAULT=redis. Raiz padrão /home/u/app/session-data. Não muda backend de sessões existentes"
               },
               "workerIdentity": {
                 "type": "object",
@@ -18399,7 +19256,7 @@
             "properties": {
               "sourcePreserved": {
                 "type": "boolean",
-                "description": "false nas novas migrações concluídas; origem removida após validação e backup verificado"
+                "description": "false somente após limpeza da origem confirmada; pode ser true com migração ready e limpeza em segundo plano"
               },
               "protection": {
                 "type": "string",
@@ -18416,6 +19273,21 @@
               "sourceCleanup": {
                 "type": "object",
                 "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending",
+                      "running",
+                      "ready",
+                      "diverged",
+                      "failed"
+                    ],
+                    "description": "Migração ready não implica limpeza ready; falhas e divergências preservam a origem"
+                  },
+                  "error": {
+                    "type": "string",
+                    "description": "Código seguro quando a limpeza em segundo plano falha"
+                  },
                   "deleted": {
                     "type": "integer",
                     "minimum": 0
@@ -18432,7 +19304,7 @@
                   "skipped": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "Divergências impedem conclusão e reconexão da migração"
+                    "description": "Chaves divergentes preservadas; não desfazem migração ou conexão já retomada"
                   }
                 }
               },
@@ -18451,6 +19323,7 @@
                   "status": {
                     "type": "string",
                     "enum": [
+                      "pending",
                       "requested",
                       "skipped",
                       "failed"
@@ -24612,6 +25485,7 @@
       },
       "MessageStatusUpdate": {
         "type": "object",
+        "description": "Operação sobre uma mensagem WhatsApp existente, não um novo envio. Aceitação assíncrona não confirma aplicação. Falhas de atualização ficam na fila/logs e não geram webhook failed para a mensagem original. Não use IDs internos de notas/artefatos de chamada, como voip-call:382; a validação do storage permanece ativa.",
         "required": [
           "status",
           "message_id"

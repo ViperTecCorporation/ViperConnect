@@ -8,7 +8,7 @@ describe('Zapo-only runtime artifacts', () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'))
     const cloudEntry = fs.readFileSync(path.resolve('src/cloud.ts'), 'utf8')
 
-    expect(config.include).toEqual(['src/cloud.ts', 'src/services/session_storage/standalone_recovery.ts',
+    expect(config.include).toEqual(['src/cloud.ts', 'src/services/service_control/standalone.ts', 'src/services/session_storage/standalone_recovery.ts',
       'src/services/session_storage/standalone_web.ts', 'src/services/session_storage/standalone_web_worker.ts',
       'src/services/session_storage/standalone_staging.ts'])
     expect(pkg.scripts.build).toContain('-p tsconfig.runtime.json')

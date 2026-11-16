@@ -200,6 +200,20 @@ the normal message ID. Do not process it as an edit or wait for another event.
 Avoid automatic previews until a viewing policy is defined. This metadata does
 not enforce single access: existing storage and media URLs remain unchanged.
 
+## Status update errors are not send failures
+
+`statuses[].status=failed` reports a message send failure, not a failure to apply
+an application-requested status/receipt. Update errors remain observable through
+the existing queue retries/failure logs, without emitting `failed` for the
+original message, even on the last attempt. HTTP acceptance of an asynchronous
+request does not confirm that the status was applied.
+
+Private notes and call bubbles/artifacts are receiver-internal events. Never
+submit IDs such as `voip-call:382` as WhatsApp message status updates. Storage ID
+validation remains enabled. Fixing the ViperChat status emitter requires a
+separate backend update; updating ViperConnect alone does not clear errors
+already stored in existing bubbles.
+
 ## Blacklist and history isolation
 
 `POST /{phone}/blacklist/{webhook_id}` accepts phone numbers, `@s.whatsapp.net`,

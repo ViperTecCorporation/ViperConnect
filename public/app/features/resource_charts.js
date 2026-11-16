@@ -1,5 +1,5 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.42-d963f113';
-import { getLocale, t } from '../core/i18n.js?v=4.0.42-d963f113';
+import { escapeHtml as e } from '../core/html.js?v=4.0.43-010277e1';
+import { getLocale, t } from '../core/i18n.js?v=4.0.43-010277e1';
 export const resourceBytes = (bytes) => bytes === undefined || !Number.isFinite(bytes) ? '—' : bytes >= 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GiB` : bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MiB` : bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${Math.round(bytes)} B`;
 export const resourcePercent = (value) => value === undefined || !Number.isFinite(value) ? '—' : `${value.toLocaleString(getLocale(), { maximumFractionDigits: 2 })}%`;
 export const resourceTime = (time) => time ? new Date(time).toLocaleString(getLocale(), { dateStyle: 'short', timeStyle: 'short' }) : t('Sem medição');

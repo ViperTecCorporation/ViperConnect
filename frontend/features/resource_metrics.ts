@@ -3,6 +3,8 @@ import { escapeHtml as e } from '../core/html.js'
 import { renderModal } from '../components/modal.js'
 import { t } from '../core/i18n.js'
 import { MetricPoint, resourceBytes as bytes, resourcePercent as percent, resourceTime as time, renderResourceChart } from './resource_charts.js'
+import { ResourceControlPanel } from './resource_control.js'
+import { ResourceLogsPanel } from './resource_logs.js'
 
 export interface ResourceComponent extends MetricPoint {
   id: string; name: string; kind: string; live: boolean; source?: string; memorySource: string
@@ -17,7 +19,7 @@ export interface ResourceComponent extends MetricPoint {
   rabbitChannels?: number; rabbitConsumers?: number; rabbitMessagesReady?: number; rabbitMessagesUnacked?: number
   rabbitPublishRate?: number; rabbitDeliverRate?: number
 }
-export interface ResourceOverview { sampledAt: number; components: ResourceComponent[]; archiveEnabled: boolean; prefix: string; redisUnavailable: boolean; archiveUnavailable: boolean }
+export interface ResourceOverview { sampledAt: number; components: ResourceComponent[]; historicalComponents?: ResourceComponent[]; archiveEnabled: boolean; prefix: string; redisUnavailable: boolean; archiveUnavailable: boolean }
 export interface ResourceHistory { points: MetricPoint[]; range: string; resolution: string; partial: boolean; warnings: string[] }
 const periods = [['1d', '1 dia'], ['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['max', 'Máx.']] as const
 
@@ -26,19 +28,36 @@ export class ResourceMetricsPanel {
   selected = ''; range = '1d'; open = false; busy = false; error = ''; historyError = ''
   history?: ResourceHistory
   private revision = 0; private historyRevision = 0; private next = 0; private loading = false
-  constructor(private readonly api: ApiClient, private readonly render: () => void) {}
-  reset() { this.revision++; this.historyRevision++; this.current = undefined; this.history = undefined; this.open = false; this.selected = ''; this.loading = false; this.next = 0; this.error = ''; this.historyError = '' }
+  readonly control: ResourceControlPanel
+  readonly logs: ResourceLogsPanel
+  constructor(private readonly api: ApiClient, private readonly render: () => void) { this.control = new ResourceControlPanel(api, render); this.logs = new ResourceLogsPanel(api, render) }
+  reset() { this.revision++; this.historyRevision++; this.current = undefined; this.history = undefined; this.open = false; this.selected = ''; this.loading = false; this.next = 0; this.error = ''; this.historyError = ''; this.control.reset(); this.logs.reset() }
   async refresh() {
+    void this.control.poll()
     if (this.loading || Date.now() < this.next) return
     const revision = this.revision; this.loading = true; this.next = Date.now() + 15000
     try { const value = await this.api.request<ResourceOverview>('/admin/resources'); if (revision === this.revision) { this.current = value; this.error = '' } }
     catch { if (revision === this.revision) this.error = t('Coleta indisponível. Os valores anteriores não são ao vivo.') }
-    finally { if (revision === this.revision) { this.loading = false; this.render() } }
+    finally { if (revision === this.revision) { await this.control.refresh(); this.loading = false; this.render() } }
   }
   async action(action: string, id = '') {
+    if (action.startsWith('resources-logs-')) {
+      if (action === 'resources-logs-open') {
+        const row = this.current?.components.find(row => row.id === id && row.kind !== 'total')
+        const target = this.control.overview?.targets.find(target => target.component === id && target.logs)
+        if (!row || !target) return
+        this.control.opened = false; this.logs.open(id, target.name)
+      } else this.logs.action(action)
+      return
+    }
+    if (action.startsWith('resources-control-')) {
+      if (action === 'resources-control-open' && !this.current?.components.some(row => row.id === id && row.kind !== 'total' && row.live && !this.error)) return
+      if (action === 'resources-control-open') this.logs.reset()
+      await this.control.action(action, id); return
+    }
     if (action === 'resources-close') { this.open = false; this.historyRevision++; this.busy = false; this.render(); return }
     if (action === 'resources-period' && this.busy) return
-    if (action === 'resources-open') { this.selected = id; this.range = '1d'; this.open = true }
+    if (action === 'resources-open') { this.logs.reset(); this.selected = id; this.range = '1d'; this.open = true }
     if (action === 'resources-period' && periods.some(([range]) => range === id)) this.range = id
     if (!this.open) return
     const revision = ++this.historyRevision, auth = this.revision; this.busy = true; this.history = undefined; this.historyError = ''; this.render()
@@ -50,6 +69,7 @@ export class ResourceMetricsPanel {
   }
   html() {
     const value = this.current, total = value?.components.find(row => row.kind === 'total')
+    const historical = [...value?.historicalComponents || []].sort((a, b) => b.t - a.t)
     const rows = [...value?.components || []].sort((a, b) => (a.kind === 'total' ? -1 : b.kind === 'total' ? 1 : a.name.localeCompare(b.name)))
     return `<section class="resource-overview" aria-label="${t('Consumo de recursos')}"><header class="section__heading"><div><h2>${t('Consumo de recursos')}</h2><p class="muted">${t('Serviços observados · coleta a cada minuto')}</p></div><span class="muted">${t('RAM e disco')} · CPU</span></header>
       ${this.error ? `<p class="storage-warning" role="alert">${e(this.error)}</p>` : ''}
@@ -57,18 +77,22 @@ export class ResourceMetricsPanel {
       ${value && !value.archiveEnabled ? `<p class="storage-warning">${t('Configure o S3 da stack para preservar o histórico. Sem S3, só as últimas 2 horas são mantidas.')}</p>` : ''}
       ${value?.archiveUnavailable ? `<p class="storage-warning">${t('S3 indisponível. Histórico recente limitado; nenhuma amostra ausente é convertida em zero.')}</p>` : ''}
       ${rows.some(row => row.archiveState === 'error') ? `<p class="storage-warning">${t('Arquivamento S3 pendente. Coleta recente preservada até o limite de 120 pontos por serviço.')}</p>` : ''}
+      ${this.control.status()}
       <div class="resource-cards">${rows.map(row => {
         const live = row.live && !this.error, state = live ? t('Ao vivo') : t('Última medição')
         const alarm = row.kind === 'rabbitmq' && (row.rabbitMemoryAlarm || row.rabbitDiskAlarm || row.rabbitRunningNodes !== undefined && row.rabbitRunningNodes !== row.rabbitNodes)
-        return `<button class="resource-card ${row.kind === 'total' ? 'resource-card--total' : ''} ${alarm ? 'resource-card--alarm' : ''}" type="button" data-action="resources-open" data-id="${e(row.id)}"><span class="resource-card__heading"><span>${e(row.name)}</span><small class="${live ? 'resource-live' : 'resource-stale'}">${state}</small></span><strong>${bytes(row.ramBytes)}</strong><span class="resource-card__cpu">${t('CPU')} <b>${percent(row.cpuPercent)}</b>${row.cpuPartial ? ` · ${t('parcial')}` : ''}</span>${alarm ? `<small class="resource-alarm">${t('Alarme de recursos')}</small>` : ''}<small>${row.kind === 'total' ? t('Sem duplicar containers compartilhados') : e(row.kind)}${row.partial ? ` · ${t('parcial')}` : ''}</small><span class="resource-card__footer"><span>${row.kind === 'total' ? t('Ver histórico') : row.kind === 'rabbitmq' ? `${t('Disco livre')} ${bytes(row.diskFreeBytes)}` : `${t('Disco')} ${bytes(row.diskBytes)}${row.diskPartial ? ' ≈' : ''}`}</span><time>${e(time(row.t))}</time></span></button>`
+        return `<button class="resource-card ${row.kind === 'total' ? 'resource-card--total' : ''} ${alarm ? 'resource-card--alarm' : ''}" type="button" data-action="resources-open" data-id="${e(row.id)}" title="${t('Ver detalhes')}"><span class="resource-card__heading"><span>${e(row.name)}</span><small class="${live ? 'resource-live' : 'resource-stale'}">${state}</small></span><strong>${bytes(row.ramBytes)}</strong><span class="resource-card__cpu">${t('CPU')} <b>${percent(row.cpuPercent)}</b>${row.cpuPartial ? ` · ${t('parcial')}` : ''}</span>${alarm ? `<small class="resource-alarm">${t('Alarme de recursos')}</small>` : ''}<small>${row.kind === 'total' ? t('Sem duplicar containers compartilhados') : e(row.kind)}${row.partial ? ` · ${t('parcial')}` : ''}</small><span class="resource-card__footer"><span>${row.kind === 'total' ? t('Ver histórico') : row.kind === 'rabbitmq' ? `${t('Disco livre')} ${bytes(row.diskFreeBytes)}` : `${t('Disco')} ${bytes(row.diskBytes)}${row.diskPartial ? ' ≈' : ''}`}</span><time>${e(time(row.t))}</time></span><small class="resource-card__hint">${t('Ver detalhes')} →</small></button>`
       }).join('') || `<p class="muted">${t('Aguardando a primeira coleta dos serviços…')}</p>`}</div>
+      ${historical.length ? `<details class="resource-previous"><summary>${t('Instâncias anteriores')} (${historical.length})</summary><p class="storage-caption">${t('Histórico de containers anteriores. Não entram no total atual.')}</p><div class="resource-previous__list">${historical.map(row => `<button type="button" class="btn btn--ghost" data-action="resources-open" data-id="${e(row.id)}"><span>${e(row.name)}</span><time>${e(time(row.t))}</time><span>${t('Ver histórico')}</span></button>`).join('')}</div></details>` : ''}
       <p class="storage-caption">${t('CPU: 100% = 1 núcleo. Pode ultrapassar 100% ao usar vários núcleos.')}</p>
       ${rows.some(row => row.kind === 'rabbitmq' && (row.cpuPercent === undefined || row.cpuPartial)) ? `<p class="storage-caption">${t('RabbitMQ: CPU requer Prometheus com duas coletas válidas; leitura incompleta deixa o total de CPU parcial.')}</p>` : ''}
       ${total ? `<p class="storage-caption">${t('Total dos serviços monitorados, não a RAM total do servidor. Redis: RSS; RabbitMQ: mem_used; containers: uso descontando cache inativo. Não inclui S3 ou outros aplicativos.')}</p>` : ''}</section>`
   }
   dialog() {
+    if (this.logs.opened) return this.logs.dialog()
+    if (this.control.opened) return this.control.dialog()
     if (!this.open) return ''
-    const row = this.current?.components.find(sample => sample.id === this.selected), history = this.history
+    const row = [...this.current?.components || [], ...this.current?.historicalComponents || []].find(sample => sample.id === this.selected), history = this.history
     const fact = (label: Parameters<typeof t>[0], value: string) => `<div><dt>${t(label)}</dt><dd>${e(value)}</dd></div>`
     const details = row ? `<dl class="resource-facts">${fact('Última medição', time(row.t))}${fact('Origem', row.live && !this.error ? t('Ao vivo') : row.source === 's3' ? 'S3 · ' + t('Última medição') : t('Última medição'))}
       ${fact('RAM', bytes(row.ramBytes))}${fact('CPU', percent(row.cpuPercent))}${row.cpuPartial ? fact('CPU parcial', t('parcial')) : ''}${!['total', 'rabbitmq'].includes(row.kind) ? fact('RSS do processo', bytes(row.rssBytes)) : ''}
@@ -83,7 +107,8 @@ export class ResourceMetricsPanel {
       ${!['total', 'rabbitmq'].includes(row.kind) ? fact(row.kind === 'redis' ? 'AOF em disco (parcial)' : 'Arquivos em disco', bytes(row.diskBytes)) : ''}
       ${row.diskSampledAt ? fact('Disco medido em', time(row.diskSampledAt)) : ''}${row.fsTotalBytes ? fact('Filesystem compartilhado: usado / total', `${bytes(row.fsUsedBytes)} / ${bytes(row.fsTotalBytes)}`) : ''}
       ${row.archivedAt ? fact('Último arquivamento S3', time(row.archivedAt)) : ''}${row.droppedPoints ? fact('Pontos não arquivados descartados pelo limite', `${row.droppedPoints}`) : ''}</dl>` : ''
-    const body = `<div class="resource-detail"><nav class="resource-periods" aria-label="${t('Período do gráfico')}">${periods.map(([range, label]) => `<button class="btn btn--small ${this.range === range ? '' : 'btn--ghost'}" type="button" aria-pressed="${this.range === range}" data-action="resources-period" data-id="${range}"${this.busy ? ' disabled' : ''}>${t(label)}</button>`).join('')}</nav>
+    const actionable = row?.kind !== 'total' && this.current?.components.some(sample => sample.id === this.selected)
+    const body = `<div class="resource-detail">${row && actionable ? `<div class="resource-detail__actions" role="group" aria-label="${t('Ações do serviço')}">${this.control.actions(row.id, row.live && !this.error)}</div>` : ''}<nav class="resource-periods" aria-label="${t('Período do gráfico')}">${periods.map(([range, label]) => `<button class="btn btn--small ${this.range === range ? '' : 'btn--ghost'}" type="button" aria-pressed="${this.range === range}" data-action="resources-period" data-id="${range}"${this.busy ? ' disabled' : ''}>${t(label)}</button>`).join('')}</nav>
       ${this.busy ? `<p role="status">${t('Carregando histórico…')}</p>` : ''}${this.historyError ? `<p class="storage-warning" role="alert">${e(this.historyError)}</p><button class="btn" data-action="resources-retry">${t('Tentar novamente')}</button>` : ''}
       ${history?.warnings.length ? `<p class="storage-warning">${t('Histórico parcial. Exibindo apenas medições disponíveis do Redis/S3, sem preencher lacunas com zero.')}</p>` : ''}
       ${row?.diskShared || row?.diskPartial ? `<p class="storage-caption">${t('Disco pode ser compartilhado ou uma leitura parcial. Filesystem é capacidade do volume, não consumo exclusivo do worker. Não some esses volumes entre serviços.')}</p>` : ''}

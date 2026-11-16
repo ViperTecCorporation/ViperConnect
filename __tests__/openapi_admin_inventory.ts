@@ -25,6 +25,17 @@ const find = (method: string, route: string) => requests.find((item: any) =>
   && item.request.url.raw.split('?')[0] === '{{base_url}}' + route.replace(/\{([^}]+)\}/g, '{{$1}}'))
 
 describe('administrative executable documentation inventory', () => {
+  test('service-control separates administrator, private agent and callback credentials/URLs', () => {
+    for (const document of [spec, publicSpec]) {
+      expect(document.paths['/admin/resources/control'].get.security).toEqual([{ AdminToken: [] }])
+      expect(document.paths['/internal/service-control/safety'].get.security).toEqual([{ ServiceControlGuardToken: [] }])
+      expect(document.paths['/v1/targets'].get.security).toEqual([{ ServiceControlToken: [] }])
+      if (document === publicSpec) expect(document.paths['/v1/targets'].get.tags).toEqual(['Administração'])
+    }
+    expect(find('get', '/internal/service-control/safety').request.auth.bearer[0].value).toBe('{{service_control_guard_token}}')
+    const direct = requests.find((item: any) => item.request.url.raw === '{{control_base_url}}/v1/targets')
+    expect(direct.request.auth.bearer[0].value).toBe('{{service_control_token}}')
+  })
   test.each([
     ['get', '/admin/settings/google-maps/browser'],
     ['get', '/admin/settings/google-maps'],

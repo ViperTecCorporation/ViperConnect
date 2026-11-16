@@ -14,13 +14,14 @@ import { getConfigRedis } from '../../src/services/config_redis'
 import { executeStorageOperation, startStorageBackupScheduler } from '../../src/services/session_storage/runtime'
 import { makeSessionBackup, pruneSessionBackups, sessionBackupPassword } from '../../src/services/session_storage/backup_runtime'
 import logger from '../../src/services/logger'
+import { requireStorageVolume, storageCapability } from '../../src/services/session_storage/capability'
 
 const phone = '999123456789', savedKey = process.env.SESSION_STORAGE_BACKUP_KEY_FILE, savedEnabled = process.env.SESSION_STORAGE_BACKUP_ENABLED
 const config: any = { ...defaultConfig, provider: 'zapo', server: 'server_1', useS3: true, autoConnect: false,
   sessionStorage: { backend: 'sqlite', storageId: '12345678-1234-4234-8234-123456789abc', owner: 'server_1', generation: 2, state: 'offline' } }
 const values = new Map<string, string>()
 beforeEach(() => {
-  jest.clearAllMocks(); delete process.env.SESSION_STORAGE_BACKUP_KEY_FILE; values.clear()
+  jest.clearAllMocks(); delete process.env.SESSION_STORAGE_BACKUP_KEY_FILE; delete process.env.SESSION_STORAGE_BACKUP_ENABLED; values.clear()
   values.set(`unoapi-status:${phone}`, 'offline')
   ;(getRedis as jest.Mock).mockResolvedValue({ get: async (key: string) => values.get(key) ?? null, set: jest.fn(), eval: jest.fn(async () => 1) })
   ;(getConfigRedis as jest.Mock).mockResolvedValue(config); (getSessionPhones as jest.Mock).mockResolvedValue([phone])
@@ -40,9 +41,26 @@ test.each([undefined, 'none', 'untrusted-label'])('status exposes plain policy, 
   expect(sessionBackupPassword).not.toHaveBeenCalled()
 })
 
-test('scheduler starts and runs new backups with no KEY_FILE and does not read a legacy secret', async () => {
-  jest.useFakeTimers(); process.env.SESSION_STORAGE_BACKUP_ENABLED = 'true'
+test.each([undefined, 'true', 'false'])('panel status matches the default-on scheduler policy: %s', async enabled => {
+  if (enabled !== undefined) process.env.SESSION_STORAGE_BACKUP_ENABLED = enabled
+  expect(await executeStorageOperation(phone, config, 'status', [])).toMatchObject({ backupPolicy: { enabled: enabled !== 'false', intervalHours: 12 } })
+})
+
+test('scheduler respects opt-out, skips unavailable volumes safely, then starts by default without a legacy key', async () => {
+  jest.useFakeTimers()
   try {
+    process.env.SESSION_STORAGE_BACKUP_ENABLED = 'false'
+    await startStorageBackupScheduler()
+    expect(requireStorageVolume).not.toHaveBeenCalled(); expect(getRedis).not.toHaveBeenCalled()
+    expect(jest.getTimerCount()).toBe(0)
+
+    delete process.env.SESSION_STORAGE_BACKUP_ENABLED
+    ;(storageCapability as jest.Mock).mockReturnValueOnce({ sqliteAvailable: false, defaultBackend: 'redis' })
+    await expect(startStorageBackupScheduler()).resolves.toBeUndefined()
+    expect(requireStorageVolume).not.toHaveBeenCalled(); expect(getRedis).not.toHaveBeenCalled()
+    expect(makeSessionBackup).not.toHaveBeenCalled(); expect(jest.getTimerCount()).toBe(0)
+    expect(logger.warn).toHaveBeenCalledWith({ code: 'session_storage_backup_volume_unavailable' }, expect.any(String))
+
     await startStorageBackupScheduler(); await jest.advanceTimersByTimeAsync(0)
     expect(makeSessionBackup).toHaveBeenCalledWith(phone, expect.anything())
     expect(sessionBackupPassword).not.toHaveBeenCalled()

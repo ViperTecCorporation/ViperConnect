@@ -16,6 +16,7 @@ node_modules
 yarn-error.log
 .playwright-cli
 output/playwright
+output/validation
 lab/registration/ipv6_relay.cjs
 lab/registration/ipv6_transport.cjs
 __tests__/services/mobile_registration_ipv6.ts

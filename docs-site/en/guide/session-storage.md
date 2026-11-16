@@ -51,7 +51,7 @@ process never opens the worker's volume.
 
 ## Default behavior and Redis dependency
 
-**New sessions default to SQLite under `/app/session-data`, only when the worker
+**New sessions default to SQLite under `/home/u/app/session-data`, only when the worker
 verifies a mounted, writable persistent volume and a compatible SQLite engine.**
 Without that volume, the existing Redis flow continues to work and the panel
 shows a configuration warning. The variables below are optional; an ENV assertion
@@ -61,7 +61,21 @@ or a directory inside the container is not proof of persistence.
 | --- | --- |
 | `SESSION_STORAGE_DEFAULT` | Requests `sqlite` for new sessions; invalid capability falls back to Redis. Set `redis` to retain the old default even with a valid volume. |
 | `SESSION_STORAGE_PERSISTENT` | Detects a real mount and tests writing. `true` does not bypass verification; `false` disables SQLite. tmpfs/ramfs/overlay mounts are rejected. |
-| `SESSION_STORAGE_ROOT` | Uses `/app/session-data`. May select another persistent worker mount; does not inherit `UNOAPI_BASE_STORE`. |
+| `SESSION_STORAGE_ROOT` | Uses `/home/u/app/session-data`. May select another persistent worker mount; does not inherit `UNOAPI_BASE_STORE`. |
+
+The Docker default is under the application directory. The image assigns it to
+user `u` before Docker initializes fresh volumes. Validation still requires a
+persistent mount writable by the runtime user; startup does not run as root or
+automatically change ownership of existing volumes. Bind mounts and reused
+volumes must have permissions matching `u`'s actual UID/GID in the image.
+
+Upgrade compatibility: an explicit `SESSION_STORAGE_ROOT` always wins. Without
+it, an existing persistent mount at legacy `/app/session-data` remains selected,
+even when the new location is also mounted. No database copy, switch or migration
+is automatic. To change the mount target, reuse the **same volume** and explicitly
+set the root; do not replace existing databases with an empty volume.
+`capability.root` reports the selected root. The lab's explicit legacy path remains
+supported.
 
 **Redis remains required even with SQLite enabled. Do not remove the Redis
 service or `REDIS_URL`.** SQLite holds local session data; Redis still owns
@@ -89,17 +103,17 @@ this does not create a session file or move session data to SQLite.
 
 Add the persistent volume to the **existing Zapo worker service**, preserving
 its image, networks, variables and other mounts. These three variables only
-make the defaults explicit and may be omitted when mounting at `/app/session-data`:
+make the defaults explicit and may be omitted when mounting at `/home/u/app/session-data`:
 
 ```yaml
 services:
   worker-zapo:
     environment:
-      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_ROOT: /home/u/app/session-data
       SESSION_STORAGE_PERSISTENT: "true"
       SESSION_STORAGE_DEFAULT: sqlite
     volumes:
-      - session-data:/app/session-data
+      - session-data:/home/u/app/session-data
 volumes:
   session-data: {}
 ```
@@ -349,10 +363,12 @@ The panel checks storage capability and ownership before confirmation.
 3. It validates integrity and publishes the new catalog generation.
 4. Uploads an unencrypted `.viperstorage` S3 backup and verifies it through readback, temporary
    restore, hash and SQLite integrity checks.
-5. While still offline under the same lease, removes unchanged source Redis
-   keys. Configuration, locks and coordination remain shared.
-6. Only task completion confirms migration. An accepted HTTP request confirms
-   neither migration nor WhatsApp connection or delivery.
+5. Releases the lease and task reservation, then requests eligible reconnection.
+   Unchanged source records are cleaned in the background under an independent
+   lock. Configuration and shared coordination stay in Redis.
+6. Task completion confirms cutover and backup, the cleanup receipt confirms
+   deletion, and socket state confirms connection. HTTP acceptance confirms
+   none of these steps or WhatsApp delivery.
 
 Migration, restore, logout and reload share per-session exclusion. Conflicting
 requests fail explicitly instead of clearing auth or deleting another task's
@@ -362,6 +378,23 @@ timed-out drain prevents copying; it cannot be reported as a complete snapshot.
 
 ### Resuming the connection after migration
 
+Legacy configurations without `server` use the canonical `server_1` route, as
+in the existing Redis flow. The transition persists that route together with
+the catalog under the same owner, generation and task guards. It never derives
+an arbitrary worker route from the storage descriptor; conflicting ownership
+is rejected before pausing the session. A failed `draining` phase does not
+confirm copying, backup or migration: inspect the task error before retrying.
+
+Each worker admits at most **one migration in its copy/validation/backup phase**.
+A second request for another session on that worker returns HTTP `409`
+`session_storage_worker_migration_busy` before pausing it or creating its task.
+Wait for completion and request it again; there is no automatic queue or retry.
+Different worker identities can migrate in parallel. The reservation renews
+during long work, expires after a crash and can only be released by its owner.
+After verified backup, that migration reservation is released with the session;
+background cleanup has independent coordination and may coexist with normal
+traffic or a subsequent migration.
+
 Before pausing, the worker captures whether the session should resume. It is
 eligible only when `autoConnect=true`, its previous status is `online` or
 `connecting`, **and** a local client exists on the owning worker. A standalone
@@ -369,26 +402,30 @@ Redis `online` marker does not authorize reconnection. Previously offline
 sessions and fixtures are not resumed; the global external-effects guard also
 blocks this workflow.
 
-After cutover, verified backup, source cleanup and release of the old connection lease, the
+After cutover, verified backup readback/restore, and release of both the old
+connection lease **and the task reservation**, the
 coordinator rechecks ownership, storage identity, generation and configuration.
 When allowed, it restores `autoConnect=true` and dispatches a normal reconnect
 request. The migration task includes a `result` fragment such as:
 
 ```json
-{ "autoConnect": true, "reconnect": { "status": "requested" } }
+{ "autoConnect": true, "reconnect": { "status": "requested" }, "sourcePreserved": true, "sourceCleanup": { "status": "pending" } }
 ```
 
 `requested` confirms dispatch only, **not that WhatsApp is online**. A socket
-state/event must confirm the actual connection. `skipped` means no reconnect
+state/event must confirm the actual connection. `pending` means coordination
+has not yet dispatched the request. `skipped` means no reconnect
 was requested and may include a reason; `failed` means intent restoration or
 dispatch failed. On a coordination failure, inspect current configuration
 before repeating any action. If dispatch fails, `autoConnect` can remain `true` without a
 confirmed connection. This does not roll back the committed SQLite migration
 or authorize repeating it; inspect the reason and handle connection separately.
 
-The storage descriptor state, including `offline`, is not the current WhatsApp
-socket state. Completing the copy, requesting reconnection and actually
-connecting are separate confirmations.
+Real socket events update the SQLite descriptor to `active` when connected and
+`offline` when disconnected without advancing the database generation. The
+socket lease token and storage identity/generation fence stale callbacks.
+A queued request never marks the session active or Online. Completing the copy,
+requesting reconnection and actually connecting are separate confirmations.
 
 Native table conversion reads bytes and metadata from the already captured
 local snapshot, not from a delayed second Redis read. Records that naturally
@@ -413,12 +450,24 @@ of `dist` can interrupt a copy without restarting the Docker container. Building
 does not reload that stable process; update it through a coordinated manual
 restart after its running tasks finish.
 
-A successful migration does not retain a second copy in Redis:
-`result.sourcePreserved=false`, `backupId` and `sourceCleanup` report finalization.
+After verified backup, migration releases the session before deleting source data.
+Task `ready` confirms cutover and backup, not cleanup or Online. A durable
+background cleanup uses its own renewable lock, not the socket lease or the
+connection/logout reservation, and resumes on the owner after a restart.
+`result.sourceCleanup.status` reports `pending`, `running`, `ready`, `diverged`
+or `failed`; only cleanup `ready` means `sourcePreserved=false`. Task/metrics
+queries reflect that receipt. Every deletion batch rechecks owner, generation,
+database, backup, absence of concurrent lifecycle work, fingerprints and TTL.
+New SQLite writes remain untouched. Changed Redis records are retained and
+reported without disconnecting the resumed session. A later manual disconnect
+does not restore the captured old connection intent. Automatic pruning retains
+the migration backup while cleanup is pending, failed or divergent; new backups
+may still publish.
 Configure a private S3 destination first; new backups need no backup key.
-If backup, verification or cleanup fails
-after cutover, SQLite remains preserved and offline; the task fails without
-requesting reconnection. Changed keys are retained, never forcibly deleted.
+If backup or verification fails after cutover, SQLite remains preserved and
+offline and the task fails without requesting reconnection. A later cleanup
+failure does not undo migration or claim successful deletion; source remains
+and requires inspection.
 Do not repeat migration; inspect the journal and use source finalization after
 reconciliation. Older migrations may retain Redis source records; there is no
 silent retroactive cleanup. An old source is not valid rollback after SQLite writes.
@@ -436,12 +485,21 @@ batch then rechecks catalog, generation, ownership token, manifest, source
 SHA-1 and expiration before `UNLINK`. Keys whose data or TTL changed are retained
 and counted as divergent. Catalog, coordination, global keys and SQLite are
 outside the deletion scope.
+When it resolves the same storage/generation as a background cleanup, this
+endpoint also updates that receipt and releases its extra backup retention,
+without restoring the old connection intent.
 
 Follow the task to completion; HTTP acceptance does not confirm deletion.
 Compared key bytes are not RSS immediately returned to the operating system.
 Never trigger cleanup on timeout or disconnection. This endpoint recovers older
 or interrupted finalization; new migrations apply the same guards automatically
-after verified backup and before reconnection.
+after verified backup, in the background after releasing the session for reconnect.
+
+Unknown legacy indexes are excluded from automatic deletion. For example,
+`unoapi-auth-seen:{phone}` was a legacy auth-key age ZSET, not the credentials
+themselves; its implementation was removed in `1e3b610e`. Current Zapo storage
+does not use it. Removing it requires a separate runtime audit and recoverable
+copy, without deleting auth material or other sessions' references.
 
 ## Disconnecting does not delete history
 
@@ -465,15 +523,35 @@ pruning; tombstones and retention policy remain intact. No automatic `VACUUM`
 runs: freed pages may be reused internally, but this promises neither a smaller
 file nor RAM returned to the operating system.
 
-The same coordinator inspects interrupted transitions and pending journals
-without connecting, replaying, promoting files or deleting source data. It
-repairs metadata only when identity, generation, files and ownership establish
+The same coordinator inspects interrupted transitions and pending journals.
+That reconciliation routine never connects, replays, promotes files or deletes
+source data; resuming and cleaning a migration with a verified backup is the
+separate handoff described above. Reconciliation repairs metadata only when
+identity, generation, files and ownership establish
 a safe result. An unverified Redis source, a promoted file or an ambiguous phase
 remains `recovery_required` with an explicit review action. Failed post-cutover
 source cleanup still requires verified finalization. Panel GET requests only
 read receipts; observing status never starts maintenance or recovery.
 
 ## Backup and recovery
+
+### Backup memory usage
+
+The worker snapshots SQLite to disk and reads 256 KiB blocks. Bounded archive
+frames are uploaded through S3 multipart with one 5 MiB part in flight. The
+intermediate queue counts bytes, with a 256 KiB high-water mark, and respects
+consumer backpressure; an individual frame may exceed that threshold. This is
+not a cap on total worker RAM: connections, codec, SDK and SQLite also allocate
+memory. Redis backups use the same byte-based queue control.
+
+Upload, readback and restore do not assemble the entire archive in a Node
+buffer. Linux may cache snapshot/temporary-file pages charged to the worker's
+cgroup. Compare process RSS/heap/buffers with `file`/`inactive_file`/`anon`, swap
+and OOM events; total cgroup usage is not heap, and inactive cache is not
+guaranteed free memory. Temporary files are closed and removed on completion
+or failure. Readback verification remains mandatory; source finalization may
+perform another verification before removing Redis keys. No global OS cache
+flush is performed.
 
 ### Through the panel, without a terminal
 
@@ -543,10 +621,36 @@ The POST takes the phone, owner and confirmation in its query, a raw
 `application/octet-stream` body and exact `Content-Length`. It does not accept
 local paths, arbitrary S3 URLs, passwords or keys from the browser.
 
-The panel supports a manual backup task. Scheduling uses
-`SESSION_STORAGE_BACKUP_ENABLED=true` and
-`SESSION_STORAGE_BACKUP_INTERVAL_HOURS=12`. Configure the stack's S3-compatible
-destination. **New backups are unencrypted and need no key or password**, even
+The panel supports a manual backup task. Automatic SQLite-session backups are
+**enabled by default**, even when `SESSION_STORAGE_BACKUP_ENABLED` is absent.
+To disable scheduling only, set this on the owning worker:
+
+```yaml
+environment:
+  SESSION_STORAGE_BACKUP_ENABLED: "false"
+```
+
+Remove the variable or use `"true"` to enable again. Reload the worker to apply
+an environment change; editing Compose without recreating it does not change
+its configuration. Reload only when there is no active backup, restore or call:
+restarting the process can interrupt them. This flag controls scheduling, not
+task cancellation. Disabling does not delete existing files or disable manual
+backups or migration's mandatory backup.
+
+The interval is fixed at two **12-hour UTC windows**; it does not depend on a
+`SESSION_STORAGE_BACKUP_INTERVAL_HOURS` variable. Only local, non-fixture SQLite
+sessions are eligible. A worker without a valid persistent volume continues
+using the existing Redis flow without starting this routine. Configure the
+stack's S3-compatible destination: missing or failed S3 remains an explicit
+error, never an incomplete backup or silent fallback.
+
+**This flag does not enable global Redis backups.** Those separately require
+`SESSION_STORAGE_REDIS_BACKUP_ENABLED=true`,
+`SESSION_STORAGE_REDIS_BACKUP_ALL_DATABASES=true` and a compatible CLI, as
+described in the Redis recovery section below. VoIP backups also have their
+own `VOIP_BACKUP_ENABLED` flag.
+
+**New backups are unencrypted and need no key or password**, even
 when a legacy key is already configured on the worker. A `.viperstorage` package
 contains credentials, configuration and history: keep the bucket and files
 private, restrict permissions and use secure transport. Integrity checks do not
@@ -554,13 +658,17 @@ provide confidentiality or establish trust in a file from an unknown source.
 A missing destination or failed verification must produce an explicit error,
 never simulated success.
 
-The lab Compose enables this SQLite-session routine by default.
-Startup and subsequent attempts use two coordinated
+The lab Compose also allows explicitly disabling this SQLite-session routine.
+On startup the worker may immediately back up the current window; it does not
+necessarily wait 12 hours after an upgrade. Session backups run sequentially
+per worker. Startup and subsequent attempts use two coordinated
 12-hour UTC windows. Reservations renew during upload; failure permits retry in
 the same window without recording success or allowing overlapping backups.
 Fixtures are excluded. `backupPolicy` in storage status and the panel's technical
-details expose schedule state and last success/error without secrets. Production
-must enable the routine separately; changing the lab does not deploy to the VPS.
+details expose schedule state and last success/error without secrets;
+`enabled=true` does not prove a backup has been created. Older releases retain
+their behavior until their image is updated; changing the lab does not deploy
+to the VPS. An explicit `false` remains respected on upgrade.
 
 ### Compatibility with older backups
 
@@ -860,17 +968,17 @@ services:
   worker-zapo-1:
     environment:
       UNOAPI_SERVER_NAME: worker_1
-      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_ROOT: /home/u/app/session-data
       SESSION_STORAGE_PERSISTENT: "true"
     volumes:
-      - worker_1_sessions:/app/session-data
+      - worker_1_sessions:/home/u/app/session-data
   worker-zapo-2:
     environment:
       UNOAPI_SERVER_NAME: worker_2
-      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_ROOT: /home/u/app/session-data
       SESSION_STORAGE_PERSISTENT: "true"
     volumes:
-      - worker_2_sessions:/app/session-data
+      - worker_2_sessions:/home/u/app/session-data
 volumes:
   worker_1_sessions: {}
   worker_2_sessions: {}

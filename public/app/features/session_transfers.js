@@ -1,9 +1,9 @@
-import { ApiError } from '../core/api.js?v=4.0.42-d963f113';
-import { escapeHtml as e } from '../core/html.js?v=4.0.42-d963f113';
-import { renderModal } from '../components/modal.js?v=4.0.42-d963f113';
-import { renderMobileBackup, downloadMobileBackup, mobileBackupError, manualBackupNeedsStorage, renderSqliteBackupAlternative, isSqliteStorageBackup, transferMobileBackup } from './mobile_backup.js?v=4.0.42-d963f113';
-import { uploadSessionRestore } from './session_restore_upload.js?v=4.0.42-d963f113';
-import { SessionStorageImport } from './session_storage_import.js?v=4.0.42-d963f113';
+import { ApiError } from '../core/api.js?v=4.0.43-010277e1';
+import { escapeHtml as e } from '../core/html.js?v=4.0.43-010277e1';
+import { renderModal } from '../components/modal.js?v=4.0.43-010277e1';
+import { renderMobileBackup, downloadMobileBackup, mobileBackupError, manualBackupNeedsStorage, renderSqliteBackupAlternative, isSqliteStorageBackup, transferMobileBackup } from './mobile_backup.js?v=4.0.43-010277e1';
+import { uploadSessionRestore } from './session_restore_upload.js?v=4.0.43-010277e1';
+import { SessionStorageImport } from './session_storage_import.js?v=4.0.43-010277e1';
 const base = '/manager/session-transfers';
 export async function isStreamSessionBackup(file) {
     const header = (await file.slice(0, 1024).text()).split('\n')[0];

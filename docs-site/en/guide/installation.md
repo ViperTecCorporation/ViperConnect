@@ -41,6 +41,31 @@ and telephony process. Native Linux packages are also available.
 Do not publish Valkey or RabbitMQ to the internet. Terminate TLS at your edge
 proxy and use strong, unique tokens for every installation.
 
+## Version 4.0.43
+
+Version 4.0.43 hardens SQLite migration, excludes retired instances from current
+resource cards and adds filtered/exportable logs and confirmed service restarts
+inside card details. Control requires a separate allowlisted agent for Docker
+standalone or Linux/systemd; it does not support Swarm or arbitrary commands.
+See the [resource manager](/en/guide/resource-metrics).
+
+The default Docker SQLite path is `/home/u/app/session-data`, writable by the
+image user. Explicit paths and legacy mounts are retained. Without verified
+persistence, new sessions keep using Redis and the panel displays a warning.
+Redis remains required. SQLite backups default to enabled when S3 is configured;
+set `SESSION_STORAGE_BACKUP_ENABLED=false` to disable the schedule. Global Redis
+backup remains a separate opt-in. See [storage and backup](/en/guide/session-storage).
+
+This version retains Zapo **1.11.0** and VoIP **0.1.71**, revision
+`b56747dbbc79a10c76e836c631b51cb63934b11c`. Check the
+[release notes](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.43/docs/release-4.0.43.md)
+and workflows on the
+[release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.43).
+Publication does not deploy or remove hostpaths. Documentation-only fixes can
+rebuild `viperconnect-docs:4.0.43` using **Documentation Docker Image** with
+`image_version=4.0.43`, matching `package.json`, without moving the Git tag or
+changing the application image.
+
 ## Version 4.0.42
 
 Version 4.0.42 brings per-session SQLite, controlled migration, metrics, an

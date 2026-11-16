@@ -5,7 +5,7 @@ import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import Redis from 'ioredis'
 import { getConfigRedis } from '../config_redis'
-import { configs, type Config } from '../config'
+import { configs, defaultConfig, type Config } from '../config'
 import { clients } from '../client'
 import { stores } from '../store'
 import { dataStores } from '../data_store'
@@ -18,7 +18,7 @@ import { SessionStorageTasks, SessionBackupScheduler } from './tasks'
 import { SessionStorageMigration } from './migration'
 import { sessionBackupPassword as backupPassword, sessionBackupService as backupService, makeSessionBackup as makeBackup, pruneSessionBackups } from './backup_runtime'
 import { captureBackupState, backupPrimaryIdentity } from './backup_capture'
-import { backupRetention } from './backup_policy'
+import { backupRetention, sessionBackupsEnabled } from './backup_policy'
 import { STORAGE_OPTIONS } from '../../defaults'
 import { assertUploadDestination, uploadedBackupService, stageSessionBackupUpload } from './backup_upload'
 import { validateLiveIdMappings } from './id_validation'
@@ -32,7 +32,9 @@ import { migrateCompatibilityRedisToSqlite, migrateNativeRedisToSqlite } from '.
 import { SqliteSessionQueries } from './sqlite_queries'
 import { cleanRedisSource, sourceFingerprintsDigest } from './source_cleanup'
 import { publishOwnedStorageOffline, reconcileStorageSessionOffline } from './offline_status'
-import { migrationResumeIntent, reconnectMigratedSession, type MigrationResumeIntent } from './migrated_connection'
+import { migrationResumeIntent, type MigrationResumeIntent } from './migrated_connection'
+import { completeMigration, prepareMigrationCompletion, migrationCompletionResult, migrationCompletionKey, recordManualSourceCleanup, type MigrationCompletion } from './migration_completion'
+import { assertSessionEffectsAllowed } from './routing'
 import logger from '../logger'
 import { assertProvisionPending, confirmedProvisionReceipt, recordProvisionReceipt } from './provisioning'
 
@@ -45,34 +47,52 @@ let scheduler: SessionBackupScheduler | undefined
 let schedulerTimer: NodeJS.Timeout | undefined
 
 async function cleanupSource(phone: string, config: Config, body: { confirm: true; backupId: string; generation: number },
-  lease: { key: string; token: string; assertOwned(): Promise<void> }, progress?: (value: StorageProgress) => Promise<void>) {
+  lease: { key: string; token: string; assertOwned(): Promise<void> }, progress?: (value: StorageProgress) => Promise<void>, deferred?: { taskId: string; digest: string }) {
   const source = new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: 1, commandTimeout: 30000 })
   try {
-    const database = openSessionDatabase(phone, config), service = await backupService(phone, config)
+    const database = openSessionDatabase(phone, config)
     return await cleanRedisSource({ redis: source, database, phone, storage: config.sessionStorage!, prefix: resolveZapoRedisKeyPrefix(ZAPO_REDIS_KEY_PREFIX), body,
-      lease, progress, verifyBackup: async (manifest, expected) => {
-        const parent = resolve(tmpdir()), directory = await mkdtemp(join(parent, 'viper-source-verify-'))
-        try {
-          const path = join(directory, 'backup.sqlite')
-          await service.restore({ phone, backupId: manifest.id, password: backupPassword(), stagedPath: path })
-          const restored = openPreparedSessionDatabase(path)
-          try { return sourceFingerprintsDigest(restored) === expected } finally { restored.close() }
-        } finally { if (directory.startsWith(parent + sep)) await rm(directory, { recursive: true, force: true }) }
-      },
+      lease, progress, deferred, verifyBackup: async (manifest, expected) => verifyMigrationBackup(phone, config, manifest.id, expected),
     })
   } finally { source.disconnect() }
 }
 
-async function startOperation(phone: string, operation: 'migration' | 'backup' | 'restore' | 'source-cleanup', run: (id: string, progress: any) => Promise<unknown>) {
-  const redis = await getRedis(), tasks = new SessionStorageTasks(redis)
-  const task = await tasks.start(phone, operation, run)
+async function verifyMigrationBackup(phone: string, config: Config, backupId: string, expected: string) {
+  const parent = resolve(tmpdir()), directory = await mkdtemp(join(parent, 'viper-source-verify-'))
+  try {
+    const path = join(directory, 'backup.sqlite'), service = await backupService(phone, config)
+    await service.restore({ phone, backupId, password: backupPassword(), stagedPath: path })
+    const restored = openPreparedSessionDatabase(path)
+    try { return sourceFingerprintsDigest(restored) === expected } finally { restored.close() }
+  } finally { if (directory.startsWith(parent + sep)) await rm(directory, { recursive: true, force: true }) }
+}
+
+export async function finishMigrationCompletion(phone: string) {
+  const redis = await getRedis()
+  return completeMigration(phone, { redis, owner: storageOwner(), hasClient: value => clients.has(value),
+    effectsAllowed: () => { try { assertSessionEffectsAllowed({}); return true } catch { return false } },
+    dispatch: async value => { const { ReloadAmqp } = await import('../reload_amqp.js'); await new ReloadAmqp(workerConfig).run(value) },
+    cleanup: async (plan: MigrationCompletion, lease) => {
+      // Cleanup is now online: do not invalidate the active socket's metadata
+      // resolver/stores just to read the durable descriptor and S3 settings.
+      const raw = await redis.get(`unoapi-config:${phone}`)
+      if (!raw) throw new SessionStorageError(409, 'session_storage_cleanup_configuration_changed')
+      const config: Config = { ...defaultConfig, useRedis: true, useS3: true, ...JSON.parse(raw), baseStore: storageRoot() }
+      return cleanupSource(phone, config, { confirm: true, backupId: plan.backupId, generation: plan.storage.generation }, lease, undefined, { taskId: plan.taskId, digest: plan.digest })
+    },
+  })
+}
+
+async function startOperation(phone: string, operation: 'migration' | 'backup' | 'restore' | 'source-cleanup', run: (id: string, progress: any) => Promise<unknown>, afterRelease?: () => Promise<unknown>) {
+  const redis = await getRedis(), tasks = new SessionStorageTasks(redis, storageOwner())
+  const task = await tasks.start(phone, operation, run, afterRelease)
   await redis.set(taskKey(phone), task.id, { EX: 604800 })
   return task
 }
 
 async function migrate(phone: string, body: unknown) {
   requireStorageVolume()
-  if (!(await workerConfig(phone)).useS3) throw new SessionStorageError(409, 'session_storage_backup_requires_s3')
+  if (!(await getConfigRedis(phone)).useS3) throw new SessionStorageError(409, 'session_storage_backup_requires_s3')
   const redis = await getRedis(), catalog = new SessionStorageCatalog(redis), startedAt = Date.now()
   return startOperation(phone, 'migration', async (id, progress) => {
     const { snapshotStorageMetrics } = await import('./metrics.js')
@@ -144,27 +164,23 @@ async function migrate(phone: string, body: unknown) {
           if (clients.has(value) || current.sessionStorage?.storageId !== storage.storageId || current.sessionStorage.generation !== storage.generation) throw new SessionStorageError(409, 'session_storage_configuration_changed')
           await update({ phase: 'backup' })
           const backup = await makeBackup(value, current)
-          await update({ phase: 'source_cleanup' })
-          const cleanup = await cleanupSource(value, current, { confirm: true, backupId: backup.id, generation: storage.generation }, cleanupLease, update)
-          return { ...cleanup, backupId: backup.id }
+          const digest = sourceFingerprintsDigest(openSessionDatabase(value, current))
+          if (!await verifyMigrationBackup(value, current, backup.id, digest)) throw new SessionStorageError(409, 'session_storage_cleanup_backup_verification_failed')
+          await cleanupLease.assertOwned()
+          await prepareMigrationCompletion(redis, { phone: value, taskId: id, storage, backupId: backup.id, digest }, resumeIntent)
+          return { status: 'pending', backupId: backup.id }
         },
       })
       const result = await migration.migrate(phone, body, id, progress)
       invalidate(phone)
-      const reconnect = await reconnectMigratedSession(phone, result.storage, resumeIntent, {
-        redis, hasClient: () => clients.has(phone), dispatch: async value => {
-          const { ReloadAmqp } = await import('../reload_amqp.js')
-          await new ReloadAmqp(workerConfig).run(value)
-        },
-      })
       const after = await snapshotStorageMetrics(phone, await workerConfig(phone))
       await redis.set(receiptKey(phone), JSON.stringify({ startedAt, durationMs: Date.now() - startedAt, before, after, sourcePreserved: result.sourcePreserved, sourceCleanup: result.sourceCleanup, backupId: result.backupId }))
-      return { ...result, ...reconnect }
+      return result
     } finally {
       ioredis?.disconnect()
       ;(await import('./activity.js')).endSessionStorageQuiesce(phone)
     }
-  })
+  }, () => finishMigrationCompletion(phone))
 }
 
 async function provision(phone: string, _config: Config, args: any[]) {
@@ -227,14 +243,22 @@ export async function executeStorageOperation(phone: string, supplied: Config, o
         && !config.mobilePrimaryDeleting && !config.sessionStorageUnlinked && ['offline', 'disconnected'].includes(connectionStatus)
         && config.sessionStorage?.backend === 'sqlite' && config.sessionStorage.state === 'offline' && task?.status !== 'running') },
       state: config.sessionStorage?.state || 'active', fixture: !!config.sessionStorage?.fixture, capability, currentTask: task,
-      backupPolicy: { enabled: process.env.SESSION_STORAGE_BACKUP_ENABLED === 'true', intervalHours: 12, destination: 's3', protection: 'none', retention: backupRetention(),
+      backupPolicy: { enabled: sessionBackupsEnabled(), intervalHours: 12, destination: 's3', protection: 'none', retention: backupRetention(),
         location: config.useS3 ? { bucket: location.bucket, prefix: `backups/session-storage/${phone}/`, ...(backupRetention().strategy === 'weekday-slots' ? { slotsPrefix: `backups/session-storage/${phone}/slots/` } : {}) } : undefined,
         schedule: await new SessionStorageCatalog(redis).backupScheduleStatus(phone) },
       maintenance: coordinator?.maintenance, recovery: coordinator?.reconciliation,
       lastBackup: last ? (({ id, createdAt, bytes, objectKey, protection }: any) => ({ id, createdAt, bytes, objectKey,
         protection: protection === 'none' ? 'none' : 'aes-256-gcm', status: 'ready' }))(JSON.parse(last)) : undefined }
   }
-  if (operation === 'metrics') return { ...await (await import('./metrics.js')).getStorageMetrics(phone, config, { redis }), migration: JSON.parse(await redis.get(receiptKey(phone)) || 'null') }
+  if (operation === 'metrics') {
+    let migration = JSON.parse(await redis.get(receiptKey(phone)) || 'null')
+    const completion = await redis.get(migrationCompletionKey(phone))
+    if (migration && completion) {
+      const plan: MigrationCompletion = JSON.parse(completion)
+      if (plan.storage.storageId === config.sessionStorage?.storageId && plan.storage.generation === config.sessionStorage?.generation && plan.backupId === migration.backupId) migration = migrationCompletionResult(plan, plan.taskId, migration)
+    }
+    return { ...await (await import('./metrics.js')).getStorageMetrics(phone, config, { redis }), migration }
+  }
   if (operation === 'explore') {
     await (await import('./write_fence.js')).assertFreshSqliteWriteSelection(phone, config)
     return (await import('./explorer.js')).exploreSessionDatabase(phone, config, args[0])
@@ -254,12 +278,14 @@ export async function executeStorageOperation(phone: string, supplied: Config, o
   if (operation === 'source-cleanup') {
     assertLocalStorageOwner(config); requireStorageVolume()
     if (!isSqliteSession(config) || clients.has(phone)) throw new SessionStorageError(409, 'session_storage_cleanup_requires_offline')
-    return startOperation(phone, 'source-cleanup', async (_task, progress) => {
+    return startOperation(phone, 'source-cleanup', async (taskId, progress) => {
       const lease = new RedisLease(`zapo-session:${phone}`, 120000)
       if (!await lease.acquire()) throw new SessionStorageError(409, 'session_storage_waiting_disconnect')
       const own = lease.ownership()
       try {
-        return await cleanupSource(phone, config, args[0], { ...own, assertOwned: async () => { if (!await lease.renew()) throw new SessionStorageError(409, 'session_storage_lease_lost') } }, progress)
+        const result = await cleanupSource(phone, config, args[0], { ...own, assertOwned: async () => { if (!await lease.renew()) throw new SessionStorageError(409, 'session_storage_lease_lost') } }, progress)
+        await recordManualSourceCleanup(redis, phone, config.sessionStorage!, taskId, result)
+        return result
       } finally { await lease.release() }
     })
   }
@@ -349,7 +375,13 @@ sessionStorageGateway.restoreUpload = async (...args: Parameters<typeof stageSes
 }
 
 export async function startStorageBackupScheduler() {
-  if (schedulerTimer || process.env.SESSION_STORAGE_BACKUP_ENABLED !== 'true') return
+  if (schedulerTimer || !sessionBackupsEnabled()) return
+  // Redis-only workers must keep booting when the default-on SQLite routine
+  // cannot run. The panel already reports persistent-volume capability.
+  if (!storageCapability().sqliteAvailable) {
+    logger.warn({ code: 'session_storage_backup_volume_unavailable' }, 'Automatic SQLite backups require a persistent storage volume')
+    return
+  }
   requireStorageVolume()
   scheduler = new SessionBackupScheduler(new SessionStorageCatalog(await getRedis()), {
     sessions: async () => { const phones = await getSessionPhones(); const selected: string[] = []; for (const phone of phones) { const c = await workerConfig(phone); if (isSqliteSession(c) && c.sessionStorage?.owner === storageOwner() && !c.sessionStorage.fixture) selected.push(phone) }; return selected },

@@ -31,6 +31,10 @@ foreach ($labOverlay in @('compose.lab.admin-port.yml', 'compose.lab.storage-too
   $labOverlayPath = Join-Path $labRoot $labOverlay
   if (Test-Path -LiteralPath $labOverlayPath) { $labArgs += @('-f', $labOverlayPath) }
 }
+$labControlEnv = Join-Path (Split-Path $labEnv -Parent) 'service-control.env'
+if (Test-Path -LiteralPath $labControlEnv) {
+  $labArgs += @('--env-file', $labControlEnv, '-f', (Join-Path $labRoot 'compose.lab.service-control.yml'))
+}
 switch ($Action) {
   'build' { & docker @labArgs build compiler docs }
   'up' { & docker @labArgs up -d --no-build }

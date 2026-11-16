@@ -44,15 +44,18 @@ local generation=old and old.generation or 0
 local backend=old and old.backend or 'redis'
 if generation~=tonumber(ARGV[1]) or backend~=ARGV[2] then return 0 end
 if ARGV[4]~='' and cfg.sessionStorageTaskId~=ARGV[4] then return 0 end
-local next=cjson.decode(ARGV[3]); local owner=old and old.owner or cfg.server
-if owner and owner~=next.owner then return 0 end
+local next=cjson.decode(ARGV[3]); local server=cfg.server
+-- Match getConfigRedis's legacy default, never infer routing from a descriptor.
+if server==nil or server==cjson.null or server==false or server=='' or server==0 then server='server_1' end
+if server~=next.owner or (old and old.owner~=next.owner) then return 0 end
 local provisionId=ARGV[8] or ''
 if provisionId~='' then
  local p=cfg.sessionStorageProvisionPending
- if type(p)~='table' or p.id~=provisionId or cfg.provider~='zapo' or cfg.autoConnect~=false or cfg.server~=next.owner then return 0 end
+ if type(p)~='table' or p.id~=provisionId or cfg.provider~='zapo' or cfg.autoConnect~=false or server~=next.owner then return 0 end
  cfg.sessionStorageProvisioned={id=provisionId,backend=next.backend,owner=next.owner,storageId=next.storageId,generation=next.generation}
 end
-cfg.sessionStorage=next
+-- Persist routing in the same guarded commit, before later offline/backup guards.
+cfg.server=server; cfg.sessionStorage=next
 if ARGV[5]~='' then cfg.sessionStorageTaskId=ARGV[5] else cfg.sessionStorageTaskId=nil end
 if ARGV[6]~='' then cfg.autoConnect=cjson.decode(ARGV[6]) end
 redis.call('SET',KEYS[1],cjson.encode(cfg)); redis.call('PUBLISH','unoapi-config:update',ARGV[7]); return 1`

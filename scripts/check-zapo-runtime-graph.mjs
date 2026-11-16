@@ -38,6 +38,7 @@ const requiredStorageEntries = [
 ]
 const missingStorageEntries = requiredStorageEntries.filter(file => !fs.existsSync(path.join(runtimeRoot, file)))
 if (missingStorageEntries.length) throw new Error(`Storage restore runtime entries missing: ${missingStorageEntries.join(', ')}`)
+if (!fs.existsSync(path.join(runtimeRoot, 'services/service_control/standalone.js'))) throw new Error('Service-control standalone runtime entry missing')
 
 if (importViolations.length || artifactViolations.length) {
   const violations = [

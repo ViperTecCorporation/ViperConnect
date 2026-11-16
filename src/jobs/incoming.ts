@@ -345,7 +345,9 @@ export class IncomingJob {
     try {
       response = await this.incoming.send(phone, payload, options)
     } catch (error) {
-      if (!shouldReturnProviderSendFailure(provider, error, retry)) throw error
+      // A receipt/update failure is not a failed send of the original message.
+      // Keep the queue error observable without publishing a fabricated status.
+      if (isStatusOperation || !shouldReturnProviderSendFailure(provider, error, retry)) throw error
       logger.warn(
         error as any,
         'Provider send failed permanently; emitting failed status provider=%s phone=%s id=%s type=%s',

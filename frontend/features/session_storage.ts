@@ -14,7 +14,7 @@ export interface SessionStorageStatus {
   restoreUpload?: { available: boolean }
   fixture?: boolean
   capability?: {
-    sqliteAvailable: boolean; reason?: string; defaultBackend: 'redis' | 'sqlite'
+    sqliteAvailable: boolean; reason?: string; root?: string; defaultBackend: 'redis' | 'sqlite'
     configurationExample?: { env?: string | Record<string, string>; compose?: string }
     documentation?: string
   }
@@ -28,7 +28,8 @@ export interface SessionStorageTask {
   id: string; phone: string; kind?: string; operation?: string
   status: 'queued' | 'running' | 'succeeded' | 'ready' | 'failed' | 'interrupted'
   phase?: string; progress?: number | { phase?: string }; error?: string
-  result?: { autoConnect?: boolean; reconnect?: { status: 'requested' | 'skipped' | 'failed'; reason?: string } }
+  result?: { autoConnect?: boolean; reconnect?: { status: 'pending' | 'requested' | 'skipped' | 'failed'; reason?: string };
+    sourcePreserved?: boolean; sourceCleanup?: { status?: 'pending' | 'running' | 'ready' | 'diverged' | 'failed'; error?: string } }
 }
 export interface SessionStorageMetrics {
   worker?: { rssBytes: number; heapUsedBytes: number; externalBytes: number; sessionCount: number;
@@ -56,6 +57,7 @@ const restoring = (task: SessionStorageTask) => ['restore', 'restore-upload'].in
 const MAX_RESTORE_UPLOAD_BYTES = 256 * 1024 * 1024
 
 export function storageTaskError(code: string | undefined, fallback: string) {
+  if (code === 'session_storage_worker_migration_busy') return 'Já há uma migração em andamento neste worker. Aguarde a cópia e a validação do backup terminarem para tentar novamente. Esta sessão não foi pausada.'
   if (code === 'session_storage_active_calls') return 'Há uma ligação ou operação VoIP em andamento. A migração não começou e a ligação foi preservada. Aguarde encerrar para tentar novamente.'
   if (code === 'session_storage_voip_gate_required') return 'Atualize o worker e o plugin VoIP antes de migrar. A sessão não foi desconectada.'
   return code || fallback

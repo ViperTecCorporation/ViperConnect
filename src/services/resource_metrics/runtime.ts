@@ -12,6 +12,7 @@ import { CpuUsageDelta } from './cpu'
 import { RabbitManagement } from '../rabbitmq_management'
 import { rabbitResourceSample } from './rabbitmq'
 import { RabbitCpuSampler } from './rabbitmq_cpu'
+import { storageRoot } from '../session_storage/capability'
 
 let query: ResourceMetricsQuery | undefined
 export async function resourceMetricsQuery() {
@@ -31,7 +32,7 @@ export async function resourceMetricsQuery() {
 export function startResourceMetrics(role: string) {
   if (process.env.RESOURCE_METRICS_ENABLED === 'false') return
   if (process.env.NODE_ENV === 'test' && process.env.RESOURCE_METRICS_ENABLED !== 'true') return
-  const sampler = new ProcessResourceSampler(role, [BASE_STORE, ...(process.env.SESSION_STORAGE_ROOT ? [process.env.SESSION_STORAGE_ROOT] : [])])
+  const sampler = new ProcessResourceSampler(role, [BASE_STORE, ...(['worker', 'all'].includes(role) ? [storageRoot()] : process.env.SESSION_STORAGE_ROOT ? [process.env.SESSION_STORAGE_ROOT] : [])])
   const redisCpu = new CpuUsageDelta()
   const rabbitCpu = new RabbitCpuSampler()
   const token = randomUUID(), states = new Map<string, { next: number; archivedAt?: number; state: 'ready' | 'error' | 'disabled'; dropped: number }>()

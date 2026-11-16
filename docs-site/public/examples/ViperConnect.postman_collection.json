@@ -83,6 +83,11 @@
       "type": "string"
     },
     {
+      "key": "channel",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "command",
       "value": "",
       "type": "string"
@@ -113,6 +118,11 @@
       "type": "string"
     },
     {
+      "key": "control_base_url",
+      "value": "http://127.0.0.1:9880",
+      "type": "string"
+    },
+    {
       "key": "conversationId",
       "value": "",
       "type": "string"
@@ -134,6 +144,11 @@
     },
     {
       "key": "endDate",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "exclude",
       "value": "",
       "type": "string"
     },
@@ -183,12 +198,22 @@
       "type": "string"
     },
     {
+      "key": "include",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "key",
       "value": "",
       "type": "string"
     },
     {
       "key": "kind",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "level",
       "value": "",
       "type": "string"
     },
@@ -328,6 +353,16 @@
       "type": "string"
     },
     {
+      "key": "service_control_guard_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "service_control_token",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "service_id",
       "value": "",
       "type": "string"
@@ -339,6 +374,11 @@
     },
     {
       "key": "side",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "since",
       "value": "",
       "type": "string"
     },
@@ -369,6 +409,11 @@
     },
     {
       "key": "table",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tail",
       "value": "",
       "type": "string"
     },
@@ -1405,7 +1450,7 @@
               ],
               "query": []
             },
-            "description": "Administrativo. Consulta backend, dono, geração, tarefa, manutenção, reconciliação e último backup. Novas sessões usam SQLite por padrão na raiz /app/session-data somente com mount persistente gravável e motor compatível confirmados pelo worker. ENVs ROOT/DEFAULT/PERSISTENT são opcionais; DEFAULT=redis mantém novas sessões em Redis, PERSISTENT=false desabilita SQLite. Sem volume válido novas sessões usam Redis e o painel alerta como configurar; uma pasta ou ENV não prova persistência. Sessões Redis existentes não migram automaticamente. Redis e REDIS_URL continuam obrigatórios com SQLite para catálogo, autenticação/autorização do painel/API, configuração, leases e roteamento; SQLite não é modo de operação sem Redis. Worker deve confirmar Redis/SQLite antes de conectar: timeout não é fallback. Sessão já migrada com volume ausente falha sem recriar banco vazio ou voltar ao Redis. Exibe bucket/prefixo/slots sem credenciais. connectionStatus difere do estado do storage; restoreUpload.available exige offline real e autoConnect=false. GET não executa manutenção. Em validação DEV; não implanta produção."
+            "description": "Administrativo. Consulta backend, dono, geração, tarefa, manutenção, reconciliação e último backup. Novas sessões usam SQLite por padrão na raiz /home/u/app/session-data somente com mount persistente gravável e motor compatível confirmados pelo worker. ENVs ROOT/DEFAULT/PERSISTENT são opcionais; DEFAULT=redis mantém novas sessões em Redis, PERSISTENT=false desabilita SQLite. Sem volume válido novas sessões usam Redis e o painel alerta como configurar; uma pasta ou ENV não prova persistência. Sessões Redis existentes não migram automaticamente. Redis e REDIS_URL continuam obrigatórios com SQLite para catálogo, autenticação/autorização do painel/API, configuração, leases e roteamento; SQLite não é modo de operação sem Redis. Worker deve confirmar Redis/SQLite antes de conectar: timeout não é fallback. Sessão já migrada com volume ausente falha sem recriar banco vazio ou voltar ao Redis. Exibe bucket/prefixo/slots sem credenciais. connectionStatus difere do estado do storage; restoreUpload.available exige offline real e autoConnect=false. GET não executa manutenção. Em validação DEV; não implanta produção."
           },
           "response": []
         },
@@ -1432,7 +1477,7 @@
               ],
               "query": []
             },
-            "description": "Pausa somente esta sessão sem logout, prepara snapshot no volume do worker dono e valida IDs, conteúdo e expiração antes do cutover por geração. Exige S3, mas não exige chave: após commit verifica novo backup sem criptografia por leitura de volta/restauração e remove somente as chaves Redis de origem cujo conteúdo/TTL permanecem iguais, sob a mesma lease. Arquivo contém credenciais; mantenha bucket e downloads restritos. Configuração e coordenação permanecem. sourcePreserved=false e sourceCleanup confirmam finalização; falha mantém SQLite offline, sem rollback silencioso. Só solicita retomada após finalização/lease liberada se autoConnect=true, status online/connecting e cliente local anterior no dono. Fixtures e guard global não retomam. result.reconnect=requested não confirma Online. Sem retry por timeout. HTTP aceito não é conclusão. Não altera outras sessões.",
+            "description": "Pausa somente esta sessão sem logout, prepara snapshot no volume do worker dono e valida IDs, conteúdo e expiração antes do cutover por geração. Exige S3, sem exigir chave: após commit verifica novo backup sem criptografia por leitura de volta/restauração. Libera lease e bloqueio da tarefa antes de solicitar reconexão conforme intenção anterior (autoConnect=true, status online/connecting e cliente local no dono). Fixtures e guard global não retomam. Limpeza Redis durável em segundo plano usa lock independente; cada lote revalida dono, geração, banco, backup, ausência de transição, conteúdo e TTL. Arquivo contém credenciais; mantenha bucket e downloads restritos. Configuração e coordenação permanecem. Tarefa ready confirma cutover/backup, não Online ou exclusão; sourceCleanup.status=ready e sourcePreserved=false confirmam limpeza. Divergência/falha preserva a origem sem desfazer SQLite ou parar a sessão. Backup/verificação falhos não reconectam. result.reconnect=requested não confirma Online. Sem retry por timeout. Não altera outras sessões.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"target\": \"sqlite\",\n  \"confirm\": true\n}",
@@ -9132,6 +9177,527 @@
               "body": "{}"
             }
           ]
+        },
+        {
+          "name": "Consultar capacidade de reinício restrito por card",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/resources/control",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "resources",
+                "control"
+              ],
+              "query": []
+            },
+            "description": "Administrador global/Manager. Proxy para agente privado, sem Docker socket no web. Lista estática de component para container Docker standalone ou unidade systemd. Sem agente retorna configured=false, targets vazios e motivo; não simula capacidade. Confirmação assinada por instância vence em 60s. Não reinicia ao consultar. Não controla Swarm.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Capacidade atual; no-store",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/resources/control",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "resources",
+                    "control"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador global/Manager. Proxy para agente privado, sem Docker socket no web. Lista estática de component para container Docker standalone ou unidade systemd. Sem agente retorna configured=false, targets vazios e motivo; não simula capacidade. Confirmação assinada por instância vence em 60s. Não reinicia ao consultar. Não controla Swarm.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Capacidade atual; no-store",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"configured\": false,\n  \"targets\": [\n    {\n      \"component\": \"string\",\n      \"name\": \"string\",\n      \"backend\": \"docker\",\n      \"available\": false\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Consultar logs ao vivo do serviço autorizado",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/resources/{{component}}/logs?tail={{tail}}&include={{include}}&exclude={{exclude}}&level={{level}}&channel={{channel}}&since={{since}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "resources",
+                "{{component}}",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "tail",
+                  "value": "{{tail}}",
+                  "description": "Quantidade de linhas brutas recentes da fonte antes dos filtros.",
+                  "disabled": true
+                },
+                {
+                  "key": "include",
+                  "value": "{{include}}",
+                  "description": "Qualquer um de até oito termos literais separados por vírgula, case-insensitive. Sem regex.",
+                  "disabled": true
+                },
+                {
+                  "key": "exclude",
+                  "value": "{{exclude}}",
+                  "description": "Excluir qualquer um de até oito termos literais separados por vírgula; aplicado após ocultar credenciais.",
+                  "disabled": true
+                },
+                {
+                  "key": "level",
+                  "value": "{{level}}",
+                  "description": "Nível mínimo. all inclui linhas sem nível identificado; stderr não é automaticamente error.",
+                  "disabled": true
+                },
+                {
+                  "key": "channel",
+                  "value": "{{channel}}",
+                  "description": "Docker com TTY reúne os canais em stdout. Systemd usa journal, sem inferir stderr pela prioridade.",
+                  "disabled": true
+                },
+                {
+                  "key": "since",
+                  "value": "{{since}}",
+                  "description": "Segundo Unix de retomada nas últimas 24h, no máximo 60s no futuro; zero usa somente tail recente. Retomada não garante ausência de lacunas.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Administrador global/Manager. Fluxo HTTP NDJSON sem buffering integral, sem Redis/S3 e somente leitura. Usa o agente restrito e allowlist de componentes, nunca nome de container/unidade ou caminho do navegador. Docker standalone stdout/stderr, incluindo TTY agregado em stdout; Linux nativo via journalctl da unidade systemd. Não suporta Swarm nem leitura de arquivo livre. Filtros literais sem regex: include aceita qualquer termo, exclude remove qualquer termo, máximo 8 separados por vírgula, sem diferenciar maiúsculas. Nível mínimo inferido de Pino/texto/PRIORITY; linhas sem nível só em all. Tail é recorte bruto recente antes dos filtros, não busca ilimitada por ocorrências. Últimos 1–2000 registros e novas linhas; máximo 4 leitores, 5 minutos/8 MiB brutos por fonte ou 50000 linhas, com encerramento explícito. Pausar/fechar/aba oculta/logout cancela a fonte. Retomar tenta desde o último segundo recebido, com deduplicação no buffer; pode haver lacunas por rotação, recorte ou interrupção. Exportação TXT é local no navegador e contém somente as linhas exibidas/filtradas (até 2000 e aproximadamente 1 MiB), não todo o log do host. Credenciais reconhecíveis/segredos do agente são ocultados antes do envio; não é garantia de anonimização, logs ainda podem conter dados pessoais. Autorização validada na abertura. Heartbeat 10s, Cache-Control no-store e X-Accel-Buffering no.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ler logs diretamente no agente restrito",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_base_url}}/v1/targets/{{component}}/logs?tail={{tail}}&include={{include}}&exclude={{exclude}}&level={{level}}&channel={{channel}}&since={{since}}",
+              "host": [
+                "{{control_base_url}}"
+              ],
+              "path": [
+                "v1",
+                "targets",
+                "{{component}}",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "tail",
+                  "value": "{{tail}}",
+                  "description": "Quantidade de linhas brutas recentes da fonte antes dos filtros.",
+                  "disabled": true
+                },
+                {
+                  "key": "include",
+                  "value": "{{include}}",
+                  "description": "Qualquer um de até oito termos literais separados por vírgula, case-insensitive. Sem regex.",
+                  "disabled": true
+                },
+                {
+                  "key": "exclude",
+                  "value": "{{exclude}}",
+                  "description": "Excluir qualquer um de até oito termos literais separados por vírgula; aplicado após ocultar credenciais.",
+                  "disabled": true
+                },
+                {
+                  "key": "level",
+                  "value": "{{level}}",
+                  "description": "Nível mínimo. all inclui linhas sem nível identificado; stderr não é automaticamente error.",
+                  "disabled": true
+                },
+                {
+                  "key": "channel",
+                  "value": "{{channel}}",
+                  "description": "Docker com TTY reúne os canais em stdout. Systemd usa journal, sem inferir stderr pela prioridade.",
+                  "disabled": true
+                },
+                {
+                  "key": "since",
+                  "value": "{{since}}",
+                  "description": "Segundo Unix de retomada nas últimas 24h, no máximo 60s no futuro; zero usa somente tail recente. Retomada não garante ausência de lacunas.",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Mesmo contrato NDJSON/filtros e limites de /admin/resources/{component}/logs, protegido por SERVICE_CONTROL_TOKEN dedicado. Resolve exclusivamente a allowlist estática. Não executa comandos fornecidos pelo cliente nem mutações. Fluxo de Docker API vinculado ao ID exato; journalctl usa argumentos fixos por unidade. Segredos reconhecidos ocultados antes de filtrar/enviar. Fonte indisponível/permissão/driver de logs incompatível retorna erro explícito. Leitura não reinicia o serviço e independe de tarefa de reinício em andamento.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_control_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar reinício com confirmação explícita e ID idempotente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/resources/{{component}}/restart",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "resources",
+                "{{component}}",
+                "restart"
+              ],
+              "query": []
+            },
+            "description": "Administrador. Envia somente ID UUID v4, confirm igual ao component e confirmation assinada obtida no resumo. Não aceita comando, URL ou nome de unidade/container. Agente independente persiste antes da ação, uma por vez, verifica segurança e instância. Recusas de chamada/tarefa/backup/migração/restore ou verificação indisponível ficam na operação failed antes do comando. Checagem pontual, não dreno global atômico. Reinício pode interromper conexões; não recria containers, remove volumes ou altera imagens. 202 não é conclusão; repetir mesmo ID não repete comando. Resultado incerto não tem retry automático.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationId\": \"string\",\n  \"confirm\": \"string\",\n  \"confirmation\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "Operação aceita ou resultado do mesmo ID já existente; consultar estado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/admin/resources/{{component}}/restart",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "resources",
+                    "{{component}}",
+                    "restart"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador. Envia somente ID UUID v4, confirm igual ao component e confirmation assinada obtida no resumo. Não aceita comando, URL ou nome de unidade/container. Agente independente persiste antes da ação, uma por vez, verifica segurança e instância. Recusas de chamada/tarefa/backup/migração/restore ou verificação indisponível ficam na operação failed antes do comando. Checagem pontual, não dreno global atômico. Reinício pode interromper conexões; não recria containers, remove volumes ou altera imagens. 202 não é conclusão; repetir mesmo ID não repete comando. Resultado incerto não tem retry automático.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"operationId\": \"string\",\n  \"confirm\": \"string\",\n  \"confirmation\": \"string\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Operação aceita ou resultado do mesmo ID já existente; consultar estado",
+              "code": 202,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"component\": \"string\",\n  \"name\": \"string\",\n  \"backend\": \"docker\",\n  \"actor\": \"string\",\n  \"createdAt\": 0,\n  \"updatedAt\": 0,\n  \"state\": \"accepted\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Acompanhar reinício sem reenviar comando",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/resources/operations/{{operation}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "resources",
+                "operations",
+                "{{operation}}"
+              ],
+              "query": []
+            },
+            "description": "Administrador; diário persistido no agente, independente do Redis. accepted/restarting são pendentes; running confirma nova instância em execução, não sessões Online. applicationHealth=healthy somente com healthcheck Docker aprovado; not_checked não confirma saúde da aplicação. failed recusado antes do comando; unknown é incerto e exige revisão de logs, nunca retry automático. Últimas 200 operações; no-store.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "Estado persistido; consulta não executa ação",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/admin/resources/operations/{{operation}}",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "admin",
+                    "resources",
+                    "operations",
+                    "{{operation}}"
+                  ],
+                  "query": []
+                },
+                "description": "Administrador; diário persistido no agente, independente do Redis. accepted/restarting são pendentes; running confirma nova instância em execução, não sessões Online. applicationHealth=healthy somente com healthcheck Docker aprovado; not_checked não confirma saúde da aplicação. failed recusado antes do comando; unknown é incerto e exige revisão de logs, nunca retry automático. Últimas 200 operações; no-store.",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{admin_token}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "status": "Estado persistido; consulta não executa ação",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"id\": \"string\",\n  \"component\": \"string\",\n  \"name\": \"string\",\n  \"backend\": \"docker\",\n  \"actor\": \"string\",\n  \"createdAt\": 0,\n  \"updatedAt\": 0,\n  \"state\": \"accepted\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Verificação interna restrita ao agente de controle",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/internal/service-control/safety",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "service-control",
+                "safety"
+              ],
+              "query": []
+            },
+            "description": "Não usa token Manager/global. Somente SERVICE_CONTROL_GUARD_TOKEN dedicado >=32 caracteres. Leitura limitada de travas Redis, chamadas Zapo, registros nativos ocupados/locks VoIP e tarefas RabbitMQ sem ACK. Falhas ou limite de scan recusam. Não retorna conteúdo ou identificadores de sessões, não altera filas. Pontual, não lock global de admissão.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_control_guard_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Capacidade direta do agente interno",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_base_url}}/v1/targets",
+              "host": [
+                "{{control_base_url}}"
+              ],
+              "path": [
+                "v1",
+                "targets"
+              ],
+              "query": []
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_control_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar ao agente reinício permitido e idempotente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{control_base_url}}/v1/targets/{{component}}/restart",
+              "host": [
+                "{{control_base_url}}"
+              ],
+              "path": [
+                "v1",
+                "targets",
+                "{{component}}",
+                "restart"
+              ],
+              "query": []
+            },
+            "description": "Somente proxy web autenticado por segredo dedicado. Mesmo contrato do reinício administrativo, com actor ID administrativo para auditoria. Configuração e permissões do host são administradas fora do navegador. Sem APIs de shell, deploy, remoção ou alteração de allowlist.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_control_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operationId\": \"string\",\n  \"confirm\": \"string\",\n  \"confirmation\": \"string\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar diário independente do Redis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{control_base_url}}/v1/operations/{{operation}}",
+              "host": [
+                "{{control_base_url}}"
+              ],
+              "path": [
+                "v1",
+                "operations",
+                "{{operation}}"
+              ],
+              "query": []
+            },
+            "description": "",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{service_control_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
         }
       ]
     },

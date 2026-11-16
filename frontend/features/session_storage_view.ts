@@ -46,7 +46,10 @@ function feedback(view: StorageView) {
   const phase = task.phase || (typeof task.progress === 'object' ? task.progress.phase : '')
   const reconnect = task.result?.reconnect
   const label = ready ? ((task.kind || task.operation) === 'backup' ? 'Backup concluído' : ['restore', 'restore-upload'].includes(task.kind || task.operation || '') ? 'Restauração concluída · Sem reconexão' : reconnect?.status === 'requested' ? 'Migração concluída · Reconexão solicitada' : reconnect?.status === 'failed' ? 'Migração concluída · Reconexão pendente' : 'Migração concluída') : failed ? 'Operação não concluída' : `${phases[phase || ''] || 'Operação em andamento'}…`
-  return `<div role="status" class="storage-feedback${ready ? ' storage-feedback--success' : failed ? ' storage-feedback--error' : ''}"><span>${e(label)}</span>${pending(task) ? '<button class="btn btn--ghost btn--small" type="button" data-action="storage-task">Atualizar</button>' : ''}</div>`
+  const cleanup = task.result?.sourceCleanup?.status
+  const cleanupLabel = ready && cleanup && ['pending', 'running'].includes(cleanup) ? 'Limpeza do Redis em segundo plano.'
+    : ready && cleanup && ['failed', 'diverged'].includes(cleanup) ? 'Origem Redis preservada; a limpeza precisa de revisão.' : ''
+  return `<div role="status" class="storage-feedback${ready ? ' storage-feedback--success' : failed ? ' storage-feedback--error' : ''}"><span>${e(label)}${cleanupLabel ? ` · ${e(cleanupLabel)}` : ''}</span>${pending(task) ? '<button class="btn btn--ghost btn--small" type="button" data-action="storage-task">Atualizar</button>' : ''}</div>`
 }
 
 function configuration(view: StorageView, scope: string) {
@@ -59,7 +62,7 @@ function configuration(view: StorageView, scope: string) {
   }
   const example = capability?.configurationExample
   const environment = typeof example?.env === 'string' ? example.env : Object.entries(example?.env || {}).map(([key, value]) => `${key}=${value}`).join('\n')
-  const body = `<p>Monte um volume persistente em <code>/app/session-data</code> no worker responsável. SQLite e esse caminho já são os padrões para novas sessões; as variáveis abaixo permitem explicitá-los ou trocar o caminho. Uma pasta no container ou apenas declarar as variáveis não comprova persistência. Sem volume validado, novas sessões usam Redis; sessões já migradas não trocam de banco silenciosamente. Redis continua obrigatório para configuração e coordenação.</p>${capability?.reason ? facts([['Motivo', capability.reason]]) : ''}${environment ? `<pre><code>${e(environment)}</code></pre>` : ''}${example?.compose ? `<pre><code>${e(example.compose)}</code></pre>` : ''}<a href="https://viperconnect.vipertec.net/guide/session-storage" target="_blank" rel="noopener noreferrer">Ver documentação de armazenamento</a>`
+  const body = `<p>Monte um volume persistente em <code>${e(capability?.root || '/home/u/app/session-data')}</code> no worker responsável. O novo padrão Docker fica dentro de <code>/home/u/app</code>, preparado para o usuário <code>u</code>. Volumes existentes e bind mounts também precisam permitir escrita por esse usuário. Preserve o mesmo volume e os bancos existentes ao atualizar. Uma pasta no container ou apenas declarar as variáveis não comprova persistência. Sem volume validado, novas sessões usam Redis; sessões já migradas não trocam de banco silenciosamente. Redis continua obrigatório para configuração e coordenação.</p>${capability?.reason ? facts([['Motivo', capability.reason]]) : ''}${environment ? `<pre><code>${e(environment)}</code></pre>` : ''}${example?.compose ? `<pre><code>${e(example.compose)}</code></pre>` : ''}<a href="https://viperconnect.vipertec.net/guide/session-storage" target="_blank" rel="noopener noreferrer">Ver documentação de armazenamento</a>`
   return `<p class="storage-warning" role="alert">SQLite indisponível neste worker. Novas sessões usarão Redis; configure o volume persistente.</p>${disclosure(view, 'configuration', 'Como configurar', body, scope)}`
 }
 

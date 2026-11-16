@@ -37,6 +37,7 @@ const tagFor = (route) => {
   if (/\/storage(?:\/|$)/.test(route)) return 'Sessões'
   if (/\/profile(?:\/|$)/.test(route)) return 'Perfil'
   if (route.startsWith('/manager/')) return 'Manager'
+  if (/^\/(?:internal\/service-control\/|v1\/(?:targets|operations)(?:\/|$))/.test(route)) return 'Administração'
   if (/^\/admin\/(?:(?:redis|rabbitmq|settings)\/|resources(?:\/|$))/.test(route)) return 'Administração'
   if (/^\/(?:ping|version)$/.test(route)) return 'Sistema'
   if (route.startsWith('/admin/voip/') || route.startsWith('/v1/console/') || route.startsWith('/v1/resources/')) return 'Telefonia'

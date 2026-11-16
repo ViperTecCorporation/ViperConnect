@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { isDeepStrictEqual } from 'node:util'
-import { decodeBackupStream, encodeBackupStream, type BackupProtection } from './backup_stream'
+import { backupArchiveReadable, decodeBackupStream, encodeBackupStream, type BackupProtection } from './backup_stream'
 import { SessionStorageDescriptor, SessionStorageError, validateSessionPhone, validateStorageDescriptor } from './types'
 import { requireSafeSqliteEngine } from './sqlite_engine'
 import { assertSqliteWalSafeVersion } from './sqlite_safety'
@@ -79,7 +79,7 @@ export class SessionSqliteBackups {
         }
       }
       const archive = encodeBackupStream({ kind: 'sqlite-session', version: 1, manifest, supplement: input.supplement || {} }, records())
-      const stream = Readable.from(archive)
+      const stream = backupArchiveReadable(archive)
       try { await this.objects.save(manifest.objectKey, stream) } finally { stream.destroy(); await archive.return(undefined) }
       // A completed PUT is not proof of a readable, intact snapshot. Read the
       // uploaded object back through the same offline restore verifier before

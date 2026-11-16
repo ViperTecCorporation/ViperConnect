@@ -1,5 +1,5 @@
-import { icon } from '../components/icons.js?v=4.0.42-d963f113';
-import { t } from '../core/i18n.js?v=4.0.42-d963f113';
+import { icon } from '../components/icons.js?v=4.0.43-010277e1';
+import { t } from '../core/i18n.js?v=4.0.43-010277e1';
 export const renderResourcesPage = (panel) => `
   <div class="resources-page">
     <header class="page-header">

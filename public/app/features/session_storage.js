@@ -1,7 +1,7 @@
-import { renderStorageDialog, renderStorageMetrics, renderStorageOverview, storageRestoreAvailable } from './session_storage_view.js?v=4.0.42-d963f113';
-import { downloadMobileBackup } from './mobile_backup.js?v=4.0.42-d963f113';
-import { normalizeStorageBackupFiles, validStorageBackupId } from './session_storage_downloads.js?v=4.0.42-d963f113';
-import { SessionStorageExplorer } from './session_storage_explorer.js?v=4.0.42-d963f113';
+import { renderStorageDialog, renderStorageMetrics, renderStorageOverview, storageRestoreAvailable } from './session_storage_view.js?v=4.0.43-010277e1';
+import { downloadMobileBackup } from './mobile_backup.js?v=4.0.43-010277e1';
+import { normalizeStorageBackupFiles, validStorageBackupId } from './session_storage_downloads.js?v=4.0.43-010277e1';
+import { SessionStorageExplorer } from './session_storage_explorer.js?v=4.0.43-010277e1';
 export function normalizeStorageMetrics(value) {
     const stored = value?.storage, migrated = value?.migration;
     return {
@@ -19,6 +19,8 @@ const pending = (task) => !!task && ['queued', 'running'].includes(task.status);
 const restoring = (task) => ['restore', 'restore-upload'].includes(task.kind || task.operation || '');
 const MAX_RESTORE_UPLOAD_BYTES = 256 * 1024 * 1024;
 export function storageTaskError(code, fallback) {
+    if (code === 'session_storage_worker_migration_busy')
+        return 'Já há uma migração em andamento neste worker. Aguarde a cópia e a validação do backup terminarem para tentar novamente. Esta sessão não foi pausada.';
     if (code === 'session_storage_active_calls')
         return 'Há uma ligação ou operação VoIP em andamento. A migração não começou e a ligação foi preservada. Aguarde encerrar para tentar novamente.';
     if (code === 'session_storage_voip_gate_required')

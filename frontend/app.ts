@@ -284,6 +284,10 @@ export class ViperConnectApp {
     for (const name of ['input', 'change']) this.root.addEventListener(name, (event) => {
       if ((event.target as HTMLElement).closest?.('.profile-editor')) this.ownProfile.markDirty()
       const target = event.target as HTMLElement
+      if (this.identity?.role === 'admin' && target.matches?.('[data-log-filter]')) {
+        const input = target as HTMLInputElement | HTMLSelectElement
+        this.resources.logs.draft(input.name, input.value)
+      }
       if (name === 'change' && target.matches?.('[data-session-backup-file]')) {
         const input = target as HTMLInputElement, file = input.files?.[0]
         const feedback = input.closest('form')?.querySelector<HTMLElement>('[data-session-backup-feedback]')
@@ -338,6 +342,8 @@ export class ViperConnectApp {
         this.render()
         return
       }
+      if (event.key === 'Escape' && this.resources?.logs?.opened) { void this.resources.action('resources-logs-close'); return }
+      if (event.key === 'Escape' && this.resources?.control?.opened) { void this.resources.action('resources-control-close'); return }
       if (event.key === 'Escape' && this.resources?.open) { void this.resources.action('resources-close'); return }
       if (event.key === 'Escape' && this.modal) this.closeModal()
     })
@@ -361,6 +367,7 @@ export class ViperConnectApp {
     if (!actionElement) return
 
     const action = actionElement.dataset.action || ''
+    if (action.startsWith('open-') || ['go-dashboard', 'manage-session'].includes(action)) this.resources?.logs?.reset()
     if (action === 'open-resources' && this.identity?.role !== 'admin') return
     if (action.startsWith('resources-')) {
       if (this.identity?.role === 'admin') await this.resources.action(action, actionElement.dataset.id || '')
@@ -870,6 +877,10 @@ export class ViperConnectApp {
     if (!(form instanceof HTMLFormElement) || !form.dataset.form) return
     event.preventDefault()
     const data = new FormData(form)
+    if (form.dataset.form === 'resource-logs') {
+      if (this.identity?.role === 'admin') this.resources.logs.submit(data)
+      return
+    }
     if (form.dataset.form === 'profile-maps-settings') {
       if (this.identity?.role !== 'admin') return
       try { await this.ownProfile.mapsSettings('PUT', String(data.get('mapsApiKey') || '')); this.showToast('Chave Google Maps salva.') }
@@ -1543,7 +1554,8 @@ export class ViperConnectApp {
 
   private tickRefresh(): void {
     if (this.view === 'resources') {
-      if (this.api.getToken() && this.identity?.role === 'admin' && !this.resources?.open && !this.modal && document.visibilityState !== 'hidden') void this.resources?.refresh()
+      if (this.api.getToken() && this.identity?.role === 'admin' && !this.resources?.logs?.opened && document.visibilityState !== 'hidden') void this.resources?.control?.poll()
+      if (this.api.getToken() && this.identity?.role === 'admin' && !this.resources?.open && !this.resources?.logs?.opened && !this.modal && document.visibilityState !== 'hidden') void this.resources?.refresh()
       return
     }
     if (!this.api.getToken() || this.modal || this.sessionStorage?.modal || this.voipBackups?.open || this.manager?.pending || this.mobileDevices.modal || this.mobileDevices.busy || this.sessionTransfers.modal || this.sessionTransfers.busy) return

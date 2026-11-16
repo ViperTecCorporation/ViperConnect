@@ -43,8 +43,9 @@ describe('generated Postman collection', () => {
 
     for (const [route, pathItem] of Object.entries<any>(spec.paths)) {
       for (const method of Object.keys(pathItem).filter((candidate) => methods.has(candidate))) {
-        const baseVariable = pathItem.servers?.length ? 'voip_base_url' : 'base_url'
-        const expectedPath = baseVariable === 'voip_base_url'
+        const controlAgent = pathItem[method].security?.some((scheme: any) => 'ServiceControlToken' in scheme)
+        const baseVariable = controlAgent ? 'control_base_url' : pathItem.servers?.length ? 'voip_base_url' : 'base_url'
+        const expectedPath = baseVariable !== 'base_url'
           ? route.replace(/\{([^}]+)\}/g, '{{$1}}') : canonicalPath(route)
         expect(requests.some((item) => (
           item.request?.method === method.toUpperCase()
@@ -52,6 +53,14 @@ describe('generated Postman collection', () => {
         ))).toBe(true)
       }
     }
+  })
+
+  test('control agent never inherits VoIP/global credentials or its service URL', () => {
+    const collection = JSON.parse(fs.readFileSync(canonicalPathname, 'utf8'))
+    const requests = flatten(collection.item)
+    const agent = requests.find(item => item.request?.url.raw === '{{control_base_url}}/v1/targets')
+    expect(agent?.request).toMatchObject({ auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{service_control_token}}', type: 'string' }] } })
+    for (const name of ['service_control_token', 'service_control_guard_token']) expect(collection.variable.find((variable: any) => variable.key === name)?.value).toBe('')
   })
 
   test('keeps direct VoIP recovery on v1 with its own service credential', () => {

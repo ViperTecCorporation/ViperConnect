@@ -9,6 +9,11 @@ interface IndexRedis extends SessionStorageRedis {
 }
 const indexPrefix = (scope: BackupScope) => scope.kind === 'session-storage' ? 'unoapi-session-storage:backup:' : scope.kind === 'voip' ? 'unoapi-infrastructure:voip-backup:manifest:' : 'unoapi-infrastructure:redis-backup:manifest:'
 
+/** SQLite session backups are on by default; only explicit false opts out. */
+export function sessionBackupsEnabled(environment: NodeJS.ProcessEnv = process.env) {
+  return environment.SESSION_STORAGE_BACKUP_ENABLED !== 'false'
+}
+
 export function backupRetention(environment: NodeJS.ProcessEnv = process.env) {
   return environment.SESSION_STORAGE_BACKUP_ROTATION === 'weekly'
     ? { strategy: 'weekday-slots' as const, slots: 7, timeZone: environment.SESSION_STORAGE_BACKUP_TIMEZONE || 'UTC', replacement: 'latest-verified' as const }
@@ -37,7 +42,14 @@ export function weeklyBackupSlots(scope: BackupScope, objects: BackupObjects, re
   if (policy.strategy !== 'weekday-slots') return undefined
   return new WeeklyBackupSlots(scope, objects, redis, { timeZone: policy.timeZone,
     legacy: () => indexedBackupManifests(scope, redis),
-    busy: async () => scope.kind === 'session-storage' && !!await redis.get(`unoapi-session-storage:task:lock:${scope.id}`),
+    busy: async () => {
+      if (scope.kind !== 'session-storage') return false
+      if (await redis.get(`unoapi-session-storage:task:lock:${scope.id}`)) return true
+      const completion = await redis.get(`unoapi-session-storage:migration-completion:${scope.id}`)
+      // Keep the verified source snapshot until cleanup is resolved, including
+      // failed/divergent runs that require inspection. Backups can still publish.
+      return !!completion && JSON.parse(completion).cleanup !== 'ready'
+    },
     forget: async manifest => {
       await redis.eval("if redis.call('GET',KEYS[1])==ARGV[1] then redis.call('DEL',KEYS[1]) end return 1", { keys: [indexPrefix(scope) + manifest.id], arguments: [JSON.stringify(manifest)] })
     },

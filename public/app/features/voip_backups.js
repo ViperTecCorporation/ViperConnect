@@ -1,6 +1,6 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.42-d963f113';
-import { renderModal } from '../components/modal.js?v=4.0.42-d963f113';
-import { downloadMobileBackup } from './mobile_backup.js?v=4.0.42-d963f113';
+import { escapeHtml as e } from '../core/html.js?v=4.0.43-010277e1';
+import { renderModal } from '../components/modal.js?v=4.0.43-010277e1';
+import { downloadMobileBackup } from './mobile_backup.js?v=4.0.43-010277e1';
 export class VoipBackupPanel {
     constructor(api, render) {
         this.api = api;

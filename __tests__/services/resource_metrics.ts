@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { measureDisk } from '../../src/services/resource_metrics/disk'
 import { ResourceArchive, MetricsObjects } from '../../src/services/resource_metrics/archive'
 import { ResourceMetricsQuery } from '../../src/services/resource_metrics/query'
-import { ResourceMetricsStore, resourceTotal } from '../../src/services/resource_metrics/store'
+import { ResourceMetricsStore, resourceTotal, currentResourceComponents } from '../../src/services/resource_metrics/store'
 import { aggregatePoints, BUFFER_LIMIT, ResourceSample } from '../../src/services/resource_metrics/types'
 import { normalizeVoipResourceSample, ProcessResourceSampler, resourceId, sampleRedis } from '../../src/services/resource_metrics/sampler'
 
@@ -81,6 +81,43 @@ test('VoIP container recreation shows only the newest instance without deleting 
   expect(value.components.find(s => s.kind === 'voip')?.id).toBe(current.id)
   expect(value.components.find(s => s.kind === 'total')).toMatchObject({ cpuPercent: 20, cpuPartial: false })
   expect((await archive.index(old.id))?.sample.id).toBe(old.id)
+  expect(value.historicalComponents).toEqual([expect.objectContaining({ id: old.id, live: false })])
+})
+
+test.each(['web', 'broker', 'worker', 'video', 'all'])('recreated %s containers retire expired cards without losing archive access', async kind => {
+  const { store } = objects(), archive = new ResourceArchive(store), now = Date.now()
+  const old = { ...sample(now - 240000), kind, name: `server_1 · ${kind} · old123`, cpuPercent: 80 }
+  const current = { ...sample(now), id: 'b'.repeat(24), kind, name: `server_1 · ${kind} · new123`, cpuPercent: 20 }
+  await archive.save([old])
+  const query = new ResourceMetricsQuery({ stack: 'test', samples: async () => [current], buffer: async () => [] } as any, archive)
+  const value = await query.current()
+  expect(value.components.filter(row => row.kind === kind)).toEqual([expect.objectContaining({ id: current.id, live: true })])
+  expect(value.historicalComponents).toEqual([expect.objectContaining({ id: old.id, live: false, source: 's3' })])
+  expect(value.components.find(row => row.kind === 'total')).toMatchObject({ ramBytes: 100, cpuPercent: 20, partial: false, cpuPartial: false })
+  expect((await query.history(old.id, 'max')).points).toHaveLength(1)
+  expect((await archive.index(old.id))?.sample.id).toBe(old.id)
+})
+
+test('active parallel replicas and other servers remain separate; a service with no live instance retains its last measurement', () => {
+  const now = Date.now(), base = { ...sample(now), name: 'server_1 · worker · one' }
+  const replica = { ...base, id: 'b'.repeat(24), name: 'server_1 · worker · two' }
+  const anotherServer = { ...base, id: 'c'.repeat(24), name: 'server_2 · worker · old', t: now - 240000 }
+  const older = { ...base, id: 'd'.repeat(24), t: now - 240000 }
+  expect(currentResourceComponents([base, replica, anotherServer, older], now).map(row => row.id)).toEqual([base.id, replica.id, anotherServer.id])
+  expect(currentResourceComponents([older, { ...replica, t: now - 200000 }], now).map(row => row.id)).toEqual([replica.id])
+  expect(currentResourceComponents([{ ...older, name: 'custom-instance' }, replica], now)).toHaveLength(2)
+})
+
+test('complete Redis loss keeps one last S3 measurement per service with earlier incarnations separately accessible', async () => {
+  const { store } = objects(), archive = new ResourceArchive(store), now = Date.now()
+  const old = { ...sample(now - 600000), name: 'server_1 · worker · old' }
+  const latest = { ...sample(now - 300000), id: 'b'.repeat(24), name: 'server_1 · worker · new' }
+  await archive.save([old]); await archive.save([latest])
+  const query = new ResourceMetricsQuery({ stack: 'test', samples: async () => { throw Error('redis down') } } as any, archive)
+  const value = await query.current()
+  expect(value.redisUnavailable).toBe(true)
+  expect(value.components).toEqual([expect.objectContaining({ id: latest.id, source: 's3', live: false })])
+  expect(value.historicalComponents).toEqual([expect.objectContaining({ id: old.id, source: 's3', live: false })])
 })
 
 test('all periods recover S3 history without Redis; invalid scope is rejected', async () => {

@@ -29,8 +29,8 @@ function fixture(redis = redisFixture(), overrides: NodeJS.ProcessEnv = {}) {
 }
 async function until(predicate: () => Promise<boolean>) { for (let i = 0; i < 100; i++) { if (await predicate()) return; await new Promise(resolve => setImmediate(resolve)) } throw new Error('condition_not_met') }
 
-test('routine is disabled by default and never initializes Redis, S3, CLI or a backup key', async () => {
-  const f = fixture(undefined, { SESSION_STORAGE_REDIS_BACKUP_ENABLED: 'false' })
+test.each([undefined, 'false'])('global Redis backup remains opt-in even when SQLite backups are enabled: %s', async enabled => {
+  const f = fixture(undefined, { SESSION_STORAGE_REDIS_BACKUP_ENABLED: enabled, SESSION_STORAGE_BACKUP_ENABLED: 'true' })
   try {
     expect(await f.routine.start()).toMatchObject({ enabled: false, routineActive: false, phase: 'disabled' })
     expect(f.deps.redis).not.toHaveBeenCalled(); expect(f.deps.backup).not.toHaveBeenCalled(); expect(f.deps.capability).not.toHaveBeenCalled(); expect(f.deps.readKey).not.toHaveBeenCalled()

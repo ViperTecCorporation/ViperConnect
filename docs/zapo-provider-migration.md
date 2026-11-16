@@ -266,8 +266,8 @@ explícito ao webhook.
 ### Falhas de envio
 
 Todas as ações que passam pelo envio comum de mensagens — texto, mídias,
-contatos, interativos, enquete, voto, edição, reação, template, raw e atualização
-de status — entregam à aplicação o mesmo webhook Cloud API com `status: failed`,
+contatos, interativos, enquete, voto, edição, reação, template e raw — entregam
+à aplicação o mesmo webhook Cloud API com `status: failed`,
 independentemente de a sessão usar Baileys ou Zapo.
 
 Na Zapo, erros conhecidos da UnoAPI (`SendError`) geram o webhook
@@ -275,6 +275,14 @@ imediatamente. Exceções nativas ou potencialmente transitórias continuam usan
 as tentativas configuradas da fila e geram o webhook na última tentativa. O
 payload preserva o ID UnoAPI e inclui `code`, `title`, `message` e
 `error_data.provider=zapo`; não inclui stack trace.
+
+Atualizações de status/recibos não são novos envios. Se falharem, o erro original
+permanece no processamento da fila, com as tentativas e o registro de falha
+existentes, sem emitir `failed` para a mensagem original. IDs internos de
+chamada, como `voip-call:382`, não são IDs WhatsApp e continuam inválidos no
+storage da sessão. O receptor não deve enviar notas privadas ou artefatos VoIP
+para essa sincronização. Erros estruturados de storage preservam seu status
+HTTP (por exemplo, 400), em vez de serem classificados como 500 genérico.
 
 Operações administrativas executadas por HTTP/RPC, como alterações de grupo,
 continuam retornando o erro na própria resposta HTTP. Elas não são transformadas

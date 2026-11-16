@@ -12,8 +12,9 @@ export interface SessionStorageMigrationRuntime {
   acquireLease(phone: string): Promise<{ assertOwned(): Promise<void>; release(): Promise<unknown> }>
   importData(phone: string, path: string, progress: (value: StorageProgress) => Promise<void>): Promise<{ verified: boolean; nativeRecords: number; compatibilityRecords: number }>
   validate(phone: string, path: string): Promise<boolean>
-  /** After durable cutover, verify an encrypted backup and remove only unchanged source keys under the same lease. */
-  finalizeSource(phone: string, storage: SessionStorageDescriptor, progress: (value: StorageProgress) => Promise<void>): Promise<{ backupId: string; deleted: number; missing: number; skipped: number }>
+  /** Verify the uploaded backup and durably enqueue fingerprint-checked cleanup.
+   * No source deletion or socket reload while the migration reservation is held. */
+  finalizeSource(phone: string, storage: SessionStorageDescriptor, progress: (value: StorageProgress) => Promise<void>): Promise<{ backupId: string; status: 'pending' }>
 }
 
 /** Stable UUID-derived path; public requests cannot supply paths. */
@@ -40,7 +41,7 @@ export class SessionStorageMigration {
     if (!input || input.target !== 'sqlite' || input.confirm !== true || Object.keys(input).sort().join(',') !== 'confirm,target') throw new SessionStorageError(400, 'session_storage_confirmation_required')
     const config = await this.runtime.getConfig(phone), old = await this.catalog.read(phone)
     if (config.provider !== 'zapo') throw new SessionStorageError(409, 'session_storage_zapo_required')
-    if ((old?.owner || config.server) !== this.runtime.owner) throw new SessionStorageError(409, 'session_storage_wrong_owner')
+    if ((config.server || 'server_1') !== this.runtime.owner || old && old.owner !== this.runtime.owner) throw new SessionStorageError(409, 'session_storage_wrong_owner')
     if (old?.backend === 'sqlite') throw new SessionStorageError(409, 'session_storage_already_sqlite')
     if (old && !['active', 'offline'].includes(old.state)) throw new SessionStorageError(409, 'session_storage_busy')
     const migrating: SessionStorageDescriptor = { backend: 'redis', storageId: old?.storageId || randomUUID(), owner: this.runtime.owner, generation: (old?.generation || 0) + 1, state: 'migrating', ...(old?.fixture ? { fixture: true } : {}) }
@@ -79,10 +80,10 @@ export class SessionStorageMigration {
       await this.catalog.journal(phone, taskId, { phase: 'committed', generation: next.generation, storageId: next.storageId })
       await lease.assertOwned()
       const sourceCleanup = await this.runtime.finalizeSource(phone, next, async value => { await lease!.assertOwned(); await progress(value) })
-      if (sourceCleanup.skipped) throw new SessionStorageError(409, 'session_storage_source_cleanup_diverged')
-      await this.catalog.journal(phone, taskId, { phase: 'source_cleaned', generation: next.generation, storageId: next.storageId })
+      if (sourceCleanup.status !== 'pending' || !/^[a-f0-9-]{36}$/i.test(sourceCleanup.backupId)) throw new SessionStorageError(409, 'session_storage_backup_verification_failed')
+      await this.catalog.journal(phone, taskId, { phase: 'backup_verified', generation: next.generation, storageId: next.storageId })
       await progress({ phase: 'ready' })
-      return { storage: next, counts, sourceCleanup, backupId: sourceCleanup.backupId, sourcePreserved: false, autoConnect: false }
+      return { storage: next, counts, sourceCleanup, backupId: sourceCleanup.backupId, sourcePreserved: true, autoConnect: false, reconnect: { status: 'pending' } }
     } catch (error) {
       // Never guess rollback after a file promotion/CAS response loss. Journal remains for recovery.
       if (prepared && !promoted) {

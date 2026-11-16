@@ -1,4 +1,4 @@
-import { SessionStoragePanel, SessionStorageStatus, SessionStorageTask, normalizeStorageMetrics } from '../../frontend/features/session_storage'
+import { SessionStoragePanel, SessionStorageStatus, SessionStorageTask, normalizeStorageMetrics, storageTaskError } from '../../frontend/features/session_storage'
 import { ApiError } from '../../frontend/core/api'
 import { renderSessionPage } from '../../frontend/pages/session'
 import { renderDashboard } from '../../frontend/pages/dashboard'
@@ -21,6 +21,12 @@ const beforeTechnical = (html: string) => {
 const plainText = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 
 afterEach(() => { jest.clearAllTimers(); jest.useRealTimers() })
+
+test('worker concurrency rejection explains that the second session stayed online and does not promise an automatic retry', () => {
+  const message = storageTaskError('session_storage_worker_migration_busy', 'fallback')
+  expect(message).toContain('neste worker'); expect(message).toContain('Esta sessão não foi pausada')
+  expect(message).toContain('tentar novamente'); expect(message).not.toContain('fila automática')
+})
 
 test('storage status loads explicit versioned route and renders owner without unsafe HTML', async () => {
   const api = { request: jest.fn().mockResolvedValue({ ...status, owner: '<worker>', fixture: true }) }
@@ -232,7 +238,8 @@ test('missing persistent volume blocks migration and explains Redis default with
   expect(panel.html(phone)).toContain('novas sessões usam Redis')
   expect(panel.html(phone)).toContain('SESSION_STORAGE_ROOT=/data/session-storage')
   expect(panel.html(phone)).toContain('Novas sessões usarão Redis; configure o volume persistente.')
-  expect(panel.html(phone)).toContain('/app/session-data')
+  expect(panel.html(phone)).toContain('/home/u/app/session-data')
+  expect(panel.html(phone)).toContain('usuário <code>u</code>')
   expect(panel.html(phone)).toContain('Redis continua obrigatório')
   expect(panel.dialog()).toContain('required disabled')
   expect(panel.html(phone)).toContain('/guide/session-storage')

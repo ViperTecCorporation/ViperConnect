@@ -1,5 +1,5 @@
-import { ApiError } from '../core/api.js?v=4.0.42-d963f113';
-import { escapeHtml } from '../core/html.js?v=4.0.42-d963f113';
+import { ApiError } from '../core/api.js?v=4.0.43-010277e1';
+import { escapeHtml } from '../core/html.js?v=4.0.43-010277e1';
 export function manualBackupNeedsStorage(error) {
     if (!(error instanceof ApiError))
         return false;

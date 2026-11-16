@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { basename, isAbsolute, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import type { SessionBackupObjectStore } from './backup'
-import { decodeBackupStream, encodeBackupStream, type BackupProtection } from './backup_stream'
+import { backupArchiveReadable, decodeBackupStream, encodeBackupStream, type BackupProtection } from './backup_stream'
 import { SessionStorageError } from './types'
 
 const CHUNK = 256 * 1024
@@ -157,7 +157,7 @@ export class RedisGlobalBackups {
         const bytes = await digest(path), id = randomUUID(), createdAt = new Date().toISOString()
         const manifest: RedisBackupManifest = { id, version: 1, instanceId: input.instanceId, createdAt, objectKey: objectKey(input.instanceId, id), ...bytes, status: 'ready', scope: 'all-databases', uploadVerified: true, rdbHeaderVerified: true, protection: 'none' }
         const records = async function* () { let offset = 0; for await (const chunk of createReadStream(path, { highWaterMark: CHUNK })) { yield { offset, data: chunk.toString('base64') }; offset += chunk.length } }
-        const archive = encodeBackupStream({ kind: 'redis-rdb', version: 1, id, instanceId: input.instanceId, createdAt, protection: 'none', ...bytes }, records()), stream = Readable.from(archive)
+        const archive = encodeBackupStream({ kind: 'redis-rdb', version: 1, id, instanceId: input.instanceId, createdAt, protection: 'none', ...bytes }, records()), stream = backupArchiveReadable(archive)
         try { await this.objects.save(manifest.objectKey, stream) } finally { stream.destroy(); await archive.return(undefined) }
         await verifyArchive(await this.objects.open(manifest.objectKey), input.backupPassword, manifest)
         // Non-secret sidecar survives loss of the Redis index itself. It contains no source URL/auth.

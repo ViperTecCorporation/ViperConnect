@@ -3,8 +3,25 @@ import { resolve, parse } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { sqliteEngineCapability } from './sqlite_engine'
 
-export const DEFAULT_SESSION_STORAGE_ROOT = '/app/session-data'
-export const storageRoot = () => resolve(process.env.SESSION_STORAGE_ROOT || DEFAULT_SESSION_STORAGE_ROOT)
+export const DEFAULT_SESSION_STORAGE_ROOT = '/home/u/app/session-data'
+export const LEGACY_SESSION_STORAGE_ROOT = '/app/session-data'
+
+function persistentMount(root: string) {
+  if (process.platform !== 'linux') return undefined
+  const mount = readFileSync('/proc/self/mountinfo', 'utf8').split('\n').map(line => ({
+    target: line.split(' ')[4]?.replace(/\\040/g, ' '), filesystem: line.split(' - ')[1]?.split(' ')[0],
+  })).filter(({ target }) => target && target !== '/' && (root === target || root.startsWith(target + '/')))
+    .sort((a, b) => b.target.length - a.target.length)[0]
+  return mount?.filesystem && !['tmpfs', 'ramfs', 'overlay'].includes(mount.filesystem) ? mount : undefined
+}
+
+export const storageRoot = () => {
+  if (process.env.SESSION_STORAGE_ROOT) return resolve(process.env.SESSION_STORAGE_ROOT)
+  // An existing legacy mount wins even if a new mount is also present. Never
+  // silently redirect existing databases to an empty directory during upgrades.
+  try { if (existsSync(LEGACY_SESSION_STORAGE_ROOT) && persistentMount(LEGACY_SESSION_STORAGE_ROOT)) return LEGACY_SESSION_STORAGE_ROOT } catch { /* Capability still requires a verified mount. */ }
+  return resolve(DEFAULT_SESSION_STORAGE_ROOT)
+}
 
 /** Routing uses server names; a separate, divergent storage-worker alias is not supported. */
 export function storageWorkerIdentity(environment: NodeJS.ProcessEnv = process.env) {
@@ -36,13 +53,7 @@ export function storageCapability(engineProbe = sqliteEngineCapability) {
     else if (!engine.available) reason = engine.reason || 'session_storage_sqlite_native_unavailable'
     else try {
       // Docker mounts must be observable by the worker, not merely asserted by ENV.
-      const mount = process.platform === 'linux' ? readFileSync('/proc/self/mountinfo', 'utf8').split('\n').map(line => {
-        const target = line.split(' ')[4]?.replace(/\\040/g, ' ')
-        const filesystem = line.split(' - ')[1]?.split(' ')[0]
-        return { target, filesystem }
-      }).filter(({ target }) => target && target !== '/' && (root === target || root.startsWith(target + '/')))
-        .sort((a, b) => b.target.length - a.target.length)[0] : undefined
-      if (!mount?.filesystem || ['tmpfs', 'ramfs', 'overlay'].includes(mount.filesystem)) reason = 'session_storage_persistent_mount_not_detected'
+      if (!persistentMount(root)) reason = 'session_storage_persistent_mount_not_detected'
       else {
         const path = resolve(root, `.storage-write-probe-${randomUUID()}`)
         const fd = openSync(path, 'wx', 0o600); closeSync(fd); unlinkSync(path)
@@ -50,12 +61,12 @@ export function storageCapability(engineProbe = sqliteEngineCapability) {
       }
     } catch { reason = 'session_storage_volume_not_writable' }
   }
-  return { sqliteAvailable: available, reason: reason || undefined, workerIdentity: identity,
+  return { sqliteAvailable: available, reason: reason || undefined, root, workerIdentity: identity,
     defaultBackend: available && requestedDefault === 'sqlite' ? 'sqlite' : 'redis',
     documentation: '/guide/session-storage',
     configurationExample: {
-      env: 'UNOAPI_SERVER_NAME=worker_1\n# UNOAPI_STORAGE_WORKER_ID must be absent or equal to worker_1\nSESSION_STORAGE_DEFAULT=sqlite\nSESSION_STORAGE_ROOT=/app/session-data\nSESSION_STORAGE_PERSISTENT=true',
-      compose: 'services:\n  worker-zapo:\n    volumes:\n      - zapo-sessions:/app/session-data\nvolumes:\n  zapo-sessions: {}',
+      env: `UNOAPI_SERVER_NAME=${identity.server || 'worker_1'}\n# UNOAPI_STORAGE_WORKER_ID must be absent or equal to ${identity.server || 'worker_1'}\nSESSION_STORAGE_DEFAULT=sqlite\nSESSION_STORAGE_ROOT=${root}\nSESSION_STORAGE_PERSISTENT=true`,
+      compose: `services:\n  worker-zapo:\n    volumes:\n      - zapo-sessions:${root}\nvolumes:\n  zapo-sessions: {}`,
     } }
 }
 

@@ -17,6 +17,8 @@ NUL
 # Local experiments and generated diagnostics, never release artifacts.
 .playwright-cli/
 output/playwright/
+# Local operational reports may contain production identifiers and maintenance snapshots.
+output/validation/
 # Preserved local deployment evidence, not source or release payload.
 output/hostpatch-recent-20261023/
 lab/registration/node_modules/

@@ -3,8 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SessionDatabase } from '../../src/services/session_storage/database'
-import { CLEAN_SOURCE_BATCH_LUA, cleanRedisSource, isSessionSourceCleanupKey, sourceFingerprintsDigest } from '../../src/services/session_storage/source_cleanup'
+import { CLEAN_SOURCE_BATCH_LUA, CLEAN_DEFERRED_SOURCE_BATCH_LUA, cleanRedisSource, isSessionSourceCleanupKey, sourceFingerprintsDigest } from '../../src/services/session_storage/source_cleanup'
 import { isRetainedSessionControlKey, isSessionCompatibilityDataKey } from '../../src/services/session_storage/source_scope'
+import { migrationCompletionKey, migrationCompletionLock } from '../../src/services/session_storage/migration_completion'
 
 const phone = '999123456789', prefix = 'unoapi:zapo:'
 let directory: string, db: SessionDatabase
@@ -86,4 +87,19 @@ test('cleanup refuses unconfirmed, wrong generation, online state, missing backu
   f.input.verifyBackup.mockResolvedValueOnce(false); await expect(cleanRedisSource(f.input)).rejects.toThrow('session_storage_cleanup_backup_verification_failed')
   expect(f.redis.eval).not.toHaveBeenCalled()
   expect(CLEAN_SOURCE_BATCH_LUA.indexOf('for i,row in ipairs(rows)')).toBeLessThan(CLEAN_SOURCE_BATCH_LUA.indexOf("redis.call('UNLINK'"))
+})
+
+test('internal deferred cleanup accepts active SQLite only with durable handoff, independent lock and matching backup digest', async () => {
+  const f = fixture(), key = `unoapi-id:${phone}:provider`
+  db.run('INSERT INTO uno_source_fingerprints VALUES (?,?,?,?)', [key, 'a'.repeat(40), null, Date.now()])
+  const deferred = { taskId: randomUUID(), digest: sourceFingerprintsDigest(db) }
+  const input = { ...f.input, storage: { ...f.input.storage, state: 'active' }, deferred,
+    lease: { ...f.input.lease, key: migrationCompletionLock(phone) } }
+  await cleanRedisSource(input)
+  const call: any[] = f.redis.eval.mock.calls[0]
+  expect(call[0]).toBe(CLEAN_DEFERRED_SOURCE_BATCH_LUA); expect(call[1]).toBe(6)
+  expect(call.slice(5, 8)).toEqual([migrationCompletionKey(phone), `unoapi-session-storage:task:lock:${phone}`, key])
+  expect(call.slice(-2)).toEqual([deferred.taskId, deferred.digest])
+  await expect(cleanRedisSource({ ...input, deferred: { ...deferred, digest: 'f'.repeat(64) } })).rejects.toThrow('backup_verification_failed')
+  await expect(cleanRedisSource({ ...input, lease: f.input.lease })).rejects.toThrow('lease_required')
 })

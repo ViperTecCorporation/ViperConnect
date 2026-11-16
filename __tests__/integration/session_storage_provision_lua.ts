@@ -3,6 +3,7 @@ import { createClient } from '@redis/client'
 import { SESSION_EVENT_LUA, sessionEvent } from '../../src/services/session_webhook_store'
 import { STORAGE_CAS_LUA } from '../../src/services/session_storage/catalog'
 import { RECORD_PROVISION_LUA, CONFIRM_PROVISION_LUA } from '../../src/services/session_storage/provisioning'
+import { STORAGE_OFFLINE_STATUS_LUA } from '../../src/services/session_storage/offline_status'
 
 // Explicit opt-in; all data keys are unique test-owned keys. Never FLUSHDB,
 // inspect customer configuration, subscribe to WhatsApp or open a client socket.
@@ -67,5 +68,65 @@ integration('new-session storage Lua on real DEV Redis with isolated keys', () =
     const fresh = (await redis.get(keys[4]))!
     expect(await redis.eval(CONFIRM_PROVISION_LUA, { keys: [keys[4]], arguments: [fresh, id, owner, phone] })).toBe(1)
     expect(await read()).toMatchObject({ autoConnect: false, label: 'concurrent', sessionStorageProvisionPending: null, sessionStorageProvisioned: receipt })
+  })
+
+  test.each([
+    { label: 'missing', server: undefined }, { label: 'null', server: null },
+    { label: 'false', server: false }, { label: 'empty', server: '' },
+    { label: 'zero', server: 0 }, { label: 'explicit', server: 'server_1' },
+  ].flatMap(route => [false, true].map(existing => ({ ...route, existing }))))('catalog normalizes $label routing atomically, existing descriptor=$existing', async ({ server, existing }) => {
+    const storageId = randomUUID(), task = randomUUID(), generation = existing ? 6 : 0
+    const old = existing ? { backend: 'redis', state: 'offline', owner: 'server_1', storageId, generation } : undefined
+    const original = { provider: 'zapo', server, autoConnect: false, label: 'preserved', sessionStorage: old }
+    await redis.set(keys[4], JSON.stringify(original))
+    const next = { backend: 'redis', state: 'migrating', owner: 'server_1', storageId, generation: generation + 1 }
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: [String(generation), 'redis', JSON.stringify(next), '', task, 'false', phone, ''] })).toBe(1)
+    expect(await read()).toEqual({ ...JSON.parse(JSON.stringify(original)), server: 'server_1', sessionStorage: next, sessionStorageTaskId: task })
+  })
+
+  test('canonical server persists through offline confirmation, rollback and successful SQLite cutover', async () => {
+    const storageId = randomUUID(), task = randomUUID(), token = randomUUID()
+    await redis.set(keys[4], JSON.stringify({ provider: 'zapo', autoConnect: false, label: 'legacy',
+      sessionStorage: { backend: 'redis', storageId, owner: 'server_1', generation: 6, state: 'offline' } }))
+    const prepared = { backend: 'redis', storageId, owner: 'server_1', generation: 7, state: 'migrating' }
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['6', 'redis', JSON.stringify(prepared), '', task, 'false', phone, ''] })).toBe(1)
+    await redis.set(keys[0], 'online'); await redis.set(keys[1], token)
+    expect(await redis.eval(STORAGE_OFFLINE_STATUS_LUA, { keys: [keys[4], keys[0], keys[1]], arguments: [token, 'server_1', storageId, '7', 'redis', 'migrating', task, phone, '0'] })).toBe(1)
+    expect(await redis.get(keys[0])).toBe('offline')
+    const offline = { ...prepared, generation: 8, state: 'offline' }
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['7', 'redis', JSON.stringify(offline), task, '', 'false', phone, ''] })).toBe(1)
+    expect(await read()).toMatchObject({ server: 'server_1', label: 'legacy', autoConnect: false, sessionStorage: offline })
+    expect((await read()).sessionStorageTaskId).toBeUndefined()
+    const retry = { ...prepared, generation: 9 }
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['8', 'redis', JSON.stringify(retry), '', task, 'false', phone, ''] })).toBe(1)
+    const committed = { ...retry, backend: 'sqlite', generation: 10, state: 'offline' }
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['9', 'redis', JSON.stringify(committed), task, '', 'false', phone, ''] })).toBe(1)
+    expect(await read()).toMatchObject({ server: 'server_1', autoConnect: false, sessionStorage: committed })
+  })
+
+  test.each(['generation', 'backend', 'task', 'server', 'descriptor-owner', 'legacy-owner'])('conflicting %s remains unchanged, without canonicalizing the raw config', async conflict => {
+    const storageId = randomUUID(), task = randomUUID(), original: any = { provider: 'zapo', autoConnect: false, sessionStorageTaskId: task,
+      sessionStorage: { backend: 'redis', storageId, owner: 'server_1', generation: 6, state: 'offline' } }
+    if (conflict === 'generation') original.sessionStorage.generation = 8
+    if (conflict === 'backend') original.sessionStorage.backend = 'sqlite'
+    if (conflict === 'task') original.sessionStorageTaskId = randomUUID()
+    if (conflict === 'server') original.server = 'server_2'
+    if (conflict === 'descriptor-owner' || conflict === 'legacy-owner') original.sessionStorage.owner = 'server_2'
+    const raw = JSON.stringify(original); await redis.set(keys[4], raw)
+    const next = { ...original.sessionStorage, backend: 'redis', generation: 7, state: 'migrating', owner: conflict === 'legacy-owner' ? 'server_2' : 'server_1' }
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['6', 'redis', JSON.stringify(next), task, task, 'false', phone, ''] })).toBe(0)
+    expect(await redis.get(keys[4])).toBe(raw)
+  })
+
+  test('an explicit matching nondefault worker stays unchanged, and a missing route cannot provision it', async () => {
+    const id = randomUUID(), task = randomUUID(), next = { backend: 'sqlite', storageId: id, owner: 'server_2', generation: 1, state: 'offline' }
+    const original: any = { provider: 'zapo', server: 'server_2', autoConnect: false, sessionStorageProvisionPending: { id, autoConnect: true } }
+    await redis.set(keys[4], JSON.stringify(original))
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['0', 'redis', JSON.stringify(next), '', '', '', phone, id] })).toBe(1)
+    expect(await read()).toMatchObject({ server: 'server_2', sessionStorage: next, sessionStorageProvisioned: { id, owner: 'server_2' } })
+    delete original.server; const raw = JSON.stringify(original); await redis.set(keys[4], raw)
+    expect(await redis.eval(STORAGE_CAS_LUA, { keys: [keys[4]], arguments: ['0', 'redis', JSON.stringify(next), '', task, 'false', phone, id] })).toBe(0)
+    expect(await redis.get(keys[4])).toBe(raw)
+    expect((await read()).sessionStorageProvisioned).toBeUndefined()
   })
 })

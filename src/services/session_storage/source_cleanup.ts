@@ -4,6 +4,7 @@ import type { SessionDatabase } from './database'
 import type { SqliteBackupManifest } from './backup'
 import { SessionStorageDescriptor, SessionStorageError, StorageProgress, validateSessionPhone, validateStorageDescriptor } from './types'
 import { isRetainedSessionControlKey, isSessionCompatibilityDataKey, SESSION_COMPATIBILITY_DATA_FAMILIES } from './source_scope'
+import { migrationCompletionKey, migrationCompletionLock } from './migration_completion'
 
 const NATIVE = ['auth', 'signal:reg', 'signal:spk', 'signal:meta', 'signal:pk', 'signal:pk:ids', 'signal:pk:avail', 'signal:sess', 'signal:ident', 'sk', 'sk:grp', 'skd', 'appstate:key', 'appstate:key:idx', 'appstate:col', 'appstate:idx', 'appstate:idx:set', 'privtoken', 'msg', 'msg:idx', 'contact', 'contact_pn', 'thread', 'panel', 'retry:out', 'retry:in', 'msgsecret', 'participants', 'devlist', 'devlistalt', 'chat_metadata']
 const COMPATIBILITY = SESSION_COMPATIBILITY_DATA_FAMILIES
@@ -17,11 +18,19 @@ export function isSessionSourceCleanupKey(key: string, phone: string, prefix: st
 const luaArray = (values: string[]) => '{' + values.map(value => JSON.stringify(value)).join(',') + '}'
 
 /** All checks and deletion happen in the same Redis command. No wildcard deletion. */
-export const CLEAN_SOURCE_BATCH_LUA = `
-if #KEYS<4 or #KEYS>103 then return {err='session_storage_cleanup_batch_invalid'} end
+const cleanupScript = (deferred: boolean) => `
+local controls=${deferred ? 5 : 3}
+if #KEYS<controls+1 or #KEYS>controls+100 then return {err='session_storage_cleanup_batch_invalid'} end
 local raw=redis.call('GET',KEYS[1]); if not raw then return {err='session_storage_cleanup_configuration_changed'} end
 local cfg=cjson.decode(raw); local s=cfg.sessionStorage
-if not s or s.backend~='sqlite' or s.state~='offline' or cfg.autoConnect~=false or s.generation~=tonumber(ARGV[1]) or s.storageId~=ARGV[2] or s.owner~=ARGV[3] then return {err='session_storage_cleanup_configuration_changed'} end
+if not s or s.backend~='sqlite' or s.generation~=tonumber(ARGV[1]) or s.storageId~=ARGV[2] or s.owner~=ARGV[3] then return {err='session_storage_cleanup_configuration_changed'} end
+${deferred ? `
+if cfg.provider~='zapo' or cfg.server~=s.owner or cfg.sessionStorageTaskId~=nil or cfg.mobilePrimaryDeleting==true or cfg.sessionStorageUnlinked==true or (s.state~='active' and s.state~='offline') then return {err='session_storage_cleanup_configuration_changed'} end
+if redis.call('EXISTS',KEYS[5])==1 then return {err='session_storage_cleanup_operation_in_progress'} end
+local planRaw=redis.call('GET',KEYS[4]); if not planRaw then return {err='session_storage_cleanup_configuration_changed'} end
+local p=cjson.decode(planRaw)
+if p.phone~=ARGV[6] or p.taskId~=ARGV[9] or p.backupId~=ARGV[5] or p.digest~=ARGV[10] or p.cleanup~='running' or p.storage.storageId~=s.storageId or p.storage.generation~=s.generation or p.storage.owner~=s.owner then return {err='session_storage_cleanup_configuration_changed'} end`
+    : "if s.state~='offline' or cfg.autoConnect~=false then return {err='session_storage_cleanup_configuration_changed'} end"}
 if redis.call('GET',KEYS[2])~=ARGV[4] then return {err='session_storage_cleanup_lease_lost'} end
 local backupRaw=redis.call('GET',KEYS[3]); if not backupRaw then return {err='session_storage_cleanup_backup_required'} end
 local backup=cjson.decode(backupRaw)
@@ -33,14 +42,14 @@ local function scoped(key)
  for _,domain in ipairs({'own-profile','own-privacy','own-profile-cover'}) do local base='unoapi-'..domain..':v1:'..ARGV[6]; if key==base or domain~='own-profile-cover' and key==base..':generation' then return true end end
  return false
 end
-local rows=cjson.decode(ARGV[8]); if #rows~=#KEYS-3 then return {err='session_storage_cleanup_batch_invalid'} end
+local rows=cjson.decode(ARGV[8]); if #rows~=#KEYS-controls then return {err='session_storage_cleanup_batch_invalid'} end
 for i,row in ipairs(rows) do
- if KEYS[i+3]~=row.key or not scoped(row.key) or type(row.sha1)~='string' or #row.sha1~=40 or not string.match(row.sha1,'^[a-f0-9]+$') or type(row.expiresAt)~='number' or row.expiresAt~=math.floor(row.expiresAt) or (row.expiresAt~=-1 and row.expiresAt<=0) then return {err='session_storage_cleanup_scope_invalid'} end
+ if KEYS[i+controls]~=row.key or not scoped(row.key) or type(row.sha1)~='string' or #row.sha1~=40 or not string.match(row.sha1,'^[a-f0-9]+$') or type(row.expiresAt)~='number' or row.expiresAt~=math.floor(row.expiresAt) or (row.expiresAt~=-1 and row.expiresAt<=0) then return {err='session_storage_cleanup_scope_invalid'} end
 end
 local tm=redis.call('TIME'); local now=tonumber(tm[1])*1000+math.floor(tonumber(tm[2])/1000)
 local deleted=0; local skipped=0; local missing=0; local before=0; local after=0; local mutated=0; local ttlChanged=0
 for i,row in ipairs(rows) do
- local key=KEYS[i+3]
+ local key=KEYS[i+controls]
  local bytes=redis.call('MEMORY','USAGE',key,'SAMPLES',5) or 0; before=before+bytes
  local dump=redis.call('DUMP',key)
  if not dump then missing=missing+1
@@ -54,6 +63,8 @@ for i,row in ipairs(rows) do
  end
 end
 return {deleted,skipped,missing,before,after,mutated,ttlChanged}`
+export const CLEAN_SOURCE_BATCH_LUA = cleanupScript(false)
+export const CLEAN_DEFERRED_SOURCE_BATCH_LUA = cleanupScript(true)
 
 export interface SourceCleanupInput {
   redis: Redis
@@ -63,6 +74,8 @@ export interface SourceCleanupInput {
   prefix: string
   body: { confirm: true; backupId: string; generation: number }
   lease: { key: string; token: string; assertOwned(): Promise<void> }
+  /** Internal durable handoff only. Public/manual cleanup remains offline-only. */
+  deferred?: { taskId: string; digest: string }
   /** Must read/verify the uploaded encrypted backup, including this fingerprint table. */
   verifyBackup(manifest: SqliteBackupManifest, expectedFingerprintSha256: string): Promise<boolean>
   progress?(value: StorageProgress): Promise<void>
@@ -84,15 +97,18 @@ export async function cleanRedisSource(input: SourceCleanupInput) {
   validateSessionPhone(input.phone); validateStorageDescriptor(input.storage)
   if (!input.body || input.body.confirm !== true || Object.keys(input.body).sort().join(',') !== 'backupId,confirm,generation'
     || !/^[0-9a-f-]{36}$/i.test(input.body.backupId) || input.body.generation !== input.storage.generation) throw new SessionStorageError(400, 'session_storage_cleanup_confirmation_required')
-  if (input.storage.backend !== 'sqlite' || input.storage.state !== 'offline') throw new SessionStorageError(409, 'session_storage_cleanup_requires_offline_sqlite')
-  if (!/^[A-Za-z0-9_:]+$/.test(input.prefix) || input.lease.key !== `unoapi-lease:zapo-session:${input.phone}` || !input.lease.token) throw new SessionStorageError(409, 'session_storage_cleanup_lease_required')
+  if (input.storage.backend !== 'sqlite' || !(input.deferred ? ['offline', 'active'] : ['offline']).includes(input.storage.state)) throw new SessionStorageError(409, 'session_storage_cleanup_requires_offline_sqlite')
+  if (input.deferred && (!/^[a-f0-9-]{36}$/i.test(input.deferred.taskId) || !/^[a-f0-9]{64}$/.test(input.deferred.digest))) throw new SessionStorageError(409, 'session_storage_cleanup_confirmation_required')
+  const leaseKey = input.deferred ? migrationCompletionLock(input.phone) : `unoapi-lease:zapo-session:${input.phone}`
+  if (!/^[A-Za-z0-9_:]+$/.test(input.prefix) || input.lease.key !== leaseKey || !input.lease.token) throw new SessionStorageError(409, 'session_storage_cleanup_lease_required')
   const identity = input.database.get<{ value: string }>('SELECT value FROM uno_storage_meta WHERE key=?', ['phone'])
   if (identity?.value !== input.phone) throw new SessionStorageError(409, 'session_storage_cleanup_identity_mismatch')
   if (!input.database.get("SELECT 1 AS found FROM sqlite_master WHERE type='table' AND name='uno_source_fingerprints'")) throw new SessionStorageError(409, 'session_storage_cleanup_fingerprints_required')
   const raw = await input.redis.get(`unoapi-session-storage:backup:${input.body.backupId}`), manifest: SqliteBackupManifest | undefined = raw ? JSON.parse(raw) : undefined
   if (!manifest || manifest.id !== input.body.backupId || manifest.phone !== input.phone || manifest.storageId !== input.storage.storageId || manifest.generation !== input.storage.generation || manifest.status !== 'ready') throw new SessionStorageError(409, 'session_storage_cleanup_backup_required')
   await input.lease.assertOwned()
-  if (!await input.verifyBackup(manifest, sourceFingerprintsDigest(input.database))) throw new SessionStorageError(409, 'session_storage_cleanup_backup_verification_failed')
+  const digest = sourceFingerprintsDigest(input.database)
+  if (input.deferred && input.deferred.digest !== digest || !await input.verifyBackup(manifest, digest)) throw new SessionStorageError(409, 'session_storage_cleanup_backup_verification_failed')
   const result = { deleted: 0, skipped: 0, missing: 0, retainedControl: 0, skippedScope: 0, skippedMutated: 0, skippedTtl: 0, sourceBytesBefore: 0, sourceBytesAfter: 0, deletedKeyBytes: 0, batches: 0 }
   let after = ''
   while (true) {
@@ -105,10 +121,12 @@ export async function cleanRedisSource(input: SourceCleanupInput) {
     result.skippedScope += rows.length - safe.length - retained; result.skipped += rows.length - safe.length - retained
     if (safe.length) {
       await input.lease.assertOwned()
-      const values = await input.redis.eval(CLEAN_SOURCE_BATCH_LUA, safe.length + 3,
-        `unoapi-config:${input.phone}`, input.lease.key, `unoapi-session-storage:backup:${input.body.backupId}`, ...safe.map(row => row.key),
+      const controls = [`unoapi-config:${input.phone}`, input.lease.key, `unoapi-session-storage:backup:${input.body.backupId}`]
+      if (input.deferred) controls.push(migrationCompletionKey(input.phone), `unoapi-session-storage:task:lock:${input.phone}`)
+      const values = await input.redis.eval(input.deferred ? CLEAN_DEFERRED_SOURCE_BATCH_LUA : CLEAN_SOURCE_BATCH_LUA, safe.length + controls.length,
+        ...controls, ...safe.map(row => row.key),
         String(input.storage.generation), input.storage.storageId, input.storage.owner, input.lease.token, input.body.backupId, input.phone, input.prefix,
-        JSON.stringify(safe.map(row => ({ key: row.key, sha1: row.sha1, expiresAt: row.expires_at ?? -1 })))) as number[]
+        JSON.stringify(safe.map(row => ({ key: row.key, sha1: row.sha1, expiresAt: row.expires_at ?? -1 }))), input.deferred?.taskId || '', input.deferred?.digest || '') as number[]
       if (!Array.isArray(values) || values.length !== 7 || values.some(value => !Number.isFinite(Number(value)))) throw new SessionStorageError(503, 'session_storage_cleanup_response_invalid')
       result.deleted += Number(values[0]); result.skipped += Number(values[1]); result.missing += Number(values[2]); result.sourceBytesBefore += Number(values[3]); result.sourceBytesAfter += Number(values[4]); result.skippedMutated += Number(values[5]); result.skippedTtl += Number(values[6]); result.batches++
     }

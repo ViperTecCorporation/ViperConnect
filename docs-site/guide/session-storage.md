@@ -50,7 +50,7 @@ cursor vinculado a sessão/banco/geração/tabela/busca. O web não abre o volum
 
 ## Padrão e dependência do Redis
 
-**Novas sessões usam SQLite por padrão, na raiz `/app/session-data`, somente
+**Novas sessões usam SQLite por padrão, na raiz `/home/u/app/session-data`, somente
 quando o worker confirma um volume persistente montado e gravável e um motor
 SQLite compatível.** Sem esse volume, o fluxo tradicional Redis continua
 funcionando e o painel mostra um alerta com instruções. As ENVs abaixo são
@@ -60,7 +60,21 @@ opcionais; declarar uma ENV ou criar uma pasta no container não substitui o vol
 | --- | --- |
 | `SESSION_STORAGE_DEFAULT` | Solicita `sqlite` para novas sessões; sem capacidade válida usa Redis. Defina `redis` para manter o padrão antigo mesmo com volume válido. |
 | `SESSION_STORAGE_PERSISTENT` | Detecta o mount real e testa escrita. `true` não ignora essa verificação; `false` desabilita SQLite. Mounts tmpfs/ramfs/overlay não são aceitos. |
-| `SESSION_STORAGE_ROOT` | Usa `/app/session-data`. Pode apontar para outro caminho persistente montado no worker; não herda `UNOAPI_BASE_STORE`. |
+| `SESSION_STORAGE_ROOT` | Usa `/home/u/app/session-data`. Pode apontar para outro caminho persistente montado no worker; não herda `UNOAPI_BASE_STORE`. |
+
+O caminho padrão Docker fica sob a aplicação e a imagem prepara sua propriedade
+para o usuário `u` antes de inicializar volumes novos. A validação continua
+exigindo um mount persistente e escrita pelo usuário real; não inicia como root
+nem muda permissões de volumes existentes automaticamente. Bind mounts e volumes
+reutilizados devem ter proprietário/permissões adequados ao UID/GID de `u` na imagem.
+
+Compatibilidade de atualização: `SESSION_STORAGE_ROOT` explícito sempre vence.
+Sem a variável, um volume persistente legado em `/app/session-data` continua
+sendo usado, inclusive se também houver um volume no caminho novo. Não há cópia,
+troca de banco ou migração automática. Para mudar o destino, monte o **mesmo volume**
+no caminho novo e explicite a variável; não substitua bancos existentes por um
+volume vazio. O campo `capability.root` informa a raiz efetivamente selecionada.
+O laboratório com caminho legado explícito permanece compatível.
 
 **Redis continua obrigatório mesmo com SQLite ativo. Não remova o serviço
 Redis nem a configuração `REDIS_URL`.** SQLite guarda os dados locais da
@@ -89,17 +103,17 @@ e a versão; isso não cria arquivo nem transfere os dados da sessão para SQLit
 
 Adicione o volume persistente ao **serviço atual do worker Zapo**, preservando
 imagem, redes, variáveis e mounts existentes. As três variáveis abaixo apenas
-explicitam os padrões; podem ser omitidas ao montar em `/app/session-data`:
+explicitam os padrões; podem ser omitidas ao montar em `/home/u/app/session-data`:
 
 ```yaml
 services:
   worker-zapo:
     environment:
-      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_ROOT: /home/u/app/session-data
       SESSION_STORAGE_PERSISTENT: "true"
       SESSION_STORAGE_DEFAULT: sqlite
     volumes:
-      - session-data:/app/session-data
+      - session-data:/home/u/app/session-data
 volumes:
   session-data: {}
 ```
@@ -351,10 +365,12 @@ não existe transferência de uma chamada em andamento entre stores.
 3. Valida integridade e publica o catálogo do novo storage com nova geração.
 4. Faz backup `.viperstorage` sem criptografia no S3 e verifica o objeto por leitura de volta,
    restauração temporária, hash e integridade SQLite.
-5. Ainda offline e sob a mesma lease, remove as chaves Redis de origem que
-   continuam iguais ao snapshot. Configuração, locks e coordenação permanecem.
-6. Somente a tarefa concluída confirma a migração. Aceite HTTP não é conclusão
-   nem confirmação de conexão/entrega no WhatsApp.
+5. Libera a lease e o bloqueio da tarefa e solicita a retomada quando elegível.
+   A limpeza dos registros Redis inalterados fica em segundo plano, sob lock
+   independente. Configuração, locks e coordenação permanecem no Redis.
+6. A tarefa concluída confirma cutover e backup. O recibo de limpeza confirma
+   a exclusão; o estado do socket confirma conexão. Aceite HTTP não confirma
+   nenhuma dessas etapas nem a entrega no WhatsApp.
 
 Migração, restore, logout e reload compartilham a exclusão por sessão. Pedidos
 conflitantes retornam erro explícito, não executam limpeza de auth nem apagam a
@@ -364,23 +380,42 @@ terminar no prazo, a cópia não começa: não se anuncia um snapshot completo.
 
 ### Retomada da conexão após a migração
 
+Configurações antigas sem `server` usam o destino canônico `server_1`, como no
+fluxo Redis existente. A transição grava esse destino junto com o catálogo,
+sob as mesmas verificações de dono, geração e tarefa. Não usa o dono declarado
+no storage para escolher arbitrariamente outro worker; divergências são
+recusadas antes de pausar a sessão. Uma falha em `draining` não confirma cópia,
+backup ou migração: consulte o erro da tarefa antes de tentar novamente.
+
+Há no máximo **uma migração na fase de cópia/validação/backup por worker**.
+Uma segunda solicitação para outra sessão no mesmo worker retorna HTTP `409`
+`session_storage_worker_migration_busy`, antes de pausar essa outra sessão ou
+criar sua tarefa. Aguarde a conclusão e solicite novamente; não há fila nem
+retry automático. Workers com identidades diferentes podem migrar em paralelo.
+A reserva é renovada durante trabalhos longos e expira após queda do processo;
+só o dono pode liberá-la. Depois do backup validado, a reserva de migração é
+liberada junto com a sessão; a limpeza em segundo plano mantém seu controle
+separado e pode coexistir com o uso normal ou uma próxima migração.
+
 Antes de pausar a sessão, o worker registra a intenção de retomada. Ela só é
 elegível se `autoConnect=true`, o status anterior for `online` ou `connecting`
 **e** houver um cliente local no worker dono. Um marcador `online` isolado no
 Redis não autoriza reconectar. Sessões anteriormente offline e fixtures não
 são retomadas. O guard global de efeitos externos também impede esse fluxo.
 
-Depois do cutover, backup verificado, limpeza da origem e liberação da lease antiga, o coordenador
+Depois do cutover, backup verificado por leitura de volta/restauração e liberação
+da lease antiga **e do bloqueio da tarefa**, o coordenador
 revalida dono, storage, geração e configuração. Quando permitido, restaura
 `autoConnect=true` e publica o pedido de reconexão pelo fluxo normal. A tarefa
 de migração informa, em `result`, por exemplo:
 
 ```json
-{ "autoConnect": true, "reconnect": { "status": "requested" } }
+{ "autoConnect": true, "reconnect": { "status": "requested" }, "sourcePreserved": true, "sourceCleanup": { "status": "pending" } }
 ```
 
 `requested` confirma somente que o pedido foi publicado, **não que o WhatsApp
 está online**. A conexão precisa ser confirmada pelo estado/evento do socket.
+`pending` indica que a retomada ainda aguarda liberação/coordenação;
 `skipped` indica que a retomada não foi solicitada e pode trazer um motivo;
 `failed` indica falha ao restaurar a intenção ou publicar o pedido. Em falha de
 coordenação, confira a configuração atual antes de repetir qualquer ação. Se a
@@ -388,9 +423,11 @@ publicação falhar, `autoConnect` pode continuar `true`, mas a conexão não es
 confirmada. Isso não desfaz o banco SQLite já migrado e não autoriza repetir a
 migração; consulte o motivo e trate a conexão separadamente.
 
-O estado do descritor de armazenamento, inclusive `offline`, não representa o
-estado atual do socket WhatsApp. Conclusão da cópia, pedido de reconexão e
-conexão efetiva são confirmações distintas.
+Eventos reais do socket atualizam o descritor SQLite para `active` ao conectar
+e `offline` ao desconectar, sem mudar a geração do banco. A atualização exige
+o token de posse do socket e a mesma identidade/geração; callbacks antigos não
+podem sobrescrever a sessão. Um pedido em fila não marca `active` nem Online.
+Conclusão da cópia, pedido de reconexão e conexão efetiva são confirmações distintas.
 
 A conversão para as tabelas nativas usa os bytes e metadados do snapshot
 local já capturado, não uma segunda leitura tardia no Redis. Registros que
@@ -415,12 +452,23 @@ hot reload de `dist` pelo nodemon pode interromper a cópia sem reiniciar o
 container Docker. Compilar não recarrega esse worker estável; após concluir as
 tarefas, a atualização do processo exige reinício manual coordenado.
 
-Uma migração bem-sucedida não mantém uma segunda cópia da sessão no Redis:
-`result.sourcePreserved=false`, `backupId` e `sourceCleanup` informam a finalização.
+Após o backup validado, a migração libera a sessão antes da limpeza da origem.
+Uma tarefa `ready` confirma o cutover e o backup, não a limpeza nem o estado Online.
+A limpeza passa a rodar em segundo plano, com registro durável e lock próprio,
+sem ocupar a lease do socket ou o bloqueio de conexão/logout. O worker dono a
+retoma após reinício; o painel mostra o estado em `result.sourceCleanup.status`:
+`pending`, `running`, `ready`, `diverged` ou `failed`. Somente `ready` implica
+`result.sourcePreserved=false`. As métricas/tarefa consultadas refletem esse recibo.
+Cada lote revalida dono, geração, banco, backup, ausência de transição concorrente,
+fingerprint e TTL. Gravações novas do SQLite não são afetadas. Mudanças no Redis
+são preservadas e informadas como divergência, sem derrubar a sessão reconectada.
+Um disconnect manual posterior não restaura a intenção antiga de conectar.
+O backup da migração fica protegido contra a poda automática enquanto a limpeza
+estiver pendente, falha ou divergente; novos backups ainda podem ser publicados.
 Configure um destino S3 privado antes de migrar; novos backups não exigem chave.
-Se backup, verificação ou limpeza
-falharem após o cutover, o SQLite continua preservado e offline; a tarefa falha
-sem solicitar reconexão. Chaves divergentes são preservadas, nunca apagadas à força.
+Se o backup ou sua verificação falhar após o cutover, o SQLite continua preservado
+e offline; a tarefa falha sem solicitar reconexão. Uma falha posterior de limpeza
+não desfaz a migração nem simula exclusão: mantém a origem e exige revisão.
 Não repetir a migração: consultar o journal e finalizar a origem com o endpoint
 específico após conferência. Migrações antigas podem ter deixado a origem Redis;
 não há limpeza retroativa silenciosa. Essa origem não é rollback válido depois
@@ -439,12 +487,21 @@ geração, token de posse, manifesto, SHA-1 dos bytes de origem e expiração an
 de executar `UNLINK`. Chaves com conteúdo ou TTL alterados são preservadas e
 contabilizadas como divergentes. Catálogo, coordenação, chaves globais e SQLite
 não fazem parte da exclusão.
+Quando resolve a mesma origem/geração de uma limpeza em segundo plano, esse
+endpoint também atualiza seu recibo e libera a retenção extra do backup, sem
+restaurar a intenção antiga de conexão.
 
 Consultar a tarefa até o fim; aceitação não confirma exclusão. Bytes das chaves
 comparadas não são RSS imediatamente devolvido ao sistema. Não executar limpeza
 por timeout ou desconexão. Esse endpoint recupera uma finalização antiga ou
 interrompida; novas migrações executam os mesmos controles automaticamente,
-após backup verificado e antes da reconexão.
+após backup verificado, em segundo plano depois da liberação para reconexão.
+
+Índices auxiliares legados desconhecidos não entram na exclusão automática.
+Por exemplo, `unoapi-auth-seen:{phone}` era o ZSET de idade das chaves do auth
+legado, não as credenciais em si; sua implementação foi removida em `1e3b610e`.
+Não é usado pelo armazenamento Zapo atual. Sua remoção exige auditoria específica
+do runtime e cópia recuperável, sem apagar o auth ou as referências de outras sessões.
 
 ## Desconectar não é apagar histórico
 
@@ -468,8 +525,10 @@ criptográficas não entram na poda; tombstones e a política de retenção são
 preservados. Não há `VACUUM` automático: páginas liberadas podem ser reutilizadas
 pelo SQLite, mas isso não promete arquivo menor nem RAM devolvida ao sistema.
 
-O mesmo coordenador inspeciona transições interrompidas e journals pendentes,
-sem conectar, reenviar, promover arquivos ou excluir a origem. Só pode reparar
+O mesmo coordenador inspeciona transições interrompidas e journals pendentes.
+Essa rotina de reconciliação não conecta, reenvia, promove arquivos ou exclui
+a origem; a retomada e limpeza de migrações com backup já verificado são o
+fluxo separado descrito acima. A reconciliação só pode reparar
 metadados quando identidade, geração, arquivos e lease permitem uma conclusão
 segura. Origem Redis sem comprovação de integridade, arquivo promovido ou fase
 ambígua permanece em `recovery_required`, com ação de conferência explícita.
@@ -478,6 +537,24 @@ origem. GETs do painel apenas leem os recibos; consultar o estado não inicia
 manutenção ou recuperação.
 
 ## Backup e recuperação
+
+### Consumo de memória no backup
+
+O worker faz o snapshot SQLite em disco e lê blocos de 256 KiB. O arquivo é
+codificado por frames limitados e enviado ao S3 por multipart com uma parte de
+5 MiB em voo. A fila intermediária conta bytes, com high-water mark de 256 KiB,
+e respeita o ritmo do consumidor; um frame individual pode exceder esse limiar.
+Isso não é um limite da RAM total do worker: conexões, codec, SDK e SQLite
+também consomem memória. O mesmo controle de fila vale para o backup Redis.
+
+Upload, leitura de volta e restauração não montam o arquivo inteiro em um
+buffer do Node. O Linux pode manter páginas de snapshots/arquivos temporários
+no cache, contabilizadas no cgroup do worker. Compare RSS/heap/buffers do
+processo com `file`/`inactive_file`/`anon`, swap e eventos OOM; não trate todo o
+cgroup como heap, nem todo cache inativo como memória livre garantida.
+Temporários são fechados e removidos ao concluir ou falhar. A validação por
+readback permanece obrigatória; finalização da origem pode exigir outra
+verificação antes de apagar chaves Redis. Não há limpeza global de cache do SO.
 
 ### Pelo painel, sem terminal
 
@@ -547,10 +624,37 @@ O POST usa telefone, worker e confirmação na query, corpo binário
 `application/octet-stream` e `Content-Length` exato; não aceita caminhos locais,
 URL S3 arbitrária, senha ou chave pelo navegador.
 
-O painel permite solicitar backup manual por tarefa. O agendamento usa
-`SESSION_STORAGE_BACKUP_ENABLED=true` e
-`SESSION_STORAGE_BACKUP_INTERVAL_HOURS=12`. Configure o destino S3 compatível
-da stack. **Novos backups são gravados sem criptografia e não exigem chave ou
+O painel permite solicitar backup manual por tarefa. O backup automático das
+sessões SQLite fica **habilitado por padrão**, mesmo sem declarar
+`SESSION_STORAGE_BACKUP_ENABLED`. Para desligar somente o agendamento, use
+no worker dono:
+
+```yaml
+environment:
+  SESSION_STORAGE_BACKUP_ENABLED: "false"
+```
+
+Remova a variável ou use `"true"` para habilitar novamente. A mudança exige
+recarregar o worker; editar o Compose sem recriá-lo não altera sua configuração.
+Faça a recarga sem backup, restauração ou chamada em andamento: o reinício do
+processo pode interrompê-los. A flag só controla a agenda, não é um cancelamento
+de tarefa. Desligar não apaga arquivos existentes nem desativa o backup manual
+ou o backup obrigatório da migração.
+
+O intervalo é fixo em duas janelas UTC de **12 horas**, não depende de uma
+variável `SESSION_STORAGE_BACKUP_INTERVAL_HOURS`. A rotina só atende sessões
+SQLite locais e não fixtures; um worker sem volume persistente válido mantém
+o fluxo Redis funcionando, sem iniciar essa rotina. Configure o destino S3
+compatível da stack: ausência ou falha de S3 continua sendo erro explícito,
+não autoriza um backup incompleto ou fallback silencioso.
+
+**Essa flag não habilita backup global do Redis.** Este exige separadamente
+`SESSION_STORAGE_REDIS_BACKUP_ENABLED=true`,
+`SESSION_STORAGE_REDIS_BACKUP_ALL_DATABASES=true` e CLI compatível, conforme a
+seção de recuperação Redis abaixo. Backups VoIP também possuem sua própria
+flag `VOIP_BACKUP_ENABLED`.
+
+**Novos backups são gravados sem criptografia e não exigem chave ou
 senha**, inclusive quando já existe uma chave antiga configurada no worker.
 O pacote `.viperstorage` contém credenciais, configuração e histórico: mantenha
 o bucket e os arquivos privados, limite as permissões e use transporte seguro.
@@ -558,13 +662,17 @@ Verificação de integridade não fornece confidencialidade nem torna confiável
 um arquivo obtido de uma origem desconhecida. Destino ausente ou falha de
 verificação deve retornar erro explícito, nunca anunciar sucesso.
 
-O Compose do laboratório habilita a agenda das sessões SQLite por padrão.
-A execução inicial e as seguintes usam
+O Compose do laboratório também permite desligar a agenda explicitamente.
+Ao iniciar, o worker pode executar o backup da janela atual imediatamente;
+não espera necessariamente 12 horas após o upgrade. Os backups das sessões
+são processados em série por worker. A execução inicial e as seguintes usam
 duas janelas UTC de 12 horas. Reservas são renovadas durante o upload; uma falha
 permite nova tentativa na mesma janela, sem registrar sucesso nem sobrepor dois
 backups da mesma sessão. Fixtures não entram na agenda. `backupPolicy` no GET de
 armazenamento e nos detalhes técnicos mostra agenda e último sucesso/erro sem
-segredos. Produção precisa habilitar a rotina separadamente: o DEV não altera a VPS.
+segredos; `enabled=true` não confirma que algum backup já foi criado. Versões
+antigas mantêm seu comportamento até atualizar a imagem: mudar o DEV não altera
+a VPS. Uma configuração explícita `false` continua sendo respeitada no upgrade.
 
 ### Compatibilidade com backups antigos
 
@@ -871,17 +979,17 @@ services:
   worker-zapo-1:
     environment:
       UNOAPI_SERVER_NAME: worker_1
-      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_ROOT: /home/u/app/session-data
       SESSION_STORAGE_PERSISTENT: "true"
     volumes:
-      - worker_1_sessions:/app/session-data
+      - worker_1_sessions:/home/u/app/session-data
   worker-zapo-2:
     environment:
       UNOAPI_SERVER_NAME: worker_2
-      SESSION_STORAGE_ROOT: /app/session-data
+      SESSION_STORAGE_ROOT: /home/u/app/session-data
       SESSION_STORAGE_PERSISTENT: "true"
     volumes:
-      - worker_2_sessions:/app/session-data
+      - worker_2_sessions:/home/u/app/session-data
 volumes:
   worker_1_sessions: {}
   worker_2_sessions: {}
