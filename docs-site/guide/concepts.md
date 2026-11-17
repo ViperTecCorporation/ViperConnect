@@ -22,6 +22,36 @@ POST /v15.0/{session}/messages
 - `to`: conversa de destino;
 - `version`: versão do contrato HTTP, mantida para compatibilidade.
 
+### Versão WhatsApp e reconexão
+
+A versão inicial do protocolo WhatsApp Web é definida pelo ViperConnect:
+valor da sessão no Manager → `ZAPO_WEB_VERSION` do worker → padrão do código
+`2.3000.1054816457`. Campo vazio no Manager herda o worker; ENV ausente/vazia
+herda o código. Não é a versão `4.x` do produto nem o prefixo HTTP `v15.0`.
+
+`recoverFromClientTooOld:true` permite à Zapo buscar a versão atual em
+`https://web.whatsapp.com/sw.js` somente após `405/failure_client_too_old` e
+reconectar o mesmo cliente. O override é de uma tentativa, não é salvo no
+Manager/ENV/credenciais; uma nova instância começa com a versão configurada.
+Portanto a versão manual é inicial, não um pin absoluto. Não garante aceitação
+futura do protocolo nem resolve falha de rede ou parsing da fonte.
+
+O ViperConnect mantém a lease e a geração durante uma janela de até 45s, com
+uma tentativa SDK de conexão por janela, sem criar outro cliente em paralelo.
+Toda conexão passa por revalidação de posse, configuração e estado do storage.
+Desconexão manual, logout, migração ou perda da lease impedem uma recuperação
+atrasada de reabrir o socket. Se não voltar, descarta o cliente pelo fluxo
+normal e espera ao menos 60s antes da próxima tentativa. O fetch SDK pendente
+pode terminar, mas não ganha autorização para conectar um cliente descartado.
+
+Salvar a versão no Manager usa o fluxo de recarga existente e pode reconectar
+a sessão/interromper chamadas; sucesso HTTP não confirma Online. Só Web aceita
+override (3–5 partes numéricas, até 54 caracteres); inválido é rejeitado, sem
+fallback silencioso. `ZAPO_CONNECTION_POLICY` registra versão inicial e dono.
+Mobile Primary mantém `deviceInfo.appVersion` e sua política anterior, sem ENV
+Web nem recuperação Android automática sobre credenciais iOS. Esse erro não
+autoriza apagar credenciais, SQLite ou refazer QR.
+
 ## 2. O token autentica a instalação
 
 Envie o token em todas as rotas protegidas:

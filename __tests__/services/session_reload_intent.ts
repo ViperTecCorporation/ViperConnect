@@ -8,7 +8,7 @@ test('reload identity ignores recreated runtime functions and JSON property orde
   expect(isDeepStrictEqual(sessionReloadIntent(first as any), sessionReloadIntent(next as any))).toBe(true)
 })
 
-test.each(['autoConnect', 'server', 'provider', 'proxyUrl', 'connectionType', 'zapoWebClientProfile', 'sessionStorage'])('reload identity preserves a real %s intent change', key => {
+test.each(['autoConnect', 'server', 'provider', 'proxyUrl', 'connectionType', 'zapoWebClientProfile', 'zapoWebVersion', 'sessionStorage'])('reload identity preserves a real %s intent change', key => {
   const first = { ...defaultConfig, autoConnect: false }
   const next = { ...first, [key]: key === 'autoConnect' ? true : key === 'sessionStorage' ? { backend: 'sqlite', generation: 2 } : 'changed' }
   expect(isDeepStrictEqual(sessionReloadIntent(first), sessionReloadIntent(next as any))).toBe(false)

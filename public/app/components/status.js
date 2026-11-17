@@ -1,6 +1,6 @@
-import { escapeHtml } from '../core/html.js?v=4.0.43-010277e1';
-import { t } from '../core/i18n.js?v=4.0.43-010277e1';
-import { normalizedStatus } from '../domain/session.js?v=4.0.43-010277e1';
+import { escapeHtml } from '../core/html.js?v=4.0.44-f63f46d2';
+import { t } from '../core/i18n.js?v=4.0.44-f63f46d2';
+import { normalizedStatus } from '../domain/session.js?v=4.0.44-f63f46d2';
 const statusLabels = {
     online: 'Online',
     connecting: 'Conectando',

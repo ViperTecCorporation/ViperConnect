@@ -1,7 +1,7 @@
-import { ApiError } from '../core/api.js?v=4.0.43-010277e1';
-import { escapeHtml as e } from '../core/html.js?v=4.0.43-010277e1';
-import { t } from '../core/i18n.js?v=4.0.43-010277e1';
-import { renderModal } from '../components/modal.js?v=4.0.43-010277e1';
+import { ApiError } from '../core/api.js?v=4.0.44-f63f46d2';
+import { escapeHtml as e } from '../core/html.js?v=4.0.44-f63f46d2';
+import { t } from '../core/i18n.js?v=4.0.44-f63f46d2';
+import { renderModal } from '../components/modal.js?v=4.0.44-f63f46d2';
 const defaults = () => ({ tail: '300', include: '', exclude: '', level: 'all', channel: 'all' });
 const formatting = (line) => `${line.timestamp || '—'} [${line.level || '?'}] [${line.channel}] ${line.text}`;
 export function logErrorMessage(error) {

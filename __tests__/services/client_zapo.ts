@@ -23,7 +23,7 @@ jest.mock('../../src/services/zapo/zapo_poll_addon_decrypt', () => ({
 }))
 
 import { mockDeep } from 'jest-mock-extended'
-import { proto, type WaClient, type WaStore, type WaStoreSession } from 'zapo-js'
+import { createStore, proto, WaClient as RuntimeWaClient, type WaClient, type WaStore, type WaStoreSession } from 'zapo-js'
 import { ClientZapo } from '../../src/services/client_zapo'
 import { ZapoContactCrypto } from '../../src/services/zapo/zapo_contact_crypto'
 import { clients } from '../../src/services/client'
@@ -42,6 +42,9 @@ import { registerZapoHistoryReader } from '../../src/services/zapo/zapo_history'
 import logger from '../../src/services/logger'
 import * as proxyOptions from '../../src/services/zapo/zapo_proxy'
 import * as redisAccess from '../../src/services/redis'
+import { VIPERCONNECT_ZAPO_CONNECTION_POLICY } from '../../src/services/zapo/zapo_connection_policy'
+import { guardZapoSdkConnect } from '../../src/services/zapo/zapo_sdk_recovery'
+import { markSessionConfigRegistration } from '../../src/services/session_storage/connection_registration'
 
 describe('ClientZapo', () => {
   const phone = '5566999999999'
@@ -271,6 +274,201 @@ describe('ClientZapo', () => {
     } finally { spy.mockRestore() }
   })
 
+  test.each(['default', 'wa_personal', 'wa_business'] as const)('ViperConnect owns the version and reconnect for profile %s', async profile => {
+    config.zapoWebClientProfile = profile
+    await service.connect(1)
+    expect((service as any).clientFactory).toHaveBeenCalledWith(expect.objectContaining(VIPERCONNECT_ZAPO_CONNECTION_POLICY), expect.any(Function))
+  })
+
+  test('the explicit Web policy preserves the stored mobile version', async () => {
+    const credentials = { meJid: `${phone}@s.whatsapp.net`, deviceInfo: { appVersion: '2.26.37.73' } }
+    session.auth.load.mockResolvedValue(credentials as never)
+    await service.connect(1)
+    expect(credentials.deviceInfo.appVersion).toBe('2.26.37.73')
+    const options = (service as any).clientFactory.mock.calls[0][0]
+    expect(options).not.toHaveProperty('version')
+    expect(options.recoverFromClientTooOld).toBe(false)
+    const sdkStore = createStore()
+    const sdkLogger = { trace: jest.fn(), debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: () => sdkLogger }
+    const runtime = new RuntimeWaClient({ ...options, store: sdkStore, plugins: [] }, sdkLogger)
+    try {
+      // Run the actual SDK's auth/config builder, not just a mocked factory:
+      // a Web version in these options throws before any socket is opened.
+      const auth = (runtime as any).deps.authClient
+      auth.credentials = credentials
+      const comms = await auth.buildCommsConfig({})
+      const login = proto.ClientPayload.decode(comms.noise.loginPayload)
+      expect(login.userAgent?.appVersion).toMatchObject({ primary: 2, secondary: 26, tertiary: 37, quaternary: 73 })
+    } finally { await sdkStore.destroy() }
+  })
+
+  test('a session Web override reaches the actual client factory', async () => {
+    config.zapoWebVersion = '2.3000.1234567890'
+    await service.connect(1)
+    expect((service as any).clientFactory).toHaveBeenCalledWith(expect.objectContaining({ version: config.zapoWebVersion, recoverFromClientTooOld: true }), expect.any(Function))
+  })
+
+  test('a version change during client construction cancels the obsolete preparation', async () => {
+    ;(service as any).clientFactory.mockImplementation(() => { config.zapoWebVersion = '2.3000.1234567890'; return client })
+    await expect(service.connect(1)).rejects.toThrow('generation_changed')
+    expect(client.disconnect).toHaveBeenCalledTimes(1)
+    expect(client.connect).not.toHaveBeenCalled()
+  })
+
+  test('405 hands off to SDK without replacing the socket, releasing ownership or scheduling a second connect', async () => {
+    jest.useFakeTimers()
+    config.retryRequestDelayMs = 1_000
+    await service.connect(1)
+    await handlers.connection({ status: 'open' })
+    const oldConnection = handlers.connection
+    await oldConnection({ status: 'close', reason: 'failure_client_too_old', code: 405, isLogout: false })
+    await oldConnection({ status: 'close', reason: 'failure_client_too_old', code: 405, isLogout: false })
+    expect((service as any).connected).toBe(false)
+    expect((service as any).socket).toBe(client)
+    expect((service as any).reconnectTimer).toBeUndefined()
+    await jest.advanceTimersByTimeAsync(10_000)
+    expect(client.connect).toHaveBeenCalledTimes(1)
+    await oldConnection({ status: 'open' })
+    expect((service as any).connected).toBe(true)
+    await jest.advanceTimersByTimeAsync(60_000)
+    expect((service as any).clientFactory).toHaveBeenCalledTimes(1)
+    expect(client.logout).not.toHaveBeenCalled()
+    await handlers.connection({ status: 'close', reason: 'failure_client_too_old', code: 405, isLogout: false })
+    await service.disconnect()
+    await jest.advanceTimersByTimeAsync(60_000)
+    expect(client.connect).toHaveBeenCalledTimes(1)
+  })
+
+  test('405 keeps the exclusive lease while recovering and a failed SDK fetch expires before a fenced retry', async () => {
+    jest.useFakeTimers()
+    config.useRedis = true; stubRedisOwnership()
+    await service.connect(1)
+    const lease = (service as any).lease
+    await handlers.connection({ status: 'close', reason: 'failure_client_too_old', isLogout: false })
+    expect(lease.release).not.toHaveBeenCalled()
+    await jest.advanceTimersByTimeAsync(44_999)
+    expect(client.disconnect).not.toHaveBeenCalled()
+    await jest.advanceTimersByTimeAsync(1)
+    expect(client.disconnect).toHaveBeenCalledTimes(1)
+    expect(lease.release).toHaveBeenCalledTimes(1)
+    expect(client.connect).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(59_999)
+    expect(client.connect).toHaveBeenCalledTimes(1)
+    await jest.advanceTimersByTimeAsync(1)
+    expect(client.connect).toHaveBeenCalledTimes(2)
+  })
+
+  test.each(['manual', 'migrating', 'restoring', 'suspended', 'unregistered', 'lease-lost', 'changed'])('SDK recovery connect is fenced for %s', async state => {
+    if (state === 'lease-lost' || state === 'unregistered') { config.useRedis = true; stubRedisOwnership() }
+    await service.connect(1)
+    const run = (service as any).clientFactory.mock.calls[0][1]
+    // Injected factories do not decorate their Jest connect stub; exercise the actual runner explicitly.
+    const networkConnect = jest.fn().mockResolvedValue(undefined)
+    await run(networkConnect)
+    await handlers.connection({ status: 'close', reason: 'failure_client_too_old', isLogout: false })
+    if (state === 'manual') await service.disconnect()
+    if (state === 'migrating' || state === 'restoring') config.sessionStorage = { backend: 'redis', owner: 'server_1', storageId: '12345678-1234-4234-8234-123456789abc', generation: 1, state }
+    if (state === 'suspended') config.autoConnect = false
+    if (state === 'unregistered') markSessionConfigRegistration(config, false)
+    if (state === 'lease-lost') (service as any).lease.renew.mockResolvedValue(false)
+    if (state === 'changed') config.zapoWebVersion = '2.3000.123'
+    await expect(run(networkConnect)).rejects.toThrow()
+    expect(networkConnect).toHaveBeenCalledTimes(1)
+  })
+
+  test('SDK reconnect gate rechecks generation after asynchronous config reads', async () => {
+    await service.connect(1)
+    const run = (service as any).clientFactory.mock.calls[0][1], network = jest.fn().mockResolvedValue(undefined)
+    await run(network)
+    await handlers.connection({ status: 'close', reason: 'failure_client_too_old', isLogout: false })
+    let finish!: (value: typeof config) => void
+    ;(service as any).getConfig.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const retry = run(network)
+    while (!finish) await Promise.resolve()
+    await service.disconnect()
+    finish(config)
+    await expect(retry).rejects.toThrow('zapo_operation_cancelled')
+    expect(network).toHaveBeenCalledTimes(1)
+  })
+
+  test('actual SDK and wrapper recover 405 on the same client, using the fetched version without a competing reconnect', async () => {
+    const sdkStore = createStore()
+    const sdkLogger = { trace: jest.fn(), debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), child: () => sdkLogger }
+    let runtime!: RuntimeWaClient, network!: jest.SpyInstance
+    ;(service as any).clientFactory.mockImplementation((options: any, run: any) => {
+      runtime = new RuntimeWaClient({ ...options, store: sdkStore, plugins: [] }, sdkLogger)
+      ;(runtime as any).deps.authClient.credentials = { meJid: `${phone}@s.whatsapp.net` }
+      network = jest.spyOn((runtime as any).deps.connectionManager, 'connect').mockImplementation(async () => undefined)
+      jest.spyOn(runtime.group, 'queryAllGroups').mockResolvedValue([])
+      return guardZapoSdkConnect(runtime, run)
+    })
+    const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, text: async () => '{"client_revision":1054999999}' } as Response)
+    try {
+      await service.connect(1)
+      for (let i = 0; i < 30; i++) await Promise.resolve()
+      runtime.emit('connection', { status: 'close', reason: 'failure_client_too_old', code: 405, isLogout: false })
+      for (let i = 0; i < 80; i++) await Promise.resolve()
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(network).toHaveBeenCalledTimes(2)
+      expect((runtime as any).deps.authClient.versionOverride).toBe('2.3000.1054999999')
+      expect((service as any).socket).toBe(runtime)
+      expect((service as any).connected).toBe(true)
+      expect((service as any).clientFactory).toHaveBeenCalledTimes(1)
+      expect((service as any).reconnectTimer).toBeUndefined()
+      expect(sessionStore.setStatus).toHaveBeenLastCalledWith(phone, 'online')
+    } finally { fetch.mockRestore(); await service.disconnect(); await sdkStore.destroy() }
+  })
+
+  test('an initial handshake rejection during 405 waits for SDK recovery instead of discarding the client', async () => {
+    let rejectHandshake!: (error: Error) => void
+    client.connect.mockReturnValueOnce(new Promise<void>((_resolve, reject) => { rejectHandshake = reject }))
+    const first = service.connect(1)
+    while (!handlers.connection) await new Promise(resolve => setImmediate(resolve))
+    await handlers.connection({ status: 'close', reason: 'failure_client_too_old', isLogout: false })
+    rejectHandshake(new Error('synthetic-405'))
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect((service as any).socket).toBe(client)
+    expect(client.disconnect).not.toHaveBeenCalled()
+    await handlers.connection({ status: 'open' })
+    await expect(first).resolves.toBeUndefined()
+    expect((service as any).clientFactory).toHaveBeenCalledTimes(1)
+  })
+
+  test('an open awaiting credential persistence cannot overwrite a later 405 recovery episode', async () => {
+    await service.connect(1)
+    let finish!: () => void
+    client.getCredentials.mockReturnValue({ meJid: `${phone}@s.whatsapp.net` } as any)
+    session.auth.save.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve }))
+    const oldOpen = handlers.connection({ status: 'open' })
+    await handlers.connection({ status: 'close', reason: 'failure_client_too_old', isLogout: false })
+    finish()
+    await oldOpen
+    expect((service as any).connected).toBe(false)
+    expect((service as any).sdkRecovery.active).toBe(true)
+    expect(sessionStore.setStatus).toHaveBeenLastCalledWith(phone, 'offline')
+    await (service as any).sdkRecovery.claim()
+  })
+
+  test('status writes serialize an in-flight online write before the newer offline write', async () => {
+    await service.connect(1)
+    let finish!: () => void
+    const writes: string[] = []
+    sessionStore.setStatus.mockImplementationOnce(async (_phone, status) => {
+      await new Promise<void>(resolve => { finish = resolve })
+      writes.push(status)
+    }).mockImplementation(async (_phone, status) => { writes.push(status) })
+    const open = handlers.connection({ status: 'open' })
+    while (!finish) await Promise.resolve()
+    const close = handlers.connection({ status: 'close', reason: 'failure_client_too_old', isLogout: false })
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(writes).toEqual([])
+    finish()
+    await Promise.all([open, close])
+    expect(writes).toEqual(['online', 'offline'])
+    expect((service as any).connected).toBe(false)
+    expect((service as any).sdkRecovery.active).toBe(true)
+  })
+
   test('waits for existing key persistence before loading auth or connecting', async () => {
     let finish!: (result: [string, string[]]) => void
     const scan = jest.fn().mockReturnValue(new Promise((resolve) => { finish = resolve }))
@@ -407,7 +605,7 @@ describe('ClientZapo', () => {
         generateWaveform: true,
         normalizeVoiceNote: true,
       }),
-    }))
+    }), expect.any(Function))
     expect(Object.keys(handlers)).toEqual(expect.arrayContaining([
       'auth_qr',
       'connection',
@@ -448,7 +646,7 @@ describe('ClientZapo', () => {
 
     expect((service as any).clientFactory).toHaveBeenCalledWith(expect.objectContaining({
       history: { enabled: true, requireFullSync: false },
-    }))
+    }), expect.any(Function))
     expect(client.connect).toHaveBeenCalledTimes(1)
   })
 

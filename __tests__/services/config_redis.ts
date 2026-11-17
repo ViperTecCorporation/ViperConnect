@@ -7,6 +7,11 @@ import { resolveSessionProvider } from '../../src/services/providers/provider_re
 const mockGetConfig = getConfig as jest.MockedFunction<typeof getConfig>
 
 describe('service config redis', () => {
+  test.each(['2.3000.1054816457', ''])('preserves the session Web override, including explicit inheritance: %j', async zapoWebVersion => {
+    configs.clear()
+    mockGetConfig.mockResolvedValue({ provider: 'zapo', zapoWebVersion })
+    expect((await getConfigRedis('999123456780')).zapoWebVersion).toBe(zapoWebVersion)
+  })
   beforeEach(() => {
     configs.clear()
   })

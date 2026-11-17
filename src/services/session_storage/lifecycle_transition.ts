@@ -5,7 +5,7 @@ import { SessionStorageError } from './types'
 
 /** Includes provider identity, not just the database generation. */
 export const sessionLifecycleIdentity = (config: Config) => JSON.stringify([
-  config.provider, config.server, config.mobilePrimaryDraftId,
+  config.provider, config.server, config.mobilePrimaryDraftId, config.zapoWebVersion,
   !!config.mobilePrimaryDeleting, config.sessionStorage ? [
     config.sessionStorage.backend, config.sessionStorage.storageId, config.sessionStorage.owner,
     config.sessionStorage.generation, ['active', 'offline'].includes(config.sessionStorage.state) ? 'stable' : config.sessionStorage.state, !!config.sessionStorage.fixture,

@@ -171,6 +171,46 @@ Zapo como dona da sessão, contratos públicos do Meow Caller como referência d
 fio e extensões próprias do ViperConnect para bridge, codec, dual-stack,
 recuperação e telemetria. Veja [VoIP dual-stack IPv4 e IPv6](/guide/voip-ipv6).
 
+### Identidade do dispositivo e autenticação do áudio
+
+O worker deriva a chave SRTP de recepção para o dispositivo remoto confirmado
+pela sinalização da chamada. Um dispositivo vinculado que atende, por exemplo
+`:42@lid`, tem prioridade sobre a identidade genérica ou antiga do mesmo
+participante no relay. A identidade específica da oferta recebida também é
+preservada. Isso evita rejeitar áudio como `SRTP auth tag verification failed`
+quando o aparelho principal funciona, mas um dispositivo vinculado não.
+
+A seleção exige a mesma identidade base e domínio; não inventa dispositivos nem
+equivalência PN/LID. Mantém a identidade local de envio, os aliases legados do
+participante, a autenticação SRTP e a rejeição de replay. Não requer ENV nova,
+recuperação das credenciais ou alteração nos apps. O log `voip_diag srtp_key_identity`
+mostra somente identidades e indicadores, nunca as chaves.
+
+Para diagnosticar silêncio apesar de SRTP válido, `voip_diag peer_audio_signaling`
+registra somente codec/taxa anunciados no atendimento. `voip_diag audio_pipeline`
+e o resumo `mediaDiagnostics` mostram contagens TX/RX, amostras, picos de amplitude,
+tamanho total dos pacotes e histograma limitado dos bytes TOC (cabeçalho do codec).
+O log periódico ocorre no primeiro e a cada 100 frames por direção. Não retém
+PCM, payload de voz, gravação ou chave; pacote autenticado não prova fala audível.
+
+No controle de 16/11/2026, WhatsApp Windows nativo falhou enquanto navegador e
+celular do contato de comparação funcionaram. Um decoder no modo errado pode
+aceitar pacotes e produzir silêncio sem erro; TOC, silêncio ou nome do aplicativo
+não são detectores seguros de Opus/MLow. A 4.0.44 mantém a seleção atual de codec
+e não declara esse caso Windows corrigido. Novos diagnósticos/canário permanecem
+pendentes; analisar o executável pode ajudar, mas não substitui validação real.
+
+Essa correção pertence ao plugin no **worker Zapo**, não ao processo SIP/WebRTC
+de telefonia. Um hostpath de teste deve conter apenas seus arquivos CJS/ESM,
+ser somente leitura e ter rollback dos mounts. Carregar o código exige recriar
+o worker em uma janela sem chamadas nem backup/migração em curso, preservando
+volumes, imagem e demais configurações. Atualização pelo Portainer pode remover
+um overlay que não esteja incorporado à definição da stack.
+
+Validar chamadas de entrada e saída com áudio nos dois sentidos, usando o
+aparelho principal, um dispositivo vinculado e mais de um contato. Testes
+criptográficos sintéticos e estado Online não comprovam áudio audível real.
+
 ## Fluxo de chamada
 
 1. A sessão Zapo abre o bridge autenticado após ficar online.

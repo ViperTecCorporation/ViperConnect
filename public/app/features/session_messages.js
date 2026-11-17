@@ -1,8 +1,8 @@
-import { ApiError } from '../core/api.js?v=4.0.43-010277e1';
-import { escapeHtml } from '../core/html.js?v=4.0.43-010277e1';
-import { icon } from '../components/icons.js?v=4.0.43-010277e1';
-import { composerPayload, mergeConversationMessages } from '../domain/session_messages.js?v=4.0.43-010277e1';
-import { conversationAvatar, conversationCard, messageBubble } from './session_messages_render.js?v=4.0.43-010277e1';
+import { ApiError } from '../core/api.js?v=4.0.44-f63f46d2';
+import { escapeHtml } from '../core/html.js?v=4.0.44-f63f46d2';
+import { icon } from '../components/icons.js?v=4.0.44-f63f46d2';
+import { composerPayload, mergeConversationMessages } from '../domain/session_messages.js?v=4.0.44-f63f46d2';
+import { conversationAvatar, conversationCard, messageBubble } from './session_messages_render.js?v=4.0.44-f63f46d2';
 export class SessionMessagesPanel {
     constructor(api, root) {
         this.api = api;

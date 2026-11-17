@@ -12,6 +12,25 @@ import { setLocale } from '../../frontend/core/i18n'
 describe('frontend features', () => {
   afterEach(() => setLocale('pt-BR'))
 
+  test('Web version field is editable per session, escaped and disabled for Mobile Primary', () => {
+    const html = renderSessionConfig({ phone: '999123456789', zapoWebVersion: '2.3000.123' })
+    expect(html).toContain('name="zapoWebVersion" value="2.3000.123"')
+    expect(html).toContain('Vazio usa ZAPO_WEB_VERSION')
+    expect(renderSessionConfig({ phone: '999123456789', zapoWebVersion: '\"><script>' })).not.toContain('value=""><script>')
+    expect(renderSessionConfig({ phone: '999123456789', mobilePrimaryDraftId: 'synthetic' })).toMatch(/name="zapoWebVersion"[^>]*disabled/)
+    setLocale('en')
+    expect(renderSessionConfig({ phone: '999123456789' })).toContain('WhatsApp Web version')
+  })
+
+  test('Web version payload clears explicitly, trims text and preserves absent/disabled fields', () => {
+    const data = new FormData()
+    expect(sessionConfigPayload(data)).not.toHaveProperty('zapoWebVersion')
+    data.set('zapoWebVersion', ' 2.3000.123 ')
+    expect(sessionConfigPayload(data).zapoWebVersion).toBe('2.3000.123')
+    data.set('zapoWebVersion', '')
+    expect(sessionConfigPayload(data).zapoWebVersion).toBe('')
+  })
+
   test('renders session config without provider selection', () => {
     const html = renderSessionConfig({ phone: '5566', label: 'Comercial', provider: 'baileys' })
     expect(html).toContain('data-form="session-config"')

@@ -41,6 +41,38 @@ and telephony process. Native Linux packages are also available.
 Do not publish Valkey or RabbitMQ to the internet. Terminate TLS at your edge
 proxy and use strong, unique tokens for every installation.
 
+## Version 4.0.44
+
+Version 4.0.44 starts with WhatsApp Web `2.3000.1054816457`, accepts Manager or
+`ZAPO_WEB_VERSION` overrides and enables Zapo's 405 recovery without a competing
+reconnect. Mobile Primary retains its previous policy and persisted app version,
+without a Web override. SQLite backup readback streams
+verification without a second restore file; actual restores still require
+`quick_check`. VoIP plugin `.7` improves SRTP device selection and adds bounded
+diagnostics, without claiming that every silence case has been resolved.
+
+It integrates Zapo **1.11.0**, plugin **1.0.0-viper.7** and VoIP service **0.1.72**,
+pinned to `5c1c3847feaa8f104140a94ffa00175e855a5746`. The separate service retains
+the SIP/WebRTC/RTP runtime of 0.1.71; SRTP changes belong to the worker.
+Check the [release notes](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.44/docs/release-4.0.44.md)
+and [release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.44).
+Publication does not deploy or remove hostpaths. Before deployment, check the
+workflows and coordinate removal of only incorporated equivalent overlays,
+preserving data, backups and rollback.
+
+Optional override on the **Zapo worker** (setting only the web container is insufficient):
+
+```yaml
+environment:
+  ZAPO_WEB_VERSION: "2.3000.1054816457"
+```
+
+Unset/blank uses the code default. On native Linux, set the same ENV on the
+worker service. Recreate/restart the worker to read an ENV change. A saved
+Manager session value takes precedence; clear it to inherit ENV. With recovery
+enabled this is the initial version, not an absolute pin. See
+[version and reconnection](/en/guide/concepts#whatsapp-version-and-reconnection).
+
 ## Version 4.0.43
 
 Version 4.0.43 hardens SQLite migration, excludes retired instances from current

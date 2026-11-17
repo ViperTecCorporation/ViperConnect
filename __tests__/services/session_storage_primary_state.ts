@@ -79,7 +79,9 @@ test('legacy prefix maps to the native effective prefix for both export and thre
 })
 
 test('existing history exporter streams actual SQLite native rows without a client or Redis', async () => {
-  const stamp = Date.now() - 10000
+  // Export packets sort by whole seconds. Keep this pagination fixture in one
+  // second instead of occasionally crossing a boundary based on wall-clock ms.
+  const stamp = Math.floor(Date.now() / 1000) * 1000 - 10000
   for (let i = 0; i < 41; i++) await message(String(i).padStart(3, '0'), jid, stamp + i)
   await sdk.stores.contacts(phone).upsert({ jid, lid: jid, phoneNumber: '999123456780', displayName: 'Synthetic contact', lastUpdatedMs: stamp })
   const index = createSqliteHistoryIndex(phone, config, prefix), store: any = { threads: sdk.stores.threads(phone), contacts: sdk.stores.contacts(phone), messages: sdk.stores.messages(phone) }

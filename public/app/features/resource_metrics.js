@@ -1,9 +1,9 @@
-import { escapeHtml as e } from '../core/html.js?v=4.0.43-010277e1';
-import { renderModal } from '../components/modal.js?v=4.0.43-010277e1';
-import { t } from '../core/i18n.js?v=4.0.43-010277e1';
-import { resourceBytes as bytes, resourcePercent as percent, resourceTime as time, renderResourceChart } from './resource_charts.js?v=4.0.43-010277e1';
-import { ResourceControlPanel } from './resource_control.js?v=4.0.43-010277e1';
-import { ResourceLogsPanel } from './resource_logs.js?v=4.0.43-010277e1';
+import { escapeHtml as e } from '../core/html.js?v=4.0.44-f63f46d2';
+import { renderModal } from '../components/modal.js?v=4.0.44-f63f46d2';
+import { t } from '../core/i18n.js?v=4.0.44-f63f46d2';
+import { resourceBytes as bytes, resourcePercent as percent, resourceTime as time, renderResourceChart } from './resource_charts.js?v=4.0.44-f63f46d2';
+import { ResourceControlPanel } from './resource_control.js?v=4.0.44-f63f46d2';
+import { ResourceLogsPanel } from './resource_logs.js?v=4.0.44-f63f46d2';
 const periods = [['1d', '1 dia'], ['7d', '7 dias'], ['30d', '30 dias'], ['90d', '90 dias'], ['max', 'Máx.']];
 export class ResourceMetricsPanel {
     constructor(api, render) {

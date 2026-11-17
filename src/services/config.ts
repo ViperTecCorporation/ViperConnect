@@ -114,6 +114,7 @@ export type Config = {
   server:  string | undefined
   connectionType: connectionType
   zapoWebClientProfile: ZapoWebClientProfile
+  zapoWebVersion: string
   baileysCountryCode: string
   useRedis: boolean
   useS3: boolean
@@ -219,6 +220,7 @@ export const defaultConfig: Config = {
   server: undefined,
   connectionType: 'qrcode',
   zapoWebClientProfile: 'default',
+  zapoWebVersion: '',
   baileysCountryCode: 'BR',
   useRedis: false,
   useS3: false,

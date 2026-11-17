@@ -37,6 +37,7 @@ export interface SessionConfig {
   server?: string
   connectionType?: ConnectionType | 'forward'
   zapoWebClientProfile?: ZapoWebClientProfile
+  zapoWebVersion?: string
   authToken?: string
   proxyUrl?: string
   openaiApiKey?: string

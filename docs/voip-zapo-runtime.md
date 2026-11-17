@@ -110,7 +110,7 @@ As dependencias que formam o caminho de chamada sao:
 | Pacote/componente | Versao | Papel |
 | --- | --- | --- |
 | `zapo-js` | `1.8.1` | cliente Zapo, sessão, transporte e primitivas de protocolo |
-| `@vipertec/zapo-voip` | `1.0.0-viper.6` (`file:vendor/zapo-voip`) | plugin vendorizado de sinalização e mídia VoIP |
+| `@vipertec/zapo-voip` | `1.0.0-viper.7` (`file:vendor/zapo-voip`) | plugin vendorizado de sinalização e mídia VoIP |
 | `libmlow-wasm` | `0.1.1` | encode/decode MLow e RFC Opus selecionado por chamada |
 | `ws` | `^8.21.1` | bridge autenticado com o processo de telefonia |
 | `relay-bridge` | binario Go estatico | UDP, DTLS, SCTP e DataChannel direto com o relay |

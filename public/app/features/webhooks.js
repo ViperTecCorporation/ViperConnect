@@ -1,9 +1,9 @@
-import { icon } from '../components/icons.js?v=4.0.43-010277e1';
-import { renderModal } from '../components/modal.js?v=4.0.43-010277e1';
-import { renderStatus } from '../components/status.js?v=4.0.43-010277e1';
-import { escapeHtml } from '../core/html.js?v=4.0.43-010277e1';
-import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.43-010277e1';
-import { t } from '../core/i18n.js?v=4.0.43-010277e1';
+import { icon } from '../components/icons.js?v=4.0.44-f63f46d2';
+import { renderModal } from '../components/modal.js?v=4.0.44-f63f46d2';
+import { renderStatus } from '../components/status.js?v=4.0.44-f63f46d2';
+import { escapeHtml } from '../core/html.js?v=4.0.44-f63f46d2';
+import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.44-f63f46d2';
+import { t } from '../core/i18n.js?v=4.0.44-f63f46d2';
 const webhookDestination = (webhook) => `${webhook.urlAbsolute || webhook.url || ''}`.trim();
 const isEnabled = (webhook) => webhook.enabled !== false && webhook.disabled !== true && !!webhookDestination(webhook);
 export const renderWebhooks = (webhooks) => `

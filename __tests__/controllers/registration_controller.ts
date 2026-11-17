@@ -29,6 +29,46 @@ const response = () => {
 describe('RegistrationController connection type policy', () => {
   beforeEach(() => { jest.clearAllMocks(); setConfigMock.mockReset(); storedConfigMock.mockReset(); (sessionStorageRpc as jest.Mock).mockReset().mockResolvedValue({ backend: 'redis' }); jest.mocked(confirmSessionStorageProvision).mockReset().mockResolvedValue({ id: 'synthetic', owner: 'server_1', backend: 'redis', generation: 0 }) })
 
+  test.each([[' 2.3000.123 ', '2.3000.123'], ['', ''], [null, '']])('normalizes and persists a manual Web version before requesting reload: %j', async (input, expected) => {
+    let saved: any = { ...defaultConfig, provider: 'zapo', zapoWebVersion: '2.3000.111' }
+    storedConfigMock.mockImplementation(async () => saved)
+    setConfigMock.mockImplementation(async (_phone, patch) => { saved = { ...saved, ...patch } })
+    const reload = mockDeep<Reload>(); reload.run.mockResolvedValue(undefined)
+    const controller = new RegistrationController(async () => saved, reload, mockDeep<Logout>()), res = response()
+    await controller.register({ params: { phone: '999123456780' }, body: { zapoWebVersion: input }, headers: {}, query: {} } as any, res)
+    expect(res.status).toHaveBeenCalledWith(200)
+    expect(saved.zapoWebVersion).toBe(expected)
+    expect(reload.run).toHaveBeenCalledTimes(1)
+  })
+
+  test('omitting a Web version preserves the saved override', async () => {
+    let saved: any = { ...defaultConfig, provider: 'zapo', zapoWebVersion: '2.3000.111' }
+    storedConfigMock.mockImplementation(async () => saved)
+    setConfigMock.mockImplementation(async (_phone, patch) => { saved = { ...saved, ...patch } })
+    const reload = mockDeep<Reload>(); reload.run.mockResolvedValue(undefined)
+    const controller = new RegistrationController(async () => saved, reload, mockDeep<Logout>())
+    await controller.register({ params: { phone: '999123456781' }, body: { label: 'Changed' }, headers: {}, query: {} } as any, response())
+    expect(saved.zapoWebVersion).toBe('2.3000.111')
+    expect(setConfigMock.mock.calls[0][1]).not.toHaveProperty('zapoWebVersion')
+  })
+
+  test.each(['auto', '2.3', '2.3000.4294967296', false, [], {}])('invalid Web version is rejected before storage or reload: %j', async input => {
+    const reload = mockDeep<Reload>()
+    const controller = new RegistrationController(async () => ({ ...defaultConfig, provider: 'zapo' }), reload, mockDeep<Logout>()), res = response()
+    await controller.register({ params: { phone: '999123456782' }, body: { zapoWebVersion: input }, headers: {}, query: {} } as any, res)
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(res.json).toHaveBeenCalledWith({ status: 'error', message: 'zapo_web_version_invalid' })
+    expect(setConfigMock).not.toHaveBeenCalled(); expect(reload.run).not.toHaveBeenCalled()
+  })
+
+  test('Mobile Primary refuses a Web version override without persisting or reconnecting', async () => {
+    const reload = mockDeep<Reload>()
+    const controller = new RegistrationController(async () => ({ ...defaultConfig, provider: 'zapo', mobilePrimaryDraftId: 'synthetic' }), reload, mockDeep<Logout>()), res = response()
+    await controller.register({ params: { phone: '999123456783' }, body: { zapoWebVersion: '2.3000.123' }, headers: {}, query: {} } as any, res)
+    expect(res.status).toHaveBeenCalledWith(409)
+    expect(setConfigMock).not.toHaveBeenCalled(); expect(reload.run).not.toHaveBeenCalled()
+  })
+
   test.each(['sqlite', 'redis'])('new QR selects the owner-confirmed %s backend before enabling automatic connection', async backend => {
     const phone = backend === 'sqlite' ? '5566000000194' : '5566000000195', steps: string[] = []
     let saved: any

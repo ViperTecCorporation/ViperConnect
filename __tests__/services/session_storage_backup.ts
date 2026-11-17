@@ -1,14 +1,15 @@
-import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { SessionSqliteBackups, snapshotSqlite, SqliteBackupManifest } from '../../src/services/session_storage/backup'
 import { assertSqliteWalSafeVersion } from '../../src/services/session_storage/sqlite_safety'
-import { decodeBackupStream } from '../../src/services/session_storage/backup_stream'
+import { decodeBackupStream, encodeBackupStream } from '../../src/services/session_storage/backup_stream'
 import { encryptSessionStream } from '../../src/services/session_transfer/archive_stream'
 
 const Database = module.require('node:sqlite').DatabaseSync
+const files: typeof import('node:fs/promises') = module.require('node:fs/promises')
 const phone = '999123456789', password = 'synthetic-backup-password'
 let directory: string, db: any
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'viper-backup-test-')); db = new Database(join(directory, 'session.sqlite')); assertSqliteWalSafeVersion(db.prepare('SELECT sqlite_version() AS version').get()?.version); db.exec('PRAGMA journal_mode=WAL'); db.exec('CREATE TABLE ids(provider TEXT PRIMARY KEY, uno TEXT, secret BLOB, expires_at INTEGER)'); db.prepare('INSERT INTO ids VALUES (?,?,?,?)').run('PROVIDER', 'UNO', Buffer.from([0, 255, 1]), 1999999999999) })
@@ -85,6 +86,30 @@ test('readback transport failure does not publish a ready manifest', async () =>
   expect(f.index.put).not.toHaveBeenCalled()
 })
 
+test('releases the uploaded snapshot before readback and never creates a second SQLite image', async () => {
+  const f = fixture(), temporary = jest.spyOn(files, 'mkdtemp'), originalOpen = f.store.open.getMockImplementation()!
+  let backupDirectory = ''
+  f.store.open.mockImplementationOnce(async key => {
+    backupDirectory = await temporary.mock.results[0].value
+    const names = await readdir(backupDirectory)
+    expect(names).not.toContain('snapshot.sqlite'); expect(names).not.toContain('verified.sqlite')
+    return originalOpen(key)
+  })
+  f.index.put.mockImplementationOnce(async manifest => {
+    expect((await readdir(backupDirectory)).some(name => name === 'snapshot.sqlite' || name === 'verified.sqlite')).toBe(false)
+    f.manifests.set(manifest.id, manifest)
+  })
+  try {
+    const manifest = await f.service.backup(f.input)
+    expect(f.manifests.has(manifest.id)).toBe(true)
+    await expect(stat(backupDirectory)).rejects.toHaveProperty('code', 'ENOENT')
+    const destination = join(directory, 'independent-restore.sqlite')
+    await f.service.restore({ phone, backupId: manifest.id, stagedPath: destination })
+    const copy = new Database(destination, { readOnly: true })
+    try { expect(copy.prepare('SELECT * FROM ids').get()).toEqual(db.prepare('SELECT * FROM ids').get()) } finally { copy.close() }
+  } finally { temporary.mockRestore() }
+})
+
 test('restore rejects a different session, legacy wrong/missing key, truncated object and pre-existing destination', async () => {
   const f = fixture(), good = await f.service.backup(f.input), output = join(directory, 'restored.sqlite')
   await expect(f.service.restore({ phone: '999987654321', backupId: good.id, password, stagedPath: output })).rejects.toThrow('session_storage_backup_not_found')
@@ -122,4 +147,22 @@ test('backup refuses missing mobile registration, wrong backend and transitional
   await expect(f.service.backup({ ...f.input, storage: { ...f.input.storage, backend: 'redis' } })).rejects.toThrow('session_storage_backup_requires_sqlite')
   await expect(f.service.backup({ ...f.input, storage: { ...f.input.storage, state: 'migrating' } })).rejects.toThrow('session_storage_backup_requires_sqlite')
   expect(f.store.save).not.toHaveBeenCalled()
+})
+
+test('a non-SQLite source cannot reach upload/readback/publication', async () => {
+  const f = fixture(), invalid = join(directory, 'invalid-source.sqlite')
+  await writeFile(invalid, Buffer.from('synthetic non-SQLite source'))
+  await expect(f.service.backup({ ...f.input, path: invalid })).rejects.toThrow()
+  expect(f.store.save).not.toHaveBeenCalled(); expect(f.store.open).not.toHaveBeenCalled(); expect(f.index.put).not.toHaveBeenCalled()
+})
+
+test('actual restore still rejects a non-SQLite image even with matching size, SHA, metadata and valid footer', async () => {
+  const f = fixture(), good = await f.service.backup(f.input), data = Buffer.from('synthetic matching-digest non-database')
+  const manifest = { ...good, bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') }
+  const meta = { kind: 'sqlite-session', version: 1, manifest, supplement: {} }, chunks: Buffer[] = []
+  for await (const chunk of encodeBackupStream(meta, (async function* () { yield { offset: 0, data: data.toString('base64') } })())) chunks.push(chunk)
+  f.objects.set(manifest.objectKey, Buffer.concat(chunks)); f.manifests.set(manifest.id, manifest)
+  const target = join(directory, 'invalid-restore.sqlite')
+  await expect(f.service.restore({ phone, backupId: manifest.id, stagedPath: target })).rejects.toThrow()
+  await expect(stat(target)).rejects.toHaveProperty('code', 'ENOENT')
 })

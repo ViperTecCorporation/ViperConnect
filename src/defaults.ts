@@ -44,6 +44,8 @@ export const FETCH_TIMEOUT_MS = parseInt(process.env.FETCH_TIMEOUT_MS || '6000')
 export const CONNECTION_TYPE = process.env.CONNECTION_TYPE || 'qrcode'
 export const WHATSAPP_ENGINE = process.env.WHATSAPP_ENGINE || process.env.UNOAPI_WHATSAPP_ENGINE || 'zapo'
 export const UNOAPI_WORKER_ENGINE = process.env.UNOAPI_WORKER_ENGINE || 'zapo'
+// Manual Web protocol override. Mobile Primary keeps its persisted appVersion.
+export const ZAPO_WEB_VERSION = process.env.ZAPO_WEB_VERSION || ''
 export const PASSKEY_BRIDGE_TTL_SECONDS = parseInt(process.env.PASSKEY_BRIDGE_TTL_SECONDS || '120')
 
 export const CONSUMER_TIMEOUT_MS = parseInt(process.env.CONSUMER_TIMEOUT_MS || '450000')

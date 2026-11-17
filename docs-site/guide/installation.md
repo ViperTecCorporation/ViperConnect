@@ -65,6 +65,38 @@ token, os volumes são persistentes e os workers necessários estão saudáveis.
 Telefonia e worker de vídeo podem ser validados separadamente do primeiro envio
 de texto.
 
+## Versão 4.0.44
+
+A 4.0.44 inicia com WhatsApp Web `2.3000.1054816457`, aceita override no Manager
+ou `ZAPO_WEB_VERSION` e habilita recuperação 405 da Zapo sem reconexão paralela.
+Mobile Primary mantém sua política e versão persistida, sem override Web. A verificação de
+backup SQLite usa readback por streaming, sem um segundo arquivo de restore;
+restauração real continua exigindo `quick_check`. O plugin VoIP `.7` melhora a
+seleção do dispositivo SRTP e inclui diagnóstico limitado, sem comprovar que
+todos os casos de silêncio estejam resolvidos.
+
+Integra Zapo **1.11.0**, plugin **1.0.0-viper.7** e serviço VoIP **0.1.72**,
+revisão imutável `5c1c3847feaa8f104140a94ffa00175e855a5746`. O serviço separado
+tem o mesmo runtime SIP/WebRTC/RTP da 0.1.71; a mudança SRTP está no worker.
+Veja as [notas da versão](https://github.com/ViperTecCorporation/ViperConnect/blob/v4.0.44/docs/release-4.0.44.md)
+e a [release](https://github.com/ViperTecCorporation/ViperConnect/releases/tag/v4.0.44).
+Publicar não faz deploy nem remove hostpaths. Antes de implantar, confira os
+workflows e retire de forma coordenada somente os overlays equivalentes já
+incorporados, preservando dados, backups e rollback.
+
+Override opcional no **worker Zapo** (não basta definir no container web):
+
+```yaml
+environment:
+  ZAPO_WEB_VERSION: "2.3000.1054816457"
+```
+
+Ausente/vazio usa o padrão do código. No Linux nativo, use a mesma ENV no
+serviço do worker. Recrie/reinicie o worker para ler uma ENV alterada. O valor
+salvo na sessão no Manager tem prioridade; limpe-o para herdar a ENV. Com
+recuperação ativa, essa versão é inicial, não um pin absoluto. Veja
+[versão e reconexão](/guide/concepts#versão-whatsapp-e-reconexão).
+
 ## Versão 4.0.43
 
 A 4.0.43 consolida SQLite e migrações, corrige os cards de instâncias antigas e

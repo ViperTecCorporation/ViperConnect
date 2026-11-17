@@ -540,6 +540,11 @@ manutenção ou recuperação.
 
 ### Consumo de memória no backup
 
+Os backups de sessões são serializados no processo proprietário: chamadas
+automáticas, manuais e de migração passam pela mesma fila, uma sessão por vez.
+Isso não limita o uso total de RAM do worker nem impede outro worker de cuidar
+dos backups das suas próprias sessões.
+
 O worker faz o snapshot SQLite em disco e lê blocos de 256 KiB. O arquivo é
 codificado por frames limitados e enviado ao S3 por multipart com uma parte de
 5 MiB em voo. A fila intermediária conta bytes, com high-water mark de 256 KiB,
@@ -552,9 +557,29 @@ buffer do Node. O Linux pode manter páginas de snapshots/arquivos temporários
 no cache, contabilizadas no cgroup do worker. Compare RSS/heap/buffers do
 processo com `file`/`inactive_file`/`anon`, swap e eventos OOM; não trate todo o
 cgroup como heap, nem todo cache inativo como memória livre garantida.
-Temporários são fechados e removidos ao concluir ou falhar. A validação por
-readback permanece obrigatória; finalização da origem pode exigir outra
-verificação antes de apagar chaves Redis. Não há limpeza global de cache do SO.
+Depois do upload completo, o snapshot temporário é removido **antes** de baixar
+o objeto para validação. O readback valida por streaming o formato, metadados,
+offsets, tamanho e SHA-256 de todos os bytes contra o manifesto local. Não cria
+um segundo `verified.sqlite`: o snapshot original já passou pelo `quick_check`
+do SQLite e o hash confirma que a imagem recuperada é idêntica. Um erro impede
+`ready` e preserva o recibo anterior. O formato `.viperstorage` não muda.
+
+Uma restauração real continua reconstruindo o arquivo e executando o
+`quick_check` antes de aceitá-lo; não aceita um banco apenas porque o hash de
+um arquivo enviado pelo operador está correto. A finalização de migração pode
+exigir outra restauração/fingerprint antes de apagar chaves Redis. Temporários
+são fechados e removidos ao concluir ou falhar. Não há limpeza global de cache
+do SO, exigência de root ou garantia de um teto fixo de RAM: snapshot, bancos
+ativos e restauração real ainda podem aquecer o cache do kernel.
+
+Comparação sintética local: `node scripts/verify-session-backup-cache.cjs 128`.
+Exige a imagem e o volume compilado do laboratório Docker. Compara o código da
+tag `v4.0.43` com o build local, usando banco artificial, armazenamento HTTP
+isolado e restauração independente nos dois casos. Não usa sessões nem S3 reais
+e remove apenas seus containers/rede. O padrão é 128 MiB (máximo 256 MiB) para
+preservar a folga do DEV compartilhado. Observe o pico **da verificação** e o
+pico do backup inteiro separadamente; tamanho do banco e redução nessa fixture
+não são uma garantia de consumo para produção ou para outro tamanho de banco.
 
 ### Pelo painel, sem terminal
 
@@ -728,7 +753,8 @@ pública de download.
 
 O pacote inclui banco, cópia da configuração da sessão e, no
 Mobile Primary, suplemento de registro/dispositivos. Só é publicado como `ready`
-após leitura de volta e restauração verificada do objeto S3. A configuração é
+após validar o snapshot SQLite e confirmar por leitura de volta que o objeto
+S3 contém exatamente a mesma imagem e os mesmos metadados. A configuração é
 material de recuperação: o restore offline não reaplica tokens, webhooks, donos
 ou conexão automática. Arquivos de mídia continuam no S3; chaves próprias do
 Mobile Primary ou de outros serviços exigem guarda segura independente quando

@@ -1,6 +1,10 @@
 export type AppLocale = 'pt-BR' | 'en'
 
 const english = {
+  'Versão WhatsApp Web': 'WhatsApp Web version',
+  'Padrão do worker (ENV ou código)': 'Worker default (ENV or code)',
+  'Mobile Primary mantém a versão do aparelho.': 'Mobile Primary keeps the device app version.',
+  'Opcional. Vazio usa ZAPO_WEB_VERSION ou o padrão do código. Salvar solicita reconexão desta sessão.': 'Optional. Empty uses ZAPO_WEB_VERSION or the code default. Saving requests a reconnect of this session.',
   'Ver detalhes': 'View details',
   'Ações do serviço': 'Service actions',
   'Conectando…': 'Connecting…',

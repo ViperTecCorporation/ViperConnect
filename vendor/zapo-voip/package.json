@@ -1,6 +1,6 @@
 {
     "name": "@vipertec/zapo-voip",
-    "version": "1.0.0-viper.6",
+    "version": "1.0.0-viper.7",
     "description": "Vendored Zapo VoIP plugin maintained inside ViperConnect",
     "private": true,
     "license": "MIT",

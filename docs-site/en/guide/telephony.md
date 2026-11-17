@@ -237,6 +237,47 @@ Zapo owns the session, public Meow Caller contracts are used as wire references,
 and ViperConnect adds the PCM bridge, codec policy, dual-stack handling,
 recovery and safe telemetry.
 
+### Peer device identity and media authentication
+
+The worker derives receive SRTP keys for the remote device confirmed by call
+signaling. A linked device answering as, for example, `:42@lid` takes priority
+over a generic or stale relay participant belonging to the same account. The
+specific device from an incoming offer is preserved too. This prevents
+`SRTP auth tag verification failed` when the primary handset works but a linked
+device does not.
+
+Selection requires the same base identity and domain. It neither guesses device
+IDs nor infers PN/LID aliases, and preserves local sending identity, existing
+participant aliases, SRTP authentication and replay protection. No new ENV,
+credential recovery or app update is required. `voip_diag srtp_key_identity`
+logs public identities and indicators, never cryptographic keys.
+
+For silence despite valid SRTP, `voip_diag peer_audio_signaling` records only
+the codec/rate advertised at answer time. `voip_diag audio_pipeline` and the final
+`mediaDiagnostics` report TX/RX counts, sample counts, amplitude peaks, total
+packet size and a bounded codec-header TOC histogram. Periodic logging occurs
+on the first and each hundredth frame per direction. No PCM, voice payload,
+recording or key is retained; authenticated packets do not prove audible speech.
+
+In the 2026-11-16 control, native WhatsApp Windows failed while the comparison
+contact's browser and phone worked. A decoder in the wrong mode can accept
+packets and produce silence without errors; TOC, silence and application names
+are not safe Opus/MLow detectors. Version 4.0.44 retains the current codec
+selection and does not claim this Windows case is fixed. Further diagnostics
+and a canary remain pending; executable analysis may help but cannot replace
+real-call validation.
+
+The fix belongs to the plugin in the **Zapo worker**, not to the SIP/WebRTC
+telephony process. A test hostpath must contain only its CJS/ESM files, be
+read-only and include mount rollback instructions. Loading it requires recreating
+the worker with no active calls or storage backup/migration, while preserving
+volumes, image and unrelated configuration. A Portainer stack update may remove
+an overlay not incorporated into the stack definition.
+
+Validate incoming/outgoing calls with two-way audio, primary and linked devices,
+and multiple contacts. Synthetic cryptographic checks and Online status do not
+prove real audible media.
+
 ## ViperChat call events
 
 In Manager, an administrator opens **Telephony → Companies → Edit** and configures

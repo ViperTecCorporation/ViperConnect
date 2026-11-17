@@ -54,6 +54,11 @@ export const renderSessionConfig = (session: SessionConfig, restricted = false):
           <small>${t('Para trocar o perfil, execute deregister e registre a sessão novamente.')}</small>
         </div>
         <label class="field field--connection-peer">
+          <span class="field-label">${t('Versão WhatsApp Web')}</span>
+          <input name="zapoWebVersion" value="${escapeHtml(session.zapoWebVersion || '')}" maxlength="54" pattern="[0-9]+([.][0-9]+){2,4}" placeholder="${t('Padrão do worker (ENV ou código)')}" ${session.mobilePrimaryDraftId ? 'disabled' : ''}>
+          <small>${session.mobilePrimaryDraftId ? t('Mobile Primary mantém a versão do aparelho.') : t('Opcional. Vazio usa ZAPO_WEB_VERSION ou o padrão do código. Salvar solicita reconexão desta sessão.')}</small>
+        </label>
+        <label class="field field--connection-peer">
           <span class="field-label">${t('Servidor')}</span>
           <input name="server" value="${escapeHtml(session.server || 'server_1')}">
           <small aria-hidden="true">&nbsp;</small>
@@ -150,6 +155,7 @@ export const sessionConfigPayload = (data: FormData, restricted = false): Record
     label: `${data.get('label') || ''}`.trim(),
     connectionType: `${data.get('connectionType') || 'qrcode'}`,
     zapoWebClientProfile: `${data.get('zapoWebClientProfile') || 'default'}`,
+    ...(data.has('zapoWebVersion') ? { zapoWebVersion: `${data.get('zapoWebVersion') || ''}`.trim() } : {}),
     server: `${data.get('server') || 'server_1'}`.trim(),
     proxyUrl: `${data.get('proxyUrl') || ''}`.trim(),
     authToken: `${data.get('authToken') || ''}`,

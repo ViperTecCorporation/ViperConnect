@@ -1,7 +1,7 @@
 import { SendError } from './send_error'
 
 const protectedFields = new Set(['server', 'provider', 'owner', 'workerid', 'storageid', 'generation', 'storage', 'basestore',
-  'getstore', 'useredis', 'uses3', 'connectiontype', 'zapowebclientprofile', 'coexistenceenabled',
+  'getstore', 'useredis', 'uses3', 'connectiontype', 'zapowebclientprofile', 'zapowebversion', 'coexistenceenabled',
   'getmessagemetadata', 'shouldignorejid', 'shouldignorekey', 'custommessagecharactersfunction', '__proto__', 'prototype', 'constructor'])
 
 /** Template commands are public configuration patches, never storage/lifecycle control. */

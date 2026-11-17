@@ -4,7 +4,13 @@ A UnoAPI usa o pacote `@vipertec/zapo-voip`, mantido diretamente em
 `vendor/zapo-voip` dentro do ViperConnect. Ele nao depende de acompanhar um fork
 completo do repositorio Zapo.
 
-Versão atualmente integrada: `1.0.0-viper.6`.
+Versão atualmente integrada: `1.0.0-viper.7`.
+
+A revisão `.7` prioriza o dispositivo remoto confirmado no atendimento para
+derivar SRTP, preservando identidade base/domínio e validação criptográfica.
+Inclui diagnóstico numérico limitado de TX/RX e codec, sem áudio ou chaves.
+Uma chamada Web de controle funcionou; continua pendente repetir o canário
+do contato Web que apresentou silêncio. Não anuncia correção geral de áudio.
 
 O pacote e incorporado ao build por `file:vendor/zapo-voip`. A pasta contem o
 codigo-fonte auditavel e o `dist` usado em producao, tornando a imagem

@@ -62,6 +62,7 @@ export declare class WaCallMediaSession implements AudioSender {
     private audioSendCount;
     private audioDropCount;
     private realAudioSendCount;
+    private audioDiagnostics;
     private static readonly EMPTY_BYTES;
     private encodeBufferA;
     private encodeBufferB;
@@ -118,6 +119,8 @@ export declare class WaCallMediaSession implements AudioSender {
     private get encodeFrameSamples();
     private get rtpTsDelta();
     private sendOpusFrame;
+    /** Bounded numeric metadata only; never retains PCM, payloads or keys. */
+    private noteAudioFrame;
     private initSrtpKeys;
     private resetEncodeState;
     private sendPendingAccept;

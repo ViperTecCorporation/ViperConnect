@@ -69,6 +69,15 @@ const REMOTE_MEDIA_CONTROL_STARTUP_TIMEOUT_MS = 3000
 const REMOTE_MEDIA_ESTABLISHED_AUDIO_FRAMES = 10
 const INBOUND_PCM_FRAME_SAMPLES = 960
 
+interface AudioFrameDiagnostics {
+    frames: number
+    nonZeroFrames: number
+    maxPeak: number
+    samples: number
+    payloadBytes: number
+    tocCounts: Record<string, number>
+}
+
 export interface WaCallMediaSessionDelegate {
     emitState(call: CallInfo): void
     emitIncoming(call: CallInfo): void
@@ -135,6 +144,7 @@ export class WaCallMediaSession implements AudioSender {
     private audioSendCount = 0
     private audioDropCount = 0
     private realAudioSendCount = 0
+    private audioDiagnostics: Partial<Record<'tx' | 'rx', AudioFrameDiagnostics>> = {}
 
     private static readonly EMPTY_BYTES = EMPTY_BYTES
 
@@ -460,6 +470,16 @@ export class WaCallMediaSession implements AudioSender {
 
         const callId = this.info.callId
         const acceptingDeviceJid = peerJid
+        try {
+            this.logger.debug('voip_diag peer_audio_signaling', {
+                callId,
+                acceptingDeviceJid,
+                audio: getNodeChildrenByTag(nodeInfo.innerNode, 'audio').slice(0, 4).map(child => ({
+                    encoding: String(child.attrs.enc || '').slice(0, 16),
+                    rate: String(child.attrs.rate || '').slice(0, 16)
+                }))
+            })
+        } catch { /* Signaling must not depend on the diagnostic sink. */ }
         const credentials = this.deps.authClient.getCurrentCredentials()
         const ourBaseJids = new Set(
             [credentials?.meLid, credentials?.meJid]
@@ -1215,6 +1235,7 @@ export class WaCallMediaSession implements AudioSender {
 
             try {
                 const opusFrame = this.opusCodec.encode(frameData)
+                this.noteAudioFrame('tx', frameData, opusFrame)
                 this.sendOpusFrame(opusFrame, false)
                 this.realAudioSendCount++
             } catch (err: unknown) {
@@ -1239,7 +1260,8 @@ export class WaCallMediaSession implements AudioSender {
             sent: this.audioSendCount,
             dropped: this.audioDropCount,
             opusOk: opusStats?.success ?? 0,
-            opusErr: opusStats?.errors ?? 0
+            opusErr: opusStats?.errors ?? 0,
+            mediaDiagnostics: this.audioDiagnostics
         })
 
         this.audioEngine.setOnAudioFinished(null)
@@ -1259,6 +1281,7 @@ export class WaCallMediaSession implements AudioSender {
 
         this.audioSendCount = 0
         this.audioDropCount = 0
+        this.audioDiagnostics = {}
         this.audioRecvCount = 0
         this.srtpErrorCount = 0
         this.pcmDeliveryErrorCount = 0
@@ -1440,6 +1463,34 @@ export class WaCallMediaSession implements AudioSender {
         }
     }
 
+    /** Bounded numeric metadata only; never retains PCM, payloads or keys. */
+    private noteAudioFrame(leg: 'tx' | 'rx', pcm: Float32Array, packet: Uint8Array): void {
+        this.audioDiagnostics ||= {}
+        const stats = this.audioDiagnostics[leg] ||= {
+            frames: 0, nonZeroFrames: 0, maxPeak: 0, samples: 0, payloadBytes: 0,
+            tocCounts: Object.create(null)
+        }
+        let peak = 0
+        for (const sample of pcm) if (Number.isFinite(sample)) peak = Math.max(peak, Math.abs(sample))
+        stats.frames++
+        if (peak > 0) stats.nonZeroFrames++
+        stats.maxPeak = Math.max(stats.maxPeak, peak)
+        stats.samples += pcm.length
+        stats.payloadBytes += packet.length
+        if (packet.length) {
+            const toc = packet[0].toString(16).padStart(2, '0')
+            stats.tocCounts[toc] = (stats.tocCounts[toc] || 0) + 1
+        }
+        if (stats.frames === 1 || stats.frames % 100 === 0) {
+            try {
+                this.logger.debug('voip_diag audio_pipeline', {
+                    callId: this.info.callId, leg, codecMode: this.voipSettings?.codecMode,
+                    ...stats, tocCounts: { ...stats.tocCounts }
+                })
+            } catch { /* Diagnostics must not discard an audio frame. */ }
+        }
+    }
+
     private initSrtpKeys(receiveCallKey?: Uint8Array): void {
         const callKey = this.info.encryptionKey
         if (!callKey) {
@@ -1465,6 +1516,17 @@ export class WaCallMediaSession implements AudioSender {
             })
             if (peerFromParticipants) rawPeerJid = peerFromParticipants
         }
+        // Relay allocations may still name the base/primary participant after a
+        // linked device answers. Its authenticated signaling identity must win
+        // within that same account, without guessing devices or PN/LID aliases.
+        const peerBaseJid = toUserJid(rawPeerJid)
+        const confirmedDeviceJid = [this.acceptedByJid, this.info.peerJid].find(
+            (jid): jid is string =>
+                !!jid &&
+                jid.split('@', 1)[0].includes(':') &&
+                toUserJid(jid) === peerBaseJid
+        )
+        if (confirmedDeviceJid) rawPeerJid = confirmedDeviceJid
         const peerDeviceJid = formatE2ESrtpParticipantId(rawPeerJid)
 
         try {
@@ -1672,6 +1734,7 @@ export class WaCallMediaSession implements AudioSender {
             }
 
             audioData = this.opusCodec.decode(opusPayload)
+            this.noteAudioFrame('rx', audioData, opusPayload)
 
             if (this.audioRecvCount % 100 === 0) {
                 const stats = this.opusCodec.getStats()

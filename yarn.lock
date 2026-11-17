@@ -1922,7 +1922,7 @@
   integrity sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==
 
 "@vipertec/zapo-voip@file:vendor/zapo-voip":
-  version "1.0.0-viper.6"
+  version "1.0.0-viper.7"
 
 "@wasm-audio-decoders/common@9.0.7":
   version "9.0.7"

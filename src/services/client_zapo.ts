@@ -83,21 +83,23 @@ import { recordSessionMessageEvent } from './messages/session_message_events'
 import { publishOwnedSqliteConnectionState } from './session_storage/connection_state'
 import { getRedis, clearConnectCount } from './redis'
 import { withZapoWebClientProfile, zapoWebClientDeviceOptions, zapoWebClientProfileLabel } from './zapo/zapo_web_client_profile'
+import { resolveZapoConnectionPolicy } from './zapo/zapo_connection_policy'
+import { guardZapoSdkConnect, ZapoSdkRecovery, type ZapoConnectRunner } from './zapo/zapo_sdk_recovery'
 
 type VoipCoordinator = ReturnType<ReturnType<typeof voipPlugin>['setup']>
 type ZapoClient = WaClientType & {
   voip: VoipCoordinator
   on(event: 'voip_call_incoming', listener: (call: CallInfo) => void): ZapoClient
 }
-type ClientFactory = (options: ConstructorParameters<typeof ZapoWaClient>[0]) => ZapoClient
+type ClientFactory = (options: ConstructorParameters<typeof ZapoWaClient>[0], runConnect: ZapoConnectRunner) => ZapoClient
 type LeaseFactory = (phone: string) => RedisLease
 
-const defaultClientFactory: ClientFactory = (options) =>
-  new ZapoWaClient(options, observeStorageDrain(companionDiagnosticLogger(
+const defaultClientFactory: ClientFactory = (options, runConnect) =>
+  guardZapoSdkConnect(new ZapoWaClient(options, observeStorageDrain(companionDiagnosticLogger(
     new PinoLogger(logger.child({ scope: 'zapo' }), 'error'),
     !!options.companionHost && process.env.MOBILE_PRIMARY_DIAGNOSTICS === 'true',
     options.sessionId || '',
-  ), options.sessionId || '')) as ZapoClient
+  ), options.sessionId || '')) as ZapoClient, runConnect)
 const mediaMessageKeys = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage', 'stickerMessage', 'ptvMessage'] as const
 const ZAPO_HISTORY_DEDUP_MAX_IDS = 100_000
 const ZAPO_HISTORY_DEDUP_TTL_MS = 30 * 24 * 60 * 60 * 1_000
@@ -142,6 +144,8 @@ export class ClientZapo implements Client {
   private readonly lifecycleObserver = new SessionLifecycleObserver()
   private readonly transportWatchdog = new ZapoTransportWatchdog()
   private transportRecovery?: Promise<void>
+  private sdkRecovery?: ZapoSdkRecovery
+  private statusWrites: Promise<void> = Promise.resolve()
   private readonly acceptedEvents = new SessionEventBarrier()
   private acceptingEvents = true
 
@@ -202,6 +206,12 @@ export class ClientZapo implements Client {
   }
 
   private async setSessionStatus(status: 'online' | 'offline' | 'disconnected' | 'connecting') {
+    const task = this.statusWrites.catch(() => undefined).then(() => this.persistSessionStatus(status))
+    this.statusWrites = task
+    await task
+  }
+
+  private async persistSessionStatus(status: 'online' | 'offline' | 'disconnected' | 'connecting') {
     if (this.config.useRedis && this.config.sessionStorage?.backend === 'sqlite') {
       if (!this.lease) return
       const redis = await getRedis()
@@ -269,8 +279,10 @@ export class ClientZapo implements Client {
   }
 
   private async handleConnectionFailure(client: ZapoClient, error: unknown) {
-    logger.error(error as any, 'Zapo connection failed for %s', this.phone)
     if (this.socket !== client) return
+    if (this.sdkRecovery?.active) return
+    logger.error(error as any, 'Zapo connection failed for %s', this.phone)
+    this.sdkRecovery?.cancel()
     if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, {
       reason: 'connection_failed', intentional: this.intentionalDisconnect, reconnect_expected: !this.intentionalDisconnect,
     })
@@ -409,7 +421,8 @@ export class ClientZapo implements Client {
     return request
   }
 
-  private bindEvents(client: ZapoClient, resolvePrompt: () => void, generation: number) {
+  private bindEvents(client: ZapoClient, resolvePrompt: () => void, generation: number, recovery: ZapoSdkRecovery, sdkVersionRecovery: boolean) {
+    let connectionEventRevision = 0
     const isCurrent = () => this.socket === client && this.connectionGeneration === generation && !this.intentionalDisconnect
     const onCurrent = (event: any, handler: (...args: any[]) => any) =>
       client.on(event, (...args: any[]) => {
@@ -466,10 +479,12 @@ export class ClientZapo implements Client {
       ).catch((error) => logger.warn(error as any, 'Could not emit Zapo passkey status for %s', this.phone))
     })
     onCurrent('connection', async (event) => {
+      const revision = ++connectionEventRevision
+      const isCurrentEvent = () => isCurrent() && revision === connectionEventRevision
       if (event.status === 'open') {
         const credentials = client.getCredentials()
         if (credentials) await this.zapoSession?.auth.save(credentials)
-        if (!isCurrent()) return
+        if (!isCurrentEvent()) return
         const registered = clients.get(this.phone)
         if (registered && registered !== this) {
           logger.warn('Discarding duplicate Zapo socket for %s after reconnect race', this.phone)
@@ -479,6 +494,7 @@ export class ClientZapo implements Client {
         }
         clients.set(this.phone, this)
         this.connected = true
+        recovery.complete()
         this.transportWatchdog.start(
           () => client.getState().connected,
           () => isCurrent() && !this.intentionalDisconnect,
@@ -496,6 +512,7 @@ export class ClientZapo implements Client {
         this.voiceBridge?.start()
         this.reconnectAttempts = 0
         await this.setSessionStatus('online')
+        if (!isCurrentEvent()) return
         await this.emitStatus(`Connected with ${this.phone} using Zapo`).catch((error) => {
           logger.warn(error as any, 'Could not emit Zapo connected status for %s', this.phone)
         })
@@ -503,6 +520,9 @@ export class ClientZapo implements Client {
         if (event.isNewLogin) await this.onNewLogin(this.phone)
         return
       }
+      const sdkRecovers = sdkVersionRecovery && event.reason === 'failure_client_too_old' && !event.isLogout
+      if (sdkRecovers && !recovery.begin()) return
+      if (!sdkRecovers) recovery.cancel()
       // Log only the provider's diagnostic fields, never the raw connection event.
       logger.warn({
         phone: this.phone,
@@ -521,12 +541,17 @@ export class ClientZapo implements Client {
         reconnect_expected: !event.isLogout && !this.intentionalDisconnect,
       })
       this.presenceHeartbeat.stop()
+      this.transportWatchdog.stop()
       this.voiceBridge?.stop(event.isLogout ? 'session_unlinked' : 'connection_closed')
       this.pendingPasskey?.reject(new SendError(502, event.isLogout ? 'zapo_passkey_session_unlinked' : 'zapo_passkey_connection_closed'))
       try {
         await this.setSessionStatus(event.isLogout ? 'disconnected' : 'offline')
       } finally {
-        if (this.socket === client && !this.intentionalDisconnect) {
+        if (sdkRecovers && isCurrent()) {
+          // Keep socket, generation and exclusive lease while SDK fetches/reconnects.
+          // The connect gate waits for this offline write before allowing an open.
+          recovery.ready()
+        } else if (this.socket === client && !this.intentionalDisconnect) {
           this.connectionGeneration += 1
           this.socket = undefined
           this.messages = undefined
@@ -537,7 +562,7 @@ export class ClientZapo implements Client {
           this.pairingCodeIssued = false
           this.socketAbort.abort()
           await this.releaseRuntimeOwnership()
-          if (!event.isLogout) this.scheduleReconnect()
+          if (!event.isLogout) this.scheduleReconnect(event.reason === 'failure_client_too_old' ? 60_000 : 0)
         }
       }
     })
@@ -890,10 +915,10 @@ export class ClientZapo implements Client {
     }
   }
 
-  private scheduleReconnect() {
+  private scheduleReconnect(minimumDelayMs = 0) {
     if (this.intentionalDisconnect || this.reconnectTimer) return
     const attempt = this.reconnectAttempts++
-    const delay = zapoReconnectDelay(attempt, this.config.retryRequestDelayMs)
+    const delay = Math.max(minimumDelayMs, zapoReconnectDelay(attempt, this.config.retryRequestDelayMs))
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined
       if (!this.intentionalDisconnect) {
@@ -941,6 +966,7 @@ export class ClientZapo implements Client {
   private async handleRuntimeOwnershipLoss(reason: string, error?: unknown) {
     if (!this.lease) return
     this.transportWatchdog.stop()
+    this.sdkRecovery?.cancel()
     this.presenceHeartbeat.stop()
     logger.error(error as any, 'Zapo session ownership lost for %s (%s); disconnecting socket', this.phone, reason)
     if (this.leaseRenewTimer) clearInterval(this.leaseRenewTimer)
@@ -1098,6 +1124,14 @@ export class ClientZapo implements Client {
       companionRuntime = { startCompanionWorker, fence, operations: new MobileCompanionOperations(redis, vault, this.config.mobilePrimaryDraftId) }
     }
     await checkPreparation()
+    const connectionPolicy = resolveZapoConnectionPolicy(!!credentials?.deviceInfo, this.config.zapoWebVersion)
+    logger.info({ phone: this.phone, transport: credentials?.deviceInfo ? 'mobile' : 'web', webVersion: connectionPolicy.version || null, recoveryOwner: connectionPolicy.recoverFromClientTooOld ? 'zapo-405-viperconnect-lifecycle' : 'viperconnect', recoverFromClientTooOld: connectionPolicy.recoverFromClientTooOld }, 'ZAPO_CONNECTION_POLICY')
+    const recovery = new ZapoSdkRecovery(() => {
+      void this.recoverTransport(client, 'client_too_old_recovery_timeout', 60_000).catch(error => {
+        logger.warn(error as any, 'Zapo SDK recovery cleanup failed for %s', this.phone)
+      })
+    })
+    let initialConnect = true
     const client = await withZapoWebClientProfile(this.config.zapoWebClientProfile, async () => this.clientFactory({
       store: zapoStore,
       sessionId: this.phone,
@@ -1105,7 +1139,9 @@ export class ClientZapo implements Client {
       proxy,
       ...(companionHost ? { companionHost } : {}),
       markOnlineOnConnect: !!this.config.mobilePrimaryDraftId || this.config.markOnlineOnConnect,
-      recoverFromClientTooOld: true,
+      // The SDK's version option overrides mobile appVersion too; never feed a
+      // three-part Web revision into a four-part mobile login payload.
+      ...connectionPolicy,
       history: {
         // Zapo hydrates LID mappings, privacy tokens and nctSalt from history
         // even when Uno must not forward historical messages to webhooks.
@@ -1124,10 +1160,27 @@ export class ClientZapo implements Client {
           || this.config.zapoWebClientProfile === 'wa_personal'
           || this.config.zapoWebClientProfile === 'wa_business',
       })],
+    }, async connect => {
+      const first = initialConnect
+      initialConnect = false
+      if (!first) await recovery.claim()
+      const assertCurrent = () => {
+        if (this.socket !== client || this.connectionGeneration !== generation || this.intentionalDisconnect || !this.acceptingEvents) {
+          throw new SendError(409, 'zapo_operation_cancelled')
+        }
+      }
+      assertCurrent()
+      const current = await readSessionLifecycleConfig(this.phone, this.getConfig, expectedConfig)
+      assertSessionConfigRegistered(current)
+      if (!current.autoConnect) throw new SendError(409, 'session_storage_session_suspended')
+      if (current.useRedis && (!this.lease || !await this.lease.renew())) throw new SendError(409, 'session_storage_lease_lost')
+      assertCurrent()
+      return withZapoWebClientProfile(current.zapoWebClientProfile, connect)
     }))
     try { await checkPreparation() }
     catch (error) { await Promise.resolve(client.disconnect()).catch(() => undefined); throw error }
     const generation = ++this.connectionGeneration
+    this.sdkRecovery = recovery
     const voiceBridgeUrl = resolveZapoVoiceBridgeUrl(VOIP_SERVICE_URL, VOIP_BRIDGE_URL)
     this.voiceBridge =
       voiceBridgeUrl && VOIP_SERVICE_TOKEN
@@ -1176,8 +1229,12 @@ export class ClientZapo implements Client {
         }
       }
     })
-    this.bindEvents(client, resolvePrompt, generation)
+    this.bindEvents(client, resolvePrompt, generation, recovery, connectionPolicy.recoverFromClientTooOld)
     const socketConnect = withZapoWebClientProfile(this.config.zapoWebClientProfile, () => client.connect()).catch(async (error) => {
+      if (this.socket === client && recovery.active) {
+        await recovery.wait()
+        if (this.socket === client && this.connected) return
+      }
       await this.handleConnectionFailure(client, error)
       if (!promptResolved) throw error
     })
@@ -1236,6 +1293,7 @@ export class ClientZapo implements Client {
 
   private async disconnectTransport(recoveryReason?: string) {
     this.transportWatchdog.stop()
+    this.sdkRecovery?.cancel()
     if (this.config.useRedis) this.lifecycleObserver.observe(this.phone, false, { intentional: !recoveryReason, reconnect_expected: !!recoveryReason, ...(recoveryReason ? { reason: recoveryReason } : {}) }, false)
     this.presenceHeartbeat.stop()
     this.intentionalDisconnect = true
@@ -1303,7 +1361,7 @@ export class ClientZapo implements Client {
     }
   }
 
-  private async recoverTransport(socket: ZapoClient, reason: string) {
+  private async recoverTransport(socket: ZapoClient, reason: string, minimumDelayMs = 0) {
     if (this.transportRecovery) return this.transportRecovery
     if (this.socket !== socket || this.intentionalDisconnect) return
     logger.warn({ phone: this.phone, reason }, 'ZAPO_TRANSPORT_RECOVERY')
@@ -1315,7 +1373,7 @@ export class ClientZapo implements Client {
       // A manual disconnect/logout while cleanup was pending takes precedence.
       if (this.connectionGeneration !== expectedGeneration) return
       this.intentionalDisconnect = false
-      this.scheduleReconnect()
+      this.scheduleReconnect(minimumDelayMs)
     })()
     this.transportRecovery = task
     try { await task } finally {

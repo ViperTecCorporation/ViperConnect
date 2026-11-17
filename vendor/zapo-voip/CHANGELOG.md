@@ -1,10 +1,18 @@
 # @vipertec/zapo-voip
 
-## Não publicado
+## 1.0.0-viper.7
+
+- Seleciona o dispositivo vinculado confirmado no atendimento como identidade
+  SRTP remota, somente na mesma conta e domínio, preservando chave local,
+  aliases e proteção contra replay. Inclui regressões criptográficas.
+- Diagnóstico limitado de TX/RX, picos, amostras, codec e histograma TOC, sem
+  reter payload de voz, PCM ou chaves. Pacote autenticado não comprova áudio
+  audível; o canário do contato Web com silêncio continua pendente.
 
 - Adiciona `preferWebRelayPort`, desativado por padrão: altera somente a porta
   de transporte para 3480, preservando credenciais e seleção. A Uno habilita
-  exclusivamente em dispositivos mobile-primary do laboratório `mobile_lab`.
+  nos perfis `wa_personal`, `wa_business` e Mobile Primary. Essa seleção não
+  altera a porta remota nem comprova que falhas de áudio sejam causadas por ela.
 
 - Trata erros assíncronos no stdin do relay nativo, incluindo `EPIPE`, sem
   derrubar o worker. Falhas durante operação geram um único `transport_error`;

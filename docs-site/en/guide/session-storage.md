@@ -537,6 +537,10 @@ read receipts; observing status never starts maintenance or recovery.
 
 ### Backup memory usage
 
+Session backups are serialized in the owning process: scheduled, manual and
+migration calls share one queue, one session at a time. This neither caps total
+worker RAM nor prevents another worker from backing up its own sessions.
+
 The worker snapshots SQLite to disk and reads 256 KiB blocks. Bounded archive
 frames are uploaded through S3 multipart with one 5 MiB part in flight. The
 intermediate queue counts bytes, with a 256 KiB high-water mark, and respects
@@ -548,10 +552,30 @@ Upload, readback and restore do not assemble the entire archive in a Node
 buffer. Linux may cache snapshot/temporary-file pages charged to the worker's
 cgroup. Compare process RSS/heap/buffers with `file`/`inactive_file`/`anon`, swap
 and OOM events; total cgroup usage is not heap, and inactive cache is not
-guaranteed free memory. Temporary files are closed and removed on completion
-or failure. Readback verification remains mandatory; source finalization may
-perform another verification before removing Redis keys. No global OS cache
-flush is performed.
+guaranteed free memory. After upload completes, the temporary snapshot is
+removed **before** downloading the object for validation. Streaming readback
+checks the format, metadata, offsets, size and every decoded byte's SHA-256
+against the trusted local manifest. It does not create a second `verified.sqlite`:
+the original snapshot already passed SQLite `quick_check`, and the matching
+digest establishes that the recovered image is identical. Failure prevents
+`ready` and preserves the previous receipt. The `.viperstorage` format is unchanged.
+
+An actual restore still reconstructs the file and runs SQLite `quick_check`
+before accepting it; a matching operator-supplied digest alone is insufficient.
+Migration finalization may still perform another restore/fingerprint check
+before deleting Redis keys. Temporary files are closed and removed on completion
+or failure. No root privileges or global OS cache eviction are required, and
+there is no fixed total-RAM guarantee: snapshotting, live databases and actual
+restores can still warm the kernel's file cache.
+
+Local synthetic comparison: `node scripts/verify-session-backup-cache.cjs 128`.
+It requires the Docker LAB image and compiled volume. It compares `v4.0.43`
+with the local build using an artificial database, isolated HTTP object storage
+and an independent restore in both cases. No real sessions or S3 are used; only
+its own containers/network are removed. The default is 128 MiB (maximum 256 MiB)
+to preserve headroom in shared DEV. Readback and whole-backup peaks are reported
+separately; fixture size or its measured improvement is not a production memory
+guarantee and must not be extrapolated to other database sizes.
 
 ### Through the panel, without a terminal
 
@@ -719,7 +743,8 @@ archives: a manifest is not a public download authorization.
 
 The package includes SQLite, a session-configuration snapshot and,
 for Mobile Primary, the registration/device supplement. It becomes `ready` only
-after S3 readback and verified temporary restore. The configuration copy is
+after validating the SQLite snapshot and confirming through readback that the
+S3 object contains the identical image and metadata. The configuration copy is
 recovery material: offline restore does not reapply tokens, webhooks, owners or
 automatic connection. Media remains in S3; keys required by Mobile Primary or
 other services need separate secure safekeeping, not an obligatory backup key

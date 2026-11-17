@@ -74,6 +74,7 @@ class WaCallMediaSession {
     audioSendCount = 0;
     audioDropCount = 0;
     realAudioSendCount = 0;
+    audioDiagnostics = {};
     static EMPTY_BYTES = bytes_js_1.EMPTY_BYTES;
     encodeBufferA = null;
     encodeBufferB = null;
@@ -318,6 +319,17 @@ class WaCallMediaSession {
             return;
         const callId = this.info.callId;
         const acceptingDeviceJid = peerJid;
+        try {
+            this.logger.debug('voip_diag peer_audio_signaling', {
+                callId,
+                acceptingDeviceJid,
+                audio: (0, transport_1.getNodeChildrenByTag)(nodeInfo.innerNode, 'audio').slice(0, 4).map(child => ({
+                    encoding: String(child.attrs.enc || '').slice(0, 16),
+                    rate: String(child.attrs.rate || '').slice(0, 16)
+                }))
+            });
+        }
+        catch { /* Signaling must not depend on the diagnostic sink. */ }
         const credentials = this.deps.authClient.getCurrentCredentials();
         const ourBaseJids = new Set([credentials?.meLid, credentials?.meJid]
             .filter((jid) => !!jid)
@@ -959,6 +971,7 @@ class WaCallMediaSession {
             this.encodeBufferPos = 0;
             try {
                 const opusFrame = this.opusCodec.encode(frameData);
+                this.noteAudioFrame('tx', frameData, opusFrame);
                 this.sendOpusFrame(opusFrame, false);
                 this.realAudioSendCount++;
             }
@@ -983,7 +996,8 @@ class WaCallMediaSession {
             sent: this.audioSendCount,
             dropped: this.audioDropCount,
             opusOk: opusStats?.success ?? 0,
-            opusErr: opusStats?.errors ?? 0
+            opusErr: opusStats?.errors ?? 0,
+            mediaDiagnostics: this.audioDiagnostics
         });
         this.audioEngine.setOnAudioFinished(null);
         this.audioEngine.stop();
@@ -999,6 +1013,7 @@ class WaCallMediaSession {
         this.srtcpSender = null;
         this.audioSendCount = 0;
         this.audioDropCount = 0;
+        this.audioDiagnostics = {};
         this.audioRecvCount = 0;
         this.srtpErrorCount = 0;
         this.pcmDeliveryErrorCount = 0;
@@ -1146,6 +1161,37 @@ class WaCallMediaSession {
             });
         }
     }
+    /** Bounded numeric metadata only; never retains PCM, payloads or keys. */
+    noteAudioFrame(leg, pcm, packet) {
+        this.audioDiagnostics ||= {};
+        const stats = this.audioDiagnostics[leg] ||= {
+            frames: 0, nonZeroFrames: 0, maxPeak: 0, samples: 0, payloadBytes: 0,
+            tocCounts: Object.create(null)
+        };
+        let peak = 0;
+        for (const sample of pcm)
+            if (Number.isFinite(sample))
+                peak = Math.max(peak, Math.abs(sample));
+        stats.frames++;
+        if (peak > 0)
+            stats.nonZeroFrames++;
+        stats.maxPeak = Math.max(stats.maxPeak, peak);
+        stats.samples += pcm.length;
+        stats.payloadBytes += packet.length;
+        if (packet.length) {
+            const toc = packet[0].toString(16).padStart(2, '0');
+            stats.tocCounts[toc] = (stats.tocCounts[toc] || 0) + 1;
+        }
+        if (stats.frames === 1 || stats.frames % 100 === 0) {
+            try {
+                this.logger.debug('voip_diag audio_pipeline', {
+                    callId: this.info.callId, leg, codecMode: this.voipSettings?.codecMode,
+                    ...stats, tocCounts: { ...stats.tocCounts }
+                });
+            }
+            catch { /* Diagnostics must not discard an audio frame. */ }
+        }
+    }
     initSrtpKeys(receiveCallKey) {
         const callKey = this.info.encryptionKey;
         if (!callKey) {
@@ -1167,6 +1213,15 @@ class WaCallMediaSession {
             if (peerFromParticipants)
                 rawPeerJid = peerFromParticipants;
         }
+        // Relay allocations may still name the base/primary participant after a
+        // linked device answers. Its authenticated signaling identity must win
+        // within that same account, without guessing devices or PN/LID aliases.
+        const peerBaseJid = (0, protocol_1.toUserJid)(rawPeerJid);
+        const confirmedDeviceJid = [this.acceptedByJid, this.info.peerJid].find((jid) => !!jid &&
+            jid.split('@', 1)[0].includes(':') &&
+            (0, protocol_1.toUserJid)(jid) === peerBaseJid);
+        if (confirmedDeviceJid)
+            rawPeerJid = confirmedDeviceJid;
         const peerDeviceJid = (0, ssrc_js_1.formatE2ESrtpParticipantId)(rawPeerJid);
         try {
             const sendKeying = (0, encryption_js_1.derivePerJidSrtpKey)(callKey, ourDeviceJid);
@@ -1346,6 +1401,7 @@ class WaCallMediaSession {
                 });
             }
             audioData = this.opusCodec.decode(opusPayload);
+            this.noteAudioFrame('rx', audioData, opusPayload);
             if (this.audioRecvCount % 100 === 0) {
                 const stats = this.opusCodec.getStats();
                 this.logger.debug('audio recv stats', {

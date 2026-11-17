@@ -1,5 +1,5 @@
-import { escapeHtml } from '../core/html.js?v=4.0.43-010277e1';
-import { getLocale, t } from '../core/i18n.js?v=4.0.43-010277e1';
+import { escapeHtml } from '../core/html.js?v=4.0.44-f63f46d2';
+import { getLocale, t } from '../core/i18n.js?v=4.0.44-f63f46d2';
 export const DOCUMENTATION_URL = 'https://viperconnect.vipertec.net/';
 export const DOCUMENTATION_ORIGIN = new URL(DOCUMENTATION_URL).origin;
 export const localizedDocumentationUrl = () => getLocale() === 'en' ? new URL('/en/', DOCUMENTATION_URL).toString() : DOCUMENTATION_URL;

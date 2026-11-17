@@ -1,7 +1,7 @@
-import { escapeHtml } from '../core/html.js?v=4.0.43-010277e1';
-import { icon } from '../components/icons.js?v=4.0.43-010277e1';
-import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.43-010277e1';
-import { t } from '../core/i18n.js?v=4.0.43-010277e1';
+import { escapeHtml } from '../core/html.js?v=4.0.44-f63f46d2';
+import { icon } from '../components/icons.js?v=4.0.44-f63f46d2';
+import { renderInfoTooltip, renderSecretField, renderSwitchField } from '../components/form_controls.js?v=4.0.44-f63f46d2';
+import { t } from '../core/i18n.js?v=4.0.44-f63f46d2';
 export const booleanSessionFields = [
     ['autoConnect', 'Conectar automaticamente', 'Reconecta esta sessão quando o worker for iniciado.'],
     ['ignoreGroupMessages', 'Ignorar mensagens de grupos', 'Não encaminha mensagens recebidas em grupos aos webhooks.'],
@@ -50,6 +50,11 @@ export const renderSessionConfig = (session, restricted = false) => `
           <input value="${escapeHtml(session.zapoWebClientProfile === 'wa_personal' ? t('WA Pessoal (Android)') : session.zapoWebClientProfile === 'wa_business' ? t('WA Business (Android)') : t('Default (padrão atual)'))}" disabled>
           <small>${t('Para trocar o perfil, execute deregister e registre a sessão novamente.')}</small>
         </div>
+        <label class="field field--connection-peer">
+          <span class="field-label">${t('Versão WhatsApp Web')}</span>
+          <input name="zapoWebVersion" value="${escapeHtml(session.zapoWebVersion || '')}" maxlength="54" pattern="[0-9]+([.][0-9]+){2,4}" placeholder="${t('Padrão do worker (ENV ou código)')}" ${session.mobilePrimaryDraftId ? 'disabled' : ''}>
+          <small>${session.mobilePrimaryDraftId ? t('Mobile Primary mantém a versão do aparelho.') : t('Opcional. Vazio usa ZAPO_WEB_VERSION ou o padrão do código. Salvar solicita reconexão desta sessão.')}</small>
+        </label>
         <label class="field field--connection-peer">
           <span class="field-label">${t('Servidor')}</span>
           <input name="server" value="${escapeHtml(session.server || 'server_1')}">
@@ -145,6 +150,7 @@ export const sessionConfigPayload = (data, restricted = false) => {
         label: `${data.get('label') || ''}`.trim(),
         connectionType: `${data.get('connectionType') || 'qrcode'}`,
         zapoWebClientProfile: `${data.get('zapoWebClientProfile') || 'default'}`,
+        ...(data.has('zapoWebVersion') ? { zapoWebVersion: `${data.get('zapoWebVersion') || ''}`.trim() } : {}),
         server: `${data.get('server') || 'server_1'}`.trim(),
         proxyUrl: `${data.get('proxyUrl') || ''}`.trim(),
         authToken: `${data.get('authToken') || ''}`,

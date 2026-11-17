@@ -2,6 +2,18 @@
 
 ## Recuperacao automatica do transporte
 
+A versão Web passa explicitamente por `VIPERCONNECT_ZAPO_CONNECTION_POLICY`
+(`2.3000.1054816457`, verificada no `sw.js` público em 16/11/2026).
+Web usa `recoverFromClientTooOld=true`: a Zapo busca a revisão atual após 405
+e recupera o mesmo cliente. O ViperConnect retém lease/geração por até 45s,
+autoriza uma conexão SDK por janela e revalida posse/configuração/storage antes
+de qualquer connect. Cancelamento impede fetch atrasado de reabrir o cliente.
+Sem retorno, cleanup normal e backoff mínimo de 60s. A versão inicial segue
+Manager → `ZAPO_WEB_VERSION` do worker → código; recuperação é override de uma
+tentativa, não persistido. Mobile Primary preserva a política anterior e
+`deviceInfo.appVersion`, sem override Web/Android automático. Detalhes PT/EN no guia
+[Como a API funciona](../docs-site/guide/concepts.md#versão-whatsapp-e-reconexão).
+
 A manutenção manual de criptografia é independente do watchdog: o endpoint
 `POST /{phone}/contacts/recover-crypto` exige `user_id` LID conhecido e
 `confirm=true`. Executa `message.syncSignalSession(lid, { force: true })` do

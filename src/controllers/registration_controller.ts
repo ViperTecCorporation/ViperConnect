@@ -12,6 +12,7 @@ import { isWebhookOnlyUpdate } from '../services/webhook_only_update'
 import { mergeMobileWebhooks } from '../services/mobile_primary/integration_policy'
 import { MobileDeviceError } from '../services/mobile_device_service'
 import { normalizeZapoWebClientProfile } from '../services/zapo/zapo_web_client_profile'
+import { normalizeZapoWebVersion } from '../services/zapo/zapo_connection_policy'
 import { UNOAPI_SERVER_NAME } from '../defaults'
 import { createProvisionPending, confirmSessionStorageProvision } from '../services/session_storage/provisioning'
 import { SessionStorageError } from '../services/session_storage/types'
@@ -43,6 +44,9 @@ export class RegistrationController {
     const phone = await resolveSessionPhoneByMetaId(req.params.phone)
     try {
       const previousConfig = await this.getConfig(phone)
+      const hasWebVersion = Object.prototype.hasOwnProperty.call(req.body, 'zapoWebVersion')
+      const webVersion = hasWebVersion ? normalizeZapoWebVersion(req.body.zapoWebVersion) : undefined
+      if (previousConfig.mobilePrimaryDraftId && webVersion) return res.status(409).json({ status: 'error', message: 'zapo_web_version_mobile_primary_not_supported' })
       if (['sessionStorage', 'sessionStorageUnlinked', 'sessionStorageTaskId', 'sessionStorageProvisionPending', 'sessionStorageProvisioned'].some(key => req.body[key] !== undefined)) return res.status(400).json({ status: 'error', message: 'session_storage_internal_fields' })
       if (previousConfig.sessionStorage?.fixture || process.env.UNOAPI_STORAGE_SYNTHETIC_ONLY === 'true') return res.status(409).json({ status: 'error', message: 'session_storage_fixture_external_effects_forbidden' })
       const storedConfig = await getStoredConfig(phone)
@@ -116,6 +120,7 @@ export class RegistrationController {
       }
       const requestedConfig = {
         ...req.body,
+        ...(hasWebVersion ? { zapoWebVersion: webVersion } : {}),
         ...(req.body.server === undefined && (!storedConfig || storedConfig.server === undefined)
           ? { server: UNOAPI_SERVER_NAME }
           : {}),

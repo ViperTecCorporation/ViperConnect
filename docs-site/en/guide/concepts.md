@@ -21,6 +21,36 @@ POST /v15.0/{session}/messages
 - `to` is the destination conversation;
 - `version` preserves the HTTP contract version.
 
+### WhatsApp version and reconnection
+
+ViperConnect selects the initial WhatsApp Web version: the session's Manager
+value → owning worker's `ZAPO_WEB_VERSION` → code default `2.3000.1054816457`.
+A blank Manager value inherits the worker; an unset/blank ENV inherits code.
+This is neither the product's `4.x` version nor the HTTP `v15.0` prefix.
+
+`recoverFromClientTooOld:true` lets Zapo fetch the current version from
+`https://web.whatsapp.com/sw.js` only after `405/failure_client_too_old`, then
+reconnect the same client. The override lasts one attempt and does not update
+Manager, ENV or credentials; a new instance starts with the configured version.
+The manual value is therefore an initial version, not an absolute pin. Recovery
+does not guarantee future protocol compatibility or fix fetch/parser failures.
+
+ViperConnect retains its lease and generation for at most 45s, permits one SDK
+connection attempt per episode and does not start a competing client. Each
+connect revalidates ownership, configuration and storage state. Manual disconnect,
+logout, migration and lease loss prevent a late recovery from reopening the
+socket. If recovery does not complete, normal cleanup discards the client and
+waits at least 60s before retrying. An outstanding SDK fetch may finish, but
+cannot authorize connecting a discarded client.
+
+Saving the Manager version uses the existing reload flow and may reconnect the
+session/interrupt calls; HTTP success does not confirm Online. Only Web accepts
+overrides (3–5 numeric parts, at most 54 characters); invalid values are rejected
+without silent fallback. `ZAPO_CONNECTION_POLICY` logs the initial version and
+owner. Mobile Primary retains `deviceInfo.appVersion` and its previous policy,
+without Web ENV or automatic Android versions on iOS credentials. This error
+does not justify deleting credentials, SQLite or pairing again.
+
 ## 2. The token authenticates the installation
 
 ```http

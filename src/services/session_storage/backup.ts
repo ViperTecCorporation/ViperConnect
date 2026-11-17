@@ -4,8 +4,8 @@ import { lstat, mkdtemp, open, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
-import { isDeepStrictEqual } from 'node:util'
-import { backupArchiveReadable, decodeBackupStream, encodeBackupStream, type BackupProtection } from './backup_stream'
+import { backupArchiveReadable, encodeBackupStream, type BackupProtection } from './backup_stream'
+import { readSqliteBackupArchive, SQLITE_BACKUP_CHUNK_BYTES } from './backup_reader'
 import { SessionStorageDescriptor, SessionStorageError, validateSessionPhone, validateStorageDescriptor } from './types'
 import { requireSafeSqliteEngine } from './sqlite_engine'
 import { assertSqliteWalSafeVersion } from './sqlite_safety'
@@ -26,7 +26,6 @@ export interface SessionBackupIndex {
   get(id: string): Promise<SqliteBackupManifest | undefined>
 }
 
-const CHUNK = 256 * 1024
 const MAX_RESTORE_BYTES = 16 * 1024 * 1024 * 1024
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -74,21 +73,19 @@ export class SessionSqliteBackups {
         createdAt: new Date().toISOString(), objectKey: `backups/session-storage/${input.phone}/${id}.viperstorage`, ...digest, kind: input.kind || 'linked-session', status: 'ready', protection: 'none' }
       const records = async function* () {
         let offset = 0
-        for await (const chunk of createReadStream(path, { highWaterMark: CHUNK })) {
+        for await (const chunk of createReadStream(path, { highWaterMark: SQLITE_BACKUP_CHUNK_BYTES })) {
           yield { offset, data: chunk.toString('base64') }; offset += chunk.length
         }
       }
       const archive = encodeBackupStream({ kind: 'sqlite-session', version: 1, manifest, supplement: input.supplement || {} }, records())
       const stream = backupArchiveReadable(archive)
       try { await this.objects.save(manifest.objectKey, stream) } finally { stream.destroy(); await archive.return(undefined) }
-      // A completed PUT is not proof of a readable, intact snapshot. Read the
-      // uploaded object back through the same offline restore verifier before
-      // publishing any ready index or replacing the last successful receipt.
-      const verifier = new SessionSqliteBackups(this.objects, {
-        put: async () => undefined,
-        get: async id => id === manifest.id ? manifest : undefined,
-      })
-      await verifier.restore({ phone: input.phone, backupId: manifest.id, password: input.password, stagedPath: join(directory, 'verified.sqlite') })
+      // Upload finished and snapshotSqlite already checked this exact database.
+      // Release its file/cache before readback, then verify every downloaded
+      // decoded byte against the trusted local digest without another disk copy.
+      // Failed readback never publishes ready or replaces an earlier receipt.
+      await rm(path)
+      await readSqliteBackupArchive(this.objects, manifest, input.password)
       await this.index.put(manifest)
       return manifest
     })
@@ -112,35 +109,16 @@ export class SessionSqliteBackups {
     if (!Number.isSafeInteger(expected.bytes) || expected.bytes <= 0 || expected.bytes > MAX_RESTORE_BYTES || !/^[a-f0-9]{64}$/.test(expected.sha256)
       || expected.protection !== undefined && !['none', 'aes-256-gcm'].includes(expected.protection)) throw new SessionStorageError(409, 'session_storage_backup_invalid')
     const file = await open(input.stagedPath, 'wx', 0o600)
-    let source: Readable | undefined
-    let frames: ReturnType<typeof decodeBackupStream> | undefined
-    let complete = false, bytes = 0, meta: any
-    const hash = createHash('sha256')
+    let complete = false
     try {
-      source = await this.objects.open(expected.objectKey); frames = decodeBackupStream(source, input.password)
-      for await (const frame of frames) {
-        if (frame.kind === 'meta') {
-          meta = frame.value
-          if (frame.protection !== (expected.protection || 'aes-256-gcm') || meta?.kind !== 'sqlite-session' || meta.version !== 1 || !isDeepStrictEqual(meta.manifest, expected)
-            || !meta.supplement || typeof meta.supplement !== 'object' || Array.isArray(meta.supplement)) throw new SessionStorageError(409, 'session_storage_backup_invalid')
-        } else if (frame.kind === 'records') {
-          if (!meta) throw new SessionStorageError(409, 'session_storage_backup_invalid')
-          for (const record of frame.value) {
-            if (!record || Object.keys(record).sort().join(',') !== 'data,offset' || record.offset !== bytes || typeof record.data !== 'string' || record.data.length > CHUNK * 2) throw new SessionStorageError(409, 'session_storage_backup_invalid')
-            const data = Buffer.from(record.data, 'base64')
-            if (!data.length || data.length > CHUNK || data.toString('base64') !== record.data || bytes + data.length > expected.bytes) throw new SessionStorageError(409, 'session_storage_backup_invalid')
-            let written = 0
-            while (written < data.length) {
-              const step = (await file.write(data, written, data.length - written)).bytesWritten
-              if (step === 0) throw new SessionStorageError(503, 'session_storage_restore_write_failed')
-              written += step
-            }
-            hash.update(data); bytes += data.length
-          }
+      const supplement = await readSqliteBackupArchive(this.objects, expected, input.password, async data => {
+        let written = 0
+        while (written < data.length) {
+          const step = (await file.write(data, written, data.length - written)).bytesWritten
+          if (step === 0) throw new SessionStorageError(503, 'session_storage_restore_write_failed')
+          written += step
         }
-      }
-      if (!meta || bytes !== expected.bytes || hash.digest('hex') !== expected.sha256) throw new SessionStorageError(409, 'session_storage_backup_invalid')
-      if (expected.kind === 'mobile-primary' && !meta.supplement.registration) throw new SessionStorageError(409, 'session_storage_mobile_registration_required')
+      })
       await file.sync(); await file.close()
       const sqlite = requireSafeSqliteEngine(), db = new sqlite.DatabaseSync(input.stagedPath, { readOnly: true })
       try {
@@ -148,9 +126,9 @@ export class SessionSqliteBackups {
         if (db.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok') throw new SessionStorageError(409, 'session_storage_snapshot_invalid')
       } finally { db.close() }
       complete = true
-      return { manifest: expected, supplement: meta.supplement as Record<string, unknown>, autoConnect: false as const }
+      return { manifest: expected, supplement, autoConnect: false as const }
     } finally {
-      await file.close().catch(() => {}); source?.destroy(); await frames?.return(undefined)
+      await file.close().catch(() => {})
       if (!complete) await rm(input.stagedPath, { force: true })
     }
   }
